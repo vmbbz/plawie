@@ -17,6 +17,7 @@ import 'preferences_service.dart';
 import 'local_llm_service.dart';
 import 'model_provider_catalog.dart';
 import 'gateway_tool_catalog.dart';
+import 'app_native_chat_tool_router.dart';
 import 'native_gateway_smoke_service.dart';
 import 'native_gateway_shadow_parity_service.dart';
 import '../constants/openclaw_paths.dart';
@@ -123,7 +124,6 @@ class GatewayService {
   DateTime? _lastWsConnectAttemptAt;
   DateTime? _gatewayInteractiveReadyAt;
   DateTime? _talkSpeakUnavailableUntil;
-  String? _lastTalkSpeakErrorMessage;
   bool _talkSpeakBackoffAllowsNativeFallback = false;
   DateTime? _lastLocalInferenceHealthSkipAt;
   DateTime? _lastHungGatewayRestartAt;
@@ -141,7 +141,11 @@ class GatewayService {
   bool _chatLaneRecoveryInFlight = false;
   bool _gatewayChatTurnInFlight = false;
   bool _runtimeLogged = false;
-  bool _skillsRegisterUnavailableLogged = false;
+  bool _appNativeSkillsRegisteredWithGateway = false;
+  String _appNativeSkillBridgeStatus = 'not_registered';
+  String? _appNativeSkillBridgeDetail;
+  int _appNativeSkillCatalogCount = 0;
+  DateTime? _lastSkillsRegisterUnavailableLogAt;
   static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
   static const Duration _processValidationInterval = Duration(seconds: 90);
@@ -170,6 +174,8 @@ class GatewayService {
   static const Duration _gatewayNoFirstTokenRecoverySettle =
       Duration(seconds: 15);
   static const Duration _nativeFullGatewayStartupGrace = Duration(seconds: 120);
+  static const Duration _skillsRegisterUnavailableLogCooldown =
+      Duration(seconds: 60);
 
   /// Live stream of human-readable chat and gateway events.
   Stream<String> get chatActivityStream => _chatActivityController.stream;
@@ -429,39 +435,14 @@ class GatewayService {
             .timeout(const Duration(seconds: 45), onTimeout: () => false);
         _addActivity('[CHAT] Recovery: PRoot restart requested=$started.');
       } else {
-        var nativeHealthLive = false;
-        try {
-          final health = await _waitForProductionHealthPayload(
-            timeout: const Duration(seconds: 4),
-          );
-          nativeHealthLive = _gatewayHealthLooksLive(health);
-          if (nativeHealthLive) {
-            _updateState(_state.copyWith(
-              status: GatewayStatus.running,
-              clearError: true,
-              isReady: true,
-              detailedHealth: health,
-            ));
-            _addActivity(
-              '[CHAT] Recovery: native health live; rebuilding WebSocket lane without process restart.',
-            );
-          }
-        } catch (_) {}
-
-        final running = nativeHealthLive
-            ? true
-            : await runtime
-                .isRunning()
-                .timeout(const Duration(seconds: 4), onTimeout: () => false);
+        final running = await runtime
+            .isRunning()
+            .timeout(const Duration(seconds: 4), onTimeout: () => false);
         if (!running) {
           final started = await runtime
               .start(allowDuringSetup: true)
               .timeout(const Duration(seconds: 25), onTimeout: () => false);
           _addActivity('[CHAT] Recovery: native restart requested=$started.');
-        } else if (!nativeHealthLive) {
-          _addActivity(
-            '[CHAT] Recovery: native process probe is running; skipping process restart.',
-          );
         }
       }
 
@@ -905,7 +886,7 @@ class GatewayService {
       if (!running) {
         final nativeRuntime =
             _runtime.id != PreferencesService.gatewayRuntimeOwnerProot;
-        final listenerAlive = await _isGatewayListenerAlive(
+        final listenerAlive = await _isSelectedRuntimeListenerAlive(
           timeout: const Duration(seconds: 2),
         );
         if (listenerAlive) {
@@ -1071,19 +1052,13 @@ class GatewayService {
     if (normalizedProvider.isEmpty || normalizedKey.isEmpty) return;
 
     try {
-      final filesDir = await getFilesDir();
-      final authFiles = <File>[
-        File(
-          '$filesDir/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json',
-        ),
-      ];
-      final nativeAuthFile = await _existingNativeAuthProfilesFile();
-      if (nativeAuthFile != null) authFiles.add(nativeAuthFile);
+      final readOrder = await _authProfilesReadOrder();
+      final authFiles = await _authProfilesWriteTargets();
 
       Map<String, dynamic> store = <String, dynamic>{};
-      final sourceFile = authFiles.firstWhere(
+      final sourceFile = readOrder.firstWhere(
         (file) => file.existsSync(),
-        orElse: () => authFiles.first,
+        orElse: () => readOrder.first,
       );
       if (await sourceFile.exists()) {
         final raw = await sourceFile.readAsString();
@@ -1311,7 +1286,7 @@ class GatewayService {
     }
   }
 
-  Future<bool> _isGatewayListenerAlive({
+  Future<Map<String, dynamic>?> _probeGatewayHealthPayload({
     Duration timeout = const Duration(seconds: 3),
   }) async {
     try {
@@ -1321,10 +1296,76 @@ class GatewayService {
         token: token,
         timeout: timeout,
       );
-      return response.statusCode < 500;
+      if (response.statusCode >= 500) return null;
+      return _decodeObject(response.body) ?? <String, dynamic>{};
     } catch (_) {
+      return null;
+    }
+  }
+
+  bool _healthMatchesSelectedRuntime(Map<String, dynamic> health) {
+    final runtime = (health['runtime'] ??
+            health['runtimeId'] ??
+            health['gatewayRuntime'] ??
+            health['owner'])
+        ?.toString()
+        .trim()
+        .toLowerCase();
+    if (_runtime.id == PreferencesService.gatewayRuntimeOwnerProot) {
+      return runtime == null ||
+          runtime.isEmpty ||
+          runtime == 'proot' ||
+          runtime.contains('proot');
+    }
+
+    // Native production health from the embedded libnode gateway currently
+    // reports native-node-embedded. Accept native-prefixed variants so the
+    // check survives future native owner renames without accepting PRoot.
+    return runtime != null &&
+        runtime.isNotEmpty &&
+        runtime.startsWith('native-node');
+  }
+
+  bool _healthExplicitlyMentionsProot(Map<String, dynamic> health) {
+    final values = <Object?>[
+      health['runtime'],
+      health['runtimeId'],
+      health['gatewayRuntime'],
+      health['owner'],
+    ];
+    return values.any(
+        (value) => value.toString().trim().toLowerCase().contains('proot'));
+  }
+
+  Future<bool> _isSelectedRuntimeListenerAlive({
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    final health = await _probeGatewayHealthPayload(timeout: timeout);
+    if (health == null) return false;
+    if (!_healthMatchesSelectedRuntime(health)) {
+      if (_runtime.id != PreferencesService.gatewayRuntimeOwnerProot &&
+          _gatewayHealthLooksLive(health) &&
+          !_healthExplicitlyMentionsProot(health)) {
+        try {
+          final nativeProcessAlive =
+              await NativeBridge.isNativeNodeIsolatedProcessAlive()
+                  .timeout(const Duration(seconds: 2), onTimeout: () => false);
+          if (nativeProcessAlive) {
+            _addActivity(
+              '[RUNTIME] Accepting native listener on ${AppConstants.gatewayPort}: '
+              'health omitted runtime but native isolated process is alive.',
+            );
+            return true;
+          }
+        } catch (_) {}
+      }
+      _addActivity(
+        '[RUNTIME] Ignoring listener on ${AppConstants.gatewayPort}: '
+        'health runtime=${health['runtime'] ?? 'unknown'} selected=${_runtime.id}.',
+      );
       return false;
     }
+    return true;
   }
 
   Future<bool> _attachToExistingGatewayAfterStartFailure(String reason) async {
@@ -1343,7 +1384,7 @@ class GatewayService {
     }
 
     if (!gatewayLooksAlive) {
-      gatewayLooksAlive = await _isGatewayListenerAlive(
+      gatewayLooksAlive = await _isSelectedRuntimeListenerAlive(
         timeout: const Duration(seconds: 2),
       );
     }
@@ -1424,11 +1465,12 @@ class GatewayService {
       );
     }
 
-    // 1. ALWAYS check if already running and attach if so. Android process
-    // discovery can miss the PRoot child even while :18789 is already bound,
-    // so the HTTP listener is also an ownership signal.
+    // 1. ALWAYS check if the selected owner is already running and attach if so.
+    // Android process discovery can miss the selected runtime even while
+    // :18789 is already bound, so owner-matched HTTP health is also an
+    // ownership signal.
     final processRunning = await _runtime.isRunning();
-    final listenerRunning = await _isGatewayListenerAlive();
+    final listenerRunning = await _isSelectedRuntimeListenerAlive();
     final alreadyRunning = processRunning || listenerRunning;
 
     if (alreadyRunning && listenerRunning) {
@@ -1605,23 +1647,14 @@ class GatewayService {
       unawaited(_checkHealth());
     } catch (e) {
       if (nativeProductionOwner) {
-        final rollbackReport = await _restoreProotDefaultOwner(
-          reason: 'native-default-startup-failed: $e',
-        );
-        if (rollbackReport['ok'] == true) {
-          _addActivity(
-            '[NATIVE-CUTOVER] Native default startup failed; PRoot rollback verified.',
-          );
-          return;
-        }
         _updateState(_state.copyWith(
           status: GatewayStatus.error,
           errorMessage:
-              'Native default startup failed and PRoot rollback did not fully verify: $e',
+              'Native Gateway startup failed. PRoot rollback is available only by explicit user action.',
           logs: [
             ..._state.logs,
             '[ERROR] Native default startup failed: $e',
-            '[ERROR] PRoot rollback report: $rollbackReport',
+            '[ERROR] PRoot rollback was not attempted automatically. Use the explicit rollback control if needed.',
           ],
         ));
         return;
@@ -1663,7 +1696,7 @@ class GatewayService {
           .timeout(const Duration(seconds: 3), onTimeout: () => false);
       final listenerAlive = processAlive
           ? false
-          : await _isGatewayListenerAlive(
+          : await _isSelectedRuntimeListenerAlive(
               timeout: const Duration(seconds: 2),
             );
       if (processAlive || listenerAlive) {
@@ -1851,39 +1884,112 @@ class GatewayService {
   Future<String> getFilesDir() async =>
       _filesDir ??= await NativeBridge.getFilesDir();
 
-  /// Helper to get the host-side path to the openclaw config file.
+  /// Legacy PRoot OpenClaw state root.
+  Future<String> _prootOpenClawRootPath() async {
+    return '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw';
+  }
+
+  /// Native embedded OpenClaw state root.
+  Future<String> _nativeOpenClawRootPath() async {
+    return '${await getFilesDir()}/native-node-embedded/native-home/.openclaw';
+  }
+
+  /// Helper to get the host-side path to the PRoot openclaw config file.
   /// Must match the PRoot ubuntu rootfs: $filesDir/rootfs/ubuntu/root/...
   Future<String> _openClawConfigPath() async {
-    return '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/openclaw.json';
+    return '${await _prootOpenClawRootPath()}/openclaw.json';
   }
 
   Future<String> _nativeOpenClawConfigPath() async {
-    return '${await getFilesDir()}/native-node-embedded/native-home/.openclaw/openclaw.json';
+    return '${await _nativeOpenClawRootPath()}/openclaw.json';
   }
 
-  Future<File?> _existingNativeOpenClawConfigFile() async {
-    final file = File(await _nativeOpenClawConfigPath());
-    return await file.exists() ? file : null;
+  Future<bool> _nativeConfigOwnerSelected() async {
+    try {
+      final prefs = PreferencesService();
+      await prefs.init();
+      return prefs.gatewayRuntimeOwner ==
+          PreferencesService.gatewayRuntimeOwnerNativeProduction;
+    } catch (_) {
+      return _runtime.id ==
+          PreferencesService.gatewayRuntimeOwnerNativeProduction;
+    }
   }
 
-  Future<File?> _existingNativeAuthProfilesFile() async {
-    final file = File(
-      '${await getFilesDir()}/native-node-embedded/native-home/.openclaw/agents/main/agent/auth-profiles.json',
+  Future<List<File>> _openClawConfigReadOrder() async {
+    final proot = File(await _openClawConfigPath());
+    final native = File(await _nativeOpenClawConfigPath());
+    return await _nativeConfigOwnerSelected()
+        ? <File>[native, proot]
+        : <File>[proot, native];
+  }
+
+  Future<File> _activeOpenClawConfigFile() async {
+    return (await _openClawConfigReadOrder()).first;
+  }
+
+  Future<List<File>> _openClawStoreReadOrder(String relativePath) async {
+    final proot = File('${await _prootOpenClawRootPath()}/$relativePath');
+    final native = File('${await _nativeOpenClawRootPath()}/$relativePath');
+    return await _nativeConfigOwnerSelected()
+        ? <File>[native, proot]
+        : <File>[proot, native];
+  }
+
+  Future<File> _prootAuthProfilesFile() async {
+    return File(
+      '${await _prootOpenClawRootPath()}/agents/main/agent/auth-profiles.json',
     );
-    return await file.exists() ? file : null;
+  }
+
+  Future<File> _nativeAuthProfilesFile() async {
+    return File(
+      '${await _nativeOpenClawRootPath()}/agents/main/agent/auth-profiles.json',
+    );
+  }
+
+  Future<List<File>> _authProfilesReadOrder() async {
+    final proot = await _prootAuthProfilesFile();
+    final native = await _nativeAuthProfilesFile();
+    return await _nativeConfigOwnerSelected()
+        ? <File>[native, proot]
+        : <File>[proot, native];
+  }
+
+  Future<List<File>> _authProfilesWriteTargets() async {
+    final proot = await _prootAuthProfilesFile();
+    final native = await _nativeAuthProfilesFile();
+    if (await _nativeConfigOwnerSelected()) {
+      return <File>[native, proot];
+    }
+    final targets = <File>[proot];
+    if (await native.exists()) targets.add(native);
+    return targets;
   }
 
   Future<void> _ensureWorkspaceHeartbeatFile() async {
     try {
-      final workspace = Directory(
-        '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/workspace',
-      );
-      await workspace.create(recursive: true);
+      final nativeOwner = await _nativeConfigOwnerSelected();
+      final roots = <String>[
+        nativeOwner
+            ? await _nativeOpenClawRootPath()
+            : await _prootOpenClawRootPath(),
+        nativeOwner
+            ? await _prootOpenClawRootPath()
+            : await _nativeOpenClawRootPath(),
+      ];
+      for (final root in roots) {
+        if (!nativeOwner && root.contains('/native-node-embedded/')) {
+          final nativeConfig = File('$root/openclaw.json');
+          if (!await nativeConfig.exists()) continue;
+        }
+        final workspace = Directory('$root/workspace');
+        await workspace.create(recursive: true);
 
-      final heartbeat = File('${workspace.path}/HEARTBEAT.md');
-      if (await heartbeat.exists()) return;
+        final heartbeat = File('${workspace.path}/HEARTBEAT.md');
+        if (await heartbeat.exists()) continue;
 
-      await heartbeat.writeAsString('''
+        await heartbeat.writeAsString('''
 # Plawie Heartbeat
 
 HEARTBEAT_OK
@@ -1893,6 +1999,7 @@ context without producing a missing-file error. Plawie does not schedule
 autonomous workspace tasks here. If nothing else is configured, reply
 HEARTBEAT_OK.
 ''');
+      }
       _addActivity('[SYS] Workspace HEARTBEAT.md initialized.');
     } catch (e) {
       debugPrint('[GatewayService] HEARTBEAT.md init skipped: $e');
@@ -1949,6 +2056,20 @@ HEARTBEAT_OK.
     return result;
   }
 
+  Future<Map<String, dynamic>> _prootGatewayConfigFrom(
+    Map<String, dynamic> config,
+  ) async {
+    final filesDir = await getFilesDir();
+    final nativeHome = '$filesDir/native-node-embedded/native-home';
+    final prootConfig = _cloneConfigMap(config);
+
+    final rewritten =
+        _rewriteProotGatewayPaths(prootConfig, nativeHome: nativeHome);
+    return rewritten is Map<String, dynamic>
+        ? rewritten
+        : _deepCastMap(rewritten as Map);
+  }
+
   dynamic _rewriteNativeGatewayPaths(
     dynamic value, {
     required String nativeHome,
@@ -1978,11 +2099,47 @@ HEARTBEAT_OK.
     return value;
   }
 
+  dynamic _rewriteProotGatewayPaths(
+    dynamic value, {
+    required String nativeHome,
+  }) {
+    if (value is Map) {
+      return value.map(
+        (key, child) => MapEntry(
+          key.toString(),
+          _rewriteProotGatewayPaths(child, nativeHome: nativeHome),
+        ),
+      );
+    }
+    if (value is List) {
+      return value
+          .map((child) => _rewriteProotGatewayPaths(
+                child,
+                nativeHome: nativeHome,
+              ))
+          .toList();
+    }
+    if (value is String) {
+      if (value == nativeHome) return '/root';
+      if (value.startsWith('$nativeHome/')) {
+        return '/root/${value.substring('$nativeHome/'.length)}';
+      }
+    }
+    return value;
+  }
+
   /// Direct Dart-native config read/write (bypasses proot overhead)
   Future<Map<String, dynamic>> _readConfig() async {
+    for (final file in await _openClawConfigReadOrder()) {
+      final config = await _readConfigFile(file);
+      if (config != null) return config;
+    }
+    return {};
+  }
+
+  Future<Map<String, dynamic>?> _readConfigFile(File file) async {
     for (int i = 0; i < 3; i++) {
       try {
-        final file = File(await _openClawConfigPath());
         if (await file.exists()) {
           final content = await file.readAsString();
           if (content.trim().isEmpty) {
@@ -1994,75 +2151,67 @@ HEARTBEAT_OK.
         }
         break;
       } catch (e) {
-        debugPrint('[GatewayService] Config read attempt ${i + 1} error: $e');
+        debugPrint(
+          '[GatewayService] Config read attempt ${i + 1} failed for ${file.path}: $e',
+        );
         await Future.delayed(const Duration(milliseconds: 200));
       }
     }
-    return {};
+    return null;
   }
 
   Future<void> _writeConfig(Map<String, dynamic> config) async {
     try {
-      final path = await _openClawConfigPath();
-      final file = File(path);
+      final workingConfig = _cloneConfigMap(config);
+      _ensurePersistentGatewayToken(workingConfig);
+      _applyExplicitAuthMode(workingConfig);
+      _syncLocalGatewayRemoteCredentials(workingConfig);
 
-      // Ensure directory exists
-      final dir = Directory(file.parent.path);
-      if (!await dir.exists()) await dir.create(recursive: true);
+      final prootConfig = await _prootGatewayConfigFrom(workingConfig);
+      final nativeConfig = await _nativeGatewayConfigFrom(workingConfig);
+      final nativeOwner = await _nativeConfigOwnerSelected();
+      final prootFile = File(await _openClawConfigPath());
+      final nativeFile = File(await _nativeOpenClawConfigPath());
 
-      _ensurePersistentGatewayToken(config);
-      _applyExplicitAuthMode(config);
-      _syncLocalGatewayRemoteCredentials(config);
-      final nextSignature = _canonicalJsonSignature(config);
-      final nativeConfig = await _nativeGatewayConfigFrom(config);
-      final nativeSignature = _canonicalJsonSignature(nativeConfig);
-
-      var writePrimary = true;
-      if (await file.exists()) {
-        try {
-          final existingRaw = await file.readAsString();
-          if (existingRaw.trim().isNotEmpty) {
-            final decoded = jsonDecode(existingRaw);
-            if (decoded is Map) {
-              final currentSignature = _canonicalJsonSignature(
-                _deepCastMap(decoded),
-              );
-              if (currentSignature == nextSignature) {
-                writePrimary = false;
-              }
-            }
-          }
-        } catch (_) {
-          // If parse/read fails, we still write the repaired config.
-        }
-      }
-
-      if (writePrimary) {
-        await _writeStringAtomically(file, nextSignature);
-      }
-
-      final nativeConfigFile = await _existingNativeOpenClawConfigFile();
-      if (nativeConfigFile != null) {
-        var writeNative = true;
-        try {
-          final existingRaw = await nativeConfigFile.readAsString();
-          if (existingRaw.trim().isNotEmpty) {
-            final decoded = jsonDecode(existingRaw);
-            if (decoded is Map) {
-              writeNative = _canonicalJsonSignature(_deepCastMap(decoded)) !=
-                  nativeSignature;
-            }
-          }
-        } catch (_) {
-          writeNative = true;
-        }
-        if (writeNative) {
-          await Directory(nativeConfigFile.parent.path).create(recursive: true);
-          await _writeStringAtomically(nativeConfigFile, nativeSignature);
+      if (nativeOwner) {
+        await _writeConfigFileIfChanged(nativeFile, nativeConfig);
+        await _writeConfigFileIfChanged(prootFile, prootConfig);
+      } else {
+        await _writeConfigFileIfChanged(prootFile, prootConfig);
+        if (await nativeFile.exists()) {
+          await _writeConfigFileIfChanged(nativeFile, nativeConfig);
         }
       }
     } catch (e) {
       debugPrint('[GatewayService] Config write error: $e');
+    }
+  }
+
+  Future<void> _writeConfigFileIfChanged(
+    File file,
+    Map<String, dynamic> config,
+  ) async {
+    final nextSignature = _canonicalJsonSignature(config);
+    var writeFile = true;
+
+    if (await file.exists()) {
+      try {
+        final existingRaw = await file.readAsString();
+        if (existingRaw.trim().isNotEmpty) {
+          final decoded = jsonDecode(existingRaw);
+          if (decoded is Map) {
+            writeFile =
+                _canonicalJsonSignature(_deepCastMap(decoded)) != nextSignature;
+          }
+        }
+      } catch (_) {
+        writeFile = true;
+      }
+    }
+
+    if (writeFile) {
+      await Directory(file.parent.path).create(recursive: true);
+      await _writeStringAtomically(file, nextSignature);
     }
   }
 
@@ -2103,22 +2252,31 @@ HEARTBEAT_OK.
 
   Future<void> _writeEnvFile(String key, String value) async {
     try {
-      final configPath = await _openClawConfigPath();
-      final envPath = configPath.replaceAll('openclaw.json', '.env');
-      final file = File(envPath);
+      final nativeOwner = await _nativeConfigOwnerSelected();
+      final prootEnv = File('${await _prootOpenClawRootPath()}/.env');
+      final nativeEnv = File('${await _nativeOpenClawRootPath()}/.env');
+      final envFiles = nativeOwner
+          ? <File>[nativeEnv, prootEnv]
+          : <File>[
+              prootEnv,
+              if (await nativeEnv.exists()) nativeEnv,
+            ];
 
-      String content = '';
-      if (await file.exists()) {
-        content = await file.readAsString();
+      for (final file in envFiles) {
+        String content = '';
+        if (await file.exists()) {
+          content = await file.readAsString();
+        }
+
+        final lines = content
+            .split('\n')
+            .where((l) => l.trim().isNotEmpty && !l.startsWith('$key='))
+            .toList();
+        lines.add('$key=$value');
+
+        await Directory(file.parent.path).create(recursive: true);
+        await file.writeAsString(lines.join('\n'));
       }
-
-      final lines = content
-          .split('\n')
-          .where((l) => l.trim().isNotEmpty && !l.startsWith('$key='))
-          .toList();
-      lines.add('$key=$value');
-
-      await file.writeAsString(lines.join('\n'));
     } catch (e) {
       debugPrint('[GatewayService] .env write error: $e');
     }
@@ -2131,7 +2289,7 @@ HEARTBEAT_OK.
 
     // Safety check: if read failed but file exists, abort to prevent clobbering auth tokens
     if (config.isEmpty) {
-      final file = File(await _openClawConfigPath());
+      final file = await _activeOpenClawConfigFile();
       if (await file.exists()) {
         debugPrint(
             '[GatewayService] Aborting configureGateway: Config read returned empty while file exists.');
@@ -2396,15 +2554,7 @@ HEARTBEAT_OK.
         return true;
       }
 
-      final authFiles = <File>[
-        File(
-          '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/agents/main/agent/auth-profiles.json',
-        ),
-      ];
-      final nativeAuthFile = await _existingNativeAuthProfilesFile();
-      if (nativeAuthFile != null) authFiles.add(nativeAuthFile);
-
-      for (final authFile in authFiles) {
+      for (final authFile in await _authProfilesReadOrder()) {
         if (!await authFile.exists()) continue;
         final raw = await authFile.readAsString();
         if (raw.trim().isEmpty) continue;
@@ -2714,44 +2864,108 @@ HEARTBEAT_OK.
     }
   }
 
+  void _setAppNativeSkillBridgeState({
+    required bool registered,
+    required String status,
+    String? detail,
+    int? catalogCount,
+  }) {
+    _appNativeSkillsRegisteredWithGateway = registered;
+    _appNativeSkillBridgeStatus = status;
+    _appNativeSkillBridgeDetail = detail;
+    if (catalogCount != null) {
+      _appNativeSkillCatalogCount = catalogCount;
+    }
+  }
+
+  void _logSkillsRegisterUnavailable(String message) {
+    final now = DateTime.now();
+    final last = _lastSkillsRegisterUnavailableLogAt;
+    if (last != null &&
+        now.difference(last) < _skillsRegisterUnavailableLogCooldown) {
+      return;
+    }
+    _lastSkillsRegisterUnavailableLogAt = now;
+    _addActivity(message);
+  }
+
   Future<void> reregisterSkills() async {
+    final catalog = SkillsService().getToolsCatalog();
+    _setAppNativeSkillBridgeState(
+      registered: false,
+      status: _state.isRunning ? 'pending' : 'gateway_not_running',
+      detail: _state.isRunning ? null : 'Gateway is not running.',
+      catalogCount: catalog.length,
+    );
     if (!_state.isRunning) return;
-    // If method discovery has not arrived yet, optimistically try the legacy
-    // registration path. The gateway may already be ready to accept it, and
-    // skipping here can leave the provider turn without the local tool catalog.
+    if (catalog.isEmpty) {
+      _setAppNativeSkillBridgeState(
+        registered: false,
+        status: 'catalog_empty',
+        detail: 'No enabled app-native skills are available to register.',
+        catalogCount: 0,
+      );
+      return;
+    }
+    // Only register device-native skills when the gateway advertises the RPC.
+    // Calling this on newer gateways that omit skills.register can collapse the
+    // broader tool context down to just Plawie's bundled skills.
     final supported = _connection?.supportedMethods ?? const <String>[];
     final methodAdvertised = supported.contains('skills.register');
     final discoveryUnknown = supported.isEmpty;
     if (!methodAdvertised && !discoveryUnknown) {
-      if (!_skillsRegisterUnavailableLogged) {
-        _skillsRegisterUnavailableLogged = true;
-        _addActivity(
-            '[SKILLS] skills.register not advertised; preserving gateway tool catalog');
-      }
+      _setAppNativeSkillBridgeState(
+        registered: false,
+        status: 'registration_unavailable',
+        detail:
+            'Gateway did not advertise skills.register; app-native skills remain local inventory unless Gateway exposes them through another tool path.',
+        catalogCount: catalog.length,
+      );
+      _logSkillsRegisterUnavailable(
+        '[SKILLS] skills.register not advertised; preserving gateway tool catalog',
+      );
       return;
     }
     try {
-      final catalog = SkillsService().getToolsCatalog();
-      if (catalog.isNotEmpty) {
-        await invoke('skills.register', {
-          'skills': catalog,
-          'callbackUrl': 'http://127.0.0.1:8765',
-        }).timeout(const Duration(seconds: 5));
-        _addActivity(
-          '[SKILLS] Registered ${catalog.length} device skills with gateway',
-        );
-        _skillsRegisterUnavailableLogged = false;
-      }
+      await invoke('skills.register', {
+        'skills': catalog,
+        'callbackUrl': 'http://127.0.0.1:8765',
+      }).timeout(const Duration(seconds: 5));
+      _setAppNativeSkillBridgeState(
+        registered: true,
+        status: 'registered',
+        detail:
+            'Gateway accepted app-native skill schemas and callback registration.',
+        catalogCount: catalog.length,
+      );
+      _addActivity(
+        '[SKILLS] Registered ${catalog.length} device skills with gateway',
+      );
     } catch (e) {
       final msg = e.toString().toLowerCase();
       if (msg.contains('unknown method') ||
           msg.contains('method unavailable') ||
           msg.contains('not supported')) {
+        _setAppNativeSkillBridgeState(
+          registered: false,
+          status: 'registration_unavailable',
+          detail:
+              'Gateway rejected skills.register; app-native skills are not direct chat tool names in this session.',
+          catalogCount: catalog.length,
+        );
         // Keep logging concise when the gateway explicitly omitted the method.
         if (methodAdvertised || supported.isEmpty) {
-          _addActivity('[SKILLS] skills.register unavailable on this gateway');
+          _logSkillsRegisterUnavailable(
+            '[SKILLS] skills.register unavailable on this gateway',
+          );
         }
       } else {
+        _setAppNativeSkillBridgeState(
+          registered: false,
+          status: 'registration_failed',
+          detail: e.toString(),
+          catalogCount: catalog.length,
+        );
         _addActivity('[SKILLS] skills.register failed: $e');
       }
     }
@@ -3681,12 +3895,23 @@ HEARTBEAT_OK.
             if (cfg['tools'] is Map && cfg['tools']['allow'] is List) {
               final rawAllow =
                   List<dynamic>.from(cfg['tools']['allow'] as List<dynamic>);
+              final rawAllowSet = rawAllow
+                  .map((value) => value.toString().trim())
+                  .where((value) => value.isNotEmpty)
+                  .toSet();
               final toolsList = GatewayToolCatalog.normalizeAllowList(
                 rawAllow,
               );
-              if (toolsList.isEmpty && rawAllow.isNotEmpty) {
-                // Repair drifted allowlists (e.g. old plugin-only ids) so the
-                // gateway retains a known-good mobile tool policy.
+              final shouldRepairToFullTools = rawAllow.isNotEmpty &&
+                  !rawAllowSet.contains(GatewayToolCatalog.wildcard) &&
+                  (_runtime.id.startsWith('native-node') ||
+                      rawAllowSet.contains('group:nodes') ||
+                      rawAllowSet.contains('nodes'));
+              if ((toolsList.isEmpty && rawAllow.isNotEmpty) ||
+                  shouldRepairToFullTools) {
+                // Repair drifted allowlists so the gateway retains the real
+                // OpenClaw `nodes` tool. Group allow entries can still narrow
+                // the provider schema enough to remove phone/device tools.
                 GatewayToolCatalog.applyDefaultMobilePolicy(cfg);
                 await _writeConfig(cfg);
                 _updateState(_state.copyWith(
@@ -3694,7 +3919,7 @@ HEARTBEAT_OK.
                       GatewayToolCatalog.primitiveIds.toList(growable: false),
                 ));
                 _addActivity(
-                    '[TOOLS] Repaired invalid tools.allow entries with mobile defaults.');
+                    '[TOOLS] Repaired tools.allow to wildcard full access for mobile device tools.');
               } else {
                 _updateState(_state.copyWith(capabilities: toolsList));
               }
@@ -3765,7 +3990,7 @@ HEARTBEAT_OK.
             .timeout(const Duration(seconds: 3), onTimeout: () => false);
         final listenerAlive = processAlive
             ? false
-            : await _isGatewayListenerAlive(
+            : await _isSelectedRuntimeListenerAlive(
                 timeout: const Duration(seconds: 2),
               );
         if (processAlive || listenerAlive) {
@@ -3793,7 +4018,7 @@ HEARTBEAT_OK.
             .timeout(const Duration(seconds: 3), onTimeout: () => false);
         final listenerAlive = processAlive
             ? false
-            : await _isGatewayListenerAlive(
+            : await _isSelectedRuntimeListenerAlive(
                 timeout: const Duration(seconds: 2),
               );
         if (!processAlive &&
@@ -3831,7 +4056,7 @@ HEARTBEAT_OK.
             .timeout(const Duration(seconds: 3), onTimeout: () => false);
         final listenerAlive = processAlive
             ? false
-            : await _isGatewayListenerAlive(
+            : await _isSelectedRuntimeListenerAlive(
                 timeout: const Duration(seconds: 2),
               );
         if (wsAlive && (processAlive || listenerAlive)) {
@@ -3860,7 +4085,7 @@ HEARTBEAT_OK.
       final processRunning = await _runtime.isRunning();
       final listenerRunning = processRunning
           ? false
-          : await _isGatewayListenerAlive(
+          : await _isSelectedRuntimeListenerAlive(
               timeout: const Duration(seconds: 2),
             );
       final isRunning = processRunning || listenerRunning;
@@ -4147,16 +4372,19 @@ HEARTBEAT_OK.
       if (prefId.isNotEmpty) return gatewayNodeHandle;
     } catch (_) {}
 
-    try {
-      final pairedFile = File(
-        '${await getFilesDir()}/rootfs/ubuntu/root/.openclaw/devices/paired.json',
-      );
-      if (!await pairedFile.exists()) return null;
-
-      final decoded = jsonDecode(await pairedFile.readAsString());
-      final nodeId = _findPairedAndroidNodeId(decoded);
-      if (nodeId != null && nodeId.isNotEmpty) return gatewayNodeHandle;
-    } catch (_) {}
+    for (final relativePath in const [
+      'devices/paired.json',
+      'nodes/paired.json',
+    ]) {
+      for (final pairedFile in await _openClawStoreReadOrder(relativePath)) {
+        try {
+          if (!await pairedFile.exists()) continue;
+          final decoded = jsonDecode(await pairedFile.readAsString());
+          final nodeId = _findPairedAndroidNodeId(decoded);
+          if (nodeId != null && nodeId.isNotEmpty) return gatewayNodeHandle;
+        } catch (_) {}
+      }
+    }
 
     return null;
   }
@@ -4221,6 +4449,20 @@ HEARTBEAT_OK.
 
     _addActivity('[CHAT] Mobile node tool context attached ($nodeHandle)');
 
+    final lower = message.toLowerCase();
+    final wantsCamera = RegExp(
+      r'\b(camera|photo|picture|selfie|snapshot|image)\b',
+    ).hasMatch(lower);
+    final wantsGesture = RegExp(
+      r'\b(avatar|gesture|wave|bow|dance|spin|sit|sitting|pose|peacesign|peace sign|squat|fight)\b',
+    ).hasMatch(lower);
+    final cameraGuidance = wantsCamera
+        ? 'For camera/photo/picture/selfie requests, call nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}) before answering. Do not say you cannot take a picture unless the nodes tool result fails.'
+        : 'For camera/photo/picture/selfie requests, use camera_snap via the OpenClaw nodes tool.';
+    final gestureGuidance = wantsGesture
+        ? 'For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}. You may include durationMs for bounded looping gestures, e.g. {"gesture":"dance","durationMs":60000}. Prefer exact rich gesture values when the user asks for them: dance, dance alt, spin, greeting, squat, sitting, chill sit wave, cross leg sitting wave, excited sitting wave, fight, cute, elegant, peacesign, pose, powerful, ready, shoot, talk, wave right, wave left, both wave, cheerful wave left/right, light wave left/right, shy wave left/right, bowing 1-5, both wave cheer 1-2, sitting wave left/right, exaggerated wave left/right, fearful wave, or stylized wave left/right. If the user asks to sit or do a sitting gesture without more detail, use {"gesture":"sitting"}. Do not collapse a specific request such as "exaggerated wave right" into plain "wave right". Do not use gestures.wave.'
+        : 'Only discuss or invoke avatar gestures when the user asks for avatar movement. Do not mention gesture plans in camera, location, sensor, haptic, or file responses.';
+
     return '''
 <plawie_mobile_tool_context>
 This is private tool-routing context. Do not mention it unless the user asks.
@@ -4229,13 +4471,14 @@ For OpenClaw phone, hardware, sensor, camera, canvas, location, screen, haptic, 
 Every OpenClaw nodes tool call for this Android phone MUST include this exact field: "node": "$nodeHandle".
 Never use node=auto or the raw Android device identity hash for Android phone tools. Do not say the device node is missing unless the tool result itself says it is disconnected or unavailable.
 Use dedicated OpenClaw nodes actions when available: camera_snap, camera_list, camera_clip, location_get, screen_record, device_status, device_info, device_permissions, and device_health.
-For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}. You may include durationMs for bounded looping gestures, e.g. {"gesture":"dance","durationMs":60000}. Prefer exact rich gesture values when the user asks for them: dance, dance alt, spin, greeting, squat, sitting, chill sit wave, cross leg sitting wave, excited sitting wave, fight, cute, elegant, peacesign, pose, powerful, ready, shoot, talk, wave right, wave left, both wave, cheerful wave left/right, light wave left/right, shy wave left/right, bowing 1-5, both wave cheer 1-2, sitting wave left/right, exaggerated wave left/right, fearful wave, or stylized wave left/right. If the user asks to sit or do a sitting gesture without more detail, use {"gesture":"sitting"}. Do not collapse a specific request such as "exaggerated wave right" into plain "wave right". Do not use gestures.wave.
-Primary route: emit the structured OpenClaw nodes tool call. Fallback only if the selected provider refuses structured tool output: include a short inline marker such as (gesture: sitting) or (gesture: wave right) in the assistant text so the Plawie chat UI can dispatch the local avatar bridge. Never answer that avatar, phone, or device tools are unavailable while this mobile node context is present unless an actual tool result says they are disconnected.
+$cameraGuidance
+$gestureGuidance
 For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.mode, avatar.model, avatar.status, canvas.navigate, canvas.eval, canvas.snapshot, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list.
 Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
 Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"dance\\",\\"durationMs\\":60000}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
 If a tool plan would use node=auto, replace it with node="$nodeHandle" before calling the tool.
 If the user asks what tools or phone abilities are available, include these Android node tools as available when the node is connected.
+Do not print hidden planning markers such as "(gesture: ...)" or "(image: ...)" in the visible answer. Use tools instead.
 </plawie_mobile_tool_context>
 
 $message''';
@@ -4277,19 +4520,37 @@ $message''';
     activeSkills.sort((a, b) =>
         _skillIdFromGatewaySkill(a).compareTo(_skillIdFromGatewaySkill(b)));
 
-    final reportedTools = (_state.capabilities ?? const <String>[])
-        .map((tool) => tool.trim())
-        .where((tool) => tool.isNotEmpty)
-        .toList();
-    final primitiveToolSource =
-        reportedTools.isEmpty ? GatewayToolCatalog.primitiveIds : reportedTools;
-    final primitiveTools = primitiveToolSource
+    final primitiveTools = (_state.capabilities ?? const <String>[])
         .map((tool) => _privatePromptText(tool, maxChars: 48))
         .where((tool) => tool.isNotEmpty)
-        .take(80)
+        .take(40)
         .toList();
 
-    if (activeSkills.isEmpty && primitiveTools.isEmpty) return message;
+    final appNativeCatalog = SkillsService().getToolsCatalog();
+    _appNativeSkillCatalogCount = appNativeCatalog.length;
+    final appNativeSkillLines = <String>[];
+    final appNativeSkillIds = <String>{};
+    for (final tool in appNativeCatalog) {
+      if (appNativeSkillLines.length >= 24) break;
+      final id = _privatePromptText(
+        tool['name'] ?? tool['id'] ?? tool['skillKey'],
+        maxChars: 64,
+      ).toLowerCase();
+      if (id.isEmpty || !appNativeSkillIds.add(id)) continue;
+      final description = _privatePromptText(
+        tool['description'] ?? tool['summary'],
+        maxChars: 110,
+      );
+      appNativeSkillLines.add(
+        description.isEmpty ? '- $id' : '- $id: $description',
+      );
+    }
+
+    if (activeSkills.isEmpty &&
+        primitiveTools.isEmpty &&
+        appNativeCatalog.isEmpty) {
+      return message;
+    }
 
     final skillLines = activeSkills.take(90).map((skill) {
       final id = _skillIdFromGatewaySkill(skill);
@@ -4313,9 +4574,22 @@ $message''';
         : '';
     final toolLine =
         primitiveTools.isEmpty ? 'none reported' : primitiveTools.join(', ');
+    final appNativeCountSuffix = appNativeCatalog.length >
+            appNativeSkillLines.length
+        ? '\n- ...and ${appNativeCatalog.length - appNativeSkillLines.length} more app-native catalog entries'
+        : '';
+    final appNativeBridgeDetail = _privatePromptText(
+      _appNativeSkillBridgeDetail,
+      maxChars: 180,
+    );
+    final appNativeBridgeLine = appNativeCatalog.isEmpty
+        ? 'no enabled app-native skills reported by Flutter'
+        : _appNativeSkillsRegisteredWithGateway
+            ? 'registered with Gateway callback http://127.0.0.1:8765 (status: $_appNativeSkillBridgeStatus)'
+            : 'not registered as direct chat tool names (status: $_appNativeSkillBridgeStatus${appNativeBridgeDetail.isEmpty ? '' : '; $appNativeBridgeDetail'})';
 
     _addActivity('[CHAT] Skill inventory context attached '
-        '(skills=${activeSkills.length}, tools=${primitiveTools.length})');
+        '(skills=${activeSkills.length}, tools=${primitiveTools.length}, appNative=$_appNativeSkillCatalogCount/$_appNativeSkillBridgeStatus)');
 
     return '''
 <openclaw_runtime_inventory>
@@ -4325,8 +4599,10 @@ Definitions:
 - Skills are installed OpenClaw packages/integrations that add agent knowledge, workflows, or tool affordances.
 - Tools are primitive permissions/capabilities the Gateway may invoke.
 - Device capabilities are Android node actions such as camera, location, sensors, haptics, flashlight, canvas, and avatar gestures.
+- App-native skills are Flutter-local bundled skills exposed by AgentSkillServer on 127.0.0.1:8765; they are direct chat tools only after Gateway accepts their schemas.
 Do not confuse these categories. If the user asks what skills are available, answer from Active skills, not from Device capabilities alone.
 Do not claim an installed skill is unavailable when it appears in Active skills. A skill can be active even if its name is not also a primitive tool function name.
+If the app-native bridge is not registered, do not call app-native names such as avatar-control, tts-voice, or device-node directly. For phone/avatar/haptic/flash/sensor/camera actions, use the Android node/Gateway tool path when available.
 
 Active skills (${activeSkills.length}):
 ${skillLines.isEmpty ? '- none reported by Gateway yet' : skillLines}$skillCountSuffix
@@ -4334,10 +4610,9 @@ ${skillLines.isEmpty ? '- none reported by Gateway yet' : skillLines}$skillCount
 Primitive tools/capabilities currently reported:
 $toolLine
 
-Structured OpenClaw tool routing:
-- The primary structured tool for connected phone/device actions is the OpenClaw nodes tool.
-- Valid Android node commands include avatar.gesture, avatar.mode, avatar.model, avatar.status, camera.snap, camera.list, camera.clip, location.get, screen.record, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.list, sensor.read, canvas.navigate, canvas.eval, and canvas.snapshot.
-- If Mobile node context is present, do not say phone/device/avatar tools are unavailable unless an actual tool result says so.
+App-native local catalog (${appNativeCatalog.length}):
+Bridge status: $appNativeBridgeLine
+${appNativeSkillLines.isEmpty ? '- none reported by Flutter' : appNativeSkillLines.join('\n')}$appNativeCountSuffix
 
 ${hasStocks ? 'Financial routing note: the stocks skill is active. For stock, ticker, market, earnings, dividend, crypto, or finance questions, prefer the installed stocks/financial-data skill path or Gateway financial tooling instead of saying no stocks skill is available.' : ''}
 </openclaw_runtime_inventory>
@@ -11053,7 +11328,7 @@ $message''';
     final ownerBefore = prefs.gatewayRuntimeOwner;
     final nativeRuntime =
         GatewayRuntimeRegistry.nativeNodeFullGatewayProduction;
-    final prootRuntime = GatewayRuntimeRegistry.current;
+    final prootRuntime = GatewayRuntimeRegistry.prootRollback;
     final startedAt = DateTime.now();
 
     var selectorRestoredOk = false;
@@ -11266,7 +11541,7 @@ $message''';
     final ownerBefore = prefs.gatewayRuntimeOwner;
     final nativeRuntime =
         GatewayRuntimeRegistry.nativeNodeFullGatewayProduction;
-    final prootRuntime = GatewayRuntimeRegistry.current;
+    final prootRuntime = GatewayRuntimeRegistry.prootRollback;
     final startedAt = DateTime.now();
 
     var nativePreStartStopped = false;
@@ -13824,6 +14099,22 @@ $message''';
       return;
     }
 
+    final appNativeToolExecution =
+        await AppNativeChatToolRouter.instance.tryExecute(
+      message,
+      directGatewayRegistrationAvailable: _appNativeSkillsRegisteredWithGateway,
+    );
+    if (appNativeToolExecution != null) {
+      _addActivity(
+        '[TOOLS] App-native direct route: '
+        '${appNativeToolExecution.toolName} ok=${appNativeToolExecution.ok}',
+      );
+      yield appNativeToolExecution.toolUseChunk;
+      yield appNativeToolExecution.toolResultChunk;
+      yield appNativeToolExecution.visibleText;
+      return;
+    }
+
     // Local-llm: bypass the gateway entirely. Do this before token lookup,
     // autostart, WS setup, or provider sync so NDK mode stays lightweight and
     // cannot accidentally trigger OpenClaw plugin hooks while the phone is
@@ -13975,14 +14266,19 @@ $message''';
     const timeoutMs = 300000;
     const noFirstTokenTimeout = Duration(seconds: 90);
     const relevantInactivityTimeout = Duration(minutes: 3);
+    const hardGatewayResponseGrace = Duration(seconds: 45);
     final requestId = const Uuid().v4();
     final chunkController = StreamController<String>();
     final requestStartedAt = DateTime.now();
     var lastRelevantGatewayActivityAt = requestStartedAt;
     final firstVisibleOutputDeadline =
         requestStartedAt.add(noFirstTokenTimeout);
+    final requestHardDeadline = requestStartedAt.add(
+        const Duration(milliseconds: timeoutMs) + hardGatewayResponseGrace);
     Timer? inactivityWatchdog;
     var visibleChatOutputSeen = false;
+    var noFirstTokenWarningLogged = false;
+    var inactivityWarningLogged = false;
     DateTime? gatewayAcceptedAt;
     DateTime? firstVisibleOutputAt;
 
@@ -14000,6 +14296,11 @@ $message''';
       if (chunkController.isClosed) return;
       chunkController.add('[Error] $message');
       chunkController.close();
+    }
+
+    void emitChatStatus(String message) {
+      if (chunkController.isClosed) return;
+      chunkController.add('\x00CHAT_STATUS:${jsonEncode(message)}\x00');
     }
 
     final outboundMessage = await _decorateMessageWithRuntimeContext(message);
@@ -14069,32 +14370,41 @@ $message''';
       }
       final now = DateTime.now();
       final idleFor = now.difference(lastRelevantGatewayActivityAt);
-      if (!visibleChatOutputSeen && now.isAfter(firstVisibleOutputDeadline)) {
-        _addActivity('[CHAT] ✗ No assistant/tool response for '
-            '${noFirstTokenTimeout.inSeconds}s');
-        _beginGatewayConfigTransition(
-          'chat no-first-token recovery',
-          minimumSettle: _gatewayNoFirstTokenRecoverySettle,
-          allowShorten: true,
+      if (!visibleChatOutputSeen &&
+          now.isAfter(firstVisibleOutputDeadline) &&
+          !noFirstTokenWarningLogged) {
+        noFirstTokenWarningLogged = true;
+        _addActivity('[CHAT] No assistant/tool response for '
+            '${noFirstTokenTimeout.inSeconds}s; continuing to listen for the '
+            'accepted Gateway turn.');
+        emitChatStatus(
+          'Gateway accepted this turn and is still working. Keeping the chat attached for the final response.',
         );
-        disconnectWebSocket();
-        unawaited(_recoverChatNoFirstTokenLane('no-first-token timeout'));
-        finishChatWithError(
-          'Gateway accepted the turn but produced no assistant/tool response after '
-          '${noFirstTokenTimeout.inSeconds} seconds. Plawie is holding the '
-          'Gateway chat lane while it rebuilds the active runtime. Please '
-          'resend after the Gateway settles.',
-        );
-        timer.cancel();
-        return;
       }
-      if (idleFor <= relevantInactivityTimeout) return;
-      _addActivity('[CHAT] ✗ No relevant gateway chat activity for '
-          '${relevantInactivityTimeout.inSeconds}s');
+      if (idleFor > relevantInactivityTimeout && !inactivityWarningLogged) {
+        inactivityWarningLogged = true;
+        _addActivity('[CHAT] No relevant gateway chat activity for '
+            '${relevantInactivityTimeout.inSeconds}s; keeping the UI attached '
+            'until the Gateway request deadline.');
+        emitChatStatus(
+          'Gateway is still processing this turn. The chat is still attached and waiting for the final response.',
+        );
+      }
+      if (now.isBefore(requestHardDeadline)) return;
+      _addActivity('[CHAT] ✗ Gateway request deadline exceeded '
+          '(timeoutMs=$timeoutMs, grace=${hardGatewayResponseGrace.inSeconds}s)');
+      _beginGatewayConfigTransition(
+        'chat no-first-token recovery',
+        minimumSettle: _gatewayNoFirstTokenRecoverySettle,
+        allowShorten: true,
+      );
+      disconnectWebSocket();
+      unawaited(_recoverChatNoFirstTokenLane('gateway request deadline'));
       finishChatWithError(
-        'Gateway chat timed out after '
-        '${relevantInactivityTimeout.inSeconds} seconds with no relevant chat '
-        'activity. Retry or switch provider/model.',
+        'Gateway accepted the turn but did not deliver a final assistant/tool '
+        'response before the ${timeoutMs ~/ 1000}s request deadline plus '
+        '${hardGatewayResponseGrace.inSeconds}s grace. The chat lane is being '
+        'rebuilt now; resend after Gateway settles.',
       );
       timer.cancel();
     });
@@ -14580,14 +14890,9 @@ $message''';
 
     final unavailableUntil = _talkSpeakUnavailableUntil;
     if (unavailableUntil != null && DateTime.now().isBefore(unavailableUntil)) {
-      final remaining = unavailableUntil.difference(DateTime.now());
-      final reason = _lastTalkSpeakErrorMessage;
       return TalkSpeakPlayback(
         played: false,
         allowNativeFallback: _talkSpeakBackoffAllowsNativeFallback,
-        errorMessage: reason == null || reason.isEmpty
-            ? 'Gateway voice is paused for ${remaining.inSeconds.clamp(1, 300)}s while Talk recovers.'
-            : 'Gateway voice is paused for ${remaining.inSeconds.clamp(1, 300)}s: $reason',
       );
     }
 
@@ -14615,8 +14920,6 @@ $message''';
       }
       final audioBytes = base64Decode(audioBase64);
       await TtsService().speakBytes(audioBytes);
-      _talkSpeakUnavailableUntil = null;
-      _lastTalkSpeakErrorMessage = null;
       return const TalkSpeakPlayback(
         played: true,
         allowNativeFallback: false,
@@ -14631,7 +14934,6 @@ $message''';
         _talkSpeakUnavailableUntil =
             DateTime.now().add(_talkSpeakUnavailableBackoff);
         _talkSpeakBackoffAllowsNativeFallback = false;
-        _lastTalkSpeakErrorMessage = message;
         _addActivity('[TTS] $message');
         return const TalkSpeakPlayback(
           played: false,
@@ -14646,15 +14948,11 @@ $message''';
         _talkSpeakUnavailableUntil =
             DateTime.now().add(_talkSpeakUnavailableBackoff);
         _talkSpeakBackoffAllowsNativeFallback = true;
-        const message =
-            'Gateway voice is unavailable on this runtime; local system TTS may be used.';
-        _lastTalkSpeakErrorMessage = message;
         _addActivity(
             '[TTS] talk.speak unavailable; suppressing retries for ${_talkSpeakUnavailableBackoff.inMinutes}m');
         return const TalkSpeakPlayback(
           played: false,
           allowNativeFallback: true,
-          errorMessage: message,
         );
       }
       final providerBillingOrQuotaError = lower.contains('http 402') ||
@@ -14670,7 +14968,6 @@ $message''';
         _talkSpeakBackoffAllowsNativeFallback = false;
         final compactError =
             err.length > 240 ? '${err.substring(0, 240)}...' : err;
-        _lastTalkSpeakErrorMessage = compactError;
         _addActivity(
             '[TTS] talk.speak provider/account error; suppressing retries for ${_talkSpeakUnavailableBackoff.inMinutes}m: $compactError');
         return TalkSpeakPlayback(

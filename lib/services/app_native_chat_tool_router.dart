@@ -1,0 +1,696 @@
+import 'dart:convert';
+
+import '../models/node_frame.dart';
+import 'avatar_gesture_catalog.dart';
+import 'capabilities/camera_capability.dart';
+import 'capabilities/flash_capability.dart';
+import 'capabilities/location_capability.dart';
+import 'capabilities/sensor_capability.dart';
+import 'capabilities/vibration_capability.dart';
+import 'skills_service.dart';
+
+class AppNativeChatToolExecution {
+  final String toolName;
+  final Map<String, dynamic> input;
+  final Map<String, dynamic> result;
+  final bool ok;
+  final String visibleText;
+
+  const AppNativeChatToolExecution({
+    required this.toolName,
+    required this.input,
+    required this.result,
+    required this.ok,
+    required this.visibleText,
+  });
+
+  String get toolUseChunk => '\x00TOOL_USE:$toolName:${jsonEncode(input)}\x00';
+
+  String get toolResultChunk =>
+      '\x00TOOL_RESULT:$toolName:${jsonEncode(result)}\x00';
+}
+
+class _AppNativeToolPlan {
+  final String toolName;
+  final String command;
+  final Map<String, dynamic> input;
+
+  const _AppNativeToolPlan({
+    required this.toolName,
+    required this.command,
+    required this.input,
+  });
+}
+
+class AppNativeChatToolRouter {
+  static final AppNativeChatToolRouter instance =
+      AppNativeChatToolRouter._internal();
+
+  AppNativeChatToolRouter._internal();
+
+  final CameraCapability _camera = CameraCapability();
+  final FlashCapability _flash = FlashCapability();
+  final LocationCapability _location = LocationCapability();
+  final SensorCapability _sensor = SensorCapability();
+  final VibrationCapability _vibration = VibrationCapability();
+
+  Future<AppNativeChatToolExecution?> tryExecute(
+    String message, {
+    required bool directGatewayRegistrationAvailable,
+  }) async {
+    if (directGatewayRegistrationAvailable) return null;
+    final plan = _plan(message);
+    if (plan == null) return null;
+
+    final result = await _execute(plan);
+    final ok = result['ok'] == true || result['success'] == true;
+    return AppNativeChatToolExecution(
+      toolName: plan.toolName,
+      input: plan.input,
+      result: result,
+      ok: ok,
+      visibleText: _visibleText(plan, result, ok),
+    );
+  }
+
+  _AppNativeToolPlan? _plan(String message) {
+    final trimmed = message.trim();
+    if (trimmed.isEmpty) return null;
+    final lower = trimmed.toLowerCase();
+    if (_isToolInventoryQuestion(lower) || _explicitlyDisablesTools(lower)) {
+      return null;
+    }
+
+    final tts = _ttsText(trimmed);
+    if (tts != null) {
+      return _AppNativeToolPlan(
+        toolName: 'tts-voice',
+        command: 'speak',
+        input: {'action': 'speak', 'text': tts},
+      );
+    }
+
+    final gesture = _gestureName(lower);
+    if (gesture != null) {
+      return _AppNativeToolPlan(
+        toolName: 'avatar-control',
+        command: 'avatar.gesture',
+        input: {'action': 'play_gesture', 'gesture': gesture},
+      );
+    }
+
+    if (_containsAny(lower, const ['vibrate', 'buzz', 'haptic'])) {
+      final durationMs = _durationMs(lower) ?? 220;
+      return _AppNativeToolPlan(
+        toolName: 'device-node',
+        command: 'haptic.vibrate',
+        input: {'action': 'vibrate', 'durationMs': durationMs},
+      );
+    }
+
+    if (_containsAny(lower, const ['flashlight', 'torch', 'flash light'])) {
+      final action = lower.contains('off')
+          ? 'flashlight_off'
+          : lower.contains('status') || lower.contains('state')
+              ? 'flashlight_status'
+              : lower.contains('toggle') || lower.contains('switch')
+                  ? 'flashlight_toggle'
+                  : lower.contains('on')
+                      ? 'flashlight_on'
+                      : null;
+      if (action != null) {
+        final command = switch (action) {
+          'flashlight_on' => 'flash.on',
+          'flashlight_off' => 'flash.off',
+          'flashlight_toggle' => 'flash.toggle',
+          _ => 'flash.status',
+        };
+        return _AppNativeToolPlan(
+          toolName: 'device-node',
+          command: command,
+          input: {'action': action},
+        );
+      }
+    }
+
+    if (lower.contains('battery') &&
+        _containsAny(lower, const [
+          'level',
+          'percent',
+          'percentage',
+          'status',
+          'how much',
+          'what is',
+          'check',
+          'get',
+        ])) {
+      return const _AppNativeToolPlan(
+        toolName: 'device-node',
+        command: 'battery.status',
+        input: {'action': 'get_battery'},
+      );
+    }
+
+    final sensor = _sensorName(lower);
+    if (sensor != null) {
+      return _AppNativeToolPlan(
+        toolName: 'device-node',
+        command: sensor == 'list' ? 'sensor.list' : 'sensor.read',
+        input: sensor == 'list'
+            ? {'action': 'read_sensor', 'sensor_type': 'list'}
+            : {'action': 'read_sensor', 'sensor_type': sensor},
+      );
+    }
+
+    if (_wantsCamera(lower)) {
+      final facing = _containsAny(lower, const ['selfie', 'front camera'])
+          ? 'front'
+          : 'back';
+      return _AppNativeToolPlan(
+        toolName: 'device-node',
+        command: lower.contains('list') ? 'camera.list' : 'camera.snap',
+        input: lower.contains('list')
+            ? {'action': 'camera_list'}
+            : {'action': 'take_photo', 'facing': facing},
+      );
+    }
+
+    if (_wantsLocation(lower)) {
+      return const _AppNativeToolPlan(
+        toolName: 'device-node',
+        command: 'location.get',
+        input: {'action': 'get_location'},
+      );
+    }
+
+    final bundledSkillPlan = _bundledSkillPlan(lower);
+    if (bundledSkillPlan != null) return bundledSkillPlan;
+
+    return null;
+  }
+
+  Future<Map<String, dynamic>> _execute(_AppNativeToolPlan plan) async {
+    try {
+      switch (plan.command) {
+        case 'avatar.gesture':
+          return _skillResultToMap(await SkillsService().executeSkill(
+            'avatar-control',
+            parameters: plan.input,
+          ));
+        case 'haptic.vibrate':
+          final frame = await _vibration.handle(
+            'haptic.vibrate',
+            {'durationMs': plan.input['durationMs'] ?? 220},
+          );
+          return _frameToMap(frame);
+        case 'flash.on':
+        case 'flash.off':
+        case 'flash.toggle':
+        case 'flash.status':
+          final frame = await _flash.handleWithPermission(
+            plan.command,
+            const {},
+          );
+          return _frameToMap(frame);
+        case 'battery.status':
+          return _skillResultToMap(await SkillsService().executeSkill(
+            'device-node',
+            parameters: const {'action': 'get_battery'},
+          ));
+        case 'sensor.list':
+          return _frameToMap(await _sensor.handleWithPermission(
+            'sensor.list',
+            const {},
+          ));
+        case 'sensor.read':
+          return _frameToMap(await _sensor.handleWithPermission(
+            'sensor.read',
+            {'sensor': plan.input['sensor_type'] ?? 'accelerometer'},
+          ));
+        case 'camera.list':
+          return _frameToMap(await _camera.handleWithPermission(
+            'camera.list',
+            const {},
+          ));
+        case 'camera.snap':
+          final frame = await _camera.handleWithPermission(
+            'camera.snap',
+            {'facing': plan.input['facing'] ?? 'back'},
+          );
+          return _frameToMap(frame);
+        case 'location.get':
+          return _frameToMap(await _location.handleWithPermission(
+            'location.get',
+            const {},
+          ));
+        case 'speak':
+          return _skillResultToMap(await SkillsService().executeSkill(
+            'tts-voice',
+            parameters: plan.input,
+          ));
+        default:
+          if (SkillsService().getSkill(plan.toolName) != null) {
+            return _skillResultToMap(await SkillsService().executeSkill(
+              plan.toolName,
+              parameters: plan.input,
+            ));
+          }
+          return {
+            'ok': false,
+            'error': {
+              'code': 'UNKNOWN_APP_NATIVE_PLAN',
+              'message': 'No app-native executor for ${plan.command}.',
+            },
+          };
+      }
+    } catch (e) {
+      return {
+        'ok': false,
+        'error': {'code': 'APP_NATIVE_TOOL_ERROR', 'message': '$e'},
+      };
+    }
+  }
+
+  Map<String, dynamic> _frameToMap(NodeFrame frame) {
+    if (frame.isError) {
+      return {
+        'ok': false,
+        'error': frame.error ?? {'message': 'Unknown capability error'},
+      };
+    }
+    final payload = Map<String, dynamic>.from(frame.payload ?? const {});
+    final sanitized = _sanitizePayload(payload);
+    return {'ok': true, ...sanitized};
+  }
+
+  Map<String, dynamic> _skillResultToMap(SkillResult result) {
+    if (!result.success) {
+      return {
+        'ok': false,
+        'error': {'message': result.error ?? 'Unknown skill error'},
+      };
+    }
+    if (result.data is Map) {
+      return {
+        'ok': true,
+        ...Map<String, dynamic>.from(result.data as Map),
+      };
+    }
+    return {'ok': true, 'result': result.data};
+  }
+
+  Map<String, dynamic> _sanitizePayload(Map<String, dynamic> payload) {
+    final copy = Map<String, dynamic>.from(payload);
+    final b64 = copy.remove('base64')?.toString();
+    if (b64 != null && b64.isNotEmpty) {
+      copy['base64Bytes'] = b64.length;
+      copy['base64Omitted'] = true;
+    }
+    return copy;
+  }
+
+  String _visibleText(
+    _AppNativeToolPlan plan,
+    Map<String, dynamic> result,
+    bool ok,
+  ) {
+    if (!ok) {
+      final error = result['error'];
+      final message = error is Map
+          ? error['message']?.toString() ?? error.toString()
+          : error?.toString() ?? 'Unknown error';
+      return 'I tried to use ${plan.toolName}, but it failed: $message';
+    }
+    switch (plan.command) {
+      case 'haptic.vibrate':
+        return 'Done. I used device-node to vibrate the phone.';
+      case 'flash.on':
+        return 'Done. I turned the flashlight on.';
+      case 'flash.off':
+        return 'Done. I turned the flashlight off.';
+      case 'flash.toggle':
+        return 'Done. I toggled the flashlight.';
+      case 'flash.status':
+        return 'Flashlight status: ${result['on'] == true ? 'on' : 'off'}.';
+      case 'battery.status':
+        final level = result['level'];
+        final charging =
+            result['isCharging'] == true ? 'charging' : 'not charging';
+        return 'Battery is ${level ?? 'unknown'}% and $charging.';
+      case 'sensor.list':
+        return 'Sensor list retrieved.';
+      case 'sensor.read':
+        return 'Sensor reading retrieved: ${_compactJson(result)}';
+      case 'camera.list':
+        return 'Camera list retrieved.';
+      case 'camera.snap':
+        return 'Done. I took a photo and attached it to this reply.';
+      case 'location.get':
+        final lat = result['lat'];
+        final lng = result['lng'];
+        return lat != null && lng != null
+            ? 'Current location retrieved: $lat, $lng.'
+            : 'Location retrieved.';
+      case 'avatar.gesture':
+        return 'Done. I triggered the ${plan.input['gesture']} avatar gesture.';
+      case 'speak':
+        return 'Done. I spoke the requested text.';
+      default:
+        if (result['status'] == 'CONFIG_REQUIRED') {
+          final actionRequired = result['actionRequired']?.toString().trim();
+          final message = result['message']?.toString().trim();
+          return '${_skillLabel(plan.toolName)} is installed, but not configured yet. ${actionRequired?.isNotEmpty == true ? actionRequired : message ?? ''}'
+              .trim();
+        }
+        if (result['status'] == 'WALLET_NOT_CONNECTED') {
+          final message = result['message']?.toString().trim();
+          return message?.isNotEmpty == true
+              ? message!
+              : 'Base wallet is not connected.';
+        }
+        return 'Done. I used ${plan.toolName}.';
+    }
+  }
+
+  String _compactJson(Map<String, dynamic> value) {
+    final encoded = jsonEncode(_sanitizePayload(value));
+    return encoded.length <= 180 ? encoded : '${encoded.substring(0, 177)}...';
+  }
+
+  bool _isToolInventoryQuestion(String lower) {
+    return RegExp(
+      r'\b(what|which|list|show|tell me)\b.{0,24}\b(tools|skills|abilities|capabilities)\b',
+    ).hasMatch(lower);
+  }
+
+  bool _explicitlyDisablesTools(String lower) {
+    return lower.contains('do not use tools') ||
+        lower.contains("don't use tools") ||
+        lower.contains('without using tools') ||
+        lower.contains('no tools');
+  }
+
+  bool _containsAny(String lower, List<String> values) {
+    return values.any(lower.contains);
+  }
+
+  int? _durationMs(String lower) {
+    final match = RegExp(
+            r'\b(\d{1,4})\s*(ms|millisecond|milliseconds|s|sec|secs|second|seconds)\b')
+        .firstMatch(lower);
+    if (match == null) return null;
+    final amount = int.tryParse(match.group(1) ?? '');
+    if (amount == null) return null;
+    final unit = match.group(2) ?? 'ms';
+    final ms = unit.startsWith('s') ? amount * 1000 : amount;
+    return ms.clamp(50, 5000);
+  }
+
+  String? _gestureName(String lower) {
+    final gestureIntent = _containsAny(lower, const [
+      'avatar',
+      'gesture',
+      'wave',
+      'dance',
+      'bow',
+      'spin',
+      'sit',
+      'sitting',
+      'pose',
+      'peacesign',
+      'peace sign',
+      'squat',
+      'fight',
+    ]);
+    if (!gestureIntent) return null;
+    if (_containsAny(
+        lower, const ['what gesture', 'which gesture', 'list gesture'])) {
+      return null;
+    }
+
+    final candidates = AvatarGestureCatalog.toolGestureNames.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    for (final candidate in candidates) {
+      final c = candidate.toLowerCase();
+      if (RegExp('(^|[^a-z0-9])${RegExp.escape(c)}([^a-z0-9]|\$)')
+          .hasMatch(lower)) {
+        return AvatarGestureCatalog.normalize(candidate);
+      }
+    }
+    if (lower.contains('wave')) return 'wave right';
+    if (lower.contains('dance')) return 'dance';
+    if (lower.contains('bow')) return 'bowing 1';
+    if (lower.contains('spin')) return 'spin';
+    if (lower.contains('sit')) return 'sitting';
+    if (lower.contains('pose')) return 'pose';
+    return null;
+  }
+
+  String? _sensorName(String lower) {
+    if (lower.contains('sensor') && lower.contains('list')) return 'list';
+    for (final name in const [
+      'accelerometer',
+      'gyroscope',
+      'gyro',
+      'magnetometer',
+      'barometer',
+    ]) {
+      if (lower.contains(name)) {
+        return name == 'gyro' ? 'gyroscope' : name;
+      }
+    }
+    if (lower.contains('sensor') &&
+        _containsAny(lower, const ['read', 'get', 'check'])) {
+      return 'accelerometer';
+    }
+    return null;
+  }
+
+  bool _wantsCamera(String lower) {
+    if (!_containsAny(
+        lower, const ['camera', 'photo', 'picture', 'selfie', 'snapshot'])) {
+      return false;
+    }
+    if (_containsAny(
+        lower, const ['do you have', 'can you use', 'available'])) {
+      return false;
+    }
+    return _containsAny(
+        lower, const ['take', 'snap', 'capture', 'shoot', 'list', 'show']);
+  }
+
+  bool _wantsLocation(String lower) {
+    return lower.contains('where am i') ||
+        lower.contains('current location') ||
+        lower.contains('my location') ||
+        lower.contains('gps location') ||
+        (lower.contains('location') &&
+            _containsAny(lower, const ['get', 'check', 'tell me']));
+  }
+
+  _AppNativeToolPlan? _bundledSkillPlan(String lower) {
+    if (_containsAny(lower, const [
+      'avatar overlay',
+      'avatar_overlay',
+      'picture in picture',
+      'pip mode',
+      'floating avatar',
+    ])) {
+      return const _AppNativeToolPlan(
+        toolName: 'avatar_overlay',
+        command: 'avatar_overlay.enter',
+        input: {},
+      );
+    }
+
+    if (_containsAny(lower, const [
+      'twilio',
+      'conversationrelay',
+      'conversation relay',
+      'agent calls',
+      'voice calls',
+    ])) {
+      final method = lower.contains('transcription')
+          ? 'set_transcription'
+          : lower.contains('relay')
+              ? 'set_relay'
+              : 'get_status';
+      return _AppNativeToolPlan(
+        toolName: 'twilio-voice',
+        command: 'twilio-voice.$method',
+        input: {
+          'method': method,
+          if (method != 'get_status') 'enabled': _enabledIntent(lower),
+        },
+      );
+    }
+
+    if (_containsAny(lower, const [
+      'agentcard',
+      'agent card',
+      'agent-card',
+      'virtual card',
+      'card balance',
+      'spend limit',
+    ])) {
+      final method =
+          lower.contains('refill') ? 'set_refill_policy' : 'get_balance';
+      return _AppNativeToolPlan(
+        toolName: 'agent-card',
+        command: 'agent-card.$method',
+        input: {
+          'method': method,
+          if (method != 'get_balance') 'enabled': _enabledIntent(lower),
+        },
+      );
+    }
+
+    if (_containsAny(lower, const [
+      'moltlaunch',
+      'molt launch',
+      'molt-launch',
+      'agent work',
+      'work skill',
+      'job marketplace',
+    ])) {
+      final method = lower.contains('register')
+          ? 'register'
+          : _containsAny(lower, const ['rep', 'reputation', 'jobs', 'payout'])
+              ? 'get_rep'
+              : 'get_identity';
+      return _AppNativeToolPlan(
+        toolName: 'molt-launch',
+        command: 'molt-launch.$method',
+        input: {'method': method},
+      );
+    }
+
+    if (_containsAny(lower, const [
+      'valeo',
+      'sentinel',
+      'valeo-sentinel',
+      'valeo sentinel',
+      'x402',
+      'budget policy',
+      'spending policy',
+    ])) {
+      final method = lower.contains('audit')
+          ? 'get_audit'
+          : _containsAny(lower, const ['enable', 'disable', 'active', 'policy'])
+              ? 'set_policy'
+              : 'get_budget';
+      return _AppNativeToolPlan(
+        toolName: 'valeo-sentinel',
+        command: 'valeo-sentinel.$method',
+        input: {
+          'method': method,
+          if (method == 'set_policy') 'active': _enabledIntent(lower),
+        },
+      );
+    }
+
+    if (_containsAny(lower, const [
+      'moonpay',
+      'moon pay',
+      'crypto portfolio',
+      'dca strategy',
+      'dca strategies',
+    ])) {
+      final method = lower.contains('price')
+          ? 'get_price'
+          : lower.contains('dca')
+              ? 'dca_list'
+              : lower.contains('swap')
+                  ? 'swap'
+                  : lower.contains('bridge')
+                      ? 'bridge'
+                      : lower.contains('buy')
+                          ? 'buy'
+                          : lower.contains('sell')
+                              ? 'sell'
+                              : 'get_portfolio';
+      return _AppNativeToolPlan(
+        toolName: 'moonpay',
+        command: 'moonpay.$method',
+        input: {
+          'method': method,
+          if (method == 'get_price') 'tokens': _cryptoTokens(lower),
+        },
+      );
+    }
+
+    if (_containsAny(lower, const [
+      'base-chain',
+      'base chain',
+      'base wallet',
+      'base balance',
+      'usdc balance',
+      'eth balance',
+      'wallet address',
+    ])) {
+      final action = lower.contains('history')
+          ? 'get_history'
+          : lower.contains('address')
+              ? 'get_address'
+              : lower.contains('sepolia') || lower.contains('mainnet')
+                  ? 'switch_network'
+                  : 'get_balance';
+      return _AppNativeToolPlan(
+        toolName: 'base-chain',
+        command: 'base-chain.$action',
+        input: {
+          'action': action,
+          if (action == 'switch_network')
+            'network': lower.contains('sepolia') ? 'sepolia' : 'mainnet',
+        },
+      );
+    }
+
+    return null;
+  }
+
+  bool _enabledIntent(String lower) {
+    if (_containsAny(lower, const ['disable', 'off', 'pause', 'stop'])) {
+      return false;
+    }
+    return true;
+  }
+
+  List<String> _cryptoTokens(String lower) {
+    final tokens = <String>[];
+    for (final token in const ['BTC', 'ETH', 'SOL', 'USDC', 'BASE']) {
+      if (lower.contains(token.toLowerCase())) tokens.add(token);
+    }
+    return tokens.isEmpty ? const ['ETH', 'BTC', 'SOL', 'USDC'] : tokens;
+  }
+
+  String _skillLabel(String skillId) {
+    return switch (skillId) {
+      'avatar_overlay' => 'Avatar Overlay',
+      'twilio-voice' => 'Twilio Voice',
+      'agent-card' => 'AgentCard',
+      'molt-launch' => 'MoltLaunch',
+      'valeo-sentinel' => 'Valeo Sentinel',
+      'moonpay' => 'MoonPay',
+      'base-chain' => 'Base Chain',
+      _ => skillId,
+    };
+  }
+
+  String? _ttsText(String text) {
+    final lower = text.toLowerCase();
+    if (!_containsAny(
+        lower, const ['speak aloud', 'say aloud', 'read aloud', 'tts'])) {
+      return null;
+    }
+    final quoted = RegExp(r'["“](.+?)["”]').firstMatch(text)?.group(1);
+    if (quoted != null && quoted.trim().isNotEmpty) return quoted.trim();
+    final match = RegExp(
+      r'\b(?:speak aloud|say aloud|read aloud|tts)\b[:,]?\s*(.+)$',
+      caseSensitive: false,
+    ).firstMatch(text);
+    final value = match?.group(1)?.trim();
+    if (value == null || value.isEmpty) return null;
+    return value.length > 400 ? value.substring(0, 400) : value;
+  }
+}

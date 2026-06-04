@@ -340,8 +340,13 @@ class OpenClawCommandService {
         final toolsConfig = config['tools'];
         if (toolsConfig is Map) {
           toolsConfig['allow'] = allowList;
+          toolsConfig['profile'] =
+              GatewayToolCatalog.profileForAllowList(allowList);
         } else {
-          config['tools'] = <String, dynamic>{'allow': allowList};
+          config['tools'] = <String, dynamic>{
+            'allow': allowList,
+            'profile': GatewayToolCatalog.profileForAllowList(allowList),
+          };
         }
         await _writeJsonFile(file, config);
         wroteAny = true;

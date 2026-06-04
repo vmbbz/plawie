@@ -32,6 +32,7 @@ import '../services/gateway_service.dart';
 import '../services/agent_skill_server.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../services/capabilities/canvas_capability.dart';
+import '../services/capabilities/camera_capability.dart';
 import '../services/chat_runtime_service.dart';
 import '../services/hologram_service.dart';
 import '../widgets/hologram_overlay.dart';
@@ -186,6 +187,10 @@ class _ChatScreenState extends State<ChatScreen>
       if (mounted) setState(() => _canvasVisible = visible);
     };
     CanvasCapability.onSnapshotTaken = (b64, mime) {
+      _pendingAiSnapBase64 = b64;
+      _pendingAiSnapMimeType = mime;
+    };
+    CameraCapability.onSnapTaken = (b64, mime) {
       _pendingAiSnapBase64 = b64;
       _pendingAiSnapMimeType = mime;
     };
@@ -659,8 +664,28 @@ class _ChatScreenState extends State<ChatScreen>
 
   /// Strips markdown, symbols, URLs, emojis, and other non-speech content so
   /// the TTS engine reads clean natural prose without pronouncing formatting.
-  String _sanitizeForTts(String text) {
+  String _stripAssistantControlMarkers(String text) {
     var t = text;
+    t = t.replaceAll(
+      RegExp(
+        r'\((?:gesture|image|tool|action)\s*:[^)]*\)\s*',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    t = t.replaceAll(
+      RegExp(
+        r'^\s*(?:gesture|image|tool|action)\s*:\s*.*$',
+        caseSensitive: false,
+        multiLine: true,
+      ),
+      '',
+    );
+    return t.trimRight();
+  }
+
+  String _sanitizeForTts(String text) {
+    var t = _stripAssistantControlMarkers(text);
     // Think blocks (internal reasoning — never read aloud)
     t = t.replaceAll(
         RegExp(r'<think>[\s\S]*?<\/think>', caseSensitive: false), '');
@@ -1181,7 +1206,7 @@ class _ChatScreenState extends State<ChatScreen>
         }
       }
       thinkBuffer = think.toString();
-      return out.toString();
+      return _stripAssistantControlMarkers(out.toString());
     }
 
     try {
@@ -1417,8 +1442,7 @@ class _ChatScreenState extends State<ChatScreen>
             // providers that can follow instructions but do not emit structured
             // tool calls on the current route.
             if (chunk.contains('(gesture:')) {
-              final match =
-                  RegExp(r'\(gesture:\s*([^)]+)\)').firstMatch(chunk);
+              final match = RegExp(r'\(gesture:\s*([^)]+)\)').firstMatch(chunk);
               if (match != null) {
                 final requestedGesture =
                     (match.group(1) ?? '').split(',').first.trim();
@@ -2477,6 +2501,7 @@ class _ChatScreenState extends State<ChatScreen>
     // widget after it's been disposed — prevents stale closure crashes.
     CanvasCapability.onVisibilityChanged = null;
     CanvasCapability.onSnapshotTaken = null;
+    CameraCapability.onSnapTaken = null;
     HologramService.instance.dismiss();
     CanvasCapability().clearController();
     CanvasCapability.onActivationRequested = null;
@@ -2799,114 +2824,114 @@ class _ChatScreenState extends State<ChatScreen>
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
               child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.tune_rounded,
-                      color: AppColors.statusGreen),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text(
-                      'Agent Controls',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
+                  Row(
+                    children: [
+                      const Icon(Icons.tune_rounded,
+                          color: AppColors.statusGreen),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Agent Controls',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
                       ),
-                    ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70),
-                    onPressed: () => Navigator.pop(ctx),
+                  const SizedBox(height: 12),
+                  _agentControlCard(
+                    icon: Icons.schedule_rounded,
+                    title: 'Cron',
+                    body:
+                        'Scheduled Gateway jobs and delayed agent actions. Use for reminders, follow-ups, and timed checks.',
+                    available: cronReady,
+                    actions: [
+                      OutlinedButton(
+                        onPressed: () => _invokeGatewayControl(
+                          ctx,
+                          label: 'Cron status',
+                          candidates: const ['cron.status', 'cron.list'],
+                        ),
+                        child: const Text('Status'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => _invokeGatewayControl(
+                          ctx,
+                          label: 'Cron jobs',
+                          candidates: const ['cron.list', 'cron.status'],
+                        ),
+                        child: const Text('Jobs'),
+                      ),
+                      TextButton(
+                        onPressed: () => _openGatewayDashboard(ctx),
+                        child: const Text('Dashboard'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _agentControlCard(
+                    icon: Icons.nightlight_round,
+                    title: 'Dreaming',
+                    body:
+                        'Memory consolidation and background reflection. Keep it opt-in until release policy is final.',
+                    available: dreamingReady,
+                    actions: [
+                      OutlinedButton(
+                        onPressed: () => _invokeGatewayControl(
+                          ctx,
+                          label: 'Dreaming status',
+                          candidates: const [
+                            'dreaming.status',
+                            'memory.status',
+                            'doctor.memory',
+                          ],
+                        ),
+                        child: const Text('Status'),
+                      ),
+                      TextButton(
+                        onPressed: () => _openGatewayDashboard(ctx),
+                        child: const Text('Dashboard'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _agentControlCard(
+                    icon: Icons.hub_rounded,
+                    title: 'Instances',
+                    body:
+                        'Connected Gateway clients and presence. Useful for confirming chat, dashboard, and mobile node ownership.',
+                    available: instancesReady,
+                    actions: [
+                      OutlinedButton(
+                        onPressed: () => _invokeGatewayControl(
+                          ctx,
+                          label: 'Instances',
+                          candidates: const [
+                            'system-presence',
+                            'instances.list',
+                            'presence.list',
+                            'clients.list',
+                          ],
+                        ),
+                        child: const Text('List'),
+                      ),
+                      TextButton(
+                        onPressed: () => _openGatewayDashboard(ctx),
+                        child: const Text('Dashboard'),
+                      ),
+                    ],
                   ),
                 ],
-              ),
-              const SizedBox(height: 12),
-              _agentControlCard(
-                icon: Icons.schedule_rounded,
-                title: 'Cron',
-                body:
-                    'Scheduled Gateway jobs and delayed agent actions. Use for reminders, follow-ups, and timed checks.',
-                available: cronReady,
-                actions: [
-                  OutlinedButton(
-                    onPressed: () => _invokeGatewayControl(
-                      ctx,
-                      label: 'Cron status',
-                      candidates: const ['cron.status', 'cron.list'],
-                    ),
-                    child: const Text('Status'),
-                  ),
-                  OutlinedButton(
-                    onPressed: () => _invokeGatewayControl(
-                      ctx,
-                      label: 'Cron jobs',
-                      candidates: const ['cron.list', 'cron.status'],
-                    ),
-                    child: const Text('Jobs'),
-                  ),
-                  TextButton(
-                    onPressed: () => _openGatewayDashboard(ctx),
-                    child: const Text('Dashboard'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              _agentControlCard(
-                icon: Icons.nightlight_round,
-                title: 'Dreaming',
-                body:
-                    'Memory consolidation and background reflection. Keep it opt-in until release policy is final.',
-                available: dreamingReady,
-                actions: [
-                  OutlinedButton(
-                    onPressed: () => _invokeGatewayControl(
-                      ctx,
-                      label: 'Dreaming status',
-                      candidates: const [
-                        'dreaming.status',
-                        'memory.status',
-                        'doctor.memory',
-                      ],
-                    ),
-                    child: const Text('Status'),
-                  ),
-                  TextButton(
-                    onPressed: () => _openGatewayDashboard(ctx),
-                    child: const Text('Dashboard'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              _agentControlCard(
-                icon: Icons.hub_rounded,
-                title: 'Instances',
-                body:
-                    'Connected Gateway clients and presence. Useful for confirming chat, dashboard, and mobile node ownership.',
-                available: instancesReady,
-                actions: [
-                  OutlinedButton(
-                    onPressed: () => _invokeGatewayControl(
-                      ctx,
-                      label: 'Instances',
-                      candidates: const [
-                        'system-presence',
-                        'instances.list',
-                        'presence.list',
-                        'clients.list',
-                      ],
-                    ),
-                    child: const Text('List'),
-                  ),
-                  TextButton(
-                    onPressed: () => _openGatewayDashboard(ctx),
-                    child: const Text('Dashboard'),
-                  ),
-                ],
-              ),
-            ],
               ),
             ),
           ),

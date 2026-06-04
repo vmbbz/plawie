@@ -10,7 +10,9 @@ import 'gateway_service.dart';
 import 'gateway_tool_catalog.dart';
 import 'native_gateway_smoke_service.dart';
 import 'capabilities/avatar_capability.dart';
+import 'capabilities/camera_capability.dart';
 import 'capabilities/flash_capability.dart';
+import 'capabilities/location_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
 
@@ -59,7 +61,9 @@ class AgentSkillServer {
   HttpServer? _server;
   Future<void>? _startFuture;
   final AvatarCapability _avatarCapability = AvatarCapability();
+  final CameraCapability _cameraCapability = CameraCapability();
   final FlashCapability _flashCapability = FlashCapability();
+  final LocationCapability _locationCapability = LocationCapability();
   final SensorCapability _sensorCapability = SensorCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
 
@@ -200,6 +204,9 @@ class AgentSkillServer {
         path ==
             '/api/native-gateway/production-chat-loop-continuation-canary') {
       await _handleNativeGatewayProductionChatLoopContinuationCanary(request);
+    } else if (request.method == 'POST' &&
+        path == '/api/debug/app-native-chat-tool-smoke') {
+      await _handleAppNativeChatToolSmoke(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
       await _handleToolsExecute(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
@@ -218,6 +225,8 @@ class AgentSkillServer {
       await _handleMoltLaunch(request);
     } else if (path.startsWith('/sentinel')) {
       await _handleValeo(request);
+    } else if (path.startsWith('/moonpay')) {
+      await _handleMoonPay(request);
     } else {
       _sendNotFound(request);
     }
@@ -1369,7 +1378,16 @@ class AgentSkillServer {
 
   void _handleToolsCatalog(HttpRequest request) {
     final catalog = SkillsService().getToolsCatalog();
-    _sendJson(request, {'tools': catalog});
+    _sendJson(request, {
+      'tools': catalog,
+      'callbackUrl': 'http://127.0.0.1:8765',
+      'executeUrl': 'http://127.0.0.1:8765/api/tools/execute',
+      'executionEnabled': true,
+      'registrationRequired': true,
+      'bridge': 'AgentSkillServer',
+      'note':
+          'These app-native skills are callable by Gateway chat only after the Gateway registers or otherwise imports their schemas.',
+    });
   }
 
   void _handleSkillsList(HttpRequest request) {
@@ -1915,6 +1933,48 @@ class AgentSkillServer {
     }
   }
 
+  Future<void> _handleAppNativeChatToolSmoke(HttpRequest request) async {
+    try {
+      final raw = await utf8.decoder.bind(request).join();
+      final body = raw.trim().isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(raw) as Map<String, dynamic>;
+      final prompt = body['prompt']?.toString().trim().isNotEmpty == true
+          ? body['prompt'].toString()
+          : 'vibrate once';
+      final model = body['model']?.toString();
+      final chunks = <String>[];
+
+      await for (final chunk in GatewayService()
+          .sendMessage(prompt, model: model)
+          .timeout(const Duration(seconds: 20))) {
+        chunks.add(chunk);
+        if (chunks.length >= 32) break;
+      }
+
+      final toolUseSeen =
+          chunks.any((chunk) => chunk.contains('\x00TOOL_USE:'));
+      final toolResultSeen =
+          chunks.any((chunk) => chunk.contains('\x00TOOL_RESULT:'));
+      final visibleText = chunks
+          .where((chunk) =>
+              !chunk.contains('\x00TOOL_USE:') &&
+              !chunk.contains('\x00TOOL_RESULT:'))
+          .join();
+
+      _sendJson(request, {
+        'success': toolUseSeen && toolResultSeen,
+        'prompt': prompt,
+        'toolUseSeen': toolUseSeen,
+        'toolResultSeen': toolResultSeen,
+        'visibleText': visibleText,
+        'chunks': chunks.map(_jsonSafeChunk).toList(growable: false),
+      });
+    } catch (e) {
+      _sendError(request, 'App-native chat tool smoke failed: $e');
+    }
+  }
+
   // ── Generic tool executor ─────────────────────────────────────────────────
   // Called by the gateway when it dispatches a tool-use event to 127.0.0.1:8765.
   // Body: { "name": "<tool-id>", "input": { ...tool parameters... } }
@@ -2151,15 +2211,16 @@ class AgentSkillServer {
 
     switch (action) {
       case 'vibrate':
-        final pattern = (data['pattern'] as List?)
-                ?.map((e) => (e as num).toInt())
-                .toList() ??
-            [0, 300];
+        final pattern = _intList(data['pattern']);
+        final durationMs = _intValue(data['durationMs']) ?? 220;
+        final params = pattern == null
+            ? {'durationMs': durationMs}
+            : <String, dynamic>{'pattern': pattern};
         final frame = await _vibrationCapability.handle(
           'haptic.vibrate',
-          {'pattern': pattern},
+          params,
         );
-        _sendNodeFrame(request, frame, fallback: {'pattern': pattern});
+        _sendNodeFrame(request, frame, fallback: params);
 
       case 'flashlight_on':
         final frame = await _flashCapability.handleWithPermission(
@@ -2182,6 +2243,13 @@ class AgentSkillServer {
         );
         _sendNodeFrame(request, frame);
 
+      case 'flashlight_status':
+        final frame = await _flashCapability.handleWithPermission(
+          'flash.status',
+          const {},
+        );
+        _sendNodeFrame(request, frame);
+
       case 'get_battery':
         final level = await const MethodChannel('com.nxg.openclawproot/native')
                 .invokeMethod<int>('getBatteryLevel') ??
@@ -2193,67 +2261,189 @@ class AgentSkillServer {
         _sendJson(request, {'level': level, 'isCharging': charging});
 
       case 'get_location':
-        _sendJson(request, {
-          'note':
-              'Use the gateway node capability: location.get for live GPS data',
-          'command': 'location.get',
-        });
+        final frame = await _locationCapability.handleWithPermission(
+          'location.get',
+          const {},
+        );
+        _sendNodeFrame(request, frame);
 
+      case 'list_sensors':
       case 'read_sensor':
-        final sensorType = data['sensor_type'] as String? ?? 'accelerometer';
-        _sendJson(request, {
-          'note':
-              'Use the gateway node capability: sensor.read for live sensor data',
-          'command': 'sensor.read',
-          'sensor_type': sensorType,
-        });
+        final sensorType = data['sensor_type']?.toString().trim().toLowerCase();
+        if (action == 'list_sensors' || sensorType == 'list') {
+          final frame = await _sensorCapability.handleWithPermission(
+            'sensor.list',
+            const {},
+          );
+          return _sendNodeFrame(request, frame);
+        }
+        final sensor = switch (sensorType) {
+          'gyro' => 'gyroscope',
+          null || '' => 'accelerometer',
+          _ => sensorType,
+        };
+        final frame = await _sensorCapability.handleWithPermission(
+          'sensor.read',
+          {'sensor': sensor},
+        );
+        _sendNodeFrame(request, frame, fallback: {'sensor': sensor});
 
+      case 'camera_list':
       case 'take_photo':
-        _sendJson(request, {
-          'note': 'Use the gateway node capability: camera.snap',
-          'command': 'camera.snap',
-        });
+        if (action == 'camera_list') {
+          final frame = await _cameraCapability.handleWithPermission(
+            'camera.list',
+            const {},
+          );
+          return _sendNodeFrame(request, frame);
+        }
+        final facing = data['facing']?.toString().toLowerCase() == 'front'
+            ? 'front'
+            : 'back';
+        final frame = await _cameraCapability.handleWithPermission(
+          'camera.snap',
+          {'facing': facing},
+        );
+        _sendNodeFrame(request, frame, fallback: {'facing': facing});
 
       default:
         _sendError(request, 'Unknown device action: $action');
     }
   }
 
-  // ── Partner skill proxies (delegate to SkillsService → GatewaySkillProxy) ──
+  // ── Partner skill routes (delegate to SkillsService gateway/native adapter) ──
 
   Future<void> _handleTwilio(HttpRequest request) async {
-    final method =
-        request.uri.path.contains('webhook') ? 'get_status' : 'get_status';
-    final result = await SkillsService()
-        .executeSkill('twilio-voice', parameters: {'method': method});
-    _sendSkillResult(request, result);
+    await _handlePartnerSkill(
+      request,
+      skillId: 'twilio-voice',
+      defaultMethod: 'get_status',
+      pathMethods: const {
+        'relay': 'set_relay',
+        'transcription': 'set_transcription',
+        'status': 'get_status',
+        'webhook': 'get_status',
+      },
+    );
   }
 
   Future<void> _handleAgentCard(HttpRequest request) async {
-    final method =
-        request.uri.path.contains('create') ? 'create_card' : 'get_balance';
-    final result = await SkillsService()
-        .executeSkill('agent-card', parameters: {'method': method});
-    _sendSkillResult(request, result);
+    await _handlePartnerSkill(
+      request,
+      skillId: 'agent-card',
+      defaultMethod: 'get_balance',
+      pathMethods: const {
+        'create': 'create_card',
+        'refill': 'set_refill_policy',
+        'balance': 'get_balance',
+      },
+    );
   }
 
   Future<void> _handleMoltLaunch(HttpRequest request) async {
-    final method =
-        request.uri.path.contains('identity') ? 'get_identity' : 'get_rep';
-    final result = await SkillsService()
-        .executeSkill('molt-launch', parameters: {'method': method});
-    _sendSkillResult(request, result);
+    await _handlePartnerSkill(
+      request,
+      skillId: 'molt-launch',
+      defaultMethod: 'get_identity',
+      pathMethods: const {
+        'identity': 'get_identity',
+        'rep': 'get_rep',
+        'reputation': 'get_rep',
+        'register': 'register',
+      },
+    );
   }
 
   Future<void> _handleValeo(HttpRequest request) async {
-    final method =
-        request.uri.path.contains('audit') ? 'get_audit' : 'get_budget';
-    final result = await SkillsService()
-        .executeSkill('valeo-sentinel', parameters: {'method': method});
+    await _handlePartnerSkill(
+      request,
+      skillId: 'valeo-sentinel',
+      defaultMethod: 'get_budget',
+      pathMethods: const {
+        'audit': 'get_audit',
+        'policy': 'set_policy',
+        'budget': 'get_budget',
+      },
+    );
+  }
+
+  Future<void> _handleMoonPay(HttpRequest request) async {
+    await _handlePartnerSkill(
+      request,
+      skillId: 'moonpay',
+      defaultMethod: 'get_portfolio',
+      pathMethods: const {
+        'portfolio': 'get_portfolio',
+        'price': 'get_price',
+        'swap': 'swap',
+        'bridge': 'bridge',
+        'buy': 'buy',
+        'sell': 'sell',
+        'dca': 'dca_list',
+      },
+    );
+  }
+
+  Future<void> _handlePartnerSkill(
+    HttpRequest request, {
+    required String skillId,
+    required String defaultMethod,
+    required Map<String, String> pathMethods,
+  }) async {
+    final body = await _readJsonBody(request);
+    var method = body['method']?.toString().trim();
+    if (method == null || method.isEmpty) {
+      method = body['action']?.toString().trim();
+    }
+    if (method == null || method.isEmpty) {
+      final path = request.uri.path.toLowerCase();
+      for (final entry in pathMethods.entries) {
+        if (path.contains(entry.key)) {
+          method = entry.value;
+          break;
+        }
+      }
+    }
+    method ??= defaultMethod;
+    final result = await SkillsService().executeSkill(
+      skillId,
+      parameters: {...body, 'method': method},
+    );
     _sendSkillResult(request, result);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> _readJsonBody(HttpRequest request) async {
+    if (request.method != 'POST' &&
+        request.method != 'PUT' &&
+        request.method != 'PATCH') {
+      return <String, dynamic>{};
+    }
+    final raw = await utf8.decoder.bind(request).join();
+    if (raw.trim().isEmpty) return <String, dynamic>{};
+    final decoded = jsonDecode(raw);
+    return decoded is Map ? Map<String, dynamic>.from(decoded) : {};
+  }
+
+  int? _intValue(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  List<int>? _intList(dynamic value) {
+    if (value is! List) return null;
+    final result = <int>[];
+    for (final item in value) {
+      final parsed = _intValue(item);
+      if (parsed == null) return null;
+      result.add(parsed.clamp(0, 5000));
+    }
+    return result.isEmpty ? null : result;
+  }
+
+  String _jsonSafeChunk(String value) => value.replaceAll('\x00', r'\u0000');
 
   void _sendSkillResult(HttpRequest request, SkillResult result) {
     if (result.success && result.data is Map<String, dynamic>) {

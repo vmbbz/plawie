@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../app.dart';
-import '../../../services/gateway_skill_proxy.dart';
+import '../../../services/skills_service.dart';
 
 /// MoonPay Agents — Skill Detail Page
 ///
@@ -33,6 +33,14 @@ import '../../../services/gateway_skill_proxy.dart';
 ///   moonpay.dca_create { token, amount_usd, frequency } — new DCA strategy
 /// Always confirm with the user before executing swaps, bridges or buys.
 /// ───────────────────────────────────────────────────────────────────────
+
+class SkillRuntimeException implements Exception {
+  final String message;
+  const SkillRuntimeException(this.message);
+
+  @override
+  String toString() => message;
+}
 
 class AgentMoonPayPage extends StatefulWidget {
   const AgentMoonPayPage({super.key});
@@ -87,22 +95,24 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
       _errorMessage = null;
     });
 
-    final proxy = GatewaySkillProxy();
-    if (!proxy.isAttached) {
-      setState(() {
-        _isLoading = false;
-        _isMoonPayConnected = false;
-        _errorMessage = 'Gateway not connected. Start the gateway to load MoonPay data.';
-        _balances = _offlineBalances();
-        _prices = _offlinePrices();
-        _dcaStrategies = [];
-      });
-      return;
-    }
-
     try {
       // Fetch portfolio
-      final portfolioResult = await proxy.execute('moonpay', 'get_portfolio');
+      final portfolio = await SkillsService()
+          .executeSkill('moonpay', parameters: {'method': 'get_portfolio'});
+      if (!portfolio.success || portfolio.data is! Map) {
+        throw SkillRuntimeException(
+          portfolio.error ?? 'MoonPay portfolio unavailable',
+        );
+      }
+      final portfolioResult = Map<String, dynamic>.from(portfolio.data as Map);
+      if (portfolioResult['configured'] == false ||
+          portfolioResult['status'] == 'CONFIG_REQUIRED') {
+        throw SkillRuntimeException(
+          portfolioResult['actionRequired']?.toString() ??
+              portfolioResult['message']?.toString() ??
+              'MoonPay is not configured.',
+        );
+      }
       final wallets = portfolioResult['wallets'] as List? ?? [];
       final List<_WalletBalance> balances = [];
       double total = 0;
@@ -121,27 +131,42 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
       }
 
       // Fetch prices
-      final priceResult = await proxy.execute('moonpay', 'get_price', params: {
+      final price = await SkillsService().executeSkill('moonpay', parameters: {
+        'method': 'get_price',
         'tokens': ['ETH', 'BTC', 'SOL', 'USDC'],
       });
+      if (!price.success || price.data is! Map) {
+        throw SkillRuntimeException(
+            price.error ?? 'MoonPay prices unavailable');
+      }
+      final priceResult = Map<String, dynamic>.from(price.data as Map);
       final rawPrices = priceResult['prices'] as List? ?? [];
-      final prices = rawPrices.map((p) => _TokenPrice(
-        token: p['token']?.toString() ?? '',
-        usd: (p['usd'] as num?)?.toDouble() ?? 0,
-        change24h: (p['change_24h'] as num?)?.toDouble() ?? 0,
-      )).toList();
+      final prices = rawPrices
+          .map((p) => _TokenPrice(
+                token: p['token']?.toString() ?? '',
+                usd: (p['usd'] as num?)?.toDouble() ?? 0,
+                change24h: (p['change_24h'] as num?)?.toDouble() ?? 0,
+              ))
+          .toList();
 
       // Fetch DCA strategies
-      final dcaResult = await proxy.execute('moonpay', 'dca_list');
+      final dca = await SkillsService()
+          .executeSkill('moonpay', parameters: {'method': 'dca_list'});
+      if (!dca.success || dca.data is! Map) {
+        throw SkillRuntimeException(dca.error ?? 'MoonPay DCA unavailable');
+      }
+      final dcaResult = Map<String, dynamic>.from(dca.data as Map);
       final rawDca = dcaResult['strategies'] as List? ?? [];
-      final dcaStrategies = rawDca.map((d) => _DcaStrategy(
-        id: d['id']?.toString() ?? '',
-        token: d['token']?.toString() ?? '',
-        amountUsd: (d['amount_usd'] as num?)?.toDouble() ?? 0,
-        frequency: d['frequency']?.toString() ?? '',
-        nextRun: d['next_run']?.toString() ?? '',
-        active: d['active'] as bool? ?? false,
-      )).toList();
+      final dcaStrategies = rawDca
+          .map((d) => _DcaStrategy(
+                id: d['id']?.toString() ?? '',
+                token: d['token']?.toString() ?? '',
+                amountUsd: (d['amount_usd'] as num?)?.toDouble() ?? 0,
+                frequency: d['frequency']?.toString() ?? '',
+                nextRun: d['next_run']?.toString() ?? '',
+                active: d['active'] as bool? ?? false,
+              ))
+          .toList();
 
       setState(() {
         _isLoading = false;
@@ -151,7 +176,7 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
         _prices = prices.isEmpty ? _offlinePrices() : prices;
         _dcaStrategies = dcaStrategies;
       });
-    } on SkillProxyException catch (e) {
+    } on SkillRuntimeException catch (e) {
       setState(() {
         _isLoading = false;
         _isMoonPayConnected = false;
@@ -163,7 +188,8 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
       setState(() {
         _isLoading = false;
         _isMoonPayConnected = false;
-        _errorMessage = 'MoonPay CLI not configured. Run: npm install -g @moonpay/cli';
+        _errorMessage =
+            'MoonPay CLI not configured. Run: npm install -g @moonpay/cli';
         _balances = _offlineBalances();
         _prices = _offlinePrices();
       });
@@ -171,17 +197,17 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
   }
 
   List<_WalletBalance> _offlineBalances() => [
-    _WalletBalance(chain: 'Ethereum', token: 'ETH', amount: 0, usdValue: 0),
-    _WalletBalance(chain: 'Base', token: 'USDC', amount: 0, usdValue: 0),
-    _WalletBalance(chain: 'Bitcoin', token: 'BTC', amount: 0, usdValue: 0),
-  ];
+        _WalletBalance(chain: 'Ethereum', token: 'ETH', amount: 0, usdValue: 0),
+        _WalletBalance(chain: 'Base', token: 'USDC', amount: 0, usdValue: 0),
+        _WalletBalance(chain: 'Bitcoin', token: 'BTC', amount: 0, usdValue: 0),
+      ];
 
   List<_TokenPrice> _offlinePrices() => [
-    _TokenPrice(token: 'ETH', usd: 0, change24h: 0),
-    _TokenPrice(token: 'BTC', usd: 0, change24h: 0),
-    _TokenPrice(token: 'SOL', usd: 0, change24h: 0),
-    _TokenPrice(token: 'USDC', usd: 1.00, change24h: 0),
-  ];
+        _TokenPrice(token: 'ETH', usd: 0, change24h: 0),
+        _TokenPrice(token: 'BTC', usd: 0, change24h: 0),
+        _TokenPrice(token: 'SOL', usd: 0, change24h: 0),
+        _TokenPrice(token: 'USDC', usd: 1.00, change24h: 0),
+      ];
 
   @override
   Widget build(BuildContext context) {
@@ -272,7 +298,9 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  _isMoonPayConnected ? 'Connected' : 'Not configured',
+                                  _isMoonPayConnected
+                                      ? 'Connected'
+                                      : 'Not configured',
                                   style: TextStyle(
                                     color: Colors.white.withValues(alpha: 0.7),
                                     fontSize: 12,
@@ -304,7 +332,8 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
           decoration: BoxDecoration(
             color: const Color(0xFF7B2FBE).withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFF7B2FBE).withValues(alpha: 0.3)),
+            border: Border.all(
+                color: const Color(0xFF7B2FBE).withValues(alpha: 0.3)),
           ),
           child: Row(
             children: [
@@ -368,8 +397,8 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
             colors: [Color(0xFF1A1040), Color(0xFF0D1B2A)],
           ),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-              color: const Color(0xFF7B2FBE).withValues(alpha: 0.3)),
+          border:
+              Border.all(color: const Color(0xFF7B2FBE).withValues(alpha: 0.3)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -384,14 +413,17 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.0)),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Text('MULTI-CHAIN',
                       style: TextStyle(
-                          color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
+                          color: Colors.white54,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -441,9 +473,12 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
               children: [
                 Text(b.token,
                     style: const TextStyle(
-                        color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
                 Text(b.chain,
-                    style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                    style:
+                        const TextStyle(color: Colors.white38, fontSize: 10)),
               ],
             ),
           ),
@@ -453,10 +488,14 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
               Text(
                 b.usdValue > 0 ? '\$${b.usdValue.toStringAsFixed(2)}' : '—',
                 style: const TextStyle(
-                    color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600),
               ),
               Text(
-                b.amount > 0 ? '${b.amount.toStringAsFixed(4)} ${b.token}' : '—',
+                b.amount > 0
+                    ? '${b.amount.toStringAsFixed(4)} ${b.token}'
+                    : '—',
                 style: const TextStyle(color: Colors.white38, fontSize: 10),
               ),
             ],
@@ -468,8 +507,10 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
 
   Widget _buildQuickActions() {
     final actions = [
-      _QuickAction('Buy', Icons.add_circle_outline_rounded, const Color(0xFF00C49A)),
-      _QuickAction('Sell', Icons.remove_circle_outline_rounded, Colors.redAccent),
+      _QuickAction(
+          'Buy', Icons.add_circle_outline_rounded, const Color(0xFF00C49A)),
+      _QuickAction(
+          'Sell', Icons.remove_circle_outline_rounded, Colors.redAccent),
       _QuickAction('Swap', Icons.swap_horiz_rounded, const Color(0xFF7B2FBE)),
       _QuickAction('Bridge', Icons.swap_calls_rounded, Colors.blueAccent),
     ];
@@ -477,33 +518,36 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
       child: Row(
-        children: actions.map((a) => Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: GestureDetector(
-              onTap: () => _showActionDialog(a.label),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color: a.color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: a.color.withValues(alpha: 0.25)),
-                ),
-                child: Column(
-                  children: [
-                    Icon(a.icon, color: a.color, size: 22),
-                    const SizedBox(height: 6),
-                    Text(a.label,
-                        style: TextStyle(
-                            color: a.color,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        )).toList(),
+        children: actions
+            .map((a) => Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: GestureDetector(
+                      onTap: () => _showActionDialog(a.label),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: a.color.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: a.color.withValues(alpha: 0.25)),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(a.icon, color: a.color, size: 22),
+                            const SizedBox(height: 6),
+                            Text(a.label,
+                                style: TextStyle(
+                                    color: a.color,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ))
+            .toList(),
       ),
     );
   }
@@ -559,7 +603,9 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
           Expanded(
             child: Text(p.token,
                 style: const TextStyle(
-                    color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600)),
           ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -567,7 +613,9 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
               Text(
                 p.usd > 0 ? '\$${_formatPrice(p.usd)}' : '—',
                 style: const TextStyle(
-                    color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700),
               ),
               if (p.change24h != 0)
                 Text(
@@ -634,12 +682,16 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
               children: [
                 Text(d.token,
                     style: const TextStyle(
-                        color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600)),
                 Text('\$${d.amountUsd.toStringAsFixed(2)} • ${d.frequency}',
-                    style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                    style:
+                        const TextStyle(color: Colors.white54, fontSize: 11)),
                 if (d.nextRun.isNotEmpty)
                   Text('Next: ${d.nextRun}',
-                      style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                      style:
+                          const TextStyle(color: Colors.white38, fontSize: 10)),
               ],
             ),
           ),
@@ -723,7 +775,9 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
               child: const Text(
                 _kAgentPrompt,
                 style: TextStyle(
-                    color: Colors.white60, fontSize: 11, height: 1.6,
+                    color: Colors.white60,
+                    fontSize: 11,
+                    height: 1.6,
                     fontFamily: 'monospace'),
               ),
             ),
@@ -759,12 +813,18 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
 
   Color _tokenColor(String token) {
     switch (token.toUpperCase()) {
-      case 'ETH': return const Color(0xFF627EEA);
-      case 'BTC': return const Color(0xFFF7931A);
-      case 'SOL': return const Color(0xFF9945FF);
-      case 'USDC': return const Color(0xFF2775CA);
-      case 'USDT': return const Color(0xFF26A17B);
-      default: return Colors.white38;
+      case 'ETH':
+        return const Color(0xFF627EEA);
+      case 'BTC':
+        return const Color(0xFFF7931A);
+      case 'SOL':
+        return const Color(0xFF9945FF);
+      case 'USDC':
+        return const Color(0xFF2775CA);
+      case 'USDT':
+        return const Color(0xFF26A17B);
+      default:
+        return Colors.white38;
     }
   }
 
@@ -780,7 +840,8 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1040),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('MoonPay Agents', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text('MoonPay Agents',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: const SingleChildScrollView(
           child: Text(
             'MoonPay Agents gives your AI a verified bank account and 30+ financial skills.\n\n'
@@ -809,7 +870,8 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Got it', style: TextStyle(color: AppColors.statusGreen)),
+            child: const Text('Got it',
+                style: TextStyle(color: AppColors.statusGreen)),
           ),
         ],
       ),
@@ -820,7 +882,8 @@ class _AgentMoonPayPageState extends State<AgentMoonPayPage>
     final hints = {
       'Buy': 'Ask your agent: "Buy \$50 of ETH" or "Buy 0.01 BTC"',
       'Sell': 'Ask your agent: "Sell 0.5 ETH to USD" or "Cash out my USDC"',
-      'Swap': 'Ask your agent: "Swap 50 USDC to SOL" or "Exchange ETH for USDC"',
+      'Swap':
+          'Ask your agent: "Swap 50 USDC to SOL" or "Exchange ETH for USDC"',
       'Bridge': 'Ask your agent: "Bridge 0.1 ETH from Ethereum to Base"',
       'DCA Setup': 'Ask your agent: "Set up weekly \$50 ETH purchases"',
     };
@@ -859,14 +922,19 @@ class _WalletBalance {
   final String token;
   final double amount;
   final double usdValue;
-  const _WalletBalance({required this.chain, required this.token, required this.amount, required this.usdValue});
+  const _WalletBalance(
+      {required this.chain,
+      required this.token,
+      required this.amount,
+      required this.usdValue});
 }
 
 class _TokenPrice {
   final String token;
   final double usd;
   final double change24h;
-  const _TokenPrice({required this.token, required this.usd, required this.change24h});
+  const _TokenPrice(
+      {required this.token, required this.usd, required this.change24h});
 }
 
 class _DcaStrategy {
@@ -876,7 +944,13 @@ class _DcaStrategy {
   final String frequency;
   final String nextRun;
   final bool active;
-  const _DcaStrategy({required this.id, required this.token, required this.amountUsd, required this.frequency, required this.nextRun, required this.active});
+  const _DcaStrategy(
+      {required this.id,
+      required this.token,
+      required this.amountUsd,
+      required this.frequency,
+      required this.nextRun,
+      required this.active});
 }
 
 class _QuickAction {

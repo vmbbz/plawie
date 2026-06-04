@@ -4,8 +4,8 @@ import 'native_bridge.dart';
 
 /// Runtime boundary for the OpenClaw Gateway process.
 ///
-/// Phase 1 keeps the production implementation on PRoot while giving
-/// GatewayService a stable seam for future native Node experiments.
+/// The production default is the embedded libnode/native Gateway runtime.
+/// PRoot is retained as an explicit rollback runtime only.
 abstract interface class GatewayRuntime {
   String get id;
   String get label;
@@ -223,6 +223,7 @@ Stream<String> _pollNativeGatewayLogs(
   Future<String> Function() readLogs,
 ) async* {
   var previousLog = '';
+  final emittedLines = <String>{};
 
   while (true) {
     try {
@@ -252,7 +253,13 @@ Stream<String> _pollNativeGatewayLogs(
         for (final line in replayLines) {
           final nativeTagged =
               line.startsWith('[native') ? line : '[native] $line';
-          yield _redactGatewayLogLine(nativeTagged);
+          final redacted = _redactGatewayLogLine(nativeTagged);
+          if (emittedLines.add(redacted)) {
+            yield redacted;
+            if (emittedLines.length > 600) {
+              emittedLines.remove(emittedLines.first);
+            }
+          }
         }
 
         previousLog = currentLog;
@@ -289,7 +296,9 @@ String _redactGatewayLogLine(String line) {
 class GatewayRuntimeRegistry {
   GatewayRuntimeRegistry._();
 
-  static final GatewayRuntime current = const ProotGatewayRuntime();
+  static final GatewayRuntime current =
+      const NativeNodeFullGatewayProductionRuntime();
+  static final GatewayRuntime prootRollback = const ProotGatewayRuntime();
   static final GatewayRuntime nativeNodeSmoke =
       const NativeNodeGatewayRuntime();
   static final GatewayRuntime nativeNodeProcessSmoke =
@@ -314,6 +323,7 @@ class GatewayRuntimeRegistry {
       case 'native-node-smoke':
         return nativeNodeSmoke;
       case 'proot':
+        return prootRollback;
       case null:
       case '':
         return current;

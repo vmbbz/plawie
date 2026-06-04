@@ -55,8 +55,10 @@ class GatewaySkillProxy {
       if (!canExecuteGatewaySkills) {
         throw const SkillProxyException(
           'This Gateway does not expose direct skill page execution yet. '
-          'The skill can still be installed and visible to chat, but this page '
-          'needs a native adapter or PRoot rollback before it can run actions.',
+          'The skill can still be installed or visible as catalog inventory, '
+          'but this page cannot run it until skills.execute or a native page '
+          'adapter is available. Phone/avatar actions should route through '
+          'Gateway node tools when they are connected.',
         );
       }
 

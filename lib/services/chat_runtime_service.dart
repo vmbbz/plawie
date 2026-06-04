@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/chat_message.dart';
 import '../utils/video_frame_extractor.dart';
+import 'capabilities/avatar_capability.dart';
 import 'capabilities/camera_capability.dart';
 import 'chat_persistence_service.dart';
 import 'gateway_service.dart';
@@ -14,7 +15,7 @@ import 'preferences_service.dart';
 import 'tts_service.dart';
 
 class ChatRuntimeService extends ChangeNotifier {
-  static const Duration _chatTurnHardTimeout = Duration(minutes: 6);
+  static const Duration _chatTurnSilenceNotice = Duration(minutes: 6);
 
   static final ChatRuntimeService _instance = ChatRuntimeService._internal();
   factory ChatRuntimeService() => _instance;
@@ -205,6 +206,8 @@ class ChatRuntimeService extends ChangeNotifier {
     final sendStopwatch = Stopwatch()..start();
     var loggedFirstAssistantChunk = false;
     final List<ChatToolEvent> toolEvents = [];
+    final dispatchedInlineGestureMarkers = <String>{};
+    String? transientStatusText;
     var rawBuffer = '';
     var thinkBuffer = '';
 
@@ -239,15 +242,36 @@ class ChatRuntimeService extends ChangeNotifier {
       List<ChatToolEvent>? events,
     }) {
       if (_messages.isEmpty) return;
+      final effectiveEvents =
+          events ?? (toolEvents.isNotEmpty ? toolEvents : null);
+      final displayText = text ??
+          (fullResponse.trim().isNotEmpty
+              ? fullResponse
+              : transientStatusText ?? '');
       _messages.last = ChatMessage(
-        text: text ?? fullResponse,
+        text: displayText,
         isUser: false,
         thinkContent: thinkContent?.isNotEmpty == true ? thinkContent : null,
-        toolEvents:
-            events?.isNotEmpty == true ? List.unmodifiable(events!) : null,
+        toolEvents: effectiveEvents?.isNotEmpty == true
+            ? List.unmodifiable(effectiveEvents!)
+            : null,
       );
       notifyListeners();
       _persistSoon();
+    }
+
+    void dispatchInlineControlMarkers(String visibleText) {
+      for (final match in RegExp(
+        r'\(gesture\s*:\s*([^)]+)\)',
+        caseSensitive: false,
+      ).allMatches(visibleText)) {
+        final gesture = (match.group(1) ?? '').split(',').first.trim();
+        if (gesture.isEmpty) continue;
+        final markerKey = '${match.start}:$gesture';
+        if (!dispatchedInlineGestureMarkers.add(markerKey)) continue;
+        addDiagnostic('Assistant inline gesture marker: $gesture');
+        unawaited(_dispatchInlineAvatarGesture(gesture));
+      }
     }
 
     try {
@@ -328,21 +352,36 @@ class ChatRuntimeService extends ChangeNotifier {
       }
 
       final guardedStream = stream.timeout(
-        _chatTurnHardTimeout,
-        onTimeout: (sink) {
-          sink.add(
-            '[Error] Chat timed out after '
-            '${_chatTurnHardTimeout.inMinutes} minutes. '
-            'Retry after switching provider/model or API key.',
+        _chatTurnSilenceNotice,
+        onTimeout: (_) {
+          addDiagnostic(
+            'No chat chunks for ${_chatTurnSilenceNotice.inMinutes} minutes; '
+            'still listening for the Gateway response.',
           );
-          sink.close();
         },
       );
 
       await for (final chunk in guardedStream) {
+        if (chunk.startsWith('\x00CHAT_STATUS:') && chunk.endsWith('\x00')) {
+          final encoded = chunk.substring(13, chunk.length - 1);
+          String statusText;
+          try {
+            statusText = jsonDecode(encoded).toString();
+          } catch (_) {
+            statusText = encoded;
+          }
+          addDiagnostic(statusText);
+          if (fullResponse.trim().isEmpty) {
+            transientStatusText = statusText;
+            updateAssistant(events: toolEvents);
+          }
+          continue;
+        }
+
         if (!loggedFirstAssistantChunk &&
             chunk.trim().isNotEmpty &&
-            !chunk.startsWith('\x00TOOL_')) {
+            !chunk.startsWith('\x00TOOL_') &&
+            !chunk.startsWith('\x00CHAT_STATUS:')) {
           loggedFirstAssistantChunk = true;
           addDiagnostic(
               'First assistant chunk after ${sendStopwatch.elapsedMilliseconds}ms');
@@ -402,7 +441,9 @@ class ChatRuntimeService extends ChangeNotifier {
         }
 
         final oldLen = fullResponse.length;
-        fullResponse = parseThinkChunk(chunk);
+        final visibleWithMarkers = parseThinkChunk(chunk);
+        dispatchInlineControlMarkers(visibleWithMarkers);
+        fullResponse = _stripAssistantControlMarkers(visibleWithMarkers);
         if (fullResponse.length > oldLen) {
           _enqueueTtsFromStream(fullResponse.substring(oldLen));
         }
@@ -445,10 +486,9 @@ class ChatRuntimeService extends ChangeNotifier {
   }
 
   String _sanitizeForTts(String text) {
-    var t = text;
+    var t = _stripAssistantControlMarkers(text);
     t = t.replaceAll(
         RegExp(r'<think>[\s\S]*?<\/think>', caseSensitive: false), '');
-    t = t.replaceAll(RegExp(r'\(gesture:\s*\w+\)\s*'), '');
     t = t.replaceAll(RegExp(r'```[\s\S]*?```'), 'code block. ');
     t = t.replaceAll(RegExp(r'`([^`]+)`'), r'$1');
     t = t.replaceAll(RegExp(r'!\[[^\]]*\]\([^)]*\)'), '');
@@ -481,6 +521,48 @@ class ChatRuntimeService extends ChangeNotifier {
     t = t.replaceAll(RegExp(r'\n{3,}'), '\n\n');
     t = t.replaceAll(RegExp(r'[ \t]{2,}'), ' ');
     return t.trim();
+  }
+
+  String _stripAssistantControlMarkers(String text) {
+    var t = text;
+    t = t.replaceAll(
+      RegExp(
+        r'\((?:gesture|image|tool|action)\s*:[^)]*\)\s*',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    t = t.replaceAll(
+      RegExp(
+        r'^\s*(?:gesture|image|tool|action)\s*:\s*.*$',
+        caseSensitive: false,
+        multiLine: true,
+      ),
+      '',
+    );
+    return t.trimRight();
+  }
+
+  Future<void> _dispatchInlineAvatarGesture(String gesture) async {
+    try {
+      final frame = await AvatarCapability().handle('avatar.gesture', {
+        'gesture': gesture,
+        'source': 'assistant-inline-marker',
+      });
+      if (frame.error != null) {
+        addDiagnostic(
+          'Inline avatar gesture failed: '
+          '${frame.error?['message'] ?? frame.error}',
+        );
+        return;
+      }
+      addDiagnostic(
+        'Inline avatar gesture queued: '
+        '${frame.payload?['gesture'] ?? gesture}',
+      );
+    } catch (e) {
+      addDiagnostic('Inline avatar gesture error: $e');
+    }
   }
 
   void _enqueueTtsFromStream(String chunk) {

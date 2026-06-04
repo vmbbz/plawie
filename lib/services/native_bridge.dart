@@ -362,6 +362,13 @@ class NativeBridge {
         false;
   }
 
+  static Future<bool> isNativeNodeIsolatedProcessAlive() async {
+    return await _channel.invokeMethod<bool>(
+          'isNativeNodeIsolatedProcessAlive',
+        ) ??
+        false;
+  }
+
   static Future<String> getNativeNodeSmokeRuntimeLogs() async {
     return await _channel
             .invokeMethod<String>('getNativeNodeSmokeRuntimeLogs') ??

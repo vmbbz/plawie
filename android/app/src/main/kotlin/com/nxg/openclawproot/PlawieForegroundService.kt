@@ -97,6 +97,7 @@ class PlawieForegroundService : Service() {
     private val restartTimestamps = mutableListOf<Long>()
     private var watchdogActive = false
     private lateinit var processManager: ProcessManager
+    private lateinit var nativeNodeSmokeProcess: NativeNodeSmokeProcess
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -105,6 +106,7 @@ class PlawieForegroundService : Service() {
         createNotificationChannel()
         val nativeLibDir = applicationInfo.nativeLibraryDir
         processManager = ProcessManager(applicationContext, filesDir.absolutePath, nativeLibDir)
+        nativeNodeSmokeProcess = NativeNodeSmokeProcess(applicationContext, nativeLibDir)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -199,7 +201,11 @@ class PlawieForegroundService : Service() {
                         updateNotification("Gateway running")
                     } else {
                         val uptimeMs = System.currentTimeMillis() - startTime
-                        val processAlive = processManager.isGatewayRunning()
+                        val processAlive = if (SetupGuards.isProotGatewayOwner(this@PlawieForegroundService)) {
+                            processManager.isGatewayRunning()
+                        } else {
+                            nativeNodeSmokeProcess.isFullGatewayProductionRunning()
+                        }
                         if (processAlive) {
                             consecutiveProcessDown = 0
                             consecutiveHttpFailures++
@@ -265,7 +271,7 @@ class PlawieForegroundService : Service() {
     }
 
     /**
-     * HTTP HEAD check against the gateway health route.
+     * HTTP GET check against the gateway health route.
      * Returns true if the gateway responds (any status code).
      */
     private fun checkGatewayHealth(): Boolean {
@@ -273,7 +279,7 @@ class PlawieForegroundService : Service() {
         return try {
             val url = URL("http://127.0.0.1:$GATEWAY_PORT/health")
             conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "HEAD"
+            conn.requestMethod = "GET"
             conn.connectTimeout = HEALTH_TIMEOUT_MS
             conn.readTimeout = HEALTH_TIMEOUT_MS
             conn.setRequestProperty("Connection", "close")
@@ -320,6 +326,22 @@ class PlawieForegroundService : Service() {
         
         Thread {
             try {
+                if (SetupGuards.isNativeGatewayOwner(this@PlawieForegroundService)) {
+                    nativeNodeSmokeProcess.stop()
+                    Thread.sleep(2000)
+                    val success = nativeNodeSmokeProcess.startFullGatewayProduction()
+                    handler.post {
+                        if (success) {
+                            Log.i(TAG, "Watchdog: native gateway restarted successfully")
+                            updateNotification("Native gateway restarted")
+                        } else {
+                            Log.e(TAG, "Watchdog: native gateway restart failed")
+                            updateNotification("Native gateway restart failed")
+                        }
+                    }
+                    return@Thread
+                }
+
                 // Kill existing gateway process
                 processManager.stopGateway()
                 Thread.sleep(2000)

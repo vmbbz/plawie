@@ -33,8 +33,43 @@ class SkillsService {
       StreamController.broadcast();
   final PreferencesService _prefs = PreferencesService();
 
+  static const Map<String, String> _skillIdAliases = {
+    'avatar_control': 'avatar-control',
+    'avatar control': 'avatar-control',
+    'tts_voice': 'tts-voice',
+    'tts voice': 'tts-voice',
+    'device_node': 'device-node',
+    'device node': 'device-node',
+    'avatar-overlay': 'avatar_overlay',
+    'avatar overlay': 'avatar_overlay',
+    'base_chain': 'base-chain',
+    'base chain': 'base-chain',
+    'base_wallet': 'base-chain',
+    'base wallet': 'base-chain',
+    'twilio': 'twilio-voice',
+    'twilio_voice': 'twilio-voice',
+    'twilio voice': 'twilio-voice',
+    'agent_card': 'agent-card',
+    'agentcard': 'agent-card',
+    'agent card': 'agent-card',
+    'molt_launch': 'molt-launch',
+    'moltlaunch': 'molt-launch',
+    'molt launch': 'molt-launch',
+    'valeo': 'valeo-sentinel',
+    'valeo_sentinel': 'valeo-sentinel',
+    'valeo sentinel': 'valeo-sentinel',
+    'moon pay': 'moonpay',
+  };
+
   Stream<SkillsEvent> get events => _eventController.stream;
   Map<String, Skill> get skills => Map.unmodifiable(_skills);
+
+  String _canonicalSkillId(String id) {
+    final trimmed = id.trim();
+    if (trimmed.isEmpty) return trimmed;
+    final lower = trimmed.toLowerCase();
+    return _skillIdAliases[lower] ?? lower;
+  }
 
   Future<void> initialize() async {
     try {
@@ -123,19 +158,25 @@ class SkillsService {
     Map<String, dynamic>? parameters,
     Map<String, dynamic>? context,
   }) async {
-    final skill = _skills[skillId];
-    if (skill == null) return SkillResult.error('Skill not found: $skillId');
-    if (!skill.enabled) return SkillResult.error('Skill is disabled: $skillId');
+    final canonicalSkillId = _canonicalSkillId(skillId);
+    final skill = _skills[canonicalSkillId];
+    if (skill == null) {
+      return SkillResult.error('Skill not found: $skillId');
+    }
+    if (!skill.enabled) {
+      return SkillResult.error('Skill is disabled: $canonicalSkillId');
+    }
 
     try {
-      _eventController.add(SkillsEvent.skillExecuting(skillId));
+      _eventController.add(SkillsEvent.skillExecuting(canonicalSkillId));
       final result =
           await _executeSkillLogic(skill, parameters ?? {}, context ?? {});
-      _eventController.add(SkillsEvent.skillExecuted(skillId, result));
+      _eventController.add(SkillsEvent.skillExecuted(canonicalSkillId, result));
       return result;
     } catch (e) {
       _logger.e('Execution failed: $e');
-      _eventController.add(SkillsEvent.skillError(skillId, e.toString()));
+      _eventController
+          .add(SkillsEvent.skillError(canonicalSkillId, e.toString()));
       return SkillResult.error(e.toString());
     }
   }
@@ -471,6 +512,15 @@ class SkillsService {
 
   Future<SkillResult> _executeAvatarPipSkill(
       Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    final action =
+        p['action']?.toString() ?? p['method']?.toString() ?? 'enter';
+    if (action == 'get_status' || action == 'status') {
+      return SkillResult.success({
+        'available': true,
+        'status': 'READY',
+        'message': 'Avatar overlay PiP channel is registered.',
+      });
+    }
     try {
       await const MethodChannel('vrm/pip_mode')
           .invokeMethod('enterPictureInPictureMode');
@@ -482,62 +532,52 @@ class SkillsService {
 
   Future<SkillResult> _executeTwilioSkill(
       Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
-    try {
-      final data = await GatewaySkillProxy().execute(
-          'twilio-voice', p['method'] ?? 'get_status',
-          params: Map.from(p)..remove('method'));
-      return SkillResult.success(data);
-    } catch (e) {
-      return SkillResult.error(_skillPageRuntimeError(e));
-    }
+    return _executeGatewayOrNativePartnerSkill(
+      skillId: 'twilio-voice',
+      defaultMethod: 'get_status',
+      params: p,
+      nativeAdapter: _twilioNativeAdapter,
+    );
   }
 
   Future<SkillResult> _executeAgentCardSkill(
       Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
-    try {
-      final data = await GatewaySkillProxy().execute(
-          'agent-card', p['method'] ?? 'get_balance',
-          params: Map.from(p)..remove('method'));
-      return SkillResult.success(data);
-    } catch (e) {
-      return SkillResult.error(_skillPageRuntimeError(e));
-    }
+    return _executeGatewayOrNativePartnerSkill(
+      skillId: 'agent-card',
+      defaultMethod: 'get_balance',
+      params: p,
+      nativeAdapter: _agentCardNativeAdapter,
+    );
   }
 
   Future<SkillResult> _executeMoltLaunchSkill(
       Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
-    try {
-      final data = await GatewaySkillProxy().execute(
-          'molt-launch', p['method'] ?? 'get_rep',
-          params: Map.from(p)..remove('method'));
-      return SkillResult.success(data);
-    } catch (e) {
-      return SkillResult.error(_skillPageRuntimeError(e));
-    }
+    return _executeGatewayOrNativePartnerSkill(
+      skillId: 'molt-launch',
+      defaultMethod: 'get_identity',
+      params: p,
+      nativeAdapter: _moltLaunchNativeAdapter,
+    );
   }
 
   Future<SkillResult> _executeValeoSkill(
       Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
-    try {
-      final data = await GatewaySkillProxy().execute(
-          'valeo-sentinel', p['method'] ?? 'get_budget',
-          params: Map.from(p)..remove('method'));
-      return SkillResult.success(data);
-    } catch (e) {
-      return SkillResult.error(_skillPageRuntimeError(e));
-    }
+    return _executeGatewayOrNativePartnerSkill(
+      skillId: 'valeo-sentinel',
+      defaultMethod: 'get_budget',
+      params: p,
+      nativeAdapter: _valeoNativeAdapter,
+    );
   }
 
   Future<SkillResult> _executeMoonPaySkill(
       Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
-    try {
-      final data = await GatewaySkillProxy().execute(
-          'moonpay', p['method'] ?? 'get_portfolio',
-          params: Map.from(p)..remove('method'));
-      return SkillResult.success(data);
-    } catch (e) {
-      return SkillResult.error(_skillPageRuntimeError(e));
-    }
+    return _executeGatewayOrNativePartnerSkill(
+      skillId: 'moonpay',
+      defaultMethod: 'get_portfolio',
+      params: p,
+      nativeAdapter: _moonPayNativeAdapter,
+    );
   }
 
   String _skillPageRuntimeError(Object error) {
@@ -549,12 +589,223 @@ class SkillsService {
     return message.replaceFirst(RegExp(r'^SkillProxyException:\s*'), '');
   }
 
+  Future<SkillResult> _executeGatewayOrNativePartnerSkill({
+    required String skillId,
+    required String defaultMethod,
+    required Map<String, dynamic> params,
+    required FutureOr<Map<String, dynamic>> Function(
+      String method,
+      Map<String, dynamic> params,
+    ) nativeAdapter,
+  }) async {
+    final method = params['method']?.toString().trim().isNotEmpty == true
+        ? params['method'].toString().trim()
+        : defaultMethod;
+    final cleanParams = Map<String, dynamic>.from(params)..remove('method');
+    final proxy = GatewaySkillProxy();
+
+    if (proxy.isAttached && proxy.canExecuteGatewaySkills) {
+      try {
+        final data = await proxy.execute(
+          skillId,
+          method,
+          params: cleanParams,
+        );
+        return SkillResult.success({
+          ...data,
+          'skill': skillId,
+          'method': method,
+          'runtime': 'gateway-skills.execute',
+          'gatewaySkillRpcAvailable': true,
+        });
+      } catch (e) {
+        final message = _skillPageRuntimeError(e);
+        final shouldFallback =
+            message.contains('direct skill page execution') ||
+                message.contains('unknown method') ||
+                message.contains('skills.execute') ||
+                message.contains('not attached');
+        if (!shouldFallback) return SkillResult.error(message);
+      }
+    }
+
+    final data = await nativeAdapter(method, cleanParams);
+    return SkillResult.success({
+      'skill': skillId,
+      'method': method,
+      'runtime': 'native-partner-adapter',
+      'gatewaySkillRpcAvailable': proxy.canExecuteGatewaySkills,
+      ...data,
+    });
+  }
+
+  Map<String, dynamic> _partnerConfigRequired({
+    required String skillId,
+    required String method,
+    required String provider,
+    String? actionRequired,
+  }) =>
+      {
+        'configured': false,
+        'connected': false,
+        'status': 'CONFIG_REQUIRED',
+        'provider': provider,
+        'message':
+            '$provider is installed as a Plawie skill, but service credentials or its Gateway skill runtime are not configured on this device.',
+        'actionRequired': actionRequired ??
+            'Open Bot Management > Skills, configure $provider, then retry $skillId.$method.',
+      };
+
+  Map<String, dynamic> _twilioNativeAdapter(
+      String method, Map<String, dynamic> params) {
+    final configured = _partnerConfigRequired(
+      skillId: 'twilio-voice',
+      method: method,
+      provider: 'Twilio Voice',
+      actionRequired:
+          'Configure Twilio Account SID, Auth Token, phone number, and ConversationRelay webhook.',
+    );
+    return {
+      ...configured,
+      'phone_number': '',
+      'concurrent_sessions': 0,
+      'inbound_count': 0,
+      'total_duration_h': 0,
+      'transcription_enabled': false,
+      'relay_enabled': false,
+      'call_logs': const <Map<String, dynamic>>[],
+      'requestedEnabled': params['enabled'],
+    };
+  }
+
+  Map<String, dynamic> _agentCardNativeAdapter(
+      String method, Map<String, dynamic> params) {
+    final configured = _partnerConfigRequired(
+      skillId: 'agent-card',
+      method: method,
+      provider: 'AgentCard',
+      actionRequired:
+          'Connect an AgentCard account before card balance, refill, or spend controls can execute.',
+    );
+    return {
+      ...configured,
+      'id': '',
+      'last4': '----',
+      'balance': 0,
+      'spendLimit': 0,
+      'expiryMonth': '--',
+      'expiryYear': '----',
+      'network': 'Visa',
+      'autoRefill': false,
+      'cardholderName': '',
+      'requestedEnabled': params['enabled'],
+    };
+  }
+
+  Future<Map<String, dynamic>> _moltLaunchNativeAdapter(
+      String method, Map<String, dynamic> params) async {
+    final base = BaseService();
+    await base.initialize();
+    final hasWallet =
+        base.isConnected && (base.address?.trim().isNotEmpty ?? false);
+    final config = _partnerConfigRequired(
+      skillId: 'molt-launch',
+      method: method,
+      provider: 'MoltLaunch',
+      actionRequired: hasWallet
+          ? 'Register this Base wallet with MoltLaunch before accepting jobs.'
+          : 'Connect or create a Base wallet before registering with MoltLaunch.',
+    );
+    if (method == 'get_rep') {
+      return {
+        ...config,
+        'wallet_address': base.address ?? '',
+        'reputation': 0,
+        'total_jobs_completed': 0,
+        'pending_payouts_eth': 0.0,
+        'active_gig_list': const <Map<String, dynamic>>[],
+      };
+    }
+    return {
+      ...config,
+      'wallet_address': base.address ?? '',
+      'display_name': '',
+      'agent_id': '',
+      'verified': false,
+      'reputation': 0,
+    };
+  }
+
+  Map<String, dynamic> _valeoNativeAdapter(
+      String method, Map<String, dynamic> params) {
+    final config = _partnerConfigRequired(
+      skillId: 'valeo-sentinel',
+      method: method,
+      provider: 'Valeo Sentinel',
+      actionRequired:
+          'Configure a Valeo Sentinel policy before budget enforcement can approve or block spend.',
+    );
+    return {
+      ...config,
+      'budget_cap': 0,
+      'current_spend': 0,
+      'sentinel_active': false,
+      'policy_id': '--',
+      'per_call_limit': 0,
+      'hourly_limit': 0,
+      'daily_limit': 0,
+      'lifetime_limit': 0,
+      'audit_log': const <Map<String, dynamic>>[],
+      'requestedActive': params['active'],
+    };
+  }
+
+  Map<String, dynamic> _moonPayNativeAdapter(
+      String method, Map<String, dynamic> params) {
+    final config = _partnerConfigRequired(
+      skillId: 'moonpay',
+      method: method,
+      provider: 'MoonPay',
+      actionRequired:
+          'Install/configure the MoonPay CLI or Gateway MCP connector before portfolio, price, swap, bridge, buy, sell, or DCA methods can run.',
+    );
+    return switch (method) {
+      'get_price' => {
+          ...config,
+          'prices': const <Map<String, dynamic>>[],
+          'tokens': params['tokens'] ?? params['token'],
+        },
+      'dca_list' => {
+          ...config,
+          'strategies': const <Map<String, dynamic>>[],
+        },
+      _ => {
+          ...config,
+          'wallets': const <Map<String, dynamic>>[],
+          'total_usd': 0,
+          'operation': method,
+        },
+    };
+  }
+
   Future<SkillResult> _executeBaseChainSkill(
       Skill skill, Map<String, dynamic> p, Map<String, dynamic> ctx) async {
     final action = p['action'] ?? 'get_balance';
     final svc = BaseService();
+    await svc.initialize();
     if (!svc.isConnected && action != 'switch_network') {
-      return SkillResult.error('Wallet not connected');
+      return SkillResult.success({
+        'configured': false,
+        'connected': false,
+        'status': 'WALLET_NOT_CONNECTED',
+        'message':
+            'Base wallet is not connected. Create or import a wallet before using Base Chain actions.',
+        'network': svc.networkName,
+        'address': '',
+        'eth': '0',
+        'usdc': '0',
+        'transactions': const <Map<String, dynamic>>[],
+      });
     }
     try {
       switch (action) {
@@ -616,7 +867,8 @@ class SkillsService {
   Skill _createDeviceNodeSkill() => Skill(
       id: 'device-node',
       name: 'Device Tools',
-      description: 'Access flashlight, battery, and sensors.',
+      description:
+          'Access Android battery, haptics, flashlight, camera, location, and sensors.',
       version: '1.0.0',
       author: 'OpenClaw',
       category: 'device',
@@ -796,7 +1048,7 @@ class SkillsService {
         return {
           'name': skill.id,
           'description':
-              'Use Android hardware: battery, haptics, flashlight, and sensors.',
+              'Use Android hardware: battery, haptics, flashlight, camera, location, and sensors.',
           'input_schema': {
             'type': 'object',
             'properties': {
@@ -808,7 +1060,10 @@ class SkillsService {
                   'flashlight_on',
                   'flashlight_off',
                   'flashlight_toggle',
+                  'flashlight_status',
+                  'list_sensors',
                   'read_sensor',
+                  'camera_list',
                   'take_photo',
                   'get_location',
                 ],
@@ -816,24 +1071,175 @@ class SkillsService {
               'sensor_type': {
                 'type': 'string',
                 'enum': [
+                  'list',
                   'accelerometer',
                   'gyroscope',
+                  'gyro',
                   'magnetometer',
                   'barometer'
                 ],
+              },
+              'durationMs': {
+                'type': 'integer',
+                'minimum': 50,
+                'maximum': 5000,
+                'description': 'Simple haptic duration in milliseconds.',
               },
               'pattern': {
                 'type': 'array',
                 'items': {'type': 'integer'},
                 'description': 'Haptic pattern in milliseconds.',
               },
+              'facing': {
+                'type': 'string',
+                'enum': ['back', 'front'],
+                'description': 'Camera facing direction for take_photo.',
+              },
             },
             'required': ['action'],
           },
         };
+      case 'base-chain':
+        return _methodToolDefinition(
+          skill,
+          description:
+              'Use the local Base wallet for address, balances, history, network selection, and explicit transfers.',
+          methods: const [
+            'get_address',
+            'get_balance',
+            'get_history',
+            'resolve_basename',
+            'switch_network',
+            'send_eth',
+            'send_usdc',
+          ],
+          extraProperties: const {
+            'to': {
+              'type': 'string',
+              'description': 'Destination wallet address or Basename.',
+            },
+            'name': {
+              'type': 'string',
+              'description': 'Basename or address to resolve.',
+            },
+            'amount': {
+              'type': 'string',
+              'description': 'Token amount as a decimal string.',
+            },
+            'network': {
+              'type': 'string',
+              'enum': ['mainnet', 'sepolia'],
+            },
+            'limit': {
+              'type': 'integer',
+              'minimum': 1,
+              'maximum': 50,
+            },
+          },
+          actionKey: 'action',
+        );
+      case 'avatar_overlay':
+        return _methodToolDefinition(
+          skill,
+          description:
+              'Control or inspect the floating avatar picture-in-picture overlay.',
+          methods: const ['get_status', 'enter'],
+          actionKey: 'action',
+        );
+      case 'twilio-voice':
+        return _methodToolDefinition(
+          skill,
+          description:
+              'Inspect or configure Twilio ConversationRelay voice-call status.',
+          methods: const ['get_status', 'set_relay', 'set_transcription'],
+          extraProperties: const {
+            'enabled': {'type': 'boolean'},
+          },
+        );
+      case 'agent-card':
+        return _methodToolDefinition(
+          skill,
+          description:
+              'Inspect AgentCard balance/status or configure card refill policy.',
+          methods: const ['get_balance', 'set_refill_policy', 'create_card'],
+          extraProperties: const {
+            'enabled': {'type': 'boolean'},
+          },
+        );
+      case 'molt-launch':
+        return _methodToolDefinition(
+          skill,
+          description:
+              'Inspect or register MoltLaunch Base-chain agent identity and work reputation.',
+          methods: const ['get_identity', 'get_rep', 'register'],
+        );
+      case 'valeo-sentinel':
+        return _methodToolDefinition(
+          skill,
+          description:
+              'Inspect Valeo Sentinel budget policy, audit log, or policy active state.',
+          methods: const ['get_budget', 'get_audit', 'set_policy'],
+          extraProperties: const {
+            'active': {'type': 'boolean'},
+          },
+        );
+      case 'moonpay':
+        return _methodToolDefinition(
+          skill,
+          description:
+              'Inspect MoonPay portfolio, token prices, DCA strategies, or requested financial operations.',
+          methods: const [
+            'get_portfolio',
+            'get_price',
+            'swap',
+            'bridge',
+            'buy',
+            'sell',
+            'dca_list',
+            'dca_create',
+          ],
+          extraProperties: const {
+            'token': {'type': 'string'},
+            'tokens': {
+              'type': 'array',
+              'items': {'type': 'string'},
+            },
+            'from_token': {'type': 'string'},
+            'to_token': {'type': 'string'},
+            'amount': {'type': 'string'},
+            'amount_usd': {'type': 'number'},
+            'from_chain': {'type': 'string'},
+            'to_chain': {'type': 'string'},
+            'frequency': {'type': 'string'},
+          },
+        );
       default:
         return skill.toToolDefinition();
     }
+  }
+
+  Map<String, dynamic> _methodToolDefinition(
+    Skill skill, {
+    required String description,
+    required List<String> methods,
+    Map<String, dynamic> extraProperties = const {},
+    String actionKey = 'method',
+  }) {
+    return {
+      'name': skill.id,
+      'description': description,
+      'input_schema': {
+        'type': 'object',
+        'properties': {
+          actionKey: {
+            'type': 'string',
+            'enum': methods,
+          },
+          ...extraProperties,
+        },
+        'required': [actionKey],
+      },
+    };
   }
 
   /// Returns the list of all registered native skills.
@@ -843,7 +1249,7 @@ class SkillsService {
 
   /// Returns a specific skill by its ID.
   Skill? getSkill(String id) {
-    return _skills[id];
+    return _skills[_canonicalSkillId(id)];
   }
 }
 

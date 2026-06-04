@@ -204,6 +204,15 @@ class _LogsScreenState extends State<LogsScreen> {
 
   Color _logColor(String line, ThemeData theme) {
     final lower = line.toLowerCase();
+    if (lower.contains('tool-policy') &&
+        (lower.contains('nodes') ||
+            lower.contains('tts') ||
+            lower.contains('cron'))) {
+      return AppColors.statusAmber;
+    }
+    if (lower.contains('iserror=false')) {
+      return theme.colorScheme.onSurface;
+    }
     if (line.contains('[ERR]') ||
         line.contains('ERROR') ||
         lower.contains('[error]')) {

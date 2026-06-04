@@ -122,21 +122,16 @@ class GatewayToolCatalog {
     'group:media': ['image'],
   };
 
-  /// Bounded Android default.
+  /// Android default.
   ///
   /// OpenClaw applies tools.profile first, then tools.allow narrows that base.
-  /// Using profile=minimal here leaves only session_status, so an allowlist for
-  /// browser/canvas/nodes narrows the visible tool set to zero. Use profile=full
-  /// as the base and then narrow to built-in groups that matter on Android.
+  /// For the mobile/native owner, narrowing this to groups is unsafe: the
+  /// Gateway may remove the callable `nodes` tool even while the Android node
+  /// commands are connected. Preserve wildcard access so provider tool schemas
+  /// include the real OpenClaw tools, then rely on gateway.nodes.allowCommands
+  /// for the Android command allowlist.
   static const defaultMobileAllowList = <String>[
-    'group:nodes',
-    'group:runtime',
-    'group:sessions',
-    'group:automation',
-    'group:messaging',
-    'group:fs',
-    'group:web',
-    'image',
+    wildcard,
   ];
 
   static Map<String, dynamic> defaultMobileToolsConfig() => <String, dynamic>{
@@ -198,7 +193,7 @@ class GatewayToolCatalog {
 
     if (rawSelected.contains(wildcard) ||
         primitiveIds.every(rawSelected.contains)) {
-      return defaultMobileAllowList.toList(growable: false);
+      return const <String>[wildcard];
     }
 
     final sorted = selected.where((value) => value != wildcard).toList()

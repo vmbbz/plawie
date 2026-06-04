@@ -461,7 +461,7 @@ class NativeGatewaySmokeService {
 
     _fullGatewayProductionOwnerInFlight = true;
     final startedAt = DateTime.now();
-    final productionRuntime = GatewayRuntimeRegistry.current;
+    final productionRuntime = GatewayRuntimeRegistry.prootRollback;
     final nativeRuntime = _fullGatewayProductionRuntime;
 
     var productionStopped = false;
@@ -670,7 +670,7 @@ class NativeGatewaySmokeService {
 
     _fullGatewayProductionChatTurnInFlight = true;
     final startedAt = DateTime.now();
-    final productionRuntime = GatewayRuntimeRegistry.current;
+    final productionRuntime = GatewayRuntimeRegistry.prootRollback;
     final nativeRuntime = _fullGatewayProductionRuntime;
     final canaryPrompt = prompt.trim().isEmpty
         ? 'Native full Gateway real chat turn canary. Reply with exactly: native-ok'
@@ -2016,7 +2016,7 @@ class NativeGatewaySmokeService {
       );
 
       final fallbackArmedBeforeExecution =
-          GatewayRuntimeRegistry.current.id == 'proot';
+          GatewayRuntimeRegistry.prootRollback.id == 'proot';
       final nativeEligible = selectedSkillId == 'device-node';
       final routeDecision = <String, dynamic>{
         'skillId': selectedSkillId,
@@ -2287,7 +2287,7 @@ class NativeGatewaySmokeService {
         '[NATIVE-DEVICE-ROUTE-SHADOW] Starting real-turn device-node route shadow; PRoot remains primary.',
       );
 
-      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeBefore = GatewayRuntimeRegistry.prootRollback.id;
       final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
       Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
       Object? productionHealthBeforeError;
@@ -2477,7 +2477,7 @@ class NativeGatewaySmokeService {
           routeDecision['fallbackOneActionAway'] == true &&
           nonPromotedFallbackOk;
 
-      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeAfter = GatewayRuntimeRegistry.prootRollback.id;
       Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
       Object? productionHealthAfterError;
       try {
@@ -2774,7 +2774,7 @@ class NativeGatewaySmokeService {
         return report;
       }
 
-      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeBefore = GatewayRuntimeRegistry.prootRollback.id;
       final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
       Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
       Object? productionHealthBeforeError;
@@ -3064,7 +3064,7 @@ class NativeGatewaySmokeService {
           listMatches(expectedOrder, expectedToolHints) &&
           listMatches(observedOrder, expectedToolHints);
 
-      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeAfter = GatewayRuntimeRegistry.prootRollback.id;
       Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
       Object? productionHealthAfterError;
       try {
@@ -3255,7 +3255,7 @@ class NativeGatewaySmokeService {
         '[NATIVE-DEVICE-SELECTOR] Starting hidden device-node runtime selector; PRoot remains the automatic fallback.',
       );
 
-      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeBefore = GatewayRuntimeRegistry.prootRollback.id;
       final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
       Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
       Object? productionHealthBeforeError;
@@ -3339,7 +3339,7 @@ class NativeGatewaySmokeService {
         'reason': 'tool_hints_not_in_device_node_readonly_allowlist',
       };
 
-      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeAfter = GatewayRuntimeRegistry.prootRollback.id;
       Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
       Object? productionHealthAfterError;
       try {
@@ -3786,7 +3786,7 @@ class NativeGatewaySmokeService {
         }
         final productionHealthOkBefore =
             _productionHealthLooksLikeProot(healthBefore);
-        final runtimeBefore = GatewayRuntimeRegistry.current.id;
+        final runtimeBefore = GatewayRuntimeRegistry.prootRollback.id;
 
         final handoffReport = await runDeviceNodeProviderToolPlanHandoffCanary(
           log: (message) {
@@ -3810,7 +3810,7 @@ class NativeGatewaySmokeService {
         }
         final productionHealthOkAfter =
             _productionHealthLooksLikeProot(healthAfter);
-        final runtimeAfter = GatewayRuntimeRegistry.current.id;
+        final runtimeAfter = GatewayRuntimeRegistry.prootRollback.id;
 
         final cancellationFixture = <String, dynamic>{
           'scenario': 'device_node_inflight_cancel_policy_fixture',
@@ -3995,7 +3995,7 @@ class NativeGatewaySmokeService {
       final rollbackOk = cycleReports.isNotEmpty &&
           cycleReports.every((report) => report['rollbackOk'] == true) &&
           finalProductionHealthOk &&
-          GatewayRuntimeRegistry.current.id == fallbackRuntimeId;
+          GatewayRuntimeRegistry.prootRollback.id == fallbackRuntimeId;
       final aggregateToolPanelEventsCount = cycleReports.fold<int>(
         0,
         (total, report) =>
@@ -4037,7 +4037,7 @@ class NativeGatewaySmokeService {
         'hotReloadRepeatOk': hotReloadRepeatOk,
         'rollbackOk': rollbackOk,
         'finalProductionHealthOk': finalProductionHealthOk,
-        'finalProductionRuntimeId': GatewayRuntimeRegistry.current.id,
+        'finalProductionRuntimeId': GatewayRuntimeRegistry.prootRollback.id,
         'finalProductionHealth': finalProductionHealth,
         if (finalProductionHealthError != null)
           'finalProductionHealthError': finalProductionHealthError.toString(),
@@ -4297,7 +4297,7 @@ class NativeGatewaySmokeService {
             selectedToolHint,
           );
       final prootRemainedPrimary =
-          GatewayRuntimeRegistry.current.id == fallbackRuntimeId &&
+          GatewayRuntimeRegistry.prootRollback.id == fallbackRuntimeId &&
               productionHealthOkBefore &&
               productionHealthOkAfter;
       final candidateSelectionOk = policyMapOk &&
@@ -4566,7 +4566,7 @@ class NativeGatewaySmokeService {
         return report;
       }
 
-      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeBefore = GatewayRuntimeRegistry.prootRollback.id;
       final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
       Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
       Object? productionHealthBeforeError;
@@ -4763,7 +4763,7 @@ class NativeGatewaySmokeService {
           routeDecision['fallbackOneActionAway'] == true &&
           fallbackPolicyOk;
 
-      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeAfter = GatewayRuntimeRegistry.prootRollback.id;
       Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
       Object? productionHealthAfterError;
       try {
@@ -5062,7 +5062,7 @@ class NativeGatewaySmokeService {
         return report;
       }
 
-      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeBefore = GatewayRuntimeRegistry.prootRollback.id;
       final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
       Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
       Object? productionHealthBeforeError;
@@ -5411,7 +5411,7 @@ class NativeGatewaySmokeService {
         toolPanelEvents.add(panelEvent);
       }
 
-      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeAfter = GatewayRuntimeRegistry.prootRollback.id;
       Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
       Object? productionHealthAfterError;
       try {
@@ -5662,7 +5662,7 @@ class NativeGatewaySmokeService {
         }
         final productionHealthOkBefore =
             _productionHealthLooksLikeProot(healthBefore);
-        final runtimeBefore = GatewayRuntimeRegistry.current.id;
+        final runtimeBefore = GatewayRuntimeRegistry.prootRollback.id;
 
         final executionReport = await runGesturesProtectedExecutionCanary(
           log: (message) {
@@ -5696,7 +5696,7 @@ class NativeGatewaySmokeService {
         }
         final productionHealthOkAfter =
             _productionHealthLooksLikeProot(healthAfter);
-        final runtimeAfter = GatewayRuntimeRegistry.current.id;
+        final runtimeAfter = GatewayRuntimeRegistry.prootRollback.id;
 
         final cancellationFixture = <String, dynamic>{
           'scenario': 'gestures_inflight_cancel_policy_fixture',
@@ -5877,7 +5877,7 @@ class NativeGatewaySmokeService {
       final rollbackOk = cycleReports.isNotEmpty &&
           cycleReports.every((report) => report['rollbackOk'] == true) &&
           finalProductionHealthOk &&
-          GatewayRuntimeRegistry.current.id == fallbackRuntimeId;
+          GatewayRuntimeRegistry.prootRollback.id == fallbackRuntimeId;
       final aggregateToolPanelEventsCount = cycleReports.fold<int>(
         0,
         (total, report) =>
@@ -5923,7 +5923,7 @@ class NativeGatewaySmokeService {
         'hotReloadRepeatOk': hotReloadRepeatOk,
         'rollbackOk': rollbackOk,
         'finalProductionHealthOk': finalProductionHealthOk,
-        'finalProductionRuntimeId': GatewayRuntimeRegistry.current.id,
+        'finalProductionRuntimeId': GatewayRuntimeRegistry.prootRollback.id,
         'finalProductionHealth': finalProductionHealth,
         if (finalProductionHealthError != null)
           'finalProductionHealthError': finalProductionHealthError.toString(),
@@ -6020,7 +6020,7 @@ class NativeGatewaySmokeService {
         '[NATIVE-GESTURES-SELECTOR] Starting bounded gestures runtime selector; PRoot remains default and fallback.',
       );
 
-      final productionRuntimeBefore = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeBefore = GatewayRuntimeRegistry.prootRollback.id;
       final prootSelectedBefore = productionRuntimeBefore == fallbackRuntimeId;
       Map<String, dynamic> productionHealthBefore = <String, dynamic>{};
       Object? productionHealthBeforeError;
@@ -6146,7 +6146,7 @@ class NativeGatewaySmokeService {
         'reason': 'cancel_before_selector_commits_protected_bridge',
       };
 
-      final productionRuntimeAfter = GatewayRuntimeRegistry.current.id;
+      final productionRuntimeAfter = GatewayRuntimeRegistry.prootRollback.id;
       Map<String, dynamic> productionHealthAfter = <String, dynamic>{};
       Object? productionHealthAfterError;
       try {
@@ -6609,7 +6609,7 @@ class NativeGatewaySmokeService {
             selectedToolHint,
           );
       final prootRemainedPrimary =
-          GatewayRuntimeRegistry.current.id == fallbackRuntimeId &&
+          GatewayRuntimeRegistry.prootRollback.id == fallbackRuntimeId &&
               productionHealthOkBefore &&
               productionHealthOkAfter;
       final candidateSelectionOk = policyMapOk &&
@@ -6704,7 +6704,7 @@ class NativeGatewaySmokeService {
   static Future<Map<String, dynamic>> runRuntimeSelectionCanary({
     required void Function(String message) log,
   }) async {
-    final productionRuntime = GatewayRuntimeRegistry.current;
+    final productionRuntime = GatewayRuntimeRegistry.prootRollback;
     final canaryRuntime = GatewayRuntimeRegistry.nativeNodeProcessSmoke;
     final productionRunning = await productionRuntime
         .isRunning()
@@ -6832,7 +6832,7 @@ class NativeGatewaySmokeService {
 
     _productionPortBindInFlight = true;
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final canaryRuntime = _productionPortRuntime;
       var nativeSmokeWasRunning = false;
       var nativeSmokeStopRequested = false;
@@ -7232,7 +7232,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       var nativeSmokeWasRunning = false;
       var nativeSmokeStopRequested = false;
@@ -7584,7 +7584,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       var nativeSmokeWasRunning = false;
       var nativeSmokeStopRequested = false;
@@ -8050,7 +8050,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       var nativeSmokeWasRunning = false;
       var nativeSmokeStopRequested = false;
@@ -8537,7 +8537,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       var nativeSmokeWasRunning = false;
       var nativeSmokeStopRequested = false;
@@ -9096,7 +9096,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       var nativeSmokeWasRunning = false;
       var nativeSmokeStopRequested = false;
@@ -9678,7 +9678,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       final providerConfigForNative = Map<String, dynamic>.from(providerConfig);
       final providerHint =
@@ -10655,7 +10655,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       final providerConfigForNative = Map<String, dynamic>.from(providerConfig);
       final providerHint =
@@ -11286,7 +11286,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       final requestedModel =
           model.trim().isEmpty ? 'openrouter/auto' : model.trim();
@@ -11939,7 +11939,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       final requestedModel =
           model.trim().isEmpty ? 'openrouter/auto' : model.trim();
@@ -12565,7 +12565,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       final requestedModel =
           model.trim().isEmpty ? 'openrouter/auto' : model.trim();
@@ -13268,7 +13268,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       final requestedModel =
           model.trim().isEmpty ? 'openrouter/auto' : model.trim();
@@ -14048,7 +14048,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       final requestedModel =
           model.trim().isEmpty ? 'openrouter/auto' : model.trim();
@@ -14789,7 +14789,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       final requestedModel =
           model.trim().isEmpty ? 'openrouter/auto' : model.trim();
@@ -15451,7 +15451,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       final requestedModel =
           model.trim().isEmpty ? 'openrouter/auto' : model.trim();
@@ -16372,7 +16372,7 @@ class NativeGatewaySmokeService {
         'mode':
             'native-production-port-provider-tool-plan-to-allowlisted-execution-with-rollback',
         'productionPort': AppConstants.gatewayPort,
-        'activeRuntimeId': GatewayRuntimeRegistry.current.id,
+        'activeRuntimeId': GatewayRuntimeRegistry.prootRollback.id,
         'temporaryOwnerRuntimeId': _productionPortRuntime.id,
         'requestedModel': requestedModel,
         'captureOk': captureOk,
@@ -16564,7 +16564,7 @@ class NativeGatewaySmokeService {
     final startedAt = DateTime.now();
 
     try {
-      final productionRuntime = GatewayRuntimeRegistry.current;
+      final productionRuntime = GatewayRuntimeRegistry.prootRollback;
       final ownerRuntime = _productionPortRuntime;
       final providerConfigForNative = Map<String, dynamic>.from(
         providerConfig,

@@ -168,7 +168,19 @@ class NativeNodeSmokeProcess(
     }
 
     fun isFullGatewayProductionRunning(): Boolean {
-        return isTcpListening(PRODUCTION_PORT)
+        val health = probeHealth(PRODUCTION_PORT)
+        if (health != null) {
+            val runtime = health.optString("runtime", "")
+            val status = health.optString("status", "")
+            val looksNative = runtime == "native-node-embedded"
+            val looksLive = health.optBoolean("ok", false) ||
+                status == "ok" ||
+                status == "live"
+            if (looksNative || (looksLive && isIsolatedProcessAlive())) {
+                return true
+            }
+        }
+        return isTcpListening(PRODUCTION_PORT) && isIsolatedProcessAlive()
     }
 
     fun isRunningOnPort(port: Int): Boolean {
@@ -214,6 +226,15 @@ class NativeNodeSmokeProcess(
         }
     }
 
+    fun isIsolatedProcessAlive(): Boolean {
+        val activityManager =
+            context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                ?: return false
+        val targetProcess = "${context.packageName}:native_node_smoke"
+        val runningProcesses = activityManager.runningAppProcesses ?: return false
+        return runningProcesses.any { process -> process.processName == targetProcess }
+    }
+
     private fun forceKillNativeNodeProcess() {
         val activityManager =
             context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
@@ -251,7 +272,11 @@ class NativeNodeSmokeProcess(
             } else {
                 emptyList()
             }
-            (runtimeLines + stdioLines).takeLast(MAX_LOG_LINES).joinToString("\n")
+            val deduped = LinkedHashSet<String>()
+            (runtimeLines + stdioLines)
+                .takeLast(MAX_LOG_LINES * 2)
+                .forEach { line -> deduped.add(line) }
+            deduped.toList().takeLast(MAX_LOG_LINES).joinToString("\n")
         } catch (e: Exception) {
             "Could not read embedded native Node logs: ${e.message}"
         }
@@ -286,7 +311,13 @@ class NativeNodeSmokeProcess(
     private fun nativeLogCategory(line: String): String {
         val lower = line.lowercase(Locale.US)
         return when {
-            lower.contains("error") || lower.contains("[err]") -> "error"
+            lower.contains("iserror=false") -> "gateway"
+            lower.contains("iserror=true") ||
+                lower.contains("[error]") ||
+                lower.contains("[err]") ||
+                lower.contains("traceback") ||
+                lower.contains("exception") ||
+                lower.contains("fatal") -> "error"
             lower.contains("warn") || lower.contains("[warn]") -> "warn"
             lower.contains("plugin") -> "plugins"
             lower.contains("active skills") ||

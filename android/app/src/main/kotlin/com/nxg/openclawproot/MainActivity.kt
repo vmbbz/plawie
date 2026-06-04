@@ -309,6 +309,16 @@ class MainActivity : FlutterActivity() {
                             return@setMethodCallHandler
                         }
 
+                        if (!SetupGuards.isProotGatewayOwner(this)) {
+                            Log.i(
+                                "MainActivity",
+                                "startGateway ignored because native Gateway owns production by default"
+                            )
+                            PlawieForegroundService.start(this)
+                            result.success(false)
+                            return@setMethodCallHandler
+                        }
+
                         PlawieForegroundService.start(this)
                         val success = processManager.startGateway()
                         result.success(success)
@@ -357,6 +367,7 @@ class MainActivity : FlutterActivity() {
                     result.success(nativeNodeSmokeProcess.startFullGatewayBootstrap())
                 }
                 "startNativeNodeFullGatewayProductionRuntime" -> {
+                    debugNativeFullGatewayProductionStarted = true
                     result.success(nativeNodeSmokeProcess.startFullGatewayProduction())
                 }
                 "stopNativeNodeSmokeRuntime" -> {
@@ -385,6 +396,9 @@ class MainActivity : FlutterActivity() {
                 }
                 "isNativeNodeFullGatewayProductionRuntimeRunning" -> {
                     result.success(nativeNodeSmokeProcess.isFullGatewayProductionRunning())
+                }
+                "isNativeNodeIsolatedProcessAlive" -> {
+                    result.success(nativeNodeSmokeProcess.isIsolatedProcessAlive())
                 }
                 "getNativeNodeSmokeRuntimeLogs" -> {
                     result.success(nativeNodeSmokeProcess.getRecentLogs())
