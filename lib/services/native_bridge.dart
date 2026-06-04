@@ -499,8 +499,28 @@ class NativeBridge {
     return await _channel.invokeMethod('getAppVersion');
   }
 
+  static Future<int> getBatteryLevel() async {
+    return await _channel.invokeMethod<int>('getBatteryLevel') ?? -1;
+  }
+
+  static Future<bool> isCharging() async {
+    return await _channel.invokeMethod<bool>('isCharging') ?? false;
+  }
+
   static Future<int> getTotalMemoryMb() async {
     return await _channel.invokeMethod<int>('getTotalMemoryMb') ?? 4096;
+  }
+
+  static Future<Map<String, dynamic>?> reverseGeocode(
+    double latitude,
+    double longitude,
+  ) async {
+    final result = await _channel.invokeMethod('reverseGeocode', {
+      'lat': latitude,
+      'lng': longitude,
+    });
+    if (result is Map) return Map<String, dynamic>.from(result);
+    return null;
   }
 
   // ── Wake Word "Plawie" ─────────────────────────────────────────────────────

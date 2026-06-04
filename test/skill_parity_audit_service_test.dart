@@ -35,6 +35,22 @@ void main() {
     await File(path.join(prootSkills.path, 'weather', 'SKILL.md'))
         .create(recursive: true)
         .then((file) => file.writeAsString('# Weather'));
+    await File(path.join(prootSkills.path, 'market-data', 'SKILL.md'))
+        .create(recursive: true)
+        .then((file) => file.writeAsString('''
+---
+requirements:
+  env:
+    - MARKET_DATA_API_KEY
+  bins:
+    - ffmpeg
+  plugins:
+    - market-plugin
+  config:
+    - skills.marketData.accountId
+---
+# Market Data
+'''));
     await File(path.join(nativeSkills.path, 'weather', 'SKILL.md'))
         .create(recursive: true)
         .then((file) => file.writeAsString('# Local Weather Override'));
@@ -45,9 +61,12 @@ void main() {
       cacheTtl: Duration.zero,
     );
 
-    expect(snapshot.nativeSkillNames, contains('stocks'));
-    expect(snapshot.prootSkillNames, containsAll(['stocks', 'weather']));
-    expect(snapshot.repair.copied, 1);
+    expect(snapshot.nativeSkillNames, containsAll(['stocks', 'market-data']));
+    expect(
+      snapshot.prootSkillNames,
+      containsAll(['stocks', 'weather', 'market-data']),
+    );
+    expect(snapshot.repair.copied, 2);
     expect(snapshot.repair.skippedConflicts, 1);
     expect(
       await File(path.join(nativeSkills.path, 'weather', 'SKILL.md'))
@@ -57,6 +76,23 @@ void main() {
     expect(
       snapshot.gates.map((gate) => gate.gate),
       contains('missing_native_bin'),
+    );
+    expect(
+      snapshot.gates.map((gate) => gate.gate),
+      containsAll([
+        'missing_native_env',
+        'missing_native_config',
+        'missing_native_plugin',
+      ]),
+    );
+    final matrix = {
+      for (final entry in snapshot.executionMatrix) entry.skillId: entry,
+    };
+    expect(matrix['stocks']?.status, SkillExecutionStatus.missingDependency);
+    expect(matrix['market-data']?.status, SkillExecutionStatus.needsConfig);
+    expect(
+      matrix['market-data']?.requiredConfig,
+      contains('skills.marketData.accountId'),
     );
   });
 }

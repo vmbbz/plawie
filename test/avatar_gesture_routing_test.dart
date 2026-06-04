@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:clawa/services/app_native_chat_tool_router.dart';
 import 'package:clawa/services/avatar_gesture_catalog.dart';
+import 'package:clawa/services/gateway_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -33,6 +34,16 @@ void main() {
     );
   });
 
+  test('bow number shorthand resolves to numbered limb gesture', () {
+    final resolved = AvatarGestureCatalog.resolve('bow 2');
+
+    expect(resolved.gesture, 'bowing 2');
+    expect(
+      resolved.assetPath,
+      'assets/vrm/animations/limbs/Bowing_02.vrma',
+    );
+  });
+
   test('avatar gesture duration parser supports seconds and minutes', () {
     final router = AppNativeChatToolRouter.instance;
 
@@ -51,6 +62,40 @@ void main() {
         maxMs: 120000,
       ),
       60000,
+    );
+  });
+
+  test('avatar sequence parser preserves ordered gestures and durations', () {
+    final router = AppNativeChatToolRouter.instance;
+    final steps = router.parseAvatarSequenceForTesting(
+      'try cross leg sit for 30 seconds then after, bow 2',
+    );
+
+    expect(steps, isNotNull);
+    expect(steps, hasLength(2));
+    expect(steps![0]['gesture'], 'cross leg sit');
+    expect(steps[0]['durationMs'], 30000);
+    expect(steps[1]['gesture'], 'bowing 2');
+    expect(
+      steps[1]['assetPath'],
+      'assets/vrm/animations/limbs/Bowing_02.vrma',
+    );
+  });
+
+  test('normal chat is not app-native fallback without explicit prefix', () {
+    final gateway = GatewayService();
+
+    expect(
+      gateway.debugIsExplicitAppNativeFallbackForTesting(
+        'turn on the flashlight',
+      ),
+      isFalse,
+    );
+    expect(
+      gateway.debugIsExplicitAppNativeFallbackForTesting(
+        '/local-tool turn on the flashlight',
+      ),
+      isTrue,
     );
   });
 

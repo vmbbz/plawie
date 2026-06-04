@@ -5,15 +5,13 @@ import 'dart:ui' as ui;
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../models/node_frame.dart';
+import '../tool_media_event_bus.dart';
+import 'camera_hardware_coordinator.dart';
 import 'capability_handler.dart';
 
 class CameraCapability extends CapabilityHandler {
-  List<CameraDescription>? _cameras;
-  Future<void> _cameraQueue = Future.value();
-
-  /// Fired after every successful camera.snap. Listeners (e.g. chat_screen)
-  /// can attach the image to the current bot message for inline display.
-  static Function(String base64, String mimeType)? onSnapTaken;
+  final CameraHardwareCoordinator _hardware =
+      CameraHardwareCoordinator.instance;
 
   @override
   String get name => 'camera';
@@ -41,21 +39,6 @@ class CameraCapability extends CapabilityHandler {
         command == 'camera.list';
   }
 
-  Future<T> _runExclusive<T>(Future<T> Function() operation) {
-    final previous = _cameraQueue;
-    final gate = Completer<void>();
-    _cameraQueue = gate.future;
-
-    return (() async {
-      await previous.catchError((_) {});
-      try {
-        return await operation();
-      } finally {
-        if (!gate.isCompleted) gate.complete();
-      }
-    })();
-  }
-
   @override
   Future<NodeFrame> handleWithPermission(
       String command, Map<String, dynamic> params) async {
@@ -63,66 +46,31 @@ class CameraCapability extends CapabilityHandler {
       return super.handleWithPermission(command, params);
     }
 
-    return _runExclusive(() async {
-      if (!await checkPermission()) {
-        for (final perm in requiredPermissions) {
-          if (await perm.isPermanentlyDenied) {
-            return NodeFrame.response('', error: {
-              'code': 'PERMISSION_PERMANENTLY_DENIED',
-              'message':
-                  '$name permission permanently denied. Enable it in Android Settings > Apps > Plawie > Permissions.',
-            });
-          }
-        }
-
-        final granted = await requestPermission();
-        if (!granted) {
+    if (!await checkPermission()) {
+      for (final perm in requiredPermissions) {
+        if (await perm.isPermanentlyDenied) {
           return NodeFrame.response('', error: {
-            'code': 'PERMISSION_DENIED',
-            'message': '$name permission not granted',
+            'code': 'PERMISSION_PERMANENTLY_DENIED',
+            'message':
+                '$name permission permanently denied. Enable it in Android Settings > Apps > Plawie > Permissions.',
           });
         }
       }
-      return _handleUnlocked(command, params);
-    });
-  }
 
-  /// Create a fresh controller for each operation. The caller MUST dispose it
-  /// when done so the camera hardware is released immediately.
-  Future<CameraController> _createController({String? facing}) async {
-    _cameras ??= await availableCameras();
-    if (_cameras!.isEmpty) throw Exception('No camera available');
-
-    final direction = facing == 'front'
-        ? CameraLensDirection.front
-        : CameraLensDirection.back;
-    final target = _cameras!.firstWhere(
-      (c) => c.lensDirection == direction,
-      orElse: () => _cameras!.first,
-    );
-
-    final controller = CameraController(
-      target,
-      ResolutionPreset.medium,
-      enableAudio: false,
-    );
-    await controller.initialize();
-    return controller;
-  }
-
-  Future<void> _disposeController(CameraController? controller) async {
-    if (controller == null) return;
-    try {
-      await controller.dispose();
-    } catch (_) {
-      // Android may already be tearing the camera session down after permission
-      // or lifecycle transitions. Disposal is best-effort cleanup.
+      final granted = await requestPermission();
+      if (!granted) {
+        return NodeFrame.response('', error: {
+          'code': 'PERMISSION_DENIED',
+          'message': '$name permission not granted',
+        });
+      }
     }
+    return _handleUnlocked(command, params);
   }
 
   @override
   Future<NodeFrame> handle(String command, Map<String, dynamic> params) async {
-    return _runExclusive(() => _handleUnlocked(command, params));
+    return _handleUnlocked(command, params);
   }
 
   Future<NodeFrame> _handleUnlocked(
@@ -144,8 +92,7 @@ class CameraCapability extends CapabilityHandler {
 
   Future<NodeFrame> _list() async {
     try {
-      _cameras ??= await availableCameras();
-      final cameraList = _cameras!
+      final cameraList = (await _hardware.cameras())
           .map((c) => {
                 'id': c.name,
                 'facing': c.lensDirection == CameraLensDirection.front
@@ -165,78 +112,84 @@ class CameraCapability extends CapabilityHandler {
   }
 
   Future<NodeFrame> _snap(Map<String, dynamic> params) async {
-    CameraController? controller;
     try {
       final facing = params['facing'] as String?;
-      controller = await _createController(facing: facing);
+      return _hardware.withCaptureController(
+        facing: facing,
+        resolution: ResolutionPreset.medium,
+        body: (controller) async {
+          await Future.delayed(const Duration(milliseconds: 500));
 
-      // Brief settle time for auto-exposure/focus
-      await Future.delayed(const Duration(milliseconds: 500));
+          final file = await controller.takePicture();
+          final bytes = await File(file.path).readAsBytes();
+          final b64 = base64Encode(bytes);
 
-      final file = await controller.takePicture();
-      final bytes = await File(file.path).readAsBytes();
-      final b64 = base64Encode(bytes);
+          final codec = await ui.instantiateImageCodec(bytes);
+          final frame = await codec.getNextFrame();
+          final width = frame.image.width;
+          final height = frame.image.height;
+          frame.image.dispose();
 
-      // Get image dimensions
-      final codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
-      final width = frame.image.width;
-      final height = frame.image.height;
-      frame.image.dispose();
+          await File(file.path).delete().catchError((_) => File(file.path));
 
-      // Clean up temp file
-      await File(file.path).delete().catchError((_) => File(file.path));
+          ToolMediaEventBus.instance.publish(ToolMediaEvent(
+            source: 'camera.snap',
+            base64: b64,
+            mimeType: 'image/jpeg',
+            width: width,
+            height: height,
+          ));
 
-      // Notify listeners (e.g. chat_screen) so the image can be shown inline
-      onSnapTaken?.call(b64, 'image/jpeg');
-
-      return NodeFrame.response('', payload: {
-        'base64': b64,
-        'format': 'jpg',
-        'width': width,
-        'height': height,
-      });
+          return NodeFrame.response('', payload: {
+            'base64': b64,
+            'format': 'jpg',
+            'width': width,
+            'height': height,
+            'attachedImage': true,
+            'timestamp': DateTime.now().toIso8601String(),
+          });
+        },
+      );
     } catch (e) {
       return NodeFrame.response('', error: {
         'code': 'CAMERA_ERROR',
         'message': '$e',
       });
-    } finally {
-      // Always release the camera
-      await _disposeController(controller);
     }
   }
 
   Future<NodeFrame> _clip(Map<String, dynamic> params) async {
-    CameraController? controller;
     try {
       final durationMs = params['durationMs'] as int? ?? 5000;
       final facing = params['facing'] as String?;
-      controller = await _createController(facing: facing);
-      await controller.startVideoRecording();
-      await Future.delayed(Duration(milliseconds: durationMs));
-      final file = await controller.stopVideoRecording();
-      final bytes = await File(file.path).readAsBytes();
-      final b64 = base64Encode(bytes);
-      await File(file.path).delete().catchError((_) => File(file.path));
-      return NodeFrame.response('', payload: {
-        'base64': b64,
-        'format': 'mp4',
-        'durationMs': durationMs,
-        'hasAudio': false,
-      });
+      return _hardware.withCaptureController(
+        facing: facing,
+        resolution: ResolutionPreset.medium,
+        body: (controller) async {
+          await controller.startVideoRecording();
+          await Future.delayed(Duration(milliseconds: durationMs));
+          final file = await controller.stopVideoRecording();
+          final bytes = await File(file.path).readAsBytes();
+          final b64 = base64Encode(bytes);
+          await File(file.path).delete().catchError((_) => File(file.path));
+          return NodeFrame.response('', payload: {
+            'base64': b64,
+            'format': 'mp4',
+            'durationMs': durationMs,
+            'hasAudio': false,
+          });
+        },
+        enableAudio: false,
+      );
     } catch (e) {
       return NodeFrame.response('', error: {
         'code': 'CAMERA_ERROR',
         'message': '$e',
       });
-    } finally {
-      // Always release the camera
-      await _disposeController(controller);
     }
   }
 
   void dispose() {
-    // No persistent controller to clean up anymore
+    unawaited(_hardware.dispose());
   }
 }

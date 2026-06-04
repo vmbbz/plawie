@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../../models/node_frame.dart';
+import '../tool_media_event_bus.dart';
 import 'capability_handler.dart';
 
 /// Canvas capability — backs `canvas.navigate`, `canvas.eval`, `canvas.snapshot`
@@ -41,9 +42,6 @@ class CanvasCapability extends CapabilityHandler {
   /// WebView. This lets Chat keep the browser overlay lazy so idle sessions
   /// do not hold an extra Android WebView/GL context all day.
   static Future<WebViewController> Function()? onActivationRequested;
-
-  /// Fired after canvas.snapshot so chat can attach the image to the bot reply.
-  static Function(String base64, String mimeType)? onSnapshotTaken;
 
   @override
   String get name => 'canvas';
@@ -181,8 +179,11 @@ class CanvasCapability extends CapabilityHandler {
           'message': resultStr.replaceFirst('ERROR:', '').trim(),
         });
       }
-      // Notify chat screen to attach this as an image in the bot reply
-      onSnapshotTaken?.call(resultStr, 'image/png');
+      ToolMediaEventBus.instance.publish(ToolMediaEvent(
+        source: 'canvas.snapshot',
+        base64: resultStr,
+        mimeType: 'image/png',
+      ));
       return NodeFrame.response('', payload: {
         'base64': resultStr,
         'mimeType': 'image/png',
@@ -190,6 +191,8 @@ class CanvasCapability extends CapabilityHandler {
             .runJavaScriptReturningResult('window.innerWidth'),
         'height': await _controller!
             .runJavaScriptReturningResult('window.innerHeight'),
+        'attachedImage': true,
+        'timestamp': DateTime.now().toIso8601String(),
       });
     } catch (e) {
       return NodeFrame.response('', error: {

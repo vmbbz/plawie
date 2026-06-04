@@ -18,6 +18,7 @@ import '../services/capabilities/screen_capability.dart';
 import '../services/capabilities/flash_capability.dart';
 import '../services/capabilities/vibration_capability.dart';
 import '../services/capabilities/sensor_capability.dart';
+import '../services/capabilities/device_capability.dart';
 
 class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final NodeService _nodeService = NodeService();
@@ -38,6 +39,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final _screenCapability = ScreenCapability();
   final _sensorCapability = SensorCapability();
   final _vibrationCapability = VibrationCapability();
+  final _deviceCapability = DeviceCapability();
 
   NodeState get state => _state;
 
@@ -244,6 +246,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       _sensorCapability,
       (cmd, params) => _sensorCapability.handleWithPermission(cmd, params),
     );
+    _registerCapabilityAliases(
+      _deviceCapability,
+      (cmd, params) => _deviceCapability.handle(cmd, params),
+    );
   }
 
   Future<void> _init() async {
@@ -298,6 +304,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
           'sensor.read',
           'sensor.list',
           'screen.record',
+          'device.status',
+          'device.info',
+          'device.permissions',
+          'device.health',
           'haptic.vibrate',
         ],
       };

@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
+import 'package:yaml/yaml.dart';
 
 import 'gateway_tool_catalog.dart';
 import 'native_bridge.dart';
@@ -97,17 +99,21 @@ class SkillParityAuditService {
     final prootPlugins = await _scanPluginRoots(layout.prootPluginRoots);
     final nativeBins = await _scanBins(layout.nativeBinRoots);
     final prootBins = await _scanBins(layout.prootBinRoots);
+    final nativePluginIds =
+        nativePlugins.map((name) => name.toLowerCase()).toSet();
 
     final nativeIds = nativeSkills.keys.toSet();
     final prootIds = prootSkills.keys.toSet();
     final missingInNative = (prootIds.difference(nativeIds)).toList()..sort();
     final missingInProot = (nativeIds.difference(prootIds)).toList()..sort();
     final gates = <SkillParityGate>[];
+    final matrix = <SkillExecutionMatrixEntry>[];
 
     for (final skill in nativeSkills.values) {
       final id = skill.id.toLowerCase();
+      final skillGates = <SkillParityGate>[];
       if (!skill.hasSkillDocument && !skill.hasPackageJson) {
-        gates.add(SkillParityGate(
+        skillGates.add(SkillParityGate(
           skillId: skill.id,
           gate: 'missing_manifest',
           owner: 'native',
@@ -115,7 +121,7 @@ class SkillParityAuditService {
         ));
       }
       if (nativeDisabled.contains(id)) {
-        gates.add(SkillParityGate(
+        skillGates.add(SkillParityGate(
           skillId: skill.id,
           gate: 'disabled',
           owner: 'native',
@@ -124,11 +130,12 @@ class SkillParityAuditService {
       }
 
       final body = await _readSkillBody(skill);
-      final requiredBins = _detectRequiredBins(body);
+      final requirements = _detectSkillRequirements(body);
+      final requiredBins = requirements.bins;
       for (final bin in requiredBins) {
         if (!nativeBins.contains(bin)) {
           final prootHas = prootBins.contains(bin);
-          gates.add(SkillParityGate(
+          skillGates.add(SkillParityGate(
             skillId: skill.id,
             gate: 'missing_native_bin',
             owner: 'native',
@@ -139,11 +146,11 @@ class SkillParityAuditService {
         }
       }
 
-      final requiredEnv = _detectRequiredEnv(body);
+      final requiredEnv = requirements.env;
       for (final envName in requiredEnv) {
         if (!_envValueLooksSet(nativeEnv[envName])) {
           final prootHas = _envValueLooksSet(prootEnv[envName]);
-          gates.add(SkillParityGate(
+          skillGates.add(SkillParityGate(
             skillId: skill.id,
             gate: 'missing_native_env',
             owner: 'native',
@@ -153,6 +160,48 @@ class SkillParityAuditService {
           ));
         }
       }
+      for (final configKey in requirements.configKeys) {
+        if (!_configValueLooksSet(nativeConfig, configKey)) {
+          skillGates.add(SkillParityGate(
+            skillId: skill.id,
+            gate: 'missing_native_config',
+            owner: 'native',
+            detail:
+                '$configKey is declared as required config but was not found in Native openclaw.json.',
+          ));
+        }
+      }
+      for (final plugin in requirements.plugins) {
+        if (!nativePluginIds.contains(plugin.toLowerCase())) {
+          skillGates.add(SkillParityGate(
+            skillId: skill.id,
+            gate: 'missing_native_plugin',
+            owner: 'native',
+            detail:
+                '$plugin is declared as a required plugin but was not found in Native plugin roots.',
+          ));
+        }
+      }
+      if (requirements.requiresExtendedRuntime) {
+        skillGates.add(SkillParityGate(
+          skillId: skill.id,
+          gate: 'manual_proot_required',
+          owner: 'native',
+          detail:
+              'Skill declares or strongly implies a full Linux runtime dependency (${requirements.runtimes.join(', ')}). Native will not silently fall back to PRoot.',
+        ));
+      }
+
+      gates.addAll(skillGates);
+      matrix.add(SkillExecutionMatrixEntry.fromGates(
+        skillId: skill.id,
+        gates: skillGates,
+        requiredBins: requiredBins.toList()..sort(),
+        requiredEnv: requiredEnv.toList()..sort(),
+        requiredRuntimes: requirements.runtimes.toList()..sort(),
+        requiredPlugins: requirements.plugins.toList()..sort(),
+        requiredConfig: requirements.configKeys.toList()..sort(),
+      ));
     }
 
     for (final id in missingInNative) {
@@ -175,6 +224,8 @@ class SkillParityAuditService {
       }
     }
 
+    matrix.sort((a, b) => a.skillId.compareTo(b.skillId));
+
     return SkillParitySnapshot(
       filesDir: root,
       nativeSkillCount: nativeSkills.length,
@@ -194,6 +245,7 @@ class SkillParityAuditService {
       nativeBins: nativeBins.toList()..sort(),
       prootBins: prootBins.toList()..sort(),
       gates: gates,
+      executionMatrix: matrix,
       repair: repair,
       auditedAt: DateTime.now(),
     );
@@ -362,6 +414,18 @@ class SkillParityAuditService {
     return '';
   }
 
+  static _SkillRequirements _detectSkillRequirements(String body) {
+    final frontmatter = _parseYamlFrontmatter(body);
+    final fromYaml = _requirementsFromYaml(frontmatter);
+    return _SkillRequirements(
+      bins: {...fromYaml.bins, ..._detectRequiredBins(body)},
+      env: {...fromYaml.env, ..._detectRequiredEnv(body)},
+      runtimes: fromYaml.runtimes,
+      plugins: fromYaml.plugins,
+      configKeys: fromYaml.configKeys,
+    );
+  }
+
   static Set<String> _detectRequiredBins(String body) {
     if (body.trim().isEmpty) return const <String>{};
     final bins = <String>{};
@@ -405,6 +469,151 @@ class SkillParityAuditService {
       }
     }
     return vars;
+  }
+
+  static Map<String, dynamic> _parseYamlFrontmatter(String body) {
+    final normalized = body.replaceFirst('\uFEFF', '');
+    if (!normalized.startsWith('---')) return const <String, dynamic>{};
+    final match = RegExp(
+      r'^---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)',
+      multiLine: false,
+    ).firstMatch(normalized);
+    if (match == null) return const <String, dynamic>{};
+    try {
+      final decoded = loadYaml(match.group(1) ?? '');
+      return _yamlToPlainMap(decoded);
+    } catch (error) {
+      debugPrint('[SkillParity] YAML frontmatter parse failed: $error');
+      return const <String, dynamic>{};
+    }
+  }
+
+  static _SkillRequirements _requirementsFromYaml(Map<String, dynamic> yaml) {
+    final candidates = <dynamic>[
+      yaml['requires'],
+      yaml['requirements'],
+      _mapPath(yaml, const ['openclaw', 'requires']),
+      _mapPath(yaml, const ['metadata', 'openclaw', 'requires']),
+      _mapPath(yaml, const ['metadata', 'requires']),
+      _mapPath(yaml, const ['skill', 'requires']),
+    ].where((value) => value != null).toList();
+
+    final bins = <String>{};
+    final env = <String>{};
+    final runtimes = <String>{};
+    final plugins = <String>{};
+    final configKeys = <String>{};
+
+    for (final candidate in candidates) {
+      if (candidate is Map) {
+        bins.addAll(_stringSetFromDynamic(candidate['bins']));
+        bins.addAll(_stringSetFromDynamic(candidate['binaries']));
+        bins.addAll(_stringSetFromDynamic(candidate['commands']));
+        env.addAll(_stringSetFromDynamic(candidate['env']));
+        env.addAll(_stringSetFromDynamic(candidate['environment']));
+        runtimes.addAll(_stringSetFromDynamic(candidate['runtimes']));
+        runtimes.addAll(_stringSetFromDynamic(candidate['runtime']));
+        plugins.addAll(_stringSetFromDynamic(candidate['plugins']));
+        configKeys.addAll(_stringSetFromDynamic(candidate['config']));
+        configKeys.addAll(_stringSetFromDynamic(candidate['configKeys']));
+      } else {
+        final values = _stringSetFromDynamic(candidate);
+        for (final value in values) {
+          final lower = value.toLowerCase();
+          if (_knownBins.contains(lower)) {
+            bins.add(lower);
+          } else if (_envPattern.hasMatch(value)) {
+            env.add(value);
+          } else if (_looksLikeExtendedRuntime(lower)) {
+            runtimes.add(lower);
+          }
+        }
+      }
+    }
+
+    return _SkillRequirements(
+      bins: bins,
+      env: env,
+      runtimes: runtimes,
+      plugins: plugins,
+      configKeys: configKeys,
+    );
+  }
+
+  static Map<String, dynamic> _yamlToPlainMap(dynamic value) {
+    if (value is YamlMap) {
+      return {
+        for (final entry in value.entries)
+          entry.key.toString(): _yamlToPlainValue(entry.value),
+      };
+    }
+    if (value is Map) {
+      return {
+        for (final entry in value.entries)
+          entry.key.toString(): _yamlToPlainValue(entry.value),
+      };
+    }
+    return const <String, dynamic>{};
+  }
+
+  static dynamic _yamlToPlainValue(dynamic value) {
+    if (value is YamlMap || value is Map) return _yamlToPlainMap(value);
+    if (value is YamlList) {
+      return value.map(_yamlToPlainValue).toList(growable: false);
+    }
+    if (value is List) {
+      return value.map(_yamlToPlainValue).toList(growable: false);
+    }
+    return value;
+  }
+
+  static dynamic _mapPath(Map<String, dynamic> root, List<String> keys) {
+    dynamic current = root;
+    for (final key in keys) {
+      if (current is! Map) return null;
+      current = current[key];
+    }
+    return current;
+  }
+
+  static Set<String> _stringSetFromDynamic(dynamic value) {
+    final result = <String>{};
+    void collect(dynamic child) {
+      if (child == null) return;
+      if (child is String) {
+        final trimmed = child.trim();
+        if (trimmed.isNotEmpty) result.add(trimmed);
+      } else if (child is Iterable) {
+        for (final item in child) {
+          collect(item);
+        }
+      } else if (child is Map) {
+        for (final entry in child.entries) {
+          final entryValue = entry.value;
+          if (entryValue == true || entryValue == null) {
+            collect(entry.key);
+          } else {
+            collect(entryValue);
+          }
+        }
+      } else {
+        final trimmed = child.toString().trim();
+        if (trimmed.isNotEmpty) result.add(trimmed);
+      }
+    }
+
+    collect(value);
+    return result;
+  }
+
+  static bool _looksLikeExtendedRuntime(String value) {
+    return value.contains('ubuntu') ||
+        value.contains('linux') ||
+        value.contains('python') ||
+        value.contains('apt') ||
+        value.contains('pip') ||
+        value.contains('native-addon') ||
+        value.contains('node-gyp');
   }
 
   static Future<Map<String, dynamic>?> _readJson(File file) async {
@@ -508,6 +717,21 @@ class SkillParityAuditService {
         !trimmed.contains('REPLACE_ME');
   }
 
+  static bool _configValueLooksSet(Map<String, dynamic>? config, String key) {
+    if (config == null || key.trim().isEmpty) return false;
+    dynamic current = config;
+    for (final part in key.split('.')) {
+      if (current is! Map) return false;
+      current = current[part];
+      if (current == null) return false;
+    }
+    final value = current.toString().trim();
+    return value.isNotEmpty &&
+        value.toLowerCase() != 'null' &&
+        !value.contains('YOUR_') &&
+        !value.contains('REPLACE_ME');
+  }
+
   static Future<void> _copyDirectory(Directory source, Directory target) async {
     await target.create(recursive: true);
     await for (final entity in source.list(recursive: false)) {
@@ -524,20 +748,22 @@ class SkillParityAuditService {
   }
 
   static Future<String> _directorySignature(Directory dir) async {
-    var latest = 0;
-    var count = 0;
+    final entries = <String>[];
     try {
       await for (final entity
           in dir.list(recursive: true, followLinks: false)) {
         if (entity is! File) continue;
+        if (path.basename(entity.path) == _mirrorMarkerName) continue;
         final stat = await entity.stat();
-        latest = latest > stat.modified.millisecondsSinceEpoch
-            ? latest
-            : stat.modified.millisecondsSinceEpoch;
-        count += 1;
+        final rel = path.relative(entity.path, from: dir.path);
+        final digest = sha256.convert(await entity.readAsBytes());
+        entries.add('$rel:${stat.size}:$digest');
       }
-    } catch (_) {}
-    return '$count:$latest';
+    } catch (error) {
+      debugPrint('[SkillParity] signature failed ${dir.path}: $error');
+    }
+    entries.sort();
+    return 'sha256:${sha256.convert(utf8.encode(entries.join('\n')))}';
   }
 
   static Future<void> _writeMirrorMarker(
@@ -577,6 +803,7 @@ class SkillParitySnapshot {
   final List<String> nativeBins;
   final List<String> prootBins;
   final List<SkillParityGate> gates;
+  final List<SkillExecutionMatrixEntry> executionMatrix;
   final SkillMirrorRepairResult repair;
   final DateTime auditedAt;
 
@@ -599,6 +826,7 @@ class SkillParitySnapshot {
     required this.nativeBins,
     required this.prootBins,
     required this.gates,
+    required this.executionMatrix,
     required this.repair,
     required this.auditedAt,
   });
@@ -623,6 +851,7 @@ class SkillParitySnapshot {
       'plugins(native/proot)=$nativePluginCount/$prootPluginCount',
       'toolsAllowParity=$toolsAllowParity',
       'gates=${gates.length}',
+      'readiness=${_readinessCountsLine(executionMatrix)}',
     ];
     if (repair.changed) {
       parts.add(
@@ -638,6 +867,16 @@ class SkillParitySnapshot {
     final gateLines = gates.take(maxGates).map((gate) {
       return '- ${gate.skillId}: ${gate.gate} (${gate.owner}) ${gate.detail}';
     }).join('\n');
+    final readinessCountMap = readinessCounts;
+    final readinessLine = readinessCountMap.entries
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join(', ');
+    final blockedLines = executionMatrix
+        .where((entry) => entry.status != SkillExecutionStatus.ready)
+        .take(maxGates)
+        .map((entry) =>
+            '- ${entry.skillId}: ${entry.status.wireName}${entry.primaryGate == null ? '' : ' (${entry.primaryGate})'}')
+        .join('\n');
     final repairLine = repair.changed
         ? 'Repair mirrored copied=${repair.copied}, updated=${repair.updated}, conflicts=${repair.skippedConflicts}. A Gateway reload/restart may be required for newly mirrored skills.'
         : 'Repair made no file changes.';
@@ -650,10 +889,29 @@ Skill parity audit:
 - Plugin inventory Native/PRoot: $nativePluginCount/$prootPluginCount.
 - tools.allow parity: $toolsAllowParity.
 - Native gates found: ${gates.isEmpty ? 'none' : gates.length}.
+- Skill readiness: ${readinessLine.isEmpty ? 'none' : readinessLine}.
 $repairLine
 ${gateLines.isEmpty ? '' : gateLines}
+${blockedLines.isEmpty ? '' : 'Readiness blocks:\n$blockedLines'}
 ''';
   }
+
+  Map<String, int> get readinessCounts {
+    final counts = <String, int>{};
+    for (final entry in executionMatrix) {
+      counts.update(entry.status.wireName, (value) => value + 1,
+          ifAbsent: () => 1);
+    }
+    return counts;
+  }
+
+  Map<String, dynamic> toReadinessDashboard() => {
+        'auditedAt': auditedAt.toIso8601String(),
+        'counts': readinessCounts,
+        'skills': executionMatrix.map((entry) => entry.toJson()).toList(),
+        'gates': gates.map((gate) => gate.toJson()).toList(),
+        'repair': repair.toJson(),
+      };
 
   Map<String, dynamic> toJson() => {
         'filesDir': filesDir,
@@ -675,6 +933,9 @@ ${gateLines.isEmpty ? '' : gateLines}
         'prootBins': prootBins,
         'toolsAllowParity': toolsAllowParity,
         'gates': gates.map((gate) => gate.toJson()).toList(),
+        'readinessCounts': readinessCounts,
+        'executionMatrix':
+            executionMatrix.map((entry) => entry.toJson()).toList(),
         'repair': repair.toJson(),
         'auditedAt': auditedAt.toIso8601String(),
       };
@@ -689,6 +950,140 @@ ${gateLines.isEmpty ? '' : gateLines}
     if (values.length <= max) return values.join(', ');
     return '${values.take(max).join(', ')}, ...and ${values.length - max} more';
   }
+
+  static String _readinessCountsLine(List<SkillExecutionMatrixEntry> matrix) {
+    if (matrix.isEmpty) return 'none';
+    final counts = <String, int>{};
+    for (final entry in matrix) {
+      counts.update(entry.status.wireName, (value) => value + 1,
+          ifAbsent: () => 1);
+    }
+    return counts.entries
+        .map((entry) => '${entry.key}:${entry.value}')
+        .join(',');
+  }
+}
+
+enum SkillExecutionStatus {
+  ready,
+  needsConfig,
+  missingDependency,
+  disabled,
+  unsupportedNative,
+  manualProotRequired,
+}
+
+extension on SkillExecutionStatus {
+  String get wireName {
+    return switch (this) {
+      SkillExecutionStatus.ready => 'ready',
+      SkillExecutionStatus.needsConfig => 'needs_config',
+      SkillExecutionStatus.missingDependency => 'missing_dependency',
+      SkillExecutionStatus.disabled => 'disabled',
+      SkillExecutionStatus.unsupportedNative => 'unsupported_native',
+      SkillExecutionStatus.manualProotRequired => 'manual_proot_required',
+    };
+  }
+}
+
+class SkillExecutionMatrixEntry {
+  final String skillId;
+  final SkillExecutionStatus status;
+  final String? primaryGate;
+  final List<String> gates;
+  final List<String> requiredBins;
+  final List<String> requiredEnv;
+  final List<String> requiredRuntimes;
+  final List<String> requiredPlugins;
+  final List<String> requiredConfig;
+
+  const SkillExecutionMatrixEntry({
+    required this.skillId,
+    required this.status,
+    required this.primaryGate,
+    required this.gates,
+    required this.requiredBins,
+    required this.requiredEnv,
+    required this.requiredRuntimes,
+    required this.requiredPlugins,
+    required this.requiredConfig,
+  });
+
+  factory SkillExecutionMatrixEntry.fromGates({
+    required String skillId,
+    required List<SkillParityGate> gates,
+    required List<String> requiredBins,
+    required List<String> requiredEnv,
+    required List<String> requiredRuntimes,
+    required List<String> requiredPlugins,
+    required List<String> requiredConfig,
+  }) {
+    final gateNames = gates.map((gate) => gate.gate).toList(growable: false);
+    final status = _statusForGateNames(gateNames);
+    return SkillExecutionMatrixEntry(
+      skillId: skillId,
+      status: status,
+      primaryGate: gateNames.isEmpty ? null : gateNames.first,
+      gates: gateNames,
+      requiredBins: requiredBins,
+      requiredEnv: requiredEnv,
+      requiredRuntimes: requiredRuntimes,
+      requiredPlugins: requiredPlugins,
+      requiredConfig: requiredConfig,
+    );
+  }
+
+  static SkillExecutionStatus _statusForGateNames(List<String> gates) {
+    if (gates.isEmpty) return SkillExecutionStatus.ready;
+    if (gates.contains('disabled')) return SkillExecutionStatus.disabled;
+    if (gates.contains('manual_proot_required')) {
+      return SkillExecutionStatus.manualProotRequired;
+    }
+    if (gates.contains('missing_native_env') ||
+        gates.contains('missing_native_config')) {
+      return SkillExecutionStatus.needsConfig;
+    }
+    if (gates.contains('missing_native_bin') ||
+        gates.contains('missing_native_plugin')) {
+      return SkillExecutionStatus.missingDependency;
+    }
+    if (gates.contains('missing_manifest') ||
+        gates.contains('missing_native_skill')) {
+      return SkillExecutionStatus.unsupportedNative;
+    }
+    return SkillExecutionStatus.unsupportedNative;
+  }
+
+  Map<String, dynamic> toJson() => {
+        'skillId': skillId,
+        'status': status.wireName,
+        if (primaryGate != null) 'primaryGate': primaryGate,
+        'gates': gates,
+        'requiredBins': requiredBins,
+        'requiredEnv': requiredEnv,
+        'requiredRuntimes': requiredRuntimes,
+        'requiredPlugins': requiredPlugins,
+        'requiredConfig': requiredConfig,
+      };
+}
+
+class _SkillRequirements {
+  final Set<String> bins;
+  final Set<String> env;
+  final Set<String> runtimes;
+  final Set<String> plugins;
+  final Set<String> configKeys;
+
+  const _SkillRequirements({
+    this.bins = const <String>{},
+    this.env = const <String>{},
+    this.runtimes = const <String>{},
+    this.plugins = const <String>{},
+    this.configKeys = const <String>{},
+  });
+
+  bool get requiresExtendedRuntime =>
+      runtimes.any(SkillParityAuditService._looksLikeExtendedRuntime);
 }
 
 class SkillParityGate {

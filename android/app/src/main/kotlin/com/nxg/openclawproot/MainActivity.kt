@@ -30,6 +30,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.location.Geocoder
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -675,6 +676,44 @@ class MainActivity : FlutterActivity() {
                     val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
                         status == BatteryManager.BATTERY_STATUS_FULL
                     result.success(charging)
+                }
+                "reverseGeocode" -> {
+                    val lat = call.argument<Double>("lat")
+                    val lng = call.argument<Double>("lng")
+                    if (lat == null || lng == null) {
+                        result.error("INVALID_ARGS", "lat and lng required", null)
+                    } else {
+                        Thread {
+                            try {
+                                @Suppress("DEPRECATION")
+                                val addresses = Geocoder(applicationContext, Locale.getDefault())
+                                    .getFromLocation(lat, lng, 1)
+                                val first = addresses?.firstOrNull()
+                                val payload = hashMapOf<String, Any?>(
+                                    "available" to (first != null),
+                                    "lat" to lat,
+                                    "lng" to lng
+                                )
+                                if (first != null) {
+                                    payload["address"] = first.getAddressLine(0) ?: ""
+                                    payload["locality"] = first.locality ?: ""
+                                    payload["adminArea"] = first.adminArea ?: ""
+                                    payload["country"] = first.countryName ?: ""
+                                    payload["postalCode"] = first.postalCode ?: ""
+                                }
+                                runOnUiThread { result.success(payload) }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.success(hashMapOf<String, Any?>(
+                                        "available" to false,
+                                        "lat" to lat,
+                                        "lng" to lng,
+                                        "error" to (e.message ?: e.toString())
+                                    ))
+                                }
+                            }
+                        }.start()
+                    }
                 }
                 "vibrate" -> {
                     val durationMs = call.argument<Int>("durationMs")?.toLong() ?: 200L

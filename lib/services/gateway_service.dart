@@ -4558,7 +4558,7 @@ HEARTBEAT_OK.
         ? 'For camera/photo/picture/selfie requests, call nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}) before answering. Do not say you cannot take a picture unless the nodes tool result fails.'
         : 'For camera/photo/picture/selfie requests, use camera_snap via the OpenClaw nodes tool.';
     final gestureGuidance = wantsGesture
-        ? 'For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}. You may include durationMs for bounded looping gestures, e.g. {"gesture":"dance","durationMs":60000}. Keep root/full-body gestures separate from limb/interaction gestures. Root/full-body gestures: dance, dance alt, spin, greeting, squat, fight, cute, elegant, peacesign, pose, powerful, ready, shoot, talk. Limb/interaction gestures: wave right, wave left, both wave, cheerful wave left/right, light wave left/right, shy wave left/right, bowing 1-5, both wave cheer 1-2, sitting, chill sit wave, cross leg sit, cross leg sitting wave, excited sitting wave, sitting wave left/right, exaggerated wave left/right, fearful wave, stylized wave left/right. If the user asks what limb gestures exist, list only limb/interaction gestures and do not include root/full-body gestures. If the user asks to sit or do a sitting gesture without more detail, use {"gesture":"sitting"}. Do not collapse a specific request such as "exaggerated wave right" into plain "wave right". Do not use gestures.wave.'
+        ? 'For one avatar gesture, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}. For ordered multi-gesture requests containing then/after/next, use invokeCommand="avatar.sequence" once with invokeParamsJson like {"interruptCurrent":true,"steps":[{"gesture":"cross leg sit","durationMs":30000},{"gesture":"bowing 2"}]}. Keep root/full-body gestures separate from limb/interaction gestures. Root/full-body gestures: dance, dance alt, spin, greeting, squat, fight, cute, elegant, peacesign, pose, powerful, ready, shoot, talk. Limb/interaction gestures: wave right, wave left, both wave, cheerful wave left/right, light wave left/right, shy wave left/right, bowing 1-5, both wave cheer 1-2, sitting, chill sit wave, cross leg sit, cross leg sitting wave, excited sitting wave, sitting wave left/right, exaggerated wave left/right, fearful wave, stylized wave left/right. If the user asks what limb gestures exist, list only limb/interaction gestures and do not include root/full-body gestures. If the user asks to sit or do a sitting gesture without more detail, use {"gesture":"sitting"}. Do not collapse a specific request such as "exaggerated wave right" into plain "wave right". Do not use gestures.wave.'
         : 'Only discuss or invoke avatar gestures when the user asks for avatar movement. Do not mention gesture plans in camera, location, sensor, haptic, or file responses.';
 
     return '''
@@ -4571,9 +4571,11 @@ Never use node=auto or the raw Android device identity hash for Android phone to
 Use dedicated OpenClaw nodes actions when available: camera_snap, camera_list, camera_clip, location_get, screen_record, device_status, device_info, device_permissions, and device_health.
 $cameraGuidance
 $gestureGuidance
-For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.mode, avatar.model, avatar.status, canvas.navigate, canvas.eval, canvas.snapshot, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list.
+For "where are we" or "tell me where I am" requests, call location_get first and answer from the returned address/coordinates instead of only reporting that the tool ran.
+For healthcheck requests, call device_health or action="invoke" with invokeCommand="device.health" and summarize the result.
+For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.sequence, avatar.mode, avatar.model, avatar.status, device.health, device.status, device.permissions, canvas.navigate, canvas.eval, canvas.snapshot, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list.
 Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
-Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"dance\\",\\"durationMs\\":60000}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
+Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.sequence","invokeParamsJson":"{\\"interruptCurrent\\":true,\\"steps\\":[{\\"gesture\\":\\"cross leg sit\\",\\"durationMs\\":30000},{\\"gesture\\":\\"bowing 2\\"}]}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
 If a tool plan would use node=auto, replace it with node="$nodeHandle" before calling the tool.
 If the user asks what tools or phone abilities are available, include these Android node tools as available when the node is connected.
 Do not print hidden planning markers such as "(gesture: ...)" or "(image: ...)" in the visible answer. Use tools instead.
@@ -4693,8 +4695,6 @@ $message''';
           : '- $id ($title): $description';
     }).join('\n');
 
-    final hasStocks = activeSkills
-        .any((skill) => _skillIdFromGatewaySkill(skill) == 'stocks');
     final skillCountSuffix = activeSkills.length > 90
         ? '\n- …and ${activeSkills.length - 90} more active skills'
         : '';
@@ -4746,7 +4746,7 @@ ${appNativeSkillLines.isEmpty ? '- none reported by Flutter' : appNativeSkillLin
 
 ${parityBlock.isEmpty ? '' : parityBlock}
 
-${hasStocks ? 'Financial routing note: the stocks skill is active. For stock, ticker, market, earnings, dividend, crypto, or finance questions, prefer the installed stocks/financial-data skill path or Gateway financial tooling instead of saying no stocks skill is available.' : ''}
+Financial routing note: for stock, ticker, market, earnings, dividend, crypto, or finance questions, prefer the installed stocks/financial-data skill path when active. If no dedicated finance skill is active or ready, use Gateway web/search/browser primitives with a timestamped answer. Do not dead-end with "listed but not executable" while another Gateway primitive can answer.
 </openclaw_runtime_capabilities>
 
 $message''';
@@ -4789,6 +4789,11 @@ $message''';
       }
     }
     return null;
+  }
+
+  @visibleForTesting
+  bool debugIsExplicitAppNativeFallbackForTesting(String message) {
+    return _explicitAppNativeFallbackPayload(message) != null;
   }
 
   String? _nativeStreamingCanaryPayload(String message) {
@@ -14253,6 +14258,7 @@ $message''';
         explicitAppNativeFallback,
         directGatewayRegistrationAvailable:
             _appNativeSkillsRegisteredWithGateway,
+        forceLocalFallback: true,
       );
       if (appNativeToolExecution != null) {
         _addActivity(

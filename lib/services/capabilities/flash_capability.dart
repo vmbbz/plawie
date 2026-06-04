@@ -1,12 +1,13 @@
-import 'package:camera/camera.dart';
+import 'dart:async';
+
 import 'package:permission_handler/permission_handler.dart';
 import '../../models/node_frame.dart';
+import 'camera_hardware_coordinator.dart';
 import 'capability_handler.dart';
 
 class FlashCapability extends CapabilityHandler {
-  CameraController? _controller;
-  List<CameraDescription>? _cameras;
-  bool _torchOn = false;
+  final CameraHardwareCoordinator _hardware =
+      CameraHardwareCoordinator.instance;
 
   @override
   String get name => 'flash';
@@ -28,29 +29,6 @@ class FlashCapability extends CapabilityHandler {
     return status.isGranted;
   }
 
-  Future<CameraController> _getController() async {
-    // Verify existing controller is still usable
-    if (_controller != null) {
-      if (_controller!.value.isInitialized && !_controller!.value.hasError) {
-        return _controller!;
-      }
-      // Controller is stale/errored — dispose and recreate
-      try { _controller!.dispose(); } catch (_) {}
-      _controller = null;
-    }
-
-    _cameras ??= await availableCameras();
-    if (_cameras!.isEmpty) throw Exception('No camera available');
-    // Use back camera for flash/torch
-    final backCamera = _cameras!.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.back,
-      orElse: () => _cameras!.first,
-    );
-    _controller = CameraController(backCamera, ResolutionPreset.low);
-    await _controller!.initialize();
-    return _controller!;
-  }
-
   @override
   Future<NodeFrame> handle(String command, Map<String, dynamic> params) async {
     switch (command) {
@@ -59,9 +37,9 @@ class FlashCapability extends CapabilityHandler {
       case 'flash.off':
         return _setTorch(false);
       case 'flash.toggle':
-        return _setTorch(!_torchOn);
+        return _setTorch(!_hardware.torchOn);
       case 'flash.status':
-        return NodeFrame.response('', payload: {'on': _torchOn});
+        return NodeFrame.response('', payload: {'on': _hardware.torchOn});
       default:
         return NodeFrame.response('', error: {
           'code': 'UNKNOWN_COMMAND',
@@ -72,22 +50,9 @@ class FlashCapability extends CapabilityHandler {
 
   Future<NodeFrame> _setTorch(bool on) async {
     try {
-      final controller = await _getController();
-      await controller.setFlashMode(on ? FlashMode.torch : FlashMode.off);
-      _torchOn = on;
-
-      // If turning off, release the camera so it doesn't block snap/clip
-      if (!on) {
-        _controller?.dispose();
-        _controller = null;
-      }
-
-      return NodeFrame.response('', payload: {'on': _torchOn});
+      final torchOn = await _hardware.setTorch(on);
+      return NodeFrame.response('', payload: {'on': torchOn});
     } catch (e) {
-      // If it failed, dispose and reset so next attempt gets a fresh controller
-      try { _controller?.dispose(); } catch (_) {}
-      _controller = null;
-      _torchOn = false;
       return NodeFrame.response('', error: {
         'code': 'FLASH_ERROR',
         'message': '$e',
@@ -96,7 +61,6 @@ class FlashCapability extends CapabilityHandler {
   }
 
   void dispose() {
-    _controller?.dispose();
-    _controller = null;
+    unawaited(_hardware.dispose());
   }
 }

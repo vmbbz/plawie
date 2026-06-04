@@ -176,6 +176,11 @@ class AvatarGestureCatalog {
     final direct = _directAlias(value);
     if (direct != null) return direct;
 
+    final bowNumber = RegExp(r'\bbow(?:ing)?\s*(0?[1-5])\b').firstMatch(value);
+    if (bowNumber != null) {
+      return 'bowing ${int.parse(bowNumber.group(1)!)}';
+    }
+
     for (final name in _searchNames) {
       if (value.contains(name)) return name;
     }

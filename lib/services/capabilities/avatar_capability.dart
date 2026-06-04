@@ -11,7 +11,8 @@ class AvatarCapability extends CapabilityHandler {
   String get name => 'avatar';
 
   @override
-  List<String> get commands => ['gesture', 'mode', 'model', 'status'];
+  List<String> get commands =>
+      ['gesture', 'sequence', 'mode', 'model', 'status'];
 
   @override
   Future<bool> checkPermission() async => true;
@@ -24,6 +25,8 @@ class AvatarCapability extends CapabilityHandler {
     switch (command) {
       case 'avatar.gesture':
         return _gesture(params);
+      case 'avatar.sequence':
+        return _sequence(params);
       case 'avatar.mode':
         return _mode(params);
       case 'avatar.model':
@@ -35,6 +38,58 @@ class AvatarCapability extends CapabilityHandler {
           'code': 'UNKNOWN_COMMAND',
           'message': 'Unknown avatar command: $command',
         });
+    }
+  }
+
+  Future<NodeFrame> _sequence(Map<String, dynamic> params) async {
+    final rawSteps = params['steps'];
+    if (rawSteps is! List || rawSteps.isEmpty) {
+      return NodeFrame.response('', error: {
+        'code': 'MISSING_PARAM',
+        'message': 'avatar.sequence requires a non-empty steps array.',
+      });
+    }
+
+    final requestCallback = AgentSkillServer.instance.onAvatarGestureRequested;
+    if (requestCallback == null) {
+      return NodeFrame.response('', error: {
+        'code': 'AVATAR_NOT_READY',
+        'message': 'Avatar UI is not ready. Open the Chat screen and retry.',
+      });
+    }
+
+    final steps = <Map<String, dynamic>>[];
+    for (var i = 0; i < rawSteps.length; i += 1) {
+      final rawStep = rawSteps[i];
+      final step = rawStep is Map
+          ? Map<String, dynamic>.from(rawStep)
+          : <String, dynamic>{'gesture': rawStep.toString()};
+      step['source'] ??= params['source']?.toString() ?? 'avatar-sequence';
+      if (i == 0 && params['interruptCurrent'] == true) {
+        step['interrupt'] = true;
+      }
+      steps.add(step);
+    }
+
+    try {
+      final result = await requestCallback({
+        'action': 'sequence',
+        'steps': steps,
+        'interruptCurrent': params['interruptCurrent'] == true,
+        'source': params['source']?.toString() ?? 'avatar-sequence',
+      }).timeout(const Duration(seconds: 9));
+      return NodeFrame.response('', payload: {
+        'status': result['status'] ?? 'queued',
+        'stepCount': result['stepCount'] ?? steps.length,
+        ...result,
+      });
+    } on TimeoutException {
+      return NodeFrame.response('', payload: {
+        'status': 'queued',
+        'stepCount': steps.length,
+        'reason':
+            'Avatar renderer did not confirm sequence start before timeout.',
+      });
     }
   }
 

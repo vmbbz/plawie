@@ -11,6 +11,7 @@ import 'gateway_tool_catalog.dart';
 import 'native_gateway_smoke_service.dart';
 import 'capabilities/avatar_capability.dart';
 import 'capabilities/camera_capability.dart';
+import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/sensor_capability.dart';
@@ -62,6 +63,7 @@ class AgentSkillServer {
   Future<void>? _startFuture;
   final AvatarCapability _avatarCapability = AvatarCapability();
   final CameraCapability _cameraCapability = CameraCapability();
+  final DeviceCapability _deviceCapability = DeviceCapability();
   final FlashCapability _flashCapability = FlashCapability();
   final LocationCapability _locationCapability = LocationCapability();
   final SensorCapability _sensorCapability = SensorCapability();
@@ -1805,6 +1807,7 @@ class AgentSkillServer {
     if (command == null || command.isEmpty) return null;
     const aliases = {
       'avatar_gesture': 'avatar.gesture',
+      'avatar_sequence': 'avatar.sequence',
       'avatar_mode': 'avatar.mode',
       'avatar_model': 'avatar.model',
       'avatar_status': 'avatar.status',
@@ -1835,6 +1838,10 @@ class AgentSkillServer {
       'sensor_list': 'sensor.list',
       'haptic_vibrate': 'haptic.vibrate',
       'vibrate': 'haptic.vibrate',
+      'device_health': 'device.health',
+      'device_status': 'device.status',
+      'device_info': 'device.info',
+      'device_permissions': 'device.permissions',
     };
     final normalized = command.trim();
     return aliases[normalized] ?? normalized;
@@ -1859,6 +1866,16 @@ class AgentSkillServer {
           message: gesture != null && gesture.isNotEmpty
               ? 'avatar.gesture arguments are dispatchable'
               : 'avatar.gesture requires a gesture value',
+        );
+      case 'avatar.sequence':
+        final steps = input['steps'];
+        final ok = steps is List && steps.isNotEmpty;
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: ok,
+          code: ok ? 'ok' : 'missing_steps',
+          message: ok
+              ? 'avatar.sequence arguments are dispatchable'
+              : 'avatar.sequence requires a non-empty steps array',
         );
       case 'haptic.vibrate':
         final duration = input['durationMs'] ?? input['duration_ms'];
@@ -1891,6 +1908,10 @@ class AgentSkillServer {
       case 'avatar.mode':
       case 'avatar.model':
       case 'avatar.status':
+      case 'device.health':
+      case 'device.status':
+      case 'device.info':
+      case 'device.permissions':
         return const _NativeGatewayDryRunArgumentValidation(
           ok: true,
           code: 'ok',
@@ -1924,6 +1945,8 @@ class AgentSkillServer {
         return 'VibrationCapability';
       case 'location':
         return 'LocationCapability';
+      case 'device':
+        return 'DeviceCapability';
       case 'screen':
         return 'ScreenCapability';
       case 'sensor':
@@ -2042,6 +2065,18 @@ class AgentSkillServer {
         final result = await _requestAvatarGesture({
           ...data,
           'gesture': gesture,
+        });
+        _sendAvatarGestureResult(request, result);
+
+      case 'play_sequence':
+        final steps = data['steps'];
+        if (steps is! List || steps.isEmpty) {
+          return _sendError(request, 'Missing steps parameter');
+        }
+        final result = await _requestAvatarGesture({
+          ...data,
+          'action': 'sequence',
+          'steps': steps,
         });
         _sendAvatarGestureResult(request, result);
 
@@ -2282,6 +2317,34 @@ class AgentSkillServer {
                     .invokeMethod<bool>('isCharging') ??
                 false;
         _sendJson(request, {'level': level, 'isCharging': charging});
+
+      case 'device_health':
+        final frame = await _deviceCapability.handle(
+          'device.health',
+          const {},
+        );
+        _sendNodeFrame(request, frame);
+
+      case 'device_status':
+        final frame = await _deviceCapability.handle(
+          'device.status',
+          const {},
+        );
+        _sendNodeFrame(request, frame);
+
+      case 'device_info':
+        final frame = await _deviceCapability.handle(
+          'device.info',
+          const {},
+        );
+        _sendNodeFrame(request, frame);
+
+      case 'device_permissions':
+        final frame = await _deviceCapability.handle(
+          'device.permissions',
+          const {},
+        );
+        _sendNodeFrame(request, frame);
 
       case 'get_location':
         final frame = await _locationCapability.handleWithPermission(

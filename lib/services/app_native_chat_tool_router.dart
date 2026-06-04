@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import '../models/node_frame.dart';
 import 'avatar_gesture_catalog.dart';
+import 'capabilities/avatar_capability.dart';
 import 'capabilities/camera_capability.dart';
+import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/sensor_capability.dart';
@@ -48,7 +50,9 @@ class AppNativeChatToolRouter {
 
   AppNativeChatToolRouter._internal();
 
+  final AvatarCapability _avatar = AvatarCapability();
   final CameraCapability _camera = CameraCapability();
+  final DeviceCapability _device = DeviceCapability();
   final FlashCapability _flash = FlashCapability();
   final LocationCapability _location = LocationCapability();
   final SensorCapability _sensor = SensorCapability();
@@ -61,11 +65,15 @@ class AppNativeChatToolRouter {
   }) =>
       _durationMs(text.toLowerCase(), minMs: minMs, maxMs: maxMs);
 
+  List<Map<String, dynamic>>? parseAvatarSequenceForTesting(String text) =>
+      _avatarSequence(text.toLowerCase());
+
   Future<AppNativeChatToolExecution?> tryExecute(
     String message, {
     required bool directGatewayRegistrationAvailable,
+    bool forceLocalFallback = false,
   }) async {
-    if (directGatewayRegistrationAvailable) return null;
+    if (directGatewayRegistrationAvailable && !forceLocalFallback) return null;
     final plan = _plan(message);
     if (plan == null) return null;
 
@@ -94,6 +102,20 @@ class AppNativeChatToolRouter {
         toolName: 'tts-voice',
         command: 'speak',
         input: {'action': 'speak', 'text': tts},
+      );
+    }
+
+    final sequence = _avatarSequence(lower);
+    if (sequence != null) {
+      return _AppNativeToolPlan(
+        toolName: 'avatar-control',
+        command: 'avatar.sequence',
+        input: {
+          'action': 'play_sequence',
+          'interruptCurrent': true,
+          'source': 'app-native-chat-router',
+          'steps': sequence,
+        },
       );
     }
 
@@ -199,6 +221,31 @@ class AppNativeChatToolRouter {
       );
     }
 
+    if (_wantsDeviceHealth(lower)) {
+      return const _AppNativeToolPlan(
+        toolName: 'device-node',
+        command: 'device.health',
+        input: {'action': 'device_health'},
+      );
+    }
+
+    if (lower.contains('device') && lower.contains('permission')) {
+      return const _AppNativeToolPlan(
+        toolName: 'device-node',
+        command: 'device.permissions',
+        input: {'action': 'device_permissions'},
+      );
+    }
+
+    if (lower.contains('device') &&
+        _containsAny(lower, const ['status', 'info', 'state'])) {
+      return const _AppNativeToolPlan(
+        toolName: 'device-node',
+        command: 'device.status',
+        input: {'action': 'device_status'},
+      );
+    }
+
     final bundledSkillPlan = _bundledSkillPlan(lower);
     if (bundledSkillPlan != null) return bundledSkillPlan;
 
@@ -212,6 +259,11 @@ class AppNativeChatToolRouter {
           return _skillResultToMap(await SkillsService().executeSkill(
             'avatar-control',
             parameters: plan.input,
+          ));
+        case 'avatar.sequence':
+          return _frameToMap(await _avatar.handle(
+            'avatar.sequence',
+            plan.input,
           ));
         case 'haptic.vibrate':
           final frame = await _vibration.handle(
@@ -257,6 +309,14 @@ class AppNativeChatToolRouter {
         case 'location.get':
           return _frameToMap(await _location.handleWithPermission(
             'location.get',
+            const {},
+          ));
+        case 'device.status':
+        case 'device.info':
+        case 'device.permissions':
+        case 'device.health':
+          return _frameToMap(await _device.handle(
+            plan.command,
             const {},
           ));
         case 'speak':
@@ -319,7 +379,9 @@ class AppNativeChatToolRouter {
 
   bool _resultOk(_AppNativeToolPlan plan, Map<String, dynamic> result) {
     final transportOk = result['ok'] == true || result['success'] == true;
-    if (plan.command != 'avatar.gesture') return transportOk;
+    if (plan.command != 'avatar.gesture' && plan.command != 'avatar.sequence') {
+      return transportOk;
+    }
     final status = result['status']?.toString().toLowerCase();
     return transportOk && (status == 'started' || status == 'completed');
   }
@@ -339,7 +401,7 @@ class AppNativeChatToolRouter {
     Map<String, dynamic> result,
     bool ok,
   ) {
-    if (plan.command == 'avatar.gesture') {
+    if (plan.command == 'avatar.gesture' || plan.command == 'avatar.sequence') {
       return _avatarGestureVisibleText(plan, result, ok);
     }
     if (!ok) {
@@ -376,8 +438,17 @@ class AppNativeChatToolRouter {
         return lat != null && lng != null
             ? 'Current location retrieved: $lat, $lng.'
             : 'Location retrieved.';
+      case 'device.health':
+        return 'Device health check completed.';
+      case 'device.status':
+      case 'device.info':
+        return 'Device status retrieved.';
+      case 'device.permissions':
+        return 'Device permissions retrieved.';
       case 'avatar.gesture':
         return 'Done. I triggered the ${plan.input['gesture']} avatar gesture.';
+      case 'avatar.sequence':
+        return 'Done. I started the avatar sequence.';
       case 'speak':
         return 'Done. I spoke the requested text.';
       default:
@@ -402,8 +473,17 @@ class AppNativeChatToolRouter {
     Map<String, dynamic> result,
     bool ok,
   ) {
-    final gesture = (result['gesture'] ?? plan.input['gesture']).toString();
+    final gesture =
+        (result['gesture'] ?? plan.input['gesture'] ?? 'sequence').toString();
     final status = result['status']?.toString().toLowerCase() ?? '';
+    if (plan.command == 'avatar.sequence') {
+      final count =
+          result['stepCount'] ?? (plan.input['steps'] as List?)?.length;
+      if (ok) {
+        return 'Done. I started the avatar sequence${count == null ? '' : ' ($count steps)'}.';
+      }
+      return 'I tried to start the avatar sequence, but it failed: ${_errorMessageFromResult(result)}';
+    }
     if (ok) {
       return 'Done. I started the $gesture avatar gesture.';
     }
@@ -496,6 +576,11 @@ class AppNativeChatToolRouter {
       return null;
     }
 
+    final bowMatch = RegExp(r'\bbow(?:ing)?\s*(0?[1-5])\b').firstMatch(lower);
+    if (bowMatch != null) {
+      return 'bowing ${int.parse(bowMatch.group(1)!)}';
+    }
+
     final candidates = AvatarGestureCatalog.toolGestureNames.toList()
       ..sort((a, b) => b.length.compareTo(a.length));
     for (final candidate in candidates) {
@@ -512,6 +597,34 @@ class AppNativeChatToolRouter {
     if (lower.contains('sit')) return 'sitting';
     if (lower.contains('pose')) return 'pose';
     return null;
+  }
+
+  List<Map<String, dynamic>>? _avatarSequence(String lower) {
+    final normalized = lower
+        .replaceAll(RegExp(r'\bafter that\b|\bafterwards\b|\bafter,\b'), 'then')
+        .replaceAll(RegExp(r'\band then\b'), 'then');
+    if (!RegExp(r'\b(then|next)\b').hasMatch(normalized)) return null;
+    final parts = normalized
+        .split(RegExp(r'\b(?:then|next)\b'))
+        .map((part) => part.trim().replaceAll(RegExp(r'^[,.;:\s]+'), ''))
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+    if (parts.length < 2) return null;
+
+    final steps = <Map<String, dynamic>>[];
+    for (final part in parts) {
+      final gesture = _gestureName(part);
+      if (gesture == null) continue;
+      final resolved = AvatarGestureCatalog.resolve(gesture);
+      final durationMs = _durationMs(part, minMs: 250, maxMs: 120000);
+      steps.add({
+        'gesture': resolved.gesture,
+        'assetPath': resolved.assetPath,
+        'source': 'app-native-chat-router',
+        if (durationMs != null) 'durationMs': durationMs,
+      });
+    }
+    return steps.length >= 2 ? steps : null;
   }
 
   String? _sensorName(String lower) {
@@ -554,6 +667,14 @@ class AppNativeChatToolRouter {
         lower.contains('gps location') ||
         (lower.contains('location') &&
             _containsAny(lower, const ['get', 'check', 'tell me']));
+  }
+
+  bool _wantsDeviceHealth(String lower) {
+    return lower.contains('healthcheck') ||
+        lower.contains('health check') ||
+        lower.contains('device health') ||
+        lower.contains('diagnostic') ||
+        lower.contains('diagnostics');
   }
 
   _AppNativeToolPlan? _bundledSkillPlan(String lower) {

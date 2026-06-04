@@ -6,12 +6,12 @@ import 'package:flutter/foundation.dart';
 import '../models/chat_message.dart';
 import '../utils/video_frame_extractor.dart';
 import 'capabilities/avatar_capability.dart';
-import 'capabilities/camera_capability.dart';
 import 'chat_persistence_service.dart';
 import 'gateway_service.dart';
 import 'local_llm_service.dart';
 import 'model_provider_catalog.dart';
 import 'preferences_service.dart';
+import 'tool_media_event_bus.dart';
 import 'tts_service.dart';
 
 enum ChatRuntimeTtsHealth {
@@ -28,10 +28,11 @@ class ChatRuntimeService extends ChangeNotifier {
   factory ChatRuntimeService() => _instance;
   ChatRuntimeService._internal() {
     _tts.addCompleteListener(_handleTtsComplete);
-    CameraCapability.onSnapTaken = (b64, mime) {
-      _pendingAiSnapBase64 = b64;
-      _pendingAiSnapMimeType = mime;
-    };
+    _mediaSubscription = ToolMediaEventBus.instance.stream.listen((event) {
+      _pendingAiSnapBase64 = event.base64;
+      _pendingAiSnapMimeType = event.mimeType;
+      _pendingAiSnapMetadata = event.toMetadata();
+    });
   }
 
   final ChatPersistenceService _persistence = ChatPersistenceService();
@@ -53,7 +54,9 @@ class ChatRuntimeService extends ChangeNotifier {
   String? _gatewaySessionKey;
   String? _pendingAiSnapBase64;
   String? _pendingAiSnapMimeType;
+  Map<String, dynamic>? _pendingAiSnapMetadata;
   Timer? _persistDebounce;
+  late final StreamSubscription<ToolMediaEvent> _mediaSubscription;
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
   List<String> get diagnostics => List.unmodifiable(_diagnostics);
@@ -230,6 +233,7 @@ class ChatRuntimeService extends ChangeNotifier {
     var loggedFirstAssistantChunk = false;
     final List<ChatToolEvent> toolEvents = [];
     final dispatchedInlineGestureMarkers = <String>{};
+    Map<String, dynamic>? lastLocationResult;
     String? transientStatusText;
     var rawBuffer = '';
     var thinkBuffer = '';
@@ -435,9 +439,21 @@ class ChatRuntimeService extends ChangeNotifier {
           if (colonIdx != -1) {
             final name = inner.substring(0, colonIdx);
             final resultJson = inner.substring(colonIdx + 1);
+            final sanitizedResultJson = _sanitizeToolResultJson(
+              name,
+              resultJson,
+              pendingMediaMetadata: _pendingAiSnapMetadata,
+            );
+            final decodedResult = _tryDecodeJsonMap(resultJson);
+            if (_isLocationToolName(name) && decodedResult != null) {
+              lastLocationResult = decodedResult;
+            }
             toolEvents.add(
               ChatToolEvent(
-                  type: 'tool_result', name: name, result: resultJson),
+                type: 'tool_result',
+                name: name,
+                result: sanitizedResultJson,
+              ),
             );
             updateAssistant(thinkContent: thinkBuffer, events: toolEvents);
           }
@@ -489,6 +505,7 @@ class ChatRuntimeService extends ChangeNotifier {
 
     final snapImage = _pendingAiSnapBase64;
     final snapMime = _pendingAiSnapMimeType ?? 'image/jpeg';
+    final snapMetadata = _pendingAiSnapMetadata;
     if (snapImage != null && _messages.isNotEmpty) {
       _messages.last = ChatMessage(
         text: _messages.last.text,
@@ -500,12 +517,220 @@ class ChatRuntimeService extends ChangeNotifier {
       );
       _pendingAiSnapBase64 = null;
       _pendingAiSnapMimeType = null;
+      _pendingAiSnapMetadata = null;
+    }
+
+    final locationResult = lastLocationResult;
+    if (_shouldExplainLocation(text) && locationResult != null) {
+      final locationSummary = _locationSummary(locationResult);
+      if (locationSummary != null &&
+          !_responseAlreadyIncludesLocation(fullResponse, locationResult)) {
+        fullResponse = _appendAssistantSection(fullResponse, locationSummary);
+        _messages.last = ChatMessage(
+          text: fullResponse,
+          isUser: false,
+          thinkContent: _messages.last.thinkContent,
+          toolEvents: _messages.last.toolEvents,
+          imageBase64: snapImage,
+          imageMimeType: snapImage != null ? snapMime : null,
+        );
+        _enqueueTtsFromStream(locationSummary);
+        _flushTtsQueue();
+      }
+    }
+
+    if (snapImage != null &&
+        _shouldRunMediaVisionContinuation(text, toolEvents, snapMetadata)) {
+      final continuation = await _runImageContinuation(
+        originalPrompt: text,
+        model: model,
+        imageBase64: snapImage,
+        mimeType: snapMime,
+      );
+      if (continuation.trim().isNotEmpty) {
+        fullResponse = _appendAssistantSection(fullResponse, continuation);
+        _messages.last = ChatMessage(
+          text: fullResponse,
+          isUser: false,
+          thinkContent: _messages.last.thinkContent,
+          toolEvents: _messages.last.toolEvents,
+          imageBase64: snapImage,
+          imageMimeType: snapMime,
+        );
+        _enqueueTtsFromStream(continuation);
+        _flushTtsQueue();
+      }
     }
 
     _setState(isThinking: false, isGenerating: false, notify: false);
     addDiagnostic('Generation completed. Total length: ${fullResponse.length}');
     notifyListeners();
     await persistNow();
+  }
+
+  Map<String, dynamic>? _tryDecodeJsonMap(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return null;
+  }
+
+  String _sanitizeToolResultJson(
+    String name,
+    String resultJson, {
+    Map<String, dynamic>? pendingMediaMetadata,
+  }) {
+    final decoded = _tryDecodeJsonMap(resultJson);
+    if (decoded == null) return resultJson;
+    final copy = Map<String, dynamic>.from(decoded);
+    final base64 = copy.remove('base64')?.toString();
+    if (base64 != null && base64.isNotEmpty) {
+      copy['base64Omitted'] = true;
+      copy['base64Bytes'] = base64.length;
+      copy['attachedImage'] = true;
+    }
+    if (_isMediaToolName(name) && pendingMediaMetadata != null) {
+      copy.addAll(pendingMediaMetadata);
+    }
+    return jsonEncode(copy);
+  }
+
+  bool _isMediaToolName(String name) {
+    final lower = name.toLowerCase();
+    return lower.contains('camera') ||
+        lower.contains('photo') ||
+        lower.contains('snapshot') ||
+        lower.contains('canvas');
+  }
+
+  bool _isLocationToolName(String name) {
+    final lower = name.toLowerCase();
+    return lower.contains('location') || lower.contains('gps');
+  }
+
+  bool _shouldRunMediaVisionContinuation(
+    String prompt,
+    List<ChatToolEvent> events,
+    Map<String, dynamic>? metadata,
+  ) {
+    if (metadata == null) return false;
+    final lower = prompt.toLowerCase();
+    final asksVision = RegExp(
+      r"\b(describe|see|look|inspect|analy[sz]e|what is|what's|read|discuss|comment|tell me about|use|identify)\b",
+    ).hasMatch(lower);
+    final toolCaptured = events.any((event) {
+      final name = event.name.toLowerCase();
+      return event.type == 'tool_result' && _isMediaToolName(name);
+    });
+    return toolCaptured && asksVision;
+  }
+
+  Future<String> _runImageContinuation({
+    required String originalPrompt,
+    required String model,
+    required String imageBase64,
+    required String mimeType,
+  }) async {
+    final gateway = GatewayService();
+    final localLlm = LocalLlmService();
+    final prompt = originalPrompt.trim().isEmpty
+        ? 'Describe the image that was just captured.'
+        : 'Use the image that was just captured to answer this request: $originalPrompt';
+    try {
+      final Stream<String> stream;
+      if (ModelProviderCatalog.isLocalModelId(model)) {
+        if (!localLlm.isVisionReady) {
+          return 'Image captured and attached, but no local vision model is active to analyze it.';
+        }
+        stream =
+            gateway.sendVisionMessage(prompt, imageBase64, mimeType: mimeType);
+      } else {
+        stream = gateway.sendCloudImageMessage(
+          prompt,
+          imageBase64,
+          mimeType: mimeType,
+        );
+      }
+      return _collectVisibleStream(stream);
+    } catch (e) {
+      return 'Image captured and attached, but vision analysis failed: $e';
+    }
+  }
+
+  Future<String> _collectVisibleStream(Stream<String> stream) async {
+    final buffer = StringBuffer();
+    await for (final chunk in stream.timeout(
+      const Duration(minutes: 3),
+      onTimeout: (_) {},
+    )) {
+      if (chunk.startsWith('\x00')) continue;
+      if (chunk.contains('[Error]')) {
+        buffer.write(chunk.replaceAll('[Error]', '').trim());
+        continue;
+      }
+      buffer.write(chunk);
+    }
+    return _stripAssistantControlMarkers(buffer.toString()).trim();
+  }
+
+  bool _shouldExplainLocation(String prompt) {
+    final lower = prompt.toLowerCase();
+    return lower.contains('where am i') ||
+        lower.contains('where are we') ||
+        lower.contains('where we are') ||
+        (lower.contains('location') &&
+            RegExp(r'\b(tell|say|explain|where|address|place)\b')
+                .hasMatch(lower));
+  }
+
+  String? _locationSummary(Map<String, dynamic> result) {
+    final lat = result['lat'] ?? result['latitude'];
+    final lng = result['lng'] ?? result['longitude'];
+    if (lat == null || lng == null) return null;
+    final address = [
+      result['address'],
+      result['locality'],
+      result['adminArea'],
+      result['country'],
+    ]
+        .whereType<Object>()
+        .map((value) => value.toString().trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .join(', ');
+    final accuracy = result['accuracy'];
+    final where = address.isNotEmpty ? address : '$lat, $lng';
+    return accuracy == null
+        ? 'Location result: you appear to be near $where.'
+        : 'Location result: you appear to be near $where (accuracy about ${accuracy}m).';
+  }
+
+  bool _responseAlreadyIncludesLocation(
+    String response,
+    Map<String, dynamic> result,
+  ) {
+    final lower = response.toLowerCase();
+    if (lower.contains('location result') ||
+        lower.contains('you appear to be') ||
+        lower.contains('latitude') ||
+        lower.contains('longitude')) {
+      return true;
+    }
+    final lat = result['lat']?.toString();
+    final lng = result['lng']?.toString();
+    final latPrefix = lat?.substring(0, lat.length < 5 ? lat.length : 5);
+    final lngPrefix = lng?.substring(0, lng.length < 5 ? lng.length : 5);
+    return (latPrefix != null && lower.contains(latPrefix)) ||
+        (lngPrefix != null && lower.contains(lngPrefix));
+  }
+
+  String _appendAssistantSection(String current, String addition) {
+    final clean = addition.trim();
+    if (clean.isEmpty) return current;
+    if (current.trim().isEmpty) return clean;
+    return '${current.trimRight()}\n\n$clean';
   }
 
   String _sanitizeForTts(String text) {
@@ -667,5 +892,11 @@ class ChatRuntimeService extends ChangeNotifier {
       notifyListeners();
       _processNextTtsInQueue();
     }
+  }
+
+  @override
+  void dispose() {
+    _mediaSubscription.cancel();
+    super.dispose();
   }
 }

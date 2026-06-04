@@ -33,9 +33,9 @@ import '../services/agent_skill_server.dart';
 import '../services/avatar_gesture_catalog.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../services/capabilities/canvas_capability.dart';
-import '../services/capabilities/camera_capability.dart';
 import '../services/chat_runtime_service.dart';
 import '../services/hologram_service.dart';
+import '../services/tool_media_event_bus.dart';
 import '../widgets/hologram_overlay.dart';
 import 'management/local_llm_screen.dart';
 import 'web_dashboard_screen.dart';
@@ -143,6 +143,7 @@ class _ChatScreenState extends State<ChatScreen>
   StreamSubscription<String>? _gatewayActivitySub;
   // Skills event bus — tracks executing/executed/error states
   StreamSubscription? _skillsSub;
+  StreamSubscription<ToolMediaEvent>? _toolMediaSub;
 
   // Latest camera.snap base64 captured by AI tool call — attached to bot message after stream ends
   String? _pendingAiSnapBase64;
@@ -188,14 +189,10 @@ class _ChatScreenState extends State<ChatScreen>
       }
       if (mounted) setState(() => _canvasVisible = visible);
     };
-    CanvasCapability.onSnapshotTaken = (b64, mime) {
-      _pendingAiSnapBase64 = b64;
-      _pendingAiSnapMimeType = mime;
-    };
-    CameraCapability.onSnapTaken = (b64, mime) {
-      _pendingAiSnapBase64 = b64;
-      _pendingAiSnapMimeType = mime;
-    };
+    _toolMediaSub = ToolMediaEventBus.instance.stream.listen((event) {
+      _pendingAiSnapBase64 = event.base64;
+      _pendingAiSnapMimeType = event.mimeType;
+    });
     _glowController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -307,6 +304,11 @@ class _ChatScreenState extends State<ChatScreen>
   Future<Map<String, dynamic>> _handleAvatarGestureRequest(
       Map<String, dynamic> request) async {
     final command = Map<String, dynamic>.from(request);
+    if (command['steps'] is List ||
+        command['action']?.toString().toLowerCase() == 'sequence') {
+      return _handleAvatarSequenceRequest(command);
+    }
+
     final gesture = command['gesture'] ??
         command['name'] ??
         command['value'] ??
@@ -363,6 +365,172 @@ class _ChatScreenState extends State<ChatScreen>
     );
     debugPrint('[AVATAR] Gesture result: ${jsonEncode(started)}');
     return started;
+  }
+
+  Future<Map<String, dynamic>> _handleAvatarSequenceRequest(
+    Map<String, dynamic> request,
+  ) async {
+    final rawSteps = request['steps'];
+    if (rawSteps is! List || rawSteps.isEmpty) {
+      return {
+        'status': 'failed',
+        'reason': 'avatar.sequence requires a non-empty steps array.',
+      };
+    }
+
+    final steps = <Map<String, dynamic>>[];
+    for (var i = 0; i < rawSteps.length; i += 1) {
+      final raw = rawSteps[i];
+      final step = raw is Map
+          ? Map<String, dynamic>.from(raw)
+          : <String, dynamic>{'gesture': raw.toString()};
+      final gesture = step['gesture'] ??
+          step['name'] ??
+          step['value'] ??
+          step['text'] ??
+          step['assetPath'] ??
+          step['path'] ??
+          step['vrmaPath'];
+      if (gesture == null || gesture.toString().trim().isEmpty) {
+        return {
+          'status': 'failed',
+          'reason': 'avatar.sequence step ${i + 1} requires a gesture name.',
+          'failedStep': i + 1,
+        };
+      }
+
+      final explicitAsset =
+          step['assetPath'] ?? step['path'] ?? step['vrmaPath'];
+      final resolved = AvatarGestureCatalog.resolve(explicitAsset ?? gesture);
+      step['gesture'] = resolved.gesture;
+      step['assetPath'] = explicitAsset?.toString().trim().isNotEmpty == true
+          ? explicitAsset.toString()
+          : resolved.assetPath;
+      step['source'] ??=
+          request['source']?.toString() ?? 'chat-screen-avatar-sequence';
+      if (i == 0 && request['interruptCurrent'] == true) {
+        step['interrupt'] = true;
+      }
+
+      final normalizedGesture = step['gesture'].toString().toLowerCase();
+      final normalizedPath = step['assetPath'].toString().toLowerCase();
+      final hasDuration = step['durationMs'] != null ||
+          step['duration_ms'] != null ||
+          step['duration'] != null;
+      if (!hasDuration) {
+        if (normalizedGesture.contains('dance') ||
+            normalizedPath.contains('dance')) {
+          step['durationMs'] = 60000;
+        } else if (_isSittingGestureRequest(normalizedGesture) ||
+            _isSittingGestureRequest(normalizedPath)) {
+          step['durationMs'] = 30000;
+        }
+      }
+      steps.add(step);
+    }
+
+    debugPrint('[AVATAR] Sequence request: ${jsonEncode(steps)}');
+    final firstResult = await _handleAvatarGestureRequest({
+      ...steps.first,
+      'sequenceStep': 1,
+      'sequenceStepCount': steps.length,
+    });
+    if (!_isAvatarGestureStarted(firstResult)) {
+      return {
+        'status': 'failed',
+        'reason': 'avatar.sequence step 1 did not start.',
+        'failedStep': 1,
+        'steps': [
+          {'step': 1, ...firstResult},
+        ],
+      };
+    }
+
+    if (steps.length > 1) {
+      unawaited(_runAvatarSequenceTail(steps, firstResult));
+    }
+
+    final scheduledSteps = <Map<String, dynamic>>[
+      {'step': 1, ...firstResult},
+      for (var i = 1; i < steps.length; i += 1)
+        {
+          'step': i + 1,
+          'status': 'scheduled',
+          'gesture': steps[i]['gesture'],
+          'path': steps[i]['assetPath'],
+          if (steps[i]['durationMs'] != null)
+            'durationMs': steps[i]['durationMs'],
+        },
+    ];
+    _addDiagnosticLog(
+      'Avatar sequence started: steps=${steps.length} first=${firstResult['gesture'] ?? steps.first['gesture']}',
+    );
+    return {
+      'status': 'started',
+      'gesture': 'sequence',
+      'stepCount': steps.length,
+      'steps': scheduledSteps,
+    };
+  }
+
+  Future<void> _runAvatarSequenceTail(
+    List<Map<String, dynamic>> steps,
+    Map<String, dynamic> firstResult,
+  ) async {
+    var previousResult = firstResult;
+    for (var i = 1; i < steps.length; i += 1) {
+      final holdMs = _avatarStepHoldMs(steps[i - 1], previousResult);
+      if (holdMs > 0) {
+        await Future.delayed(Duration(milliseconds: holdMs));
+      }
+      final result = await _handleAvatarGestureRequest({
+        ...steps[i],
+        'sequenceStep': i + 1,
+        'sequenceStepCount': steps.length,
+      });
+      _addDiagnosticLog(
+        'Avatar sequence step ${i + 1} ${result['status']}: ${result['gesture'] ?? steps[i]['gesture']}',
+      );
+      if (!_isAvatarGestureStarted(result)) {
+        break;
+      }
+      previousResult = result;
+    }
+  }
+
+  bool _isAvatarGestureStarted(Map<String, dynamic> result) {
+    final status = result['status']?.toString().toLowerCase();
+    return status == 'started' || status == 'completed';
+  }
+
+  int _avatarStepHoldMs(
+    Map<String, dynamic> step,
+    Map<String, dynamic> result,
+  ) {
+    final value = _intFromAvatarMap(step, const [
+          'durationMs',
+          'duration_ms',
+          'duration',
+        ]) ??
+        _intFromAvatarMap(result, const [
+          'durationMs',
+          'duration_ms',
+          'duration',
+        ]);
+    if (value == null || value <= 0) return 0;
+    return value.clamp(250, 120000).toInt();
+  }
+
+  int? _intFromAvatarMap(Map<String, dynamic> map, List<String> keys) {
+    for (final key in keys) {
+      final value = map[key];
+      if (value == null) continue;
+      if (value is int) return value;
+      if (value is num) return value.round();
+      final parsed = int.tryParse(value.toString());
+      if (parsed != null) return parsed;
+    }
+    return null;
   }
 
   bool _isSittingGestureRequest(String value) {
@@ -2588,11 +2756,7 @@ class _ChatScreenState extends State<ChatScreen>
     AgentSkillServer.instance.onAvatarGestureRequested = null;
     AgentSkillServer.instance.onGesturePlayed = null;
     AgentSkillServer.instance.onEmotionSet = null;
-    // Clear static callbacks set during initState so they don't reference this
-    // widget after it's been disposed — prevents stale closure crashes.
     CanvasCapability.onVisibilityChanged = null;
-    CanvasCapability.onSnapshotTaken = null;
-    CameraCapability.onSnapTaken = null;
     HologramService.instance.dismiss();
     CanvasCapability().clearController();
     CanvasCapability.onActivationRequested = null;
@@ -2601,6 +2765,7 @@ class _ChatScreenState extends State<ChatScreen>
     _gatewaySub?.cancel();
     _gatewayActivitySub?.cancel();
     _skillsSub?.cancel();
+    _toolMediaSub?.cancel();
     _talkAudioStreamSub?.cancel();
     _talkEventSub?.cancel();
     _chatRuntime.removeListener(_syncChatRuntimeState);

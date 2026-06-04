@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../models/node_frame.dart';
+import '../native_bridge.dart';
 import 'capability_handler.dart';
 
 class LocationCapability extends CapabilityHandler {
@@ -44,13 +45,21 @@ class LocationCapability extends CapabilityHandler {
     }
   }
 
-  NodeFrame _positionToFrame(Position position) {
+  Future<NodeFrame> _positionToFrame(Position position) async {
+    Map<String, dynamic>? address;
+    try {
+      address = await NativeBridge.reverseGeocode(
+        position.latitude,
+        position.longitude,
+      ).timeout(const Duration(seconds: 5));
+    } catch (_) {}
     return NodeFrame.response('', payload: {
       'lat': position.latitude,
       'lng': position.longitude,
       'accuracy': position.accuracy,
       'altitude': position.altitude,
       'timestamp': position.timestamp.toIso8601String(),
+      if (address != null) ...address,
     });
   }
 
@@ -78,7 +87,8 @@ class LocationCapability extends CapabilityHandler {
         }
         return NodeFrame.response('', error: {
           'code': 'LOCATION_TIMEOUT',
-          'message': 'Could not get location within 10 seconds and no cached position available',
+          'message':
+              'Could not get location within 10 seconds and no cached position available',
         });
       }
     } catch (e) {
