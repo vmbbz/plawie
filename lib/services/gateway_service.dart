@@ -20,6 +20,7 @@ import 'gateway_tool_catalog.dart';
 import 'app_native_chat_tool_router.dart';
 import 'native_gateway_smoke_service.dart';
 import 'native_gateway_shadow_parity_service.dart';
+import 'skill_parity_audit_service.dart';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'openclaw_service.dart';
@@ -45,13 +46,21 @@ class _FastCloudRoute {
 class TalkSpeakPlayback {
   final bool played;
   final bool allowNativeFallback;
+  final String status;
+  final String? message;
   final String? errorMessage;
+  final DateTime? backoffUntil;
 
   const TalkSpeakPlayback({
     required this.played,
     required this.allowNativeFallback,
+    this.status = 'unknown',
+    this.message,
     this.errorMessage,
+    this.backoffUntil,
   });
+
+  String? get displayMessage => message ?? errorMessage;
 }
 
 class GatewayService {
@@ -125,6 +134,7 @@ class GatewayService {
   DateTime? _gatewayInteractiveReadyAt;
   DateTime? _talkSpeakUnavailableUntil;
   bool _talkSpeakBackoffAllowsNativeFallback = false;
+  String? _talkSpeakBackoffMessage;
   DateTime? _lastLocalInferenceHealthSkipAt;
   DateTime? _lastHungGatewayRestartAt;
   DateTime? _lastStartupHealthKickAt;
@@ -146,6 +156,9 @@ class GatewayService {
   String? _appNativeSkillBridgeDetail;
   int _appNativeSkillCatalogCount = 0;
   DateTime? _lastSkillsRegisterUnavailableLogAt;
+  DateTime? _lastSkillParityAuditAt;
+  String? _lastSkillParityPromptBlock;
+  bool _skillParityAuditInFlight = false;
   static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
   static const Duration _processValidationInterval = Duration(seconds: 90);
@@ -176,6 +189,7 @@ class GatewayService {
   static const Duration _nativeFullGatewayStartupGrace = Duration(seconds: 120);
   static const Duration _skillsRegisterUnavailableLogCooldown =
       Duration(seconds: 60);
+  static const Duration _skillParityAuditCooldown = Duration(minutes: 3);
 
   /// Live stream of human-readable chat and gateway events.
   Stream<String> get chatActivityStream => _chatActivityController.stream;
@@ -1489,6 +1503,13 @@ class GatewayService {
       unawaited(
           fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null));
       unawaited(_runRuntimeHardeningSweep());
+      if (nativeProductionOwner) {
+        unawaited(_auditNativeSkillParity(
+          reason: 'attach-existing',
+          repair: true,
+          reloadIfChanged: true,
+        ));
+      }
       return;
     }
 
@@ -1540,6 +1561,13 @@ class GatewayService {
       _subscribeLogs();
       _startHealthCheck();
       unawaited(_checkHealth());
+      if (nativeProductionOwner) {
+        unawaited(_auditNativeSkillParity(
+          reason: 'attach-existing-booting',
+          repair: true,
+          reloadIfChanged: true,
+        ));
+      }
       return;
     }
 
@@ -1587,6 +1615,11 @@ class GatewayService {
       if (nativeProductionOwner) {
         _addActivity(
           '[NATIVE-DEFAULT] Skipping PRoot config rewrite for native startup.',
+        );
+        await _auditNativeSkillParity(
+          reason: 'native pre-start',
+          repair: true,
+          reloadIfChanged: false,
         );
       } else {
         await _configureGateway();
@@ -2889,6 +2922,52 @@ HEARTBEAT_OK.
     _addActivity(message);
   }
 
+  Future<void> _auditNativeSkillParity({
+    required String reason,
+    bool repair = false,
+    bool reloadIfChanged = false,
+  }) async {
+    if (_runtime.id !=
+        GatewayRuntimeRegistry.nativeNodeFullGatewayProduction.id) {
+      return;
+    }
+    if (_skillParityAuditInFlight) return;
+    final now = DateTime.now();
+    final last = _lastSkillParityAuditAt;
+    if (!repair &&
+        last != null &&
+        now.difference(last) < _skillParityAuditCooldown) {
+      return;
+    }
+
+    _skillParityAuditInFlight = true;
+    try {
+      final snapshot = await SkillParityAuditService.instance
+          .audit(repairNativeFromProot: repair)
+          .timeout(const Duration(seconds: 20));
+      _lastSkillParityAuditAt = DateTime.now();
+      _lastSkillParityPromptBlock = snapshot.toPromptBlock();
+      _addActivity('${snapshot.compactLogLine} reason=$reason');
+      if (snapshot.repair.errors.isNotEmpty) {
+        _addActivity(
+          '[SKILL-PARITY] repair errors: '
+          '${snapshot.repair.errors.take(4).join('; ')}',
+        );
+      }
+      if (snapshot.repair.changed && reloadIfChanged) {
+        _addActivity(
+          '[SKILL-PARITY] Native skill mirror changed; reloading Gateway.',
+        );
+        await applyActiveOwnerConfigChange('native skill parity mirror')
+            .timeout(const Duration(seconds: 35), onTimeout: () {});
+      }
+    } catch (e) {
+      _addActivity('[SKILL-PARITY] audit failed ($reason): $e');
+    } finally {
+      _skillParityAuditInFlight = false;
+    }
+  }
+
   Future<void> reregisterSkills() async {
     final catalog = SkillsService().getToolsCatalog();
     _setAppNativeSkillBridgeState(
@@ -2918,11 +2997,11 @@ HEARTBEAT_OK.
         registered: false,
         status: 'registration_unavailable',
         detail:
-            'Gateway did not advertise skills.register; app-native skills remain local inventory unless Gateway exposes them through another tool path.',
+            'Gateway did not advertise skills.register for Flutter-local helper schemas; OpenClaw active skills remain governed by skills.status and Gateway agent routing.',
         catalogCount: catalog.length,
       );
       _logSkillsRegisterUnavailable(
-        '[SKILLS] skills.register not advertised; preserving gateway tool catalog',
+        '[SKILLS] skills.register not advertised for Flutter-local helpers; preserving Gateway/OpenClaw skill catalog',
       );
       return;
     }
@@ -2950,7 +3029,7 @@ HEARTBEAT_OK.
           registered: false,
           status: 'registration_unavailable',
           detail:
-              'Gateway rejected skills.register; app-native skills are not direct chat tool names in this session.',
+              'Gateway rejected Flutter-local helper registration; OpenClaw active skills still route through the Gateway agent loop.',
           catalogCount: catalog.length,
         );
         // Keep logging concise when the gateway explicitly omitted the method.
@@ -4089,6 +4168,25 @@ HEARTBEAT_OK.
               timeout: const Duration(seconds: 2),
             );
       final isRunning = processRunning || listenerRunning;
+      final nativeFullGateway =
+          _runtime.id != PreferencesService.gatewayRuntimeOwnerProot;
+      if (!isRunning &&
+          nativeFullGateway &&
+          _state.status != GatewayStatus.stopped) {
+        final startedAt = _state.startedAt ?? _httpWaitingSince;
+        final startupAge = startedAt == null
+            ? Duration.zero
+            : DateTime.now().difference(startedAt);
+        if (startupAge < _nativeFullGatewayStartupGrace) {
+          _consecutiveFailures = 0;
+          _httpWaitingSince ??= DateTime.now();
+          _addActivity(
+            '[HEALTH] Native Gateway bootstrap still within startup grace; '
+            'suppressing duplicate auto-start (${startupAge.inSeconds}s).',
+          );
+          return;
+        }
+      }
       if (!isRunning && _state.status != GatewayStatus.stopped) {
         _updateState(_state.copyWith(
           status: GatewayStatus.stopped,
@@ -4460,7 +4558,7 @@ HEARTBEAT_OK.
         ? 'For camera/photo/picture/selfie requests, call nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}) before answering. Do not say you cannot take a picture unless the nodes tool result fails.'
         : 'For camera/photo/picture/selfie requests, use camera_snap via the OpenClaw nodes tool.';
     final gestureGuidance = wantsGesture
-        ? 'For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}. You may include durationMs for bounded looping gestures, e.g. {"gesture":"dance","durationMs":60000}. Prefer exact rich gesture values when the user asks for them: dance, dance alt, spin, greeting, squat, sitting, chill sit wave, cross leg sitting wave, excited sitting wave, fight, cute, elegant, peacesign, pose, powerful, ready, shoot, talk, wave right, wave left, both wave, cheerful wave left/right, light wave left/right, shy wave left/right, bowing 1-5, both wave cheer 1-2, sitting wave left/right, exaggerated wave left/right, fearful wave, or stylized wave left/right. If the user asks to sit or do a sitting gesture without more detail, use {"gesture":"sitting"}. Do not collapse a specific request such as "exaggerated wave right" into plain "wave right". Do not use gestures.wave.'
+        ? 'For avatar gestures, use action="invoke" with invokeCommand="avatar.gesture" and invokeParamsJson like {"gesture":"wave right"}. You may include durationMs for bounded looping gestures, e.g. {"gesture":"dance","durationMs":60000}. Keep root/full-body gestures separate from limb/interaction gestures. Root/full-body gestures: dance, dance alt, spin, greeting, squat, fight, cute, elegant, peacesign, pose, powerful, ready, shoot, talk. Limb/interaction gestures: wave right, wave left, both wave, cheerful wave left/right, light wave left/right, shy wave left/right, bowing 1-5, both wave cheer 1-2, sitting, chill sit wave, cross leg sit, cross leg sitting wave, excited sitting wave, sitting wave left/right, exaggerated wave left/right, fearful wave, stylized wave left/right. If the user asks what limb gestures exist, list only limb/interaction gestures and do not include root/full-body gestures. If the user asks to sit or do a sitting gesture without more detail, use {"gesture":"sitting"}. Do not collapse a specific request such as "exaggerated wave right" into plain "wave right". Do not use gestures.wave.'
         : 'Only discuss or invoke avatar gestures when the user asks for avatar movement. Do not mention gesture plans in camera, location, sensor, haptic, or file responses.';
 
     return '''
@@ -4508,6 +4606,14 @@ $message''';
   }
 
   Future<String> _decorateMessageWithGatewaySkillContext(String message) async {
+    if (_runtime.id ==
+        GatewayRuntimeRegistry.nativeNodeFullGatewayProduction.id) {
+      await _auditNativeSkillParity(
+        reason: 'chat-context',
+        repair: false,
+      );
+    }
+
     final rawSkills = _state.activeSkills ?? const <Map<String, dynamic>>[];
     final activeSkills = <Map<String, dynamic>>[];
     final seen = <String>{};
@@ -4546,12 +4652,16 @@ $message''';
       );
     }
 
+    final parityBlock = _lastSkillParityPromptBlock?.trim() ?? '';
+
     if (activeSkills.isEmpty &&
         primitiveTools.isEmpty &&
-        appNativeCatalog.isEmpty) {
+        appNativeCatalog.isEmpty &&
+        parityBlock.isEmpty) {
       return message;
     }
 
+    final skillGateLines = <String>[];
     final skillLines = activeSkills.take(90).map((skill) {
       final id = _skillIdFromGatewaySkill(skill);
       final title = _privatePromptText(
@@ -4562,6 +4672,22 @@ $message''';
         skill['description'] ?? skill['summary'] ?? skill['about'],
         maxChars: 120,
       );
+      final disabled = skill['disabled'] == true ||
+          skill['enabled'] == false ||
+          skill['eligible'] == false;
+      if (disabled && skillGateLines.length < 16) {
+        final reason = _privatePromptText(
+          skill['reason'] ??
+              skill['disabledReason'] ??
+              skill['ineligibleReason'] ??
+              skill['missing'] ??
+              skill['requirements'],
+          maxChars: 140,
+        );
+        skillGateLines.add(
+          '- $id: ${reason.isEmpty ? 'Gateway reports disabled/ineligible.' : reason}',
+        );
+      }
       return description.isEmpty
           ? '- $id ($title)'
           : '- $id ($title): $description';
@@ -4586,26 +4712,30 @@ $message''';
         ? 'no enabled app-native skills reported by Flutter'
         : _appNativeSkillsRegisteredWithGateway
             ? 'registered with Gateway callback http://127.0.0.1:8765 (status: $_appNativeSkillBridgeStatus)'
-            : 'not registered as direct chat tool names (status: $_appNativeSkillBridgeStatus${appNativeBridgeDetail.isEmpty ? '' : '; $appNativeBridgeDetail'})';
+            : 'not registered as direct app-native tool names in this session (status: $_appNativeSkillBridgeStatus${appNativeBridgeDetail.isEmpty ? '' : '; $appNativeBridgeDetail'}). This is separate from OpenClaw active skills.';
 
-    _addActivity('[CHAT] Skill inventory context attached '
+    _addActivity('[CHAT] Skill capability context attached '
         '(skills=${activeSkills.length}, tools=${primitiveTools.length}, appNative=$_appNativeSkillCatalogCount/$_appNativeSkillBridgeStatus)');
 
     return '''
-<openclaw_runtime_inventory>
+<openclaw_runtime_capabilities>
 This is private runtime context. Use it to route the answer, but do not quote the XML tag.
 
 Definitions:
-- Skills are installed OpenClaw packages/integrations that add agent knowledge, workflows, or tool affordances.
+- Active skills are installed OpenClaw packages/integrations that the Gateway has loaded for the agent. Treat active skills as usable capabilities unless Gateway status or the parity audit reports a concrete gate.
 - Tools are primitive permissions/capabilities the Gateway may invoke.
 - Device capabilities are Android node actions such as camera, location, sensors, haptics, flashlight, canvas, and avatar gestures.
-- App-native skills are Flutter-local bundled skills exposed by AgentSkillServer on 127.0.0.1:8765; they are direct chat tools only after Gateway accepts their schemas.
+- App-native skills are Flutter-local bundled helpers exposed by AgentSkillServer on 127.0.0.1:8765; they are not the same thing as the Gateway/OpenClaw skill registry.
 Do not confuse these categories. If the user asks what skills are available, answer from Active skills, not from Device capabilities alone.
-Do not claim an installed skill is unavailable when it appears in Active skills. A skill can be active even if its name is not also a primitive tool function name.
-If the app-native bridge is not registered, do not call app-native names such as avatar-control, tts-voice, or device-node directly. For phone/avatar/haptic/flash/sensor/camera actions, use the Android node/Gateway tool path when available.
+Do not claim an active skill is unavailable just because its name is not also a primitive tool function name. Use the Gateway agent loop and closest available Gateway/node primitive.
+Only report a skill as blocked when there is a real gate: disabled/ineligible from skills.status, missing dependency/bin/env/config from parity audit, unsupported platform, or tool policy denial.
+If the app-native bridge is not registered, do not call app-native names such as avatar-control, tts-voice, or device-node directly. For phone/avatar/haptic/flash/sensor/camera actions, use the Android node/Gateway tool path when available. Local app-native fallback is explicit fallback only.
 
 Active skills (${activeSkills.length}):
 ${skillLines.isEmpty ? '- none reported by Gateway yet' : skillLines}$skillCountSuffix
+
+Concrete active-skill gates reported by Gateway:
+${skillGateLines.isEmpty ? '- none' : skillGateLines.join('\n')}
 
 Primitive tools/capabilities currently reported:
 $toolLine
@@ -4614,8 +4744,10 @@ App-native local catalog (${appNativeCatalog.length}):
 Bridge status: $appNativeBridgeLine
 ${appNativeSkillLines.isEmpty ? '- none reported by Flutter' : appNativeSkillLines.join('\n')}$appNativeCountSuffix
 
+${parityBlock.isEmpty ? '' : parityBlock}
+
 ${hasStocks ? 'Financial routing note: the stocks skill is active. For stock, ticker, market, earnings, dividend, crypto, or finance questions, prefer the installed stocks/financial-data skill path or Gateway financial tooling instead of saying no stocks skill is available.' : ''}
-</openclaw_runtime_inventory>
+</openclaw_runtime_capabilities>
 
 $message''';
   }
@@ -4641,6 +4773,20 @@ $message''';
 
     if (model == 'plawie/native-node-probe') {
       return message;
+    }
+    return null;
+  }
+
+  String? _explicitAppNativeFallbackPayload(String message) {
+    final trimmedLeft = message.trimLeft();
+    const prefixes = <String>[
+      '/local-tool ',
+      '/app-native ',
+    ];
+    for (final prefix in prefixes) {
+      if (trimmedLeft.toLowerCase().startsWith(prefix)) {
+        return trimmedLeft.substring(prefix.length).trimLeft();
+      }
     }
     return null;
   }
@@ -14099,19 +14245,28 @@ $message''';
       return;
     }
 
-    final appNativeToolExecution =
-        await AppNativeChatToolRouter.instance.tryExecute(
-      message,
-      directGatewayRegistrationAvailable: _appNativeSkillsRegisteredWithGateway,
-    );
-    if (appNativeToolExecution != null) {
-      _addActivity(
-        '[TOOLS] App-native direct route: '
-        '${appNativeToolExecution.toolName} ok=${appNativeToolExecution.ok}',
+    final explicitAppNativeFallback =
+        _explicitAppNativeFallbackPayload(message);
+    if (explicitAppNativeFallback != null) {
+      final appNativeToolExecution =
+          await AppNativeChatToolRouter.instance.tryExecute(
+        explicitAppNativeFallback,
+        directGatewayRegistrationAvailable:
+            _appNativeSkillsRegisteredWithGateway,
       );
-      yield appNativeToolExecution.toolUseChunk;
-      yield appNativeToolExecution.toolResultChunk;
-      yield appNativeToolExecution.visibleText;
+      if (appNativeToolExecution != null) {
+        _addActivity(
+          '[TOOLS] Explicit app-native local fallback: '
+          '${appNativeToolExecution.toolName} ok=${appNativeToolExecution.ok}',
+        );
+        yield appNativeToolExecution.toolUseChunk;
+        yield appNativeToolExecution.toolResultChunk;
+        yield appNativeToolExecution.visibleText;
+        return;
+      }
+      yield '[Error] No app-native local fallback matched that request. '
+          'Normal production chat uses Gateway chat.send so OpenClaw skills '
+          'and node tools stay in the agent loop.';
       return;
     }
 
@@ -14885,6 +15040,7 @@ $message''';
       return const TalkSpeakPlayback(
         played: false,
         allowNativeFallback: false,
+        status: 'empty',
       );
     }
 
@@ -14893,6 +15049,14 @@ $message''';
       return TalkSpeakPlayback(
         played: false,
         allowNativeFallback: _talkSpeakBackoffAllowsNativeFallback,
+        status: _talkSpeakBackoffAllowsNativeFallback
+            ? 'fallback_backoff'
+            : 'backoff',
+        message: _talkSpeakBackoffMessage ??
+            (_talkSpeakBackoffAllowsNativeFallback
+                ? 'Gateway voice is cooling down; using local system TTS.'
+                : 'Gateway voice is cooling down after a provider error.'),
+        backoffUntil: unavailableUntil,
       );
     }
 
@@ -14915,14 +15079,19 @@ $message''';
         return const TalkSpeakPlayback(
           played: false,
           allowNativeFallback: false,
+          status: 'empty_audio',
+          message: 'talk.speak returned empty audio payload.',
           errorMessage: 'talk.speak returned empty audio payload.',
         );
       }
       final audioBytes = base64Decode(audioBase64);
       await TtsService().speakBytes(audioBytes);
+      _talkSpeakUnavailableUntil = null;
+      _talkSpeakBackoffMessage = null;
       return const TalkSpeakPlayback(
         played: true,
         allowNativeFallback: false,
+        status: 'played',
       );
     } catch (e) {
       final err = e.toString();
@@ -14934,11 +15103,15 @@ $message''';
         _talkSpeakUnavailableUntil =
             DateTime.now().add(_talkSpeakUnavailableBackoff);
         _talkSpeakBackoffAllowsNativeFallback = false;
+        _talkSpeakBackoffMessage = message;
         _addActivity('[TTS] $message');
-        return const TalkSpeakPlayback(
+        return TalkSpeakPlayback(
           played: false,
           allowNativeFallback: false,
+          status: 'configuration_required',
+          message: message,
           errorMessage: message,
+          backoffUntil: _talkSpeakUnavailableUntil,
         );
       }
       final methodUnavailable = lower.contains('unknown method') ||
@@ -14948,11 +15121,16 @@ $message''';
         _talkSpeakUnavailableUntil =
             DateTime.now().add(_talkSpeakUnavailableBackoff);
         _talkSpeakBackoffAllowsNativeFallback = true;
+        _talkSpeakBackoffMessage =
+            'Gateway talk.speak is unavailable; using local system TTS.';
         _addActivity(
             '[TTS] talk.speak unavailable; suppressing retries for ${_talkSpeakUnavailableBackoff.inMinutes}m');
-        return const TalkSpeakPlayback(
+        return TalkSpeakPlayback(
           played: false,
           allowNativeFallback: true,
+          status: 'fallback_allowed',
+          message: 'Gateway talk.speak is unavailable; using local system TTS.',
+          backoffUntil: _talkSpeakUnavailableUntil,
         );
       }
       final providerBillingOrQuotaError = lower.contains('http 402') ||
@@ -14966,6 +15144,8 @@ $message''';
         _talkSpeakUnavailableUntil =
             DateTime.now().add(_talkSpeakUnavailableBackoff);
         _talkSpeakBackoffAllowsNativeFallback = false;
+        _talkSpeakBackoffMessage =
+            'Gateway TTS credits or provider quota are exhausted. Voice playback is paused for ${_talkSpeakUnavailableBackoff.inMinutes} minutes before retrying.';
         final compactError =
             err.length > 240 ? '${err.substring(0, 240)}...' : err;
         _addActivity(
@@ -14973,13 +15153,18 @@ $message''';
         return TalkSpeakPlayback(
           played: false,
           allowNativeFallback: false,
+          status: 'provider_backoff',
+          message: _talkSpeakBackoffMessage,
           errorMessage: err,
+          backoffUntil: _talkSpeakUnavailableUntil,
         );
       }
       _addActivity('[TTS] talk.speak failed: $e');
       return TalkSpeakPlayback(
         played: false,
         allowNativeFallback: false,
+        status: 'error',
+        message: err,
         errorMessage: err,
       );
     }

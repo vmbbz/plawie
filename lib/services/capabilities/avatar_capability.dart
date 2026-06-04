@@ -49,7 +49,10 @@ class AvatarCapability extends CapabilityHandler {
         'message': 'avatar.gesture requires a gesture name.',
       });
     }
-    final gesture = AvatarGestureCatalog.normalize(rawGesture);
+    final resolved = AvatarGestureCatalog.resolve(
+      params['assetPath'] ?? params['path'] ?? params['vrmaPath'] ?? rawGesture,
+    );
+    final gesture = resolved.gesture;
 
     final requestCallback = AgentSkillServer.instance.onAvatarGestureRequested;
     final legacyCallback = AgentSkillServer.instance.onGesturePlayed;
@@ -73,10 +76,11 @@ class AvatarCapability extends CapabilityHandler {
             (_isSittingGesture(gesture) ? true : null);
         final result = await requestCallback({
           'gesture': gesture,
+          'assetPath': resolved.assetPath,
           if (durationMs != null) 'durationMs': durationMs,
           if (interrupt != null) 'interrupt': interrupt,
           if (params['protectedGesture'] == true) 'protectedGesture': true,
-          if (params['source'] != null) 'source': params['source'].toString(),
+          'source': params['source']?.toString() ?? 'avatar-capability',
           if (params['canaryMode'] != null)
             'canaryMode': params['canaryMode'].toString(),
         }).timeout(const Duration(seconds: 9));
@@ -89,6 +93,7 @@ class AvatarCapability extends CapabilityHandler {
         return NodeFrame.response('', payload: {
           'status': 'queued',
           'gesture': gesture,
+          'path': resolved.assetPath,
           'reason': 'Avatar renderer did not confirm start before timeout.',
         });
       }
@@ -98,6 +103,7 @@ class AvatarCapability extends CapabilityHandler {
     return NodeFrame.response('', payload: {
       'status': 'queued',
       'gesture': gesture,
+      'path': resolved.assetPath,
       'reason': 'Legacy avatar gesture callback was used.',
     });
   }

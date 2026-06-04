@@ -30,6 +30,7 @@ import '../services/model_provider_catalog.dart';
 import '../widgets/aura_dot.dart';
 import '../services/gateway_service.dart';
 import '../services/agent_skill_server.dart';
+import '../services/avatar_gesture_catalog.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../services/capabilities/canvas_capability.dart';
 import '../services/capabilities/camera_capability.dart';
@@ -43,6 +44,7 @@ import 'package:path_provider/path_provider.dart';
 
 enum _GatewayTtsHealth {
   normal,
+  processing,
   degraded,
   failed,
 }
@@ -315,19 +317,30 @@ class _ChatScreenState extends State<ChatScreen>
         'reason': 'avatar.gesture requires a gesture name.',
       };
     }
-    command['gesture'] = gesture.toString();
+    final explicitAsset =
+        command['assetPath'] ?? command['path'] ?? command['vrmaPath'];
+    final resolved = AvatarGestureCatalog.resolve(explicitAsset ?? gesture);
+    command['gesture'] = resolved.gesture;
+    command['assetPath'] = explicitAsset?.toString().trim().isNotEmpty == true
+        ? explicitAsset.toString()
+        : resolved.assetPath;
+    command['source'] ??= 'chat-screen-avatar-control';
     final normalizedGesture = command['gesture'].toString().toLowerCase();
+    final normalizedPath = command['assetPath'].toString().toLowerCase();
     final hasDuration = command['durationMs'] != null ||
         command['duration_ms'] != null ||
         command['duration'] != null;
     if (!hasDuration) {
-      if (normalizedGesture.contains('dance')) {
+      if (normalizedGesture.contains('dance') ||
+          normalizedPath.contains('dance')) {
         command['durationMs'] = 60000;
-      } else if (_isSittingGestureRequest(normalizedGesture)) {
+      } else if (_isSittingGestureRequest(normalizedGesture) ||
+          _isSittingGestureRequest(normalizedPath)) {
         command['durationMs'] = 30000;
       }
     }
-    if (_isSittingGestureRequest(normalizedGesture) &&
+    if ((_isSittingGestureRequest(normalizedGesture) ||
+            _isSittingGestureRequest(normalizedPath)) &&
         command['interrupt'] == null) {
       command['interrupt'] = true;
     }
@@ -339,13 +352,14 @@ class _ChatScreenState extends State<ChatScreen>
       return {
         'status': 'queued',
         'gesture': command['gesture'],
+        'path': command['assetPath'],
         'reason':
             'Avatar renderer accepted the request but has not started it yet.',
       };
     });
 
     _addDiagnosticLog(
-      'Avatar gesture ${started['status']}: ${started['gesture'] ?? command['gesture']}',
+      'Avatar gesture ${started['status']}: ${started['gesture'] ?? command['gesture']} path=${started['path'] ?? command['assetPath']} bones=${started['humanBoneCount'] ?? '-'} tracks=${started['trackCount'] ?? '-'}',
     );
     debugPrint('[AVATAR] Gesture result: ${jsonEncode(started)}');
     return started;
@@ -387,6 +401,9 @@ class _ChatScreenState extends State<ChatScreen>
       }
       _isThinking = _chatRuntime.isThinking;
       _isGenerating = _chatRuntime.isGenerating;
+      _isTtsSpeaking = _chatRuntime.isTtsSpeaking;
+      _gatewayTtsHealth = _runtimeTtsHealthToScreen(_chatRuntime.ttsHealth);
+      _gatewayTtsHealthMessage = _chatRuntime.ttsHealthMessage;
     });
     if (_chatPinnedToBottom ||
         scrollInstantly ||
@@ -518,6 +535,8 @@ class _ChatScreenState extends State<ChatScreen>
       '[sess]',
       '[skills]',
       '[tts]',
+      '[avatar]',
+      '[vrma]',
       '[model]',
       '[warn]',
       '[error]',
@@ -557,6 +576,8 @@ class _ChatScreenState extends State<ChatScreen>
       'queued_work_without_active_run',
       'talk.speak',
       'talk provider',
+      'avatar gesture',
+      'vrma',
       'node required',
       'missing node',
       'tools.allow',
@@ -779,7 +800,10 @@ class _ChatScreenState extends State<ChatScreen>
       _gatewayTtsHealth = health;
       _gatewayTtsHealthMessage = message;
     });
-    if (!notify || health == _GatewayTtsHealth.normal || message == null) {
+    if (!notify ||
+        health == _GatewayTtsHealth.normal ||
+        health == _GatewayTtsHealth.processing ||
+        message == null) {
       return;
     }
     final now = DateTime.now();
@@ -793,18 +817,38 @@ class _ChatScreenState extends State<ChatScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: health == _GatewayTtsHealth.failed
-            ? AppColors.statusRed
-            : AppColors.statusAmber,
+        backgroundColor: switch (health) {
+          _GatewayTtsHealth.failed => AppColors.statusRed,
+          _GatewayTtsHealth.processing => Colors.cyanAccent,
+          _ => AppColors.statusAmber,
+        },
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 5),
       ),
     );
   }
 
+  _GatewayTtsHealth _runtimeTtsHealthToScreen(ChatRuntimeTtsHealth health) {
+    switch (health) {
+      case ChatRuntimeTtsHealth.normal:
+        return _GatewayTtsHealth.normal;
+      case ChatRuntimeTtsHealth.processing:
+        return _GatewayTtsHealth.normal;
+      case ChatRuntimeTtsHealth.degraded:
+        return _GatewayTtsHealth.degraded;
+      case ChatRuntimeTtsHealth.failed:
+        return _GatewayTtsHealth.failed;
+    }
+  }
+
+  bool get _isGatewayTtsUnavailable =>
+      _gatewayTtsHealth == _GatewayTtsHealth.degraded ||
+      _gatewayTtsHealth == _GatewayTtsHealth.failed;
+
   Color? _gatewayTtsAuraColor() {
     switch (_gatewayTtsHealth) {
       case _GatewayTtsHealth.normal:
+      case _GatewayTtsHealth.processing:
         return null;
       case _GatewayTtsHealth.degraded:
         return AppColors.statusAmber;
@@ -813,12 +857,48 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  Color _chatNobTtsColor() {
+    switch (_gatewayTtsHealth) {
+      case _GatewayTtsHealth.normal:
+      case _GatewayTtsHealth.processing:
+        return AppColors.statusGreen;
+      case _GatewayTtsHealth.degraded:
+        return AppColors.statusAmber;
+      case _GatewayTtsHealth.failed:
+        return AppColors.statusRed;
+    }
+  }
+
+  List<Color> _chatNobGradientColors(ThemeData theme) {
+    final color = _chatNobTtsColor();
+    if (!_isGatewayTtsUnavailable) {
+      return [
+        AppColors.statusGreen.withValues(alpha: 0.95),
+        theme.colorScheme.primary.withValues(alpha: 0.82),
+      ];
+    }
+    return [
+      color.withValues(alpha: 0.96),
+      Color.lerp(color, Colors.black, 0.28)!.withValues(alpha: 0.88),
+    ];
+  }
+
   void _setTtsProcessing(bool value) {
-    if (_isTtsSpeaking == value) return;
+    final nextHealth = _gatewayTtsHealth == _GatewayTtsHealth.processing
+        ? _GatewayTtsHealth.normal
+        : _gatewayTtsHealth;
+    if (_isTtsSpeaking == value && _gatewayTtsHealth == nextHealth) return;
     if (mounted) {
-      setState(() => _isTtsSpeaking = value);
+      setState(() {
+        _isTtsSpeaking = value;
+        _gatewayTtsHealth = nextHealth;
+        if (nextHealth == _GatewayTtsHealth.normal) {
+          _gatewayTtsHealthMessage = null;
+        }
+      });
     } else {
       _isTtsSpeaking = value;
+      _gatewayTtsHealth = nextHealth;
     }
   }
 
@@ -845,7 +925,7 @@ class _ChatScreenState extends State<ChatScreen>
         // Official fallback path: only when talk.speak is unavailable on this gateway.
         _setGatewayTtsHealth(
           _GatewayTtsHealth.degraded,
-          message:
+          message: playback.displayMessage ??
               'Gateway voice is unavailable on this runtime; using local system TTS.',
         );
         await _tts.speak(sentence);
@@ -853,22 +933,33 @@ class _ChatScreenState extends State<ChatScreen>
           _setTtsProcessing(false);
           _processNextTtsInQueue();
         }
-      } else if (!playback.played && playback.errorMessage != null) {
-        _addDiagnosticLog('Gateway Talk voice error: ${playback.errorMessage}');
+      } else if (!playback.played && playback.displayMessage != null) {
+        _addDiagnosticLog(
+            'Gateway Talk voice ${playback.status}: ${playback.displayMessage}');
+        final degraded = playback.status.contains('backoff');
         _setGatewayTtsHealth(
-          _GatewayTtsHealth.failed,
-          message: playback.errorMessage!,
+          degraded ? _GatewayTtsHealth.degraded : _GatewayTtsHealth.failed,
+          message: playback.displayMessage!,
         );
         _setTtsProcessing(false);
         _processNextTtsInQueue();
       } else if (!playback.played) {
         // Backoff/skip responses (for example temporary Talk suppression) must
         // release the queue lock, otherwise viseme + speech state can freeze.
+        _setGatewayTtsHealth(
+          _GatewayTtsHealth.degraded,
+          message: 'Gateway voice skipped playback (${playback.status}).',
+        );
         _setTtsProcessing(false);
         _processNextTtsInQueue();
       }
-    } catch (_) {
+    } catch (e) {
       // Guarantee _isTtsSpeaking is cleared on error so queue isn't permanently jammed
+      _addDiagnosticLog('Gateway Talk voice exception: $e');
+      _setGatewayTtsHealth(
+        _GatewayTtsHealth.failed,
+        message: 'Gateway voice failed: $e',
+      );
       _setTtsProcessing(false);
       _processNextTtsInQueue();
     }
@@ -3946,36 +4037,50 @@ class _ChatScreenState extends State<ChatScreen>
                                           ),
                                         ),
                                         const SizedBox(width: 8),
-                                        Container(
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            gradient: LinearGradient(
-                                              begin: Alignment.topLeft,
-                                              end: Alignment.bottomRight,
-                                              colors: [
-                                                AppColors.statusGreen
-                                                    .withValues(alpha: 0.95),
-                                                Theme.of(context)
-                                                    .colorScheme
-                                                    .primary
-                                                    .withValues(alpha: 0.82),
-                                              ],
-                                            ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: AppColors.statusGreen
-                                                    .withValues(alpha: 0.22),
-                                                blurRadius: 18,
-                                                spreadRadius: -2,
+                                        AnimatedBuilder(
+                                          animation: _glowController,
+                                          builder: (context, _) {
+                                            final theme = Theme.of(context);
+                                            final signalColor =
+                                                _chatNobTtsColor();
+                                            final pulse =
+                                                _isGatewayTtsUnavailable
+                                                    ? _glowController.value
+                                                    : 0.0;
+                                            return AnimatedContainer(
+                                              duration: const Duration(
+                                                  milliseconds: 180),
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                gradient: LinearGradient(
+                                                  begin: Alignment.topLeft,
+                                                  end: Alignment.bottomRight,
+                                                  colors:
+                                                      _chatNobGradientColors(
+                                                          theme),
+                                                ),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color:
+                                                        signalColor.withValues(
+                                                            alpha: 0.22 +
+                                                                pulse * 0.32),
+                                                    blurRadius: 18 + pulse * 10,
+                                                    spreadRadius:
+                                                        -2 + pulse * 2,
+                                                  ),
+                                                ],
                                               ),
-                                            ],
-                                          ),
-                                          child: IconButton(
-                                            icon: const Icon(Icons.send_rounded,
-                                                color: Colors.white, size: 20),
-                                            onPressed: () => _handleSubmit(
-                                                _textController.text),
-                                          ),
+                                              child: IconButton(
+                                                icon: const Icon(
+                                                    Icons.send_rounded,
+                                                    color: Colors.white,
+                                                    size: 20),
+                                                onPressed: () => _handleSubmit(
+                                                    _textController.text),
+                                              ),
+                                            );
+                                          },
                                         ),
                                       ],
                                     ],
@@ -4073,7 +4178,7 @@ class _ChatScreenState extends State<ChatScreen>
                   _isTtsSpeaking ||
                   _ttsQueue.isNotEmpty,
               statusColor: _gatewayTtsAuraColor(),
-              alertPulse: _gatewayTtsHealth != _GatewayTtsHealth.normal,
+              alertPulse: _isGatewayTtsUnavailable,
               onTap: () => _showHolographicTtsMenu(context),
             ),
         ],
@@ -4178,6 +4283,170 @@ class _ChatScreenState extends State<ChatScreen>
 
   // ── Holographic TTS Menu ───────────────────────────────────────────────────
 
+  String _voiceCatalogString(Map<String, dynamic> entry, List<String> keys) {
+    for (final key in keys) {
+      final value = entry[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  String _voiceIdFromCatalogEntry(Object? voice) {
+    if (voice is Map) {
+      final entry = Map<String, dynamic>.from(voice);
+      final id = _voiceCatalogString(entry, const [
+        'id',
+        'voiceId',
+        'voice_id',
+        'voice',
+        'name',
+        'value',
+      ]);
+      if (id.isNotEmpty) return id;
+    }
+    return voice?.toString().trim() ?? '';
+  }
+
+  String _voiceLabelFromCatalogEntry(Object? voice, String fallback) {
+    if (voice is Map) {
+      final entry = Map<String, dynamic>.from(voice);
+      final label = _voiceCatalogString(entry, const [
+        'label',
+        'displayName',
+        'display_name',
+        'name',
+        'title',
+      ]);
+      if (label.isNotEmpty && label.toLowerCase() != fallback.toLowerCase()) {
+        return '$label ($fallback)';
+      }
+    }
+    return fallback;
+  }
+
+  String? _voiceGenderFromCatalogEntry(
+    Object? voice,
+    String voiceId,
+    String providerId,
+  ) {
+    String? normalize(String? raw) {
+      final lower = raw?.trim().toLowerCase() ?? '';
+      if (lower.isEmpty) return null;
+      if (lower.contains('female') ||
+          lower == 'f' ||
+          lower.contains('feminine')) {
+        return 'Female';
+      }
+      if (lower.contains('male') ||
+          lower == 'm' ||
+          lower.contains('masculine')) {
+        return 'Male';
+      }
+      if (lower.contains('neutral') || lower.contains('androgynous')) {
+        return 'Neutral';
+      }
+      return null;
+    }
+
+    if (voice is Map) {
+      final entry = Map<String, dynamic>.from(voice);
+      for (final key in const [
+        'gender',
+        'ssmlGender',
+        'voiceGender',
+        'speakerGender',
+        'sex',
+        'category',
+      ]) {
+        final found = normalize(entry[key]?.toString());
+        if (found != null) return found;
+      }
+    }
+
+    final id = voiceId.trim().toLowerCase();
+    final provider = providerId.trim().toLowerCase();
+
+    if (id.startsWith('af_') || id.startsWith('bf_')) return 'Female';
+    if (id.startsWith('am_') || id.startsWith('bm_')) return 'Male';
+
+    const curated = <String, String>{
+      'amy': 'Female',
+      'en_us-amy-medium': 'Female',
+      'lessac': 'Female',
+      'en_us-lessac-high': 'Female',
+      'ryan': 'Male',
+      'en_us-ryan-high': 'Male',
+      'alloy': 'Neutral',
+      'echo': 'Male',
+      'onyx': 'Male',
+      'ash': 'Male',
+      'ballad': 'Male',
+      'verse': 'Male',
+      'coral': 'Female',
+      'nova': 'Female',
+      'sage': 'Female',
+      'shimmer': 'Female',
+      'kore': 'Female',
+      'leda': 'Female',
+      'aoede': 'Female',
+      'callirrhoe': 'Female',
+      'autonoe': 'Female',
+      'achernar': 'Female',
+      'despina': 'Female',
+      'erinome': 'Female',
+      'laomedeia': 'Female',
+      'pulcherrima': 'Female',
+      'vindemiatrix': 'Female',
+      'sadachbia': 'Female',
+      'sadaltager': 'Female',
+      'sulafat': 'Female',
+      'puck': 'Male',
+      'charon': 'Male',
+      'fenrir': 'Male',
+      'orus': 'Male',
+      'enceladus': 'Male',
+      'iapetus': 'Male',
+      'umbriel': 'Male',
+      'algieba': 'Male',
+      'algenib': 'Male',
+      'rasalgethi': 'Male',
+      'alnilam': 'Male',
+      'schedar': 'Male',
+      'gacrux': 'Male',
+      'achird': 'Male',
+      'zubenelgenubi': 'Male',
+    };
+    final direct = curated[id];
+    if (direct != null) return direct;
+    for (final entry in curated.entries) {
+      if (id.contains(entry.key)) return entry.value;
+    }
+    if (provider.contains('google') && id.contains('neural')) {
+      if (id.contains('jenny') ||
+          id.contains('michelle') ||
+          id.contains('aria')) {
+        return 'Female';
+      }
+      if (id.contains('guy') || id.contains('davis') || id.contains('tony')) {
+        return 'Male';
+      }
+    }
+    return null;
+  }
+
+  Color _voiceGenderColor(String gender) {
+    switch (gender.toLowerCase()) {
+      case 'female':
+        return const Color(0xFFFF79B8);
+      case 'male':
+        return const Color(0xFF7DB5FF);
+      case 'neutral':
+        return Colors.cyanAccent;
+      default:
+        return Colors.white38;
+    }
+  }
+
   Future<Map<String, dynamic>> _loadGatewayVoiceControlData() async {
     final gatewayProvider =
         Provider.of<GatewayProvider>(context, listen: false);
@@ -4191,6 +4460,8 @@ class _ChatScreenState extends State<ChatScreen>
     final selectedVoiceId = prefs.gatewayVoiceId.trim();
     final voices = <String>[];
     final voiceProviders = <String, String>{};
+    final voiceLabels = <String, String>{};
+    final voiceGenders = <String, String>{};
     var talkConfigured = false;
 
     void collectProviderVoices(
@@ -4203,10 +4474,19 @@ class _ChatScreenState extends State<ChatScreen>
       final rawVoices = provider['voices'];
       if (rawVoices is! List) return;
       for (final voice in rawVoices) {
-        final v = voice.toString().trim();
+        final v = _voiceIdFromCatalogEntry(voice);
         if (v.isEmpty) continue;
         voices.add(v);
-        voiceProviders.putIfAbsent(v.toLowerCase(), () => id);
+        final key = v.toLowerCase();
+        voiceProviders.putIfAbsent(key, () => id);
+        voiceLabels.putIfAbsent(
+          key,
+          () => _voiceLabelFromCatalogEntry(voice, v),
+        );
+        final gender = _voiceGenderFromCatalogEntry(voice, v, id);
+        if (gender != null) {
+          voiceGenders.putIfAbsent(key, () => gender);
+        }
       }
     }
 
@@ -4303,10 +4583,20 @@ class _ChatScreenState extends State<ChatScreen>
       final rawVoices = providerEntry?['voices'];
       if (rawVoices is List) {
         for (final voice in rawVoices) {
-          final v = voice.toString().trim();
+          final v = _voiceIdFromCatalogEntry(voice);
           if (v.isNotEmpty) {
             voices.add(v);
-            voiceProviders.putIfAbsent(v.toLowerCase(), () => activeProvider);
+            final key = v.toLowerCase();
+            voiceProviders.putIfAbsent(key, () => activeProvider);
+            voiceLabels.putIfAbsent(
+              key,
+              () => _voiceLabelFromCatalogEntry(voice, v),
+            );
+            final gender =
+                _voiceGenderFromCatalogEntry(voice, v, activeProvider);
+            if (gender != null) {
+              voiceGenders.putIfAbsent(key, () => gender);
+            }
           }
         }
       }
@@ -4328,6 +4618,8 @@ class _ChatScreenState extends State<ChatScreen>
       'selectedVoiceId': selectedVoiceId,
       'voices': dedupedVoices,
       'voiceProviders': voiceProviders,
+      'voiceLabels': voiceLabels,
+      'voiceGenders': voiceGenders,
       'talkConfigured': talkConfigured,
     };
   }
@@ -4379,6 +4671,16 @@ class _ChatScreenState extends State<ChatScreen>
                     final voiceProvidersRaw = data['voiceProviders'];
                     final voiceProviders = voiceProvidersRaw is Map
                         ? voiceProvidersRaw.map((key, value) =>
+                            MapEntry(key.toString(), value.toString()))
+                        : const <String, String>{};
+                    final voiceLabelsRaw = data['voiceLabels'];
+                    final voiceLabels = voiceLabelsRaw is Map
+                        ? voiceLabelsRaw.map((key, value) =>
+                            MapEntry(key.toString(), value.toString()))
+                        : const <String, String>{};
+                    final voiceGendersRaw = data['voiceGenders'];
+                    final voiceGenders = voiceGendersRaw is Map
+                        ? voiceGendersRaw.map((key, value) =>
                             MapEntry(key.toString(), value.toString()))
                         : const <String, String>{};
 
@@ -4457,6 +4759,47 @@ class _ChatScreenState extends State<ChatScreen>
                                   )),
                                 )
                               else ...[
+                                if (_isGatewayTtsUnavailable) ...[
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: _chatNobTtsColor()
+                                          .withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: _chatNobTtsColor()
+                                            .withValues(alpha: 0.45),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(
+                                          Icons.warning_amber_rounded,
+                                          color: _chatNobTtsColor(),
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            _gatewayTtsHealthMessage ??
+                                                'Gateway voice is unavailable right now.',
+                                            style: GoogleFonts.outfit(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.82),
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              height: 1.25,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 18),
+                                ],
                                 if (providers.isNotEmpty) ...[
                                   Text(
                                     'PROVIDER',
@@ -4560,16 +4903,63 @@ class _ChatScreenState extends State<ChatScreen>
                                         isExpanded: true,
                                         dropdownColor: const Color(0xFF17181F),
                                         items: voices.map((voice) {
-                                          final owner = voiceProviders[
-                                                  voice.toLowerCase()] ??
-                                              '';
+                                          final key = voice.toLowerCase();
+                                          final owner =
+                                              voiceProviders[key] ?? '';
+                                          final display =
+                                              voiceLabels[key] ?? voice;
+                                          final gender =
+                                              voiceGenders[key] ?? 'Unknown';
                                           final label = owner.isNotEmpty &&
                                                   owner != activeProvider
-                                              ? '$voice · $owner'
-                                              : voice;
+                                              ? '$display · $owner'
+                                              : display;
                                           return DropdownMenuItem(
                                             value: voice,
-                                            child: Text(label),
+                                            child: Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    label,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 3,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: _voiceGenderColor(
+                                                            gender)
+                                                        .withValues(
+                                                            alpha: 0.12),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            999),
+                                                    border: Border.all(
+                                                      color: _voiceGenderColor(
+                                                              gender)
+                                                          .withValues(
+                                                              alpha: 0.55),
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    gender,
+                                                    style: GoogleFonts.outfit(
+                                                      color: _voiceGenderColor(
+                                                          gender),
+                                                      fontSize: 10,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           );
                                         }).toList(),
                                         onChanged: (value) async {
@@ -4724,13 +5114,26 @@ class _ChatScreenState extends State<ChatScreen>
                                               'Voice check complete.',
                                             );
                                             if (!context.mounted) return;
+                                            _setGatewayTtsHealth(
+                                              result.played
+                                                  ? _GatewayTtsHealth.normal
+                                                  : result.allowNativeFallback ||
+                                                          result.status
+                                                              .contains(
+                                                                  'backoff')
+                                                      ? _GatewayTtsHealth
+                                                          .degraded
+                                                      : _GatewayTtsHealth
+                                                          .failed,
+                                              message: result.displayMessage,
+                                            );
                                             if (!result.played &&
-                                                result.errorMessage != null) {
+                                                result.displayMessage != null) {
                                               ScaffoldMessenger.of(context)
                                                   .showSnackBar(
                                                 SnackBar(
                                                   content: Text(
-                                                      result.errorMessage!),
+                                                      result.displayMessage!),
                                                   backgroundColor:
                                                       Colors.orangeAccent,
                                                 ),

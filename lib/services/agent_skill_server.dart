@@ -2035,7 +2035,7 @@ class AgentSkillServer {
         _sendJson(request, {'success': true, 'model': filename});
 
       case 'play_gesture':
-        final gesture = data['gesture'] as String?;
+        final gesture = data['gesture']?.toString();
         if (gesture == null) {
           return _sendError(request, 'Missing gesture parameter');
         }
@@ -2043,10 +2043,13 @@ class AgentSkillServer {
           ...data,
           'gesture': gesture,
         });
-        _sendJson(request, {'success': true, ...result});
+        _sendAvatarGestureResult(request, result);
 
       case 'play_vrma':
       case 'play_vrma_composite':
+        final explicitAsset = data['assetPath']?.toString() ??
+            data['path']?.toString() ??
+            data['vrmaPath']?.toString();
         final base = data['base']?.toString() ??
             data['gesture']?.toString() ??
             data['animation']?.toString();
@@ -2055,18 +2058,23 @@ class AgentSkillServer {
                 .where((item) => item.trim().isNotEmpty)
                 .toList() ??
             const <String>[];
-        final target = layers.isNotEmpty ? layers.first : base;
+        final target = explicitAsset?.trim().isNotEmpty == true
+            ? explicitAsset
+            : layers.isNotEmpty
+                ? layers.first
+                : base;
         if (target == null || target.trim().isEmpty) {
           return _sendError(request, 'Missing base/gesture/layers parameter');
         }
         final result = await _requestAvatarGesture({
           ...data,
-          'gesture': target,
+          'gesture': data['gesture']?.toString() ?? target,
+          'assetPath': target,
           'base': base,
           'layers': layers,
           'blendTime': data['blendTime'] ?? 0.4,
         });
-        _sendJson(request, {'success': true, ...result});
+        _sendAvatarGestureResult(request, result);
 
       case 'set_emotion':
         final emotion = data['emotion'] as String?;
@@ -2099,6 +2107,19 @@ class AgentSkillServer {
     }
   }
 
+  void _sendAvatarGestureResult(
+    HttpRequest request,
+    Map<String, dynamic> result,
+  ) {
+    final status = result['status']?.toString().toLowerCase();
+    final success = status == 'started' || status == 'completed';
+    _sendJson(request, {
+      ...result,
+      'success': success,
+      'ok': success,
+    });
+  }
+
   Future<Map<String, dynamic>> _requestAvatarGesture(
       Map<String, dynamic> request) async {
     final callback = onAvatarGestureRequested;
@@ -2111,6 +2132,8 @@ class AgentSkillServer {
       return {
         'status': 'queued',
         'gesture': gesture,
+        if (request['assetPath'] != null)
+          'path': request['assetPath'].toString(),
         'reason': 'Legacy avatar gesture callback was used.',
       };
     }

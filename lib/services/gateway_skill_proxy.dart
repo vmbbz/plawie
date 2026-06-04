@@ -55,10 +55,10 @@ class GatewaySkillProxy {
       if (!canExecuteGatewaySkills) {
         throw const SkillProxyException(
           'This Gateway does not expose direct skill page execution yet. '
-          'The skill can still be installed or visible as catalog inventory, '
-          'but this page cannot run it until skills.execute or a native page '
-          'adapter is available. Phone/avatar actions should route through '
-          'Gateway node tools when they are connected.',
+          'That is only a management-page RPC gate; active OpenClaw skills can '
+          'still be used by the chat agent through the normal Gateway agent '
+          'loop. This page needs skills.execute or a native page adapter for '
+          'direct button-driven execution.',
         );
       }
 

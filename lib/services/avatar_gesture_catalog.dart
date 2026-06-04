@@ -1,5 +1,31 @@
 import 'dart:convert';
 
+class AvatarGestureResolution {
+  final String gesture;
+  final String assetPath;
+  final String source;
+
+  const AvatarGestureResolution({
+    required this.gesture,
+    required this.assetPath,
+    required this.source,
+  });
+
+  bool get isLimb => source == 'limb';
+
+  Map<String, dynamic> toCommand({
+    int? durationMs,
+    String? commandSource,
+  }) {
+    return {
+      'gesture': gesture,
+      'assetPath': assetPath,
+      'source': commandSource ?? source,
+      if (durationMs != null) 'durationMs': durationMs,
+    };
+  }
+}
+
 class AvatarGestureCatalog {
   AvatarGestureCatalog._();
 
@@ -14,8 +40,9 @@ class AvatarGestureCatalog {
     'gesture dance': 'assets/vrm/animations/gesture_dance.vrma',
     'spin': 'assets/vrm/animations/gesture_spin.vrma',
     'greeting': 'assets/vrm/animations/gesture_greeting.vrma',
+    'greeting wave': 'assets/vrm/animations/gesture_greeting.vrma',
+    'hello wave': 'assets/vrm/animations/gesture_greeting.vrma',
     'wave': 'assets/vrm/animations/gesture_greeting.vrma',
-    'wave right': 'assets/vrm/animations/gesture_greeting.vrma',
     'squat': 'assets/vrm/animations/gesture_squat.vrma',
     'fight': 'assets/vrm/animations/gesture_fight.vrma',
     'cute': 'assets/vrm/animations/gesture_cute.vrma',
@@ -54,12 +81,12 @@ class AvatarGestureCatalog {
         'assets/vrm/animations/limbs/Cheerful_Wave_Left_01.vrma',
     'cheerful wave right':
         'assets/vrm/animations/limbs/Cheerful_Wave_Right_01.vrma',
-    'sit': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
-    'sit down': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
-    'sitting': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
-    'sitting gesture': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
-    'seated': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
-    'seated wave': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
+    'sit': 'assets/vrm/animations/limbs/Sitting_Both_Wave_01.vrma',
+    'sit down': 'assets/vrm/animations/limbs/Sitting_Both_Wave_01.vrma',
+    'sitting': 'assets/vrm/animations/limbs/Sitting_Both_Wave_01.vrma',
+    'sitting gesture': 'assets/vrm/animations/limbs/Sitting_Both_Wave_01.vrma',
+    'seated': 'assets/vrm/animations/limbs/Sitting_Both_Wave_01.vrma',
+    'seated wave': 'assets/vrm/animations/limbs/Sitting_Both_Wave_01.vrma',
     'chill sit wave': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
     'chill sit': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
     'chill sitting': 'assets/vrm/animations/limbs/Chill_Sit_Wave_01.vrma',
@@ -107,8 +134,14 @@ class AvatarGestureCatalog {
     'both wave': 'assets/vrm/animations/limbs/Wave_Both_01.vrma',
     'wave both': 'assets/vrm/animations/limbs/Wave_Both_01.vrma',
     'wave left': 'assets/vrm/animations/limbs/Wave_Left_01.vrma',
+    'left wave': 'assets/vrm/animations/limbs/Wave_Left_01.vrma',
+    'wave right': 'assets/vrm/animations/limbs/Wave_Right_01.vrma',
+    'right wave': 'assets/vrm/animations/limbs/Wave_Right_01.vrma',
   };
 
+  static final List<String> fullBodyGestureNames =
+      _buildGestureNames(fullBodyPaths);
+  static final List<String> limbGestureNames = _buildGestureNames(limbPaths);
   static final List<String> toolGestureNames = _buildToolGestureNames();
   static final List<String> _searchNames = _buildSearchNames();
 
@@ -119,7 +152,7 @@ class AvatarGestureCatalog {
             'type': 'string',
             'enum': toolGestureNames,
             'description':
-                'Exact avatar animation name. Examples: dance, spin, greeting, wave right, cheerful wave left, bowing 4, exaggerated wave right.',
+                'Exact avatar animation name. Root/full-body examples: dance, spin, greeting, squat. Limb/interaction examples: wave right, wave left, both wave, bowing 4, sitting, cross leg sit.',
           },
         },
         'required': ['gesture'],
@@ -161,6 +194,62 @@ class AvatarGestureCatalog {
       if (path != null && value.contains(name)) return path;
     }
     return fullBodyPaths[fallback]!;
+  }
+
+  static AvatarGestureResolution resolve(
+    Object? raw, {
+    String fallback = 'cute',
+  }) {
+    final value = _clean(raw);
+    final normalized = normalize(value);
+
+    final limbDirect = limbPaths[normalized];
+    if (limbDirect != null) {
+      return AvatarGestureResolution(
+        gesture: normalized,
+        assetPath: limbDirect,
+        source: 'limb',
+      );
+    }
+
+    for (final name in _searchNames) {
+      final path = limbPaths[name];
+      if (path != null && value.contains(name)) {
+        return AvatarGestureResolution(
+          gesture: name,
+          assetPath: path,
+          source: 'limb',
+        );
+      }
+    }
+
+    final fullDirect = fullBodyPaths[normalized];
+    if (fullDirect != null) {
+      return AvatarGestureResolution(
+        gesture: normalized,
+        assetPath: fullDirect,
+        source: 'full-body',
+      );
+    }
+
+    for (final name in _searchNames) {
+      final path = fullBodyPaths[name];
+      if (path != null && value.contains(name)) {
+        return AvatarGestureResolution(
+          gesture: name,
+          assetPath: path,
+          source: 'full-body',
+        );
+      }
+    }
+
+    final fallbackPath =
+        fullBodyPaths[fallback] ?? fullBodyPaths[defaultGesture]!;
+    return AvatarGestureResolution(
+      gesture: fallback,
+      assetPath: fallbackPath,
+      source: 'fallback',
+    );
   }
 
   static List<String> limbPathsForText(Object? raw) {
@@ -218,6 +307,11 @@ class AvatarGestureCatalog {
       ...limbPaths.keys,
     }.toList()
       ..sort();
+    return List.unmodifiable(names);
+  }
+
+  static List<String> _buildGestureNames(Map<String, String> paths) {
+    final names = paths.keys.toList()..sort();
     return List.unmodifiable(names);
   }
 

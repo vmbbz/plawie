@@ -54,6 +54,13 @@ class AppNativeChatToolRouter {
   final SensorCapability _sensor = SensorCapability();
   final VibrationCapability _vibration = VibrationCapability();
 
+  int? parseDurationMsForTesting(
+    String text, {
+    int minMs = 50,
+    int maxMs = 5000,
+  }) =>
+      _durationMs(text.toLowerCase(), minMs: minMs, maxMs: maxMs);
+
   Future<AppNativeChatToolExecution?> tryExecute(
     String message, {
     required bool directGatewayRegistrationAvailable,
@@ -63,7 +70,7 @@ class AppNativeChatToolRouter {
     if (plan == null) return null;
 
     final result = await _execute(plan);
-    final ok = result['ok'] == true || result['success'] == true;
+    final ok = _resultOk(plan, result);
     return AppNativeChatToolExecution(
       toolName: plan.toolName,
       input: plan.input,
@@ -92,10 +99,19 @@ class AppNativeChatToolRouter {
 
     final gesture = _gestureName(lower);
     if (gesture != null) {
+      final resolved = AvatarGestureCatalog.resolve(gesture);
+      final durationMs = _durationMs(lower, minMs: 250, maxMs: 120000);
       return _AppNativeToolPlan(
         toolName: 'avatar-control',
         command: 'avatar.gesture',
-        input: {'action': 'play_gesture', 'gesture': gesture},
+        input: {
+          'action': 'play_gesture',
+          'gesture': resolved.gesture,
+          'assetPath': resolved.assetPath,
+          'source': 'app-native-chat-router',
+          'interrupt': true,
+          if (durationMs != null) 'durationMs': durationMs,
+        },
       );
     }
 
@@ -291,12 +307,21 @@ class AppNativeChatToolRouter {
       };
     }
     if (result.data is Map) {
+      final payload = Map<String, dynamic>.from(result.data as Map);
+      final payloadOk = payload['ok'] != false && payload['success'] != false;
       return {
-        'ok': true,
-        ...Map<String, dynamic>.from(result.data as Map),
+        ...payload,
+        'ok': payloadOk,
       };
     }
     return {'ok': true, 'result': result.data};
+  }
+
+  bool _resultOk(_AppNativeToolPlan plan, Map<String, dynamic> result) {
+    final transportOk = result['ok'] == true || result['success'] == true;
+    if (plan.command != 'avatar.gesture') return transportOk;
+    final status = result['status']?.toString().toLowerCase();
+    return transportOk && (status == 'started' || status == 'completed');
   }
 
   Map<String, dynamic> _sanitizePayload(Map<String, dynamic> payload) {
@@ -314,11 +339,11 @@ class AppNativeChatToolRouter {
     Map<String, dynamic> result,
     bool ok,
   ) {
+    if (plan.command == 'avatar.gesture') {
+      return _avatarGestureVisibleText(plan, result, ok);
+    }
     if (!ok) {
-      final error = result['error'];
-      final message = error is Map
-          ? error['message']?.toString() ?? error.toString()
-          : error?.toString() ?? 'Unknown error';
+      final message = _errorMessageFromResult(result);
       return 'I tried to use ${plan.toolName}, but it failed: $message';
     }
     switch (plan.command) {
@@ -372,6 +397,37 @@ class AppNativeChatToolRouter {
     }
   }
 
+  String _avatarGestureVisibleText(
+    _AppNativeToolPlan plan,
+    Map<String, dynamic> result,
+    bool ok,
+  ) {
+    final gesture = (result['gesture'] ?? plan.input['gesture']).toString();
+    final status = result['status']?.toString().toLowerCase() ?? '';
+    if (ok) {
+      return 'Done. I started the $gesture avatar gesture.';
+    }
+    if (status == 'queued') {
+      return 'I sent the $gesture avatar gesture, but the renderer has not confirmed playback yet.';
+    }
+    if (status == 'skipped') {
+      return 'I skipped the $gesture avatar gesture: ${_errorMessageFromResult(result)}';
+    }
+    return 'I tried to play the $gesture avatar gesture, but it failed: ${_errorMessageFromResult(result)}';
+  }
+
+  String _errorMessageFromResult(Map<String, dynamic> result) {
+    final error = result['error'];
+    if (error is Map) return error['message']?.toString() ?? error.toString();
+    final direct = error?.toString();
+    if (direct != null && direct.isNotEmpty) return direct;
+    for (final key in const ['reason', 'message', 'status']) {
+      final value = result[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return 'Unknown error';
+  }
+
   String _compactJson(Map<String, dynamic> value) {
     final encoded = jsonEncode(_sanitizePayload(value));
     return encoded.length <= 180 ? encoded : '${encoded.substring(0, 177)}...';
@@ -394,16 +450,28 @@ class AppNativeChatToolRouter {
     return values.any(lower.contains);
   }
 
-  int? _durationMs(String lower) {
+  int? _durationMs(
+    String lower, {
+    int minMs = 50,
+    int maxMs = 5000,
+  }) {
     final match = RegExp(
-            r'\b(\d{1,4})\s*(ms|millisecond|milliseconds|s|sec|secs|second|seconds)\b')
+            r'\b(\d{1,4})\s*(ms|millisecond|milliseconds|s|sec|secs|second|seconds|m|min|mins|minute|minutes)\b')
         .firstMatch(lower);
     if (match == null) return null;
     final amount = int.tryParse(match.group(1) ?? '');
     if (amount == null) return null;
     final unit = match.group(2) ?? 'ms';
-    final ms = unit.startsWith('s') ? amount * 1000 : amount;
-    return ms.clamp(50, 5000);
+    final isMinuteUnit = unit == 'm' ||
+        unit == 'min' ||
+        unit == 'mins' ||
+        unit.startsWith('minute');
+    final ms = isMinuteUnit
+        ? amount * 60000
+        : unit.startsWith('s')
+            ? amount * 1000
+            : amount;
+    return ms.clamp(minMs, maxMs).toInt();
   }
 
   String? _gestureName(String lower) {

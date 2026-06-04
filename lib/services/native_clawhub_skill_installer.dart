@@ -95,6 +95,12 @@ class NativeClawHubSkillInstaller {
         version: resolvedVersion,
         installedAt: installedAt,
       );
+      await _mirrorNativeInstallToProotFallback(
+        sourceDir: targetDir,
+        slug: slug,
+        version: resolvedVersion,
+        installedAt: installedAt,
+      );
       await OpenClawCommandService.reloadGateway(
         reason: 'native ClawHub skill install: $slug',
       );
@@ -141,6 +147,7 @@ class NativeClawHubSkillInstaller {
     final workspaceDir = await _nativeWorkspaceDir();
     final targetDir = Directory(path.join(workspaceDir.path, 'skills', slug));
     if (!await targetDir.exists()) {
+      await _removeProotFallbackMirror(slug);
       return NativeClawHubSkillResult(
         ok: false,
         slug: slug,
@@ -152,6 +159,7 @@ class NativeClawHubSkillInstaller {
     try {
       await targetDir.delete(recursive: true);
       await _removeFromLock(workspaceDir, slug);
+      await _removeProotFallbackMirror(slug);
       await OpenClawCommandService.reloadGateway(
         reason: 'native ClawHub skill uninstall: $slug',
       );
@@ -186,6 +194,89 @@ class NativeClawHubSkillInstaller {
       recursive: true,
     );
     return workspaceDir;
+  }
+
+  Future<Directory?> _prootWorkspaceDirIfPresent() async {
+    final filesDir = await NativeBridge.getFilesDir();
+    final openClawDir = Directory(
+      path.join(filesDir, 'rootfs', 'ubuntu', 'root', '.openclaw'),
+    );
+    if (!await openClawDir.exists()) return null;
+    final workspaceDir = Directory(path.join(openClawDir.path, 'workspace'));
+    await Directory(path.join(workspaceDir.path, 'skills')).create(
+      recursive: true,
+    );
+    return workspaceDir;
+  }
+
+  Future<void> _mirrorNativeInstallToProotFallback({
+    required Directory sourceDir,
+    required String slug,
+    required String version,
+    required int installedAt,
+  }) async {
+    try {
+      final workspaceDir = await _prootWorkspaceDirIfPresent();
+      if (workspaceDir == null) return;
+      final targetDir = Directory(path.join(workspaceDir.path, 'skills', slug));
+      final marker =
+          File(path.join(targetDir.path, '.plawie-native-clawhub-mirror.json'));
+      if (await targetDir.exists()) {
+        if (!await marker.exists()) {
+          debugPrint(
+            '[NativeClawHub] PRoot mirror skipped existing non-mirrored slug=$slug',
+          );
+          return;
+        }
+        await targetDir.delete(recursive: true);
+      }
+      await _copyDirectory(sourceDir, targetDir);
+      await _writeJson(marker, {
+        'version': 1,
+        'slug': slug,
+        'installedVersion': version,
+        'mirroredAt': DateTime.now().toIso8601String(),
+      });
+      await _writeSkillLock(
+        workspaceDir,
+        slug: slug,
+        version: version,
+        installedAt: installedAt,
+      );
+      debugPrint('[NativeClawHub] PRoot fallback mirror updated slug=$slug');
+    } catch (error) {
+      debugPrint('[NativeClawHub] PRoot fallback mirror failed: $error');
+    }
+  }
+
+  Future<void> _removeProotFallbackMirror(String slug) async {
+    try {
+      final workspaceDir = await _prootWorkspaceDirIfPresent();
+      if (workspaceDir == null) return;
+      final targetDir = Directory(path.join(workspaceDir.path, 'skills', slug));
+      final marker =
+          File(path.join(targetDir.path, '.plawie-native-clawhub-mirror.json'));
+      if (await targetDir.exists() && await marker.exists()) {
+        await targetDir.delete(recursive: true);
+      }
+      await _removeFromLock(workspaceDir, slug);
+    } catch (error) {
+      debugPrint('[NativeClawHub] PRoot fallback mirror remove failed: $error');
+    }
+  }
+
+  Future<void> _copyDirectory(Directory source, Directory target) async {
+    await target.create(recursive: true);
+    await for (final entity in source.list(recursive: false)) {
+      final name = path.basename(entity.path);
+      final targetPath = path.join(target.path, name);
+      if (entity is Directory) {
+        await _copyDirectory(entity, Directory(targetPath));
+      } else if (entity is File) {
+        await File(targetPath).parent.create(recursive: true);
+        await entity.copy(targetPath);
+      }
+    }
   }
 
   String _normalizeSlug(String raw) {

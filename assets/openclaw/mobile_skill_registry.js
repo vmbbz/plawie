@@ -59,32 +59,28 @@ function findSkillDocument(skillDir) {
   return null;
 }
 
-function inspectSkillRegistry({ skillsRoot, configPath }) {
+function configToolsFromPath(configPath, errors) {
+  try {
+    return JSON.parse(safeRead(configPath, 64000) || "{}")?.tools ?? null;
+  } catch (error) {
+    errors.push(`config_parse_failed:${error?.message || String(error)}`);
+    return null;
+  }
+}
+
+function scanSkillRoot(skillsRoot) {
   const errors = [];
   const skillEntries = [];
   const countsByClass = {};
-  let configTools = null;
-
-  try {
-    const config = JSON.parse(safeRead(configPath, 64000) || "{}");
-    configTools = config?.tools ?? null;
-  } catch (error) {
-    errors.push(`config_parse_failed:${error?.message || String(error)}`);
-  }
 
   try {
     if (!fs.existsSync(skillsRoot)) {
       return {
         ok: false,
-        readOnly: true,
-        executionEnabled: false,
-        registrySource: "proot-openclaw-skills",
         skillsRoot,
-        configPath,
         skillCount: 0,
         skills: [],
         countsByClass,
-        configTools,
         errors: ["skills_root_missing"]
       };
     }
@@ -102,6 +98,8 @@ function inspectSkillRegistry({ skillsRoot, configPath }) {
       const body = documentPath ? safeRead(documentPath) : "";
       const capabilityClass = classifySkill(slug, body);
       countsByClass[capabilityClass] = (countsByClass[capabilityClass] || 0) + 1;
+      const executionGates = [];
+      if (!documentPath) executionGates.push("missing_skill_document");
       skillEntries.push({
         id: slug,
         name: firstHeading(body, slug),
@@ -109,40 +107,105 @@ function inspectSkillRegistry({ skillsRoot, configPath }) {
         hasSkillDocument: Boolean(documentPath),
         documentFile: documentPath ? path.basename(documentPath) : null,
         description: firstParagraph(body).slice(0, 240),
-        executionEnabled: false
+        agentUsable: executionGates.length === 0,
+        executionGates
       });
     }
 
     return {
       ok: true,
-      readOnly: true,
-      executionEnabled: false,
-      registrySource: "proot-openclaw-skills",
       skillsRoot,
-      configPath,
       skillCount: skillEntries.length,
       skills: skillEntries,
       countsByClass,
-      configTools,
       errors
     };
   } catch (error) {
     return {
       ok: false,
-      readOnly: true,
-      executionEnabled: false,
-      registrySource: "proot-openclaw-skills",
       skillsRoot,
-      configPath,
       skillCount: skillEntries.length,
       skills: skillEntries,
       countsByClass,
-      configTools,
       errors: [...errors, error?.message || String(error)]
     };
   }
 }
 
+function inspectSkillRegistry({
+  skillsRoot,
+  configPath,
+  registrySource = "openclaw-skills",
+  runtimeOwner = "unknown"
+}) {
+  const errors = [];
+  const scanned = scanSkillRoot(skillsRoot);
+  const configTools = configToolsFromPath(configPath, errors);
+  const hardGates = (scanned.skills || [])
+    .flatMap((skill) => (skill.executionGates || []).map((gate) => `${skill.id}:${gate}`));
+  return {
+    ...scanned,
+    ok: scanned.ok === true,
+    readOnly: true,
+    executionEnabled: hardGates.length === 0,
+    agentUsable: scanned.ok === true,
+    registrySource,
+    runtimeOwner,
+    configPath,
+    configTools,
+    executionGates: hardGates,
+    errors: [...(scanned.errors || []), ...errors]
+  };
+}
+
+function scanSkillRoots(roots) {
+  const map = new Map();
+  const errors = [];
+  for (const root of roots || []) {
+    const scanned = scanSkillRoot(root);
+    for (const skill of scanned.skills || []) {
+      if (!map.has(skill.id)) map.set(skill.id, { ...skill, root });
+    }
+    errors.push(...(scanned.errors || []).map((error) => `${root}:${error}`));
+  }
+  return {
+    skills: Array.from(map.values()).sort((a, b) => a.id.localeCompare(b.id)),
+    errors
+  };
+}
+
+function inspectSkillParity({
+  nativeSkillsRoot,
+  nativeWorkspaceSkillsRoot,
+  prootSkillsRoot,
+  prootWorkspaceSkillsRoot,
+  nativeConfigPath,
+  prootConfigPath
+}) {
+  const errors = [];
+  const native = scanSkillRoots([nativeSkillsRoot, nativeWorkspaceSkillsRoot].filter(Boolean));
+  const proot = scanSkillRoots([prootSkillsRoot, prootWorkspaceSkillsRoot].filter(Boolean));
+  const nativeIds = new Set(native.skills.map((skill) => skill.id));
+  const prootIds = new Set(proot.skills.map((skill) => skill.id));
+  const missingInNative = Array.from(prootIds).filter((id) => !nativeIds.has(id)).sort();
+  const missingInProot = Array.from(nativeIds).filter((id) => !prootIds.has(id)).sort();
+  const nativeConfigTools = configToolsFromPath(nativeConfigPath, errors);
+  const prootConfigTools = configToolsFromPath(prootConfigPath, errors);
+  return {
+    ok: missingInNative.length === 0 && native.errors.length === 0,
+    nativeSkillCount: native.skills.length,
+    prootSkillCount: proot.skills.length,
+    nativeSkillNames: native.skills.map((skill) => skill.id),
+    prootSkillNames: proot.skills.map((skill) => skill.id),
+    missingInNative,
+    missingInProot,
+    nativeConfigTools,
+    prootConfigTools,
+    errors: [...errors, ...native.errors, ...proot.errors]
+  };
+}
+
 module.exports = {
-  inspectSkillRegistry
+  inspectSkillRegistry,
+  inspectSkillParity
 };

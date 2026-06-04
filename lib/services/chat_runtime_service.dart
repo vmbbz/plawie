@@ -14,6 +14,13 @@ import 'model_provider_catalog.dart';
 import 'preferences_service.dart';
 import 'tts_service.dart';
 
+enum ChatRuntimeTtsHealth {
+  normal,
+  processing,
+  degraded,
+  failed,
+}
+
 class ChatRuntimeService extends ChangeNotifier {
   static const Duration _chatTurnSilenceNotice = Duration(minutes: 6);
 
@@ -38,6 +45,8 @@ class ChatRuntimeService extends ChangeNotifier {
   bool _isThinking = false;
   bool _isGenerating = false;
   bool _isTtsSpeaking = false;
+  ChatRuntimeTtsHealth _ttsHealth = ChatRuntimeTtsHealth.normal;
+  String? _ttsHealthMessage;
   String _ttsSentenceBuffer = '';
   String _ttsModel = ModelProviderCatalog.defaultCloudFallbackModel;
   String _agentName = 'Plawie';
@@ -51,6 +60,8 @@ class ChatRuntimeService extends ChangeNotifier {
   bool get isThinking => _isThinking;
   bool get isGenerating => _isGenerating;
   bool get isTtsSpeaking => _isTtsSpeaking || _tts.isSpeaking;
+  ChatRuntimeTtsHealth get ttsHealth => _ttsHealth;
+  String? get ttsHealthMessage => _ttsHealthMessage;
 
   Future<void> init() {
     if (_initialized) return Future<void>.value();
@@ -122,6 +133,17 @@ class ChatRuntimeService extends ChangeNotifier {
     if (notify) notifyListeners();
   }
 
+  void _setTtsHealth(
+    ChatRuntimeTtsHealth health, {
+    String? message,
+    bool notify = true,
+  }) {
+    if (_ttsHealth == health && _ttsHealthMessage == message) return;
+    _ttsHealth = health;
+    _ttsHealthMessage = message;
+    if (notify) notifyListeners();
+  }
+
   void addDiagnostic(String message) {
     final ts = DateTime.now().toIso8601String().substring(11, 19);
     _diagnostics.add('[$ts] $message');
@@ -189,6 +211,7 @@ class ChatRuntimeService extends ChangeNotifier {
     _ttsQueue.clear();
     _ttsSentenceBuffer = '';
     _isTtsSpeaking = false;
+    _setTtsHealth(ChatRuntimeTtsHealth.normal, notify: false);
     _ttsModel = model;
 
     _messages.add(ChatMessage(
@@ -591,12 +614,20 @@ class ChatRuntimeService extends ChangeNotifier {
 
   void _handleTtsComplete() {
     _isTtsSpeaking = false;
+    if (_ttsHealth == ChatRuntimeTtsHealth.processing) {
+      _setTtsHealth(ChatRuntimeTtsHealth.normal, notify: false);
+    }
+    notifyListeners();
     _processNextTtsInQueue();
   }
 
   Future<void> _processNextTtsInQueue() async {
     if (_isTtsSpeaking || _ttsQueue.isEmpty || _tts.isSpeaking) return;
     _isTtsSpeaking = true;
+    if (_ttsHealth == ChatRuntimeTtsHealth.normal) {
+      _setTtsHealth(ChatRuntimeTtsHealth.processing, notify: false);
+    }
+    notifyListeners();
     final sentence = _ttsQueue.removeAt(0);
     try {
       if (ModelProviderCatalog.isLocalModelId(_ttsModel)) {
@@ -604,15 +635,36 @@ class ChatRuntimeService extends ChangeNotifier {
         return;
       }
       final playback = await GatewayService().speakTextViaTalk(sentence);
+      if (playback.played) {
+        _setTtsHealth(ChatRuntimeTtsHealth.normal);
+      }
       if (!playback.played && playback.allowNativeFallback) {
+        _setTtsHealth(
+          ChatRuntimeTtsHealth.degraded,
+          message: playback.displayMessage ??
+              'Gateway voice is unavailable; using local system TTS.',
+        );
         await _tts.speak(sentence);
       } else if (!playback.played) {
+        final message = playback.displayMessage ??
+            'Gateway voice skipped playback (${playback.status}).';
+        final degraded = playback.status.contains('backoff');
+        addDiagnostic('TTS ${playback.status}: $message');
+        _setTtsHealth(
+          degraded
+              ? ChatRuntimeTtsHealth.degraded
+              : ChatRuntimeTtsHealth.failed,
+          message: message,
+        );
         _isTtsSpeaking = false;
+        notifyListeners();
         _processNextTtsInQueue();
       }
     } catch (e) {
       addDiagnostic('TTS error: $e');
+      _setTtsHealth(ChatRuntimeTtsHealth.failed, message: 'TTS error: $e');
       _isTtsSpeaking = false;
+      notifyListeners();
       _processNextTtsInQueue();
     }
   }

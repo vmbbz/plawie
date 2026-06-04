@@ -443,21 +443,26 @@ class SkillsService {
     String action = params['action'] ?? 'get_status';
 
     if (action == 'play_gesture' || action == 'play_vrma') {
-      String? raw = params['gesture'] ??
+      String? raw = params['assetPath'] ??
+          params['path'] ??
+          params['vrmaPath'] ??
+          params['gesture'] ??
           params['animation'] ??
           params['value'] ??
           params['text'];
       if (raw != null) {
-        final base = AvatarGestureCatalog.fullBodyPathForText(raw);
-        final layers = AvatarGestureCatalog.limbPathsForText(raw);
-        body['action'] = 'play_vrma_composite';
-        body['base'] = base;
-        body['layers'] = layers;
-        body['blendTime'] = 0.4;
-        action = 'play_vrma_composite';
+        final resolved = AvatarGestureCatalog.resolve(raw);
+        body['action'] = 'play_gesture';
+        body['gesture'] = resolved.gesture;
+        body['assetPath'] =
+            params['assetPath']?.toString().trim().isNotEmpty == true
+                ? params['assetPath'].toString()
+                : resolved.assetPath;
+        body['source'] = params['source'] ?? 'skills-service';
+        action = 'play_gesture';
         _eventController.add(SkillsEvent.gesturePlayed(
-          base: base.split('/').last,
-          layers: layers.map((p) => p.split('/').last).toList(),
+          base: resolved.assetPath.split('/').last,
+          layers: const <String>[],
         ));
       }
     }
@@ -975,7 +980,7 @@ class SkillsService {
         return {
           'name': skill.id,
           'description':
-              'Control Plawie avatar model, facial emotion, speaking style, and exact VRMA full-body or limb gestures.',
+              'Control Plawie avatar model, facial emotion, speaking style, and exact VRMA gestures. Root/full-body gestures and limb/interaction gestures are separate catalogs.',
           'input_schema': {
             'type': 'object',
             'properties': {
@@ -984,6 +989,7 @@ class SkillsService {
                 'enum': [
                   'play_gesture',
                   'play_vrma',
+                  'play_vrma_composite',
                   'set_emotion',
                   'set_mode',
                   'change_model',
@@ -996,7 +1002,19 @@ class SkillsService {
                 'type': 'string',
                 'enum': AvatarGestureCatalog.toolGestureNames,
                 'description':
-                    'Exact gesture name. Examples: dance, spin, greeting, sitting, chill sit wave, wave right, cheerful wave left, bowing 4, exaggerated wave right.'
+                    'Exact gesture name. Root/full-body examples: dance, spin, greeting, squat, fight, cute, elegant, pose. Limb/interaction examples: wave right, wave left, both wave, bowing 4, sitting, cross leg sit. When the user asks what limb gestures exist, list only limb/interaction names.'
+              },
+              'durationMs': {
+                'type': 'integer',
+                'minimum': 250,
+                'maximum': 120000,
+                'description':
+                    'Optional gesture playback duration in milliseconds.'
+              },
+              'assetPath': {
+                'type': 'string',
+                'description':
+                    'Internal resolved VRMA asset path. Normally omit and use gesture.'
               },
               'emotion': {
                 'type': 'string',

@@ -143,12 +143,12 @@
             'bowing 05': 'animations/limbs/Bowing_05.vrma',
             'cheerful wave left': 'animations/limbs/Cheerful_Wave_Left_01.vrma',
             'cheerful wave right': 'animations/limbs/Cheerful_Wave_Right_01.vrma',
-            'sit': 'animations/limbs/Chill_Sit_Wave_01.vrma',
-            'sit down': 'animations/limbs/Chill_Sit_Wave_01.vrma',
-            'sitting': 'animations/limbs/Chill_Sit_Wave_01.vrma',
-            'sitting gesture': 'animations/limbs/Chill_Sit_Wave_01.vrma',
-            'seated': 'animations/limbs/Chill_Sit_Wave_01.vrma',
-            'seated wave': 'animations/limbs/Chill_Sit_Wave_01.vrma',
+            'sit': 'animations/limbs/Sitting_Both_Wave_01.vrma',
+            'sit down': 'animations/limbs/Sitting_Both_Wave_01.vrma',
+            'sitting': 'animations/limbs/Sitting_Both_Wave_01.vrma',
+            'sitting gesture': 'animations/limbs/Sitting_Both_Wave_01.vrma',
+            'seated': 'animations/limbs/Sitting_Both_Wave_01.vrma',
+            'seated wave': 'animations/limbs/Sitting_Both_Wave_01.vrma',
             'chill sit': 'animations/limbs/Chill_Sit_Wave_01.vrma',
             'chill sitting': 'animations/limbs/Chill_Sit_Wave_01.vrma',
             'chill sit wave': 'animations/limbs/Chill_Sit_Wave_01.vrma',
@@ -177,6 +177,12 @@
             'stylized wave left': 'animations/limbs/Stylized_Wave_Left_01.vrma',
             'stylized wave right': 'animations/limbs/Stylized_Wave_Right_01.vrma',
             'fearful wave': 'animations/limbs/Fearful_Wave_01.vrma',
+            'both wave': 'animations/limbs/Wave_Both_01.vrma',
+            'wave both': 'animations/limbs/Wave_Both_01.vrma',
+            'wave left': 'animations/limbs/Wave_Left_01.vrma',
+            'left wave': 'animations/limbs/Wave_Left_01.vrma',
+            'wave right': 'animations/limbs/Wave_Right_01.vrma',
+            'right wave': 'animations/limbs/Wave_Right_01.vrma',
         };
         const FULL_BODY_GESTURE_ALIASES = {
             'dance picatrix': 'animations/dance_picatrix.vrma',
@@ -187,6 +193,7 @@
             'peace sign': 'animations/gesture_peacesign.vrma',
         };
         const LEGACY_GESTURE_ALIASES = {
+            'wave': 'animations/gesture_greeting.vrma',
             'greeting wave': 'animations/gesture_greeting.vrma',
             'hello wave': 'animations/gesture_greeting.vrma',
             'legacy wave': 'animations/gesture_greeting.vrma',
@@ -232,67 +239,93 @@
 
         function createNeonStool() {
             const seat = new THREE.Group();
+            seat.userData.targetAlpha = 0;
+            seat.userData.alpha = 0;
 
-            const glassMat = new THREE.MeshPhongMaterial({
-                color: 0x7ffcff,
-                emissive: 0x103a5f,
-                emissiveIntensity: 0.65,
+            const cushionMat = new THREE.MeshPhongMaterial({
+                color: 0x122b33,
+                emissive: 0x0b7d88,
+                emissiveIntensity: 0.4,
                 shininess: 120,
                 transparent: true,
-                opacity: 0.32,
+                opacity: 0.58,
                 depthWrite: false,
-                side: THREE.DoubleSide
             });
-            stoolSeat = new THREE.Mesh(new THREE.SphereGeometry(0.34, 48, 24), glassMat);
-            stoolSeat.scale.set(1.0, 0.42, 0.92);
+            cushionMat.userData.baseOpacity = cushionMat.opacity;
+            stoolSeat = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.29, 0.055, 48), cushionMat);
+            stoolSeat.scale.set(1.28, 1.0, 0.72);
             seat.add(stoolSeat);
 
-            const coreMat = new THREE.MeshBasicMaterial({
-                color: 0x42f6ff,
+            const rimMat = new THREE.MeshBasicMaterial({
+                color: 0x64fff0,
+                transparent: true,
+                opacity: 0.45,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            rimMat.userData.baseOpacity = rimMat.opacity;
+            const rim = new THREE.Mesh(new THREE.TorusGeometry(0.265, 0.006, 8, 64), rimMat);
+            rim.rotation.x = Math.PI / 2;
+            rim.scale.set(1.28, 0.72, 1.0);
+            rim.position.y = 0.031;
+            seat.add(rim);
+
+            const glowMat = new THREE.MeshBasicMaterial({
+                color: 0x49fff4,
                 transparent: true,
                 opacity: 0.16,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false
             });
-            const core = new THREE.Mesh(new THREE.SphereGeometry(0.2, 32, 16), coreMat);
-            core.scale.set(1.0, 0.38, 0.9);
-            seat.add(core);
+            glowMat.userData.baseOpacity = glowMat.opacity;
+            const undersideGlow = new THREE.Mesh(new THREE.CircleGeometry(0.31, 64), glowMat);
+            undersideGlow.rotation.x = -Math.PI / 2;
+            undersideGlow.scale.set(1.15, 0.72, 1.0);
+            undersideGlow.position.y = -0.035;
+            seat.add(undersideGlow);
 
-            const cyanRingMat = new THREE.MeshBasicMaterial({
-                color: 0x69f7ff,
+            const stemMat = new THREE.MeshPhongMaterial({
+                color: 0x10252b,
+                emissive: 0x0bd7d7,
+                emissiveIntensity: 0.28,
                 transparent: true,
-                opacity: 0.72,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false
+                opacity: 0.34,
+                depthWrite: false,
             });
-            const magentaRingMat = new THREE.MeshBasicMaterial({
-                color: 0xd66bff,
-                transparent: true,
-                opacity: 0.52,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false
-            });
-
-            const equator = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.008, 10, 96), cyanRingMat);
-            equator.rotation.x = Math.PI / 2;
-            seat.add(equator);
-
-            const meridianA = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.005, 8, 80), magentaRingMat);
-            meridianA.scale.y = 0.42;
-            seat.add(meridianA);
-
-            const meridianB = meridianA.clone();
-            meridianB.rotation.y = Math.PI / 2;
-            seat.add(meridianB);
-
-            const hoverHalo = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.009, 8, 80), cyanRingMat);
-            hoverHalo.position.y = -0.16;
-            hoverHalo.rotation.x = Math.PI / 2;
-            seat.add(hoverHalo);
+            stemMat.userData.baseOpacity = stemMat.opacity;
+            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.038, 0.22, 24), stemMat);
+            stem.position.y = -0.13;
+            seat.add(stem);
 
             neonStool = seat;
             neonStool.visible = false;
             scene.add(neonStool);
+        }
+
+        function setNeonStoolActive(active) {
+            if (!neonStool) return;
+            neonStool.userData.targetAlpha = active ? 1 : 0;
+            if (active) neonStool.visible = true;
+        }
+
+        function updateNeonStoolVisual(delta, time) {
+            if (!neonStool) return;
+            const target = neonStool.userData.targetAlpha || 0;
+            const current = neonStool.userData.alpha || 0;
+            const alpha = THREE.MathUtils.lerp(current, target, delta * 8.0);
+            neonStool.userData.alpha = alpha;
+            neonStool.visible = alpha > 0.025 || target > 0;
+            neonStool.traverse(obj => {
+                if (!obj.material) return;
+                const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+                materials.forEach(mat => {
+                    const base = mat.userData?.baseOpacity ?? mat.opacity ?? 1;
+                    mat.opacity = base * alpha;
+                });
+            });
+            if (stoolSeat) {
+                stoolSeat.position.y = Math.sin(time * 2.0) * 0.008 * alpha;
+            }
         }
 
         // ── Animation State Machine ───────────────────────────────────────────
@@ -549,6 +582,8 @@
                 });
                 this.points = new THREE.Points(this.geometry, this.material);
                 this.points.frustumCulled = false;
+                this.points.visible = false;
+                this.geometry.setDrawRange(0, 0);
                 this.scene.add(this.points);
             }
 
@@ -579,6 +614,7 @@
                 if (this.particles.length > this.maxParticles) {
                     this.particles = this.particles.slice(-this.maxParticles);
                 }
+                this.points.visible = true;
             }
 
             update(delta) {
@@ -605,6 +641,7 @@
                 this.geometry.attributes.position.needsUpdate = true;
                 this.geometry.attributes.color.needsUpdate = true;
                 this.geometry.setDrawRange(0, activeCount);
+                this.points.visible = activeCount > 0;
             }
         }
         window.SparkleManager = new SparkleManager(scene);
@@ -690,6 +727,7 @@
         function normalizeGestureName(input) {
             return String(input || '')
                 .toLowerCase()
+                .replaceAll('\\', '/')
                 .replace('assets/vrm/', '')
                 .replace('animations/', '')
                 .replace('gesture_', '')
@@ -699,13 +737,51 @@
                 .trim();
         }
 
+        function normalizeGesturePath(input) {
+            const raw = String(input || '').trim().replaceAll('\\', '/');
+            if (!raw) return '';
+            let path = raw.replace(/^\.?\//, '').replace(/^assets\/vrm\//, '');
+            if (path.startsWith('limbs/')) path = 'animations/' + path;
+            if (!path.startsWith('animations/') && path.endsWith('.vrma')) {
+                path = 'animations/' + path;
+            }
+            return path;
+        }
+
+        function humanBonesForGltf(gltf) {
+            const json = gltf?.parser?.json || {};
+            const extension = json.extensions?.VRMC_vrm_animation || {};
+            return extension.humanoid?.humanBones || {};
+        }
+
         function registerGestureAction(alias, path, gltf) {
             if (!currentVrm || !mixer) return null;
-            const anim = gltf.userData.vrmAnimations[0];
+            try {
+            const vrmAnimations = gltf?.userData?.vrmAnimations || [];
+            if (!vrmAnimations.length) {
+                throw new Error('VRMA did not expose userData.vrmAnimations.');
+            }
+            const humanBones = humanBonesForGltf(gltf);
+            const humanBoneCount = Object.keys(humanBones).length;
+            if (humanBoneCount <= 0) {
+                throw new Error('VRMA has no humanoid humanBones mapping.');
+            }
+            const anim = vrmAnimations[0];
             const clip = createVRMAnimationClip(anim, currentVrm);
+            const trackCount = Array.isArray(clip.tracks) ? clip.tracks.length : 0;
+            const clipDuration = Number(clip.duration);
+            if (trackCount <= 0) {
+                throw new Error('VRMA produced no animation tracks.');
+            }
+            if (!Number.isFinite(clipDuration) || clipDuration < 0) {
+                throw new Error('VRMA produced invalid clip duration.');
+            }
             const action = mixer.clipAction(clip);
             action.alias = alias;
             action.path = path;
+            action.humanBoneCount = humanBoneCount;
+            action.trackCount = trackCount;
+            action.clipDuration = clipDuration;
             const isLooping = alias === 'talk' || 
                               alias === 'gesture_talk' || 
                               path.includes('gesture_talk') ||
@@ -721,6 +797,7 @@
             }
             gestures[alias] = action;
             gestures[path.toLowerCase()] = action;
+            gestures[normalizeGestureName(path)] = action;
             gestures[path.split('/').pop().replace('.vrma', '').toLowerCase().replaceAll('_', ' ')] = action;
             if (path.includes('/gesture_')) {
                 const shortName = path.split('/').pop().replace('.vrma', '').replace('gesture_', '');
@@ -728,35 +805,47 @@
             }
             if (path.includes('dance_picatrix')) gestures['dance'] = action;
             return action;
+            } catch (err) {
+                if (window.PlawieBridge) {
+                    window.PlawieBridge.postMessage('ERROR: [VRMA] rejected alias=' + alias + ' path=' + path + ' reason=' + err);
+                }
+                return null;
+            }
         }
 
-        function loadGestureAction(inputName) {
+        function loadGestureAction(inputName, explicitPath = '') {
+            const directPath = normalizeGesturePath(explicitPath);
             const key = normalizeGestureName(inputName);
-            const existing = gestures[key] || gestures['gesture_' + key];
+            const cacheKey = directPath ? directPath.toLowerCase() : key;
+            const existing = gestures[cacheKey] || gestures[key] || gestures['gesture_' + key];
             if (existing) return Promise.resolve(existing);
             if (!currentAnimationLoader || !currentVrm || !mixer) return Promise.resolve(null);
 
-            const path = GESTURE_FILE_MAP[key] || GESTURE_FILE_MAP['gesture_' + key];
+            const path = directPath || GESTURE_FILE_MAP[key] || GESTURE_FILE_MAP['gesture_' + key];
             if (!path) return Promise.resolve(null);
-            if (pendingGestureLoads[key]) return pendingGestureLoads[key];
+            if (pendingGestureLoads[cacheKey]) return pendingGestureLoads[cacheKey];
 
-            pendingGestureLoads[key] = new Promise(resolve => {
+            pendingGestureLoads[cacheKey] = new Promise(resolve => {
                 currentAnimationLoader.load(`./${path}`, (gltf) => {
                     const action = registerGestureAction(key, path, gltf);
                     if (window.PlawieBridge) {
-                        window.PlawieBridge.postMessage('LOG: [JS] Gesture loaded on demand: ' + key + ' path=' + path);
+                        if (action) {
+                            window.PlawieBridge.postMessage('LOG: [VRMA] loaded gesture=' + key + ' path=' + path + ' humanBoneCount=' + action.humanBoneCount + ' trackCount=' + action.trackCount + ' clipDuration=' + action.clipDuration.toFixed(3));
+                        } else {
+                            window.PlawieBridge.postMessage('WARN: [VRMA] load rejected gesture=' + key + ' path=' + path);
+                        }
                     }
                     resolve(action);
                 }, undefined, (err) => {
                     if (window.PlawieBridge) {
-                        window.PlawieBridge.postMessage('WARN: [JS] gesture failed ' + key + ': ' + err);
+                        window.PlawieBridge.postMessage('WARN: [VRMA] gesture failed ' + key + ' path=' + path + ': ' + err);
                     }
                     resolve(null);
                 });
             }).finally(() => {
-                delete pendingGestureLoads[key];
+                delete pendingGestureLoads[cacheKey];
             });
-            return pendingGestureLoads[key];
+            return pendingGestureLoads[cacheKey];
         }
 
         function postGestureResult(result) {
@@ -800,26 +889,40 @@
                    alias === 'dance' ||
                    alias === 'gesture_talk' ||
                    alias === 'gesture_dance' ||
-                   alias.includes('sit') ||
-                   alias.includes('seated') ||
                    normalizedPath.includes('gesture_talk') ||
                    normalizedPath.includes('dance_picatrix') ||
-                   normalizedPath.includes('gesture_dance') ||
-                   normalizedPath.includes('sit');
+                   normalizedPath.includes('gesture_dance');
         }
 
-        function resolveGestureName(baseClipName, layerClipNames = []) {
+        function isSittingGestureName(name, path = '') {
+            const n = String(name || '').toLowerCase();
+            const p = String(path || '').toLowerCase();
+            return n.includes('sit') ||
+                   n.includes('seated') ||
+                   p.includes('sit') ||
+                   p.includes('sitting');
+        }
+
+        function resolveGestureName(baseClipName, layerClipNames = [], explicitPath = '') {
+            const directPath = normalizeGesturePath(explicitPath);
             const candidates = [baseClipName, ...(Array.isArray(layerClipNames) ? layerClipNames : [])]
                 .map(normalizeGestureName)
                 .filter(Boolean);
+            if (directPath && candidates.length === 0) {
+                candidates.push(normalizeGestureName(directPath));
+            }
             return candidates.find(name =>
                 gestures[name] ||
                 GESTURE_FILE_MAP[name] ||
-                GESTURE_FILE_MAP['gesture_' + name]) || candidates[0] || 'ready';
+                GESTURE_FILE_MAP['gesture_' + name] ||
+                directPath) || candidates[0] || 'ready';
         }
 
         function finishActiveGesture(command, action, status = 'completed') {
             if (activeGestureCommand !== command) return;
+            if (isSittingGestureName(command.resolvedGesture || command.gesture, action?.path || command.resolvedPath || command.assetPath)) {
+                setNeonStoolActive(false);
+            }
             if (status === 'completed') {
                 if (isSpeaking && gestures['talk'] && gestureMode !== 'subtle') {
                     talkGestureActive = true;
@@ -834,6 +937,10 @@
                 id: command.id,
                 status,
                 gesture: command.resolvedGesture || command.gesture,
+                path: action?.path || command.resolvedPath || command.assetPath || null,
+                clipDuration: action?.clipDuration ?? null,
+                trackCount: action?.trackCount ?? null,
+                humanBoneCount: action?.humanBoneCount ?? null,
                 protectedGesture: protectedGestureId === command.id,
                 queueDepth: gestureQueue.length,
             });
@@ -852,30 +959,37 @@
                 return;
             }
 
-            const n = resolveGestureName(command.gesture, command.layers);
+            const requestedPath = normalizeGesturePath(command.assetPath || command.path || command.vrmaPath);
+            const n = resolveGestureName(command.gesture, command.layers, requestedPath);
             command.resolvedGesture = n;
+            command.resolvedPath = requestedPath || GESTURE_FILE_MAP[n] || GESTURE_FILE_MAP['gesture_' + n] || null;
             targetEmotion = GESTURE_EMOTIONS[n] || 'neutral';
 
             // Auto-stool logic
-            const isSitting = n.includes('squat') || n.includes('sit');
+            const isSitting = isSittingGestureName(n, requestedPath);
             if (neonStool) {
-                neonStool.visible = isSitting;
+                setNeonStoolActive(isSitting);
                 if (isSitting && currentVrm) {
                     neonStool.position.set(
                         currentVrm.scene.position.x,
-                        currentVrm.scene.position.y + 0.44,
-                        currentVrm.scene.position.z - 0.42
+                        currentVrm.scene.position.y + 0.28,
+                        currentVrm.scene.position.z - 0.24
                     );
                     neonStool.rotation.y = currentVrm.scene.rotation.y;
                 }
             }
 
             if (n === 'idle') {
+                setNeonStoolActive(false);
                 _returnToIdle(0.5);
                 postGestureResult({
                     id: command.id,
                     status: 'started',
                     gesture: n,
+                    path: command.resolvedPath,
+                    clipDuration: 0,
+                    trackCount: 0,
+                    humanBoneCount: 0,
                     durationMs: 0,
                     queueDepth: gestureQueue.length,
                 });
@@ -883,12 +997,14 @@
                 return;
             }
 
-            const action = await loadGestureAction(n);
+            const action = await loadGestureAction(n, requestedPath);
             if (!action || !currentVrm || !idleAction) {
+                setNeonStoolActive(false);
                 postGestureResult({
                     id: command.id,
                     status: 'failed',
                     gesture: n,
+                    path: command.resolvedPath,
                     reason: 'Gesture clip is unavailable or avatar is not ready.',
                     queueDepth: gestureQueue.length,
                 });
@@ -902,6 +1018,9 @@
                     status: 'started',
                     gesture: n,
                     path: action.path || null,
+                    clipDuration: action.clipDuration ?? null,
+                    trackCount: action.trackCount ?? null,
+                    humanBoneCount: action.humanBoneCount ?? null,
                     alreadyRunning: true,
                     queueDepth: gestureQueue.length,
                 });
@@ -914,7 +1033,7 @@
 
             const isLooping = isLoopingGesture(n, action);
             const requestedDurationMs = boundedDurationMs(command.durationMs ?? command.duration ?? command.duration_ms);
-            const duration = action.getClip().duration;
+            const duration = Number(action.getClip().duration) || 0;
             const naturalDurationMs = Math.max((duration * 1000) - 350, 100);
             const playDurationMs = requestedDurationMs || (isLooping ? DEFAULT_LOOP_GESTURE_MS : naturalDurationMs);
             const protectedCommand = isProtectedGestureCommand(command);
@@ -946,12 +1065,18 @@
                 status: 'started',
                 gesture: n,
                 path: action.path || null,
+                clipDuration: action.clipDuration ?? null,
+                trackCount: action.trackCount ?? null,
+                humanBoneCount: action.humanBoneCount ?? null,
                 looping: isLooping,
                 durationMs: playDurationMs,
                 protectedGesture: protectedCommand,
                 protectedUntilMs: protectedCommand ? Math.max(0, Math.round(protectedGestureUntil - performance.now())) : 0,
                 queueDepth: gestureQueue.length,
             });
+            if (window.PlawieBridge) {
+                window.PlawieBridge.postMessage('LOG: [VRMA] started path=' + (action.path || 'unknown') + ' gesture=' + n + ' humanBoneCount=' + action.humanBoneCount + ' trackCount=' + action.trackCount + ' clipDuration=' + action.clipDuration.toFixed(3));
+            }
 
             if (activeGestureTimer) clearTimeout(activeGestureTimer);
             activeGestureTimer = setTimeout(() => {
@@ -969,10 +1094,12 @@
             if (!command) return;
             activeGestureCommand = command;
             startGestureCommand(command).catch(err => {
+                setNeonStoolActive(false);
                 postGestureResult({
                     id: command.id,
                     status: 'failed',
                     gesture: command.gesture,
+                    path: command.resolvedPath || command.assetPath || null,
                     reason: String(err),
                     queueDepth: gestureQueue.length,
                 });
@@ -987,6 +1114,7 @@
                 : { ...rawCommand };
             command.id = command.id || ('js_gesture_' + Date.now() + '_' + (gestureCommandSequence++));
             command.gesture = command.gesture || command.name || command.value || 'ready';
+            command.assetPath = command.assetPath || command.path || command.vrmaPath || null;
             const protectedIncoming = isProtectedGestureCommand(command);
             if (isProtectedGestureActive() && !protectedIncoming) {
                 const incomingGesture = normalizeGestureName(command.gesture);
@@ -1001,6 +1129,7 @@
                         id: command.id,
                         status: 'skipped',
                         gesture: command.gesture,
+                        path: command.assetPath || null,
                         reason: 'Protected gesture is active.',
                         queueDepth: gestureQueue.length,
                     });
@@ -1205,6 +1334,7 @@
             if (!currentVrm) return;
 
             if (mixer) mixer.update(delta);
+            updateNeonStoolVisual(delta, time);
             if (needsPostIdleRecenter && currentVrm) {
                 recenterVrmOnHumanoidAnchor(currentVrm);
                 avatarMetrics = measureAvatarMetrics(currentVrm, avatarMetrics.headY);
@@ -1248,7 +1378,10 @@
             // This is the fix for the "wrestling" artifact: when a VRMA clip is
             // playing, scaling procedural bone overrides to near-zero lets the VRMA
             // keyframes drive the skeleton without fighting each other.
-            const isVrmaActive = currentAction && currentAction !== idleAction && currentAction.isRunning();
+            const holdActiveAction = activeGestureCommand && currentAction && currentAction !== idleAction;
+            const isVrmaActive = currentAction &&
+                                 currentAction !== idleAction &&
+                                 (currentAction.isRunning() || holdActiveAction);
             let isSubtleGesture = false;
             if (isVrmaActive && currentAction) {
                 const alias = currentAction.alias || '';
