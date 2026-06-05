@@ -110,7 +110,29 @@ class AgentSkillServer {
     final path = request.uri.path;
 
     if (request.method == 'GET' && path == '/battery') {
-      _handleBattery(request);
+      await _handleBattery(request);
+    } else if ((request.method == 'GET' || request.method == 'POST') &&
+        (path == '/vibrate' || path == '/haptic/vibrate')) {
+      await _handleLegacyVibrate(request);
+    } else if (request.method == 'GET' && path == '/sensor') {
+      await _handleLegacySensor(request);
+    } else if (request.method == 'GET' && path == '/sensors') {
+      await _handleLegacySensorList(request);
+    } else if (request.method == 'GET' && path == '/location') {
+      await _handleLegacyLocation(request);
+    } else if ((request.method == 'GET' || request.method == 'POST') &&
+        (path == '/flashlight' ||
+            path.startsWith('/flashlight/') ||
+            path == '/torch' ||
+            path.startsWith('/torch/'))) {
+      await _handleLegacyFlashlight(request);
+    } else if (request.method == 'GET' &&
+        (path == '/device/status' || path == '/device/info')) {
+      await _handleLegacyDeviceAction(request, 'device_status');
+    } else if (request.method == 'GET' && path == '/device/health') {
+      await _handleLegacyDeviceAction(request, 'device_health');
+    } else if (request.method == 'GET' && path == '/device/permissions') {
+      await _handleLegacyDeviceAction(request, 'device_permissions');
     } else if (request.method == 'GET' && path == '/api/tools') {
       _handleToolsCatalog(request);
     } else if (request.method == 'GET' && path == '/api/skills/list') {
@@ -1376,9 +1398,68 @@ class AgentSkillServer {
     }
   }
 
-  // ── Legacy battery stub ───────────────────────────────────────────────────
-  void _handleBattery(HttpRequest request) {
-    _sendJson(request, {'level': 85, 'isCharging': true});
+  // ── Legacy skill-doc compatibility routes ────────────────────────────────
+  Future<void> _handleBattery(HttpRequest request) async {
+    await _processDeviceControl({'action': 'get_battery'}, request);
+  }
+
+  Future<void> _handleLegacyVibrate(HttpRequest request) async {
+    final body = await _readJsonBody(request);
+    final durationMs =
+        _intValue(body['durationMs'] ?? request.uri.queryParameters['durationMs']) ??
+            220;
+    final pattern = _intList(body['pattern']);
+    await _processDeviceControl({
+      'action': 'vibrate',
+      'durationMs': durationMs,
+      if (pattern != null) 'pattern': pattern,
+    }, request);
+  }
+
+  Future<void> _handleLegacySensor(HttpRequest request) async {
+    final type =
+        request.uri.queryParameters['type'] ?? request.uri.queryParameters['sensor'];
+    await _processDeviceControl({
+      'action': 'read_sensor',
+      if (type != null) 'sensor_type': type,
+    }, request);
+  }
+
+  Future<void> _handleLegacySensorList(HttpRequest request) async {
+    await _processDeviceControl({'action': 'list_sensors'}, request);
+  }
+
+  Future<void> _handleLegacyLocation(HttpRequest request) async {
+    await _processDeviceControl({'action': 'get_location'}, request);
+  }
+
+  Future<void> _handleLegacyFlashlight(HttpRequest request) async {
+    final body = await _readJsonBody(request);
+    final pathParts = request.uri.path
+        .split('/')
+        .where((part) => part.trim().isNotEmpty)
+        .map((part) => part.toLowerCase())
+        .toList();
+    final rawAction = (body['action'] ??
+            request.uri.queryParameters['action'] ??
+            (pathParts.length > 1 ? pathParts.last : 'toggle'))
+        .toString()
+        .trim()
+        .toLowerCase();
+    final action = switch (rawAction) {
+      'on' || 'enable' || 'start' || 'true' => 'flashlight_on',
+      'off' || 'disable' || 'stop' || 'false' => 'flashlight_off',
+      'status' || 'state' || 'get_status' => 'flashlight_status',
+      _ => 'flashlight_toggle',
+    };
+    await _processDeviceControl({'action': action}, request);
+  }
+
+  Future<void> _handleLegacyDeviceAction(
+    HttpRequest request,
+    String action,
+  ) async {
+    await _processDeviceControl({'action': action}, request);
   }
 
   void _handleToolsCatalog(HttpRequest request) {
