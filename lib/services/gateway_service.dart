@@ -21,6 +21,7 @@ import 'app_native_chat_tool_router.dart';
 import 'native_gateway_smoke_service.dart';
 import 'native_gateway_shadow_parity_service.dart';
 import 'skill_parity_audit_service.dart';
+import 'skill_provisioning_service.dart';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'openclaw_service.dart';
@@ -2945,9 +2946,16 @@ HEARTBEAT_OK.
       final snapshot = await SkillParityAuditService.instance
           .audit(repairNativeFromProot: repair)
           .timeout(const Duration(seconds: 20));
+      final provisioning = await SkillProvisioningService.instance
+          .planSnapshot(snapshot)
+          .timeout(const Duration(seconds: 10));
       _lastSkillParityAuditAt = DateTime.now();
-      _lastSkillParityPromptBlock = snapshot.toPromptBlock();
+      _lastSkillParityPromptBlock = [
+        snapshot.toPromptBlock(),
+        provisioning.toPromptBlock(),
+      ].where((block) => block.trim().isNotEmpty).join('\n');
       _addActivity('${snapshot.compactLogLine} reason=$reason');
+      _addActivity('${provisioning.compactLogLine} reason=$reason');
       if (snapshot.repair.errors.isNotEmpty) {
         _addActivity(
           '[SKILL-PARITY] repair errors: '

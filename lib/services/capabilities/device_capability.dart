@@ -5,6 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../models/node_frame.dart';
 import '../native_bridge.dart';
 import '../skill_parity_audit_service.dart';
+import '../skill_provisioning_service.dart';
 import 'capability_handler.dart';
 
 class DeviceCapability extends CapabilityHandler {
@@ -71,10 +72,13 @@ class DeviceCapability extends CapabilityHandler {
         repairNativeFromProot: false,
         cacheTtl: const Duration(seconds: 15),
       );
+      final provisioning =
+          await SkillProvisioningService.instance.planSnapshot(parity);
       return NodeFrame.response('', payload: {
         'status': status.payload,
         'permissions': permissions.payload,
         'skillReadiness': parity.readinessCounts,
+        'skillProvisioning': provisioning.toHealthJson(maxResults: 12),
         'skillGateCount': parity.gates.length,
         'toolsAllowParity': parity.toolsAllowParity,
         'nativeSkillCount': parity.nativeSkillCount,

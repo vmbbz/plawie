@@ -9,6 +9,8 @@ import 'package:path/path.dart' as path;
 import 'clawhub_service.dart';
 import 'native_bridge.dart';
 import 'openclaw_service.dart';
+import 'skill_parity_audit_service.dart';
+import 'skill_provisioning_service.dart';
 
 class NativeClawHubSkillInstaller {
   NativeClawHubSkillInstaller._();
@@ -34,12 +36,20 @@ class NativeClawHubSkillInstaller {
 
     if (await targetDir.exists() && !force) {
       debugPrint('[NativeClawHub] install no-op already-installed slug=$slug');
+      final provisioning = await _auditProvisioningPlan(slug);
+      if (provisioning?.reloadRecommended == true) {
+        await OpenClawCommandService.reloadGateway(
+          reason: 'native ClawHub skill provision: $slug',
+        );
+        debugPrint('[NativeClawHub] provision reload requested slug=$slug');
+      }
       return NativeClawHubSkillResult(
         ok: true,
         slug: slug,
         version: resolvedVersion,
         targetPath: targetDir.path,
         alreadyInstalled: true,
+        provisioning: provisioning?.toJson(),
       );
     }
 
@@ -101,6 +111,7 @@ class NativeClawHubSkillInstaller {
         version: resolvedVersion,
         installedAt: installedAt,
       );
+      final provisioning = await _auditProvisioningPlan(slug);
       await OpenClawCommandService.reloadGateway(
         reason: 'native ClawHub skill install: $slug',
       );
@@ -111,6 +122,7 @@ class NativeClawHubSkillInstaller {
         slug: slug,
         version: resolvedVersion,
         targetPath: targetDir.path,
+        provisioning: provisioning?.toJson(),
       );
     } catch (error) {
       if (await stageDir.exists()) {
@@ -194,6 +206,37 @@ class NativeClawHubSkillInstaller {
       recursive: true,
     );
     return workspaceDir;
+  }
+
+  Future<SkillProvisioningReport?> _auditProvisioningPlan(String slug) async {
+    try {
+      final snapshot = await SkillParityAuditService.instance.audit(
+        repairNativeFromProot: false,
+        cacheTtl: Duration.zero,
+      );
+      final report = await SkillProvisioningService.instance.provisionSnapshot(
+        snapshot,
+        skillId: slug,
+      );
+      debugPrint('[NativeClawHub] ${report.compactLogLine} slug=$slug');
+      for (final result in report.results.take(3)) {
+        final blockedActions = result.actions
+            .where((action) =>
+                action.status != SkillProvisioningActionStatus.ready &&
+                action.status != SkillProvisioningActionStatus.satisfied)
+            .take(4)
+            .map((action) => '${action.key}:${action.status.wireName}')
+            .join(',');
+        debugPrint(
+          '[NativeClawHub] provision skill=${result.skillId} status=${result.status.wireName}${blockedActions.isEmpty ? '' : ' actions=$blockedActions'}',
+        );
+      }
+      return report;
+    } catch (error) {
+      debugPrint(
+          '[NativeClawHub] provisioning audit failed slug=$slug: $error');
+      return null;
+    }
   }
 
   Future<Directory?> _prootWorkspaceDirIfPresent() async {
@@ -526,6 +569,7 @@ class NativeClawHubSkillResult {
   final String targetPath;
   final String? error;
   final bool alreadyInstalled;
+  final Map<String, dynamic>? provisioning;
 
   const NativeClawHubSkillResult({
     required this.ok,
@@ -534,5 +578,6 @@ class NativeClawHubSkillResult {
     required this.targetPath,
     this.error,
     this.alreadyInstalled = false,
+    this.provisioning,
   });
 }

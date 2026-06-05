@@ -235,13 +235,16 @@ class SkillsService {
         }
         await ensureAgentAwareness(fullSync: false);
         if (!silent) _broadcast(SkillsEvent.skillInstalled(id));
+        final provisioningMessage =
+            _nativeProvisioningInstallMessage(result.provisioning);
         return SkillInstallReport(
           ok: true,
           id: result.slug,
           message: result.alreadyInstalled
-              ? 'Native workspace skill ${result.slug} is already installed'
-              : 'Installed native workspace skill ${result.slug}@${result.version ?? 'latest'}',
+              ? 'Native workspace skill ${result.slug} is already installed$provisioningMessage'
+              : 'Installed native workspace skill ${result.slug}@${result.version ?? 'latest'}$provisioningMessage',
           targetPath: result.targetPath,
+          provisioning: result.provisioning,
         );
       }
 
@@ -271,6 +274,26 @@ class SkillsService {
         error: e.toString(),
       );
     }
+  }
+
+  String _nativeProvisioningInstallMessage(Map<String, dynamic>? provisioning) {
+    if (provisioning == null) return '';
+    final counts = provisioning['summaryCounts'];
+    final blocked = provisioning['blockedCount'];
+    if (counts is! Map) return '';
+    final ready = counts['ready'] ?? 0;
+    final satisfied = counts['satisfied'] ?? 0;
+    final blockedCount = blocked is num ? blocked.toInt() : 0;
+    if (blockedCount == 0) {
+      return ' (Native readiness ok: ready=$ready satisfied=$satisfied)';
+    }
+    final summary = counts.entries
+        .where((entry) => entry.key != 'ready' && entry.key != 'satisfied')
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join(', ');
+    return summary.isEmpty
+        ? ' (Native provisioning requires attention)'
+        : ' (Native provisioning needs attention: $summary)';
   }
 
   /// Uninstalls a skill via the OpenClaw CLI and triggers a forensic awareness sync.
@@ -1371,6 +1394,7 @@ class SkillInstallReport {
   final String message;
   final String? error;
   final String? targetPath;
+  final Map<String, dynamic>? provisioning;
 
   const SkillInstallReport({
     required this.ok,
@@ -1378,5 +1402,6 @@ class SkillInstallReport {
     required this.message,
     this.error,
     this.targetPath,
+    this.provisioning,
   });
 }
