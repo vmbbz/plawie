@@ -188,6 +188,56 @@ class Tools:
     expect(descriptor.methods.single.requiredParameters, ['city']);
   });
 
+  test('audit builds Node module descriptors and npm dependency gates',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_node_descriptor_test_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeSkills = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+      'workspace',
+      'skills',
+    ));
+    await nativeSkills.create(recursive: true);
+
+    final skill = Directory(path.join(nativeSkills.path, 'nodeish'));
+    await skill.create(recursive: true);
+    await File(path.join(skill.path, 'package.json')).writeAsString(jsonEncode({
+      'main': 'index.js',
+      'dependencies': {'left-pad': '^1.3.0'},
+      'openclaw': {
+        'methods': [
+          {'name': 'pad'}
+        ],
+      },
+    }));
+    await File(path.join(skill.path, 'index.js')).writeAsString(
+      'module.exports = {};',
+    );
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final entry = snapshot.executionMatrix.single;
+    final descriptor = entry.executionDescriptor;
+
+    expect(entry.status, SkillExecutionStatus.missingDependency);
+    expect(entry.gates, contains('missing_native_runtime'));
+    expect(entry.gates, contains('missing_native_node_package'));
+    expect(entry.requiredRuntimes, contains('node'));
+    expect(entry.requiredNodePackages, ['left-pad']);
+    expect(descriptor, isNotNull);
+    expect(descriptor!.runtime, SkillExecutionRuntime.node);
+    expect(descriptor.mode, SkillExecutionMode.nodeModule);
+    expect(descriptor.methods.single.name, 'pad');
+  });
+
   test('audit treats Python requirements as native provisionable gates',
       () async {
     final temp =

@@ -91,7 +91,7 @@ class HttpEndpointAdapter implements NativeSkillAdapter {
     http.Client client,
     String entrypoint,
     String method,
-    Map<String, String> args,
+    Map<String, dynamic> args,
   ) {
     final uri = Uri.parse(entrypoint);
     if (method == 'POST') {
@@ -114,11 +114,11 @@ class HttpEndpointAdapter implements NativeSkillAdapter {
     return client.get(_uriWithQuery(uri, args));
   }
 
-  static Uri _uriWithQuery(Uri uri, Map<String, String> args) {
+  static Uri _uriWithQuery(Uri uri, Map<String, dynamic> args) {
     if (args.isEmpty) return uri;
     return uri.replace(queryParameters: {
       ...uri.queryParameters,
-      ...args,
+      for (final entry in args.entries) entry.key: entry.value.toString(),
     });
   }
 

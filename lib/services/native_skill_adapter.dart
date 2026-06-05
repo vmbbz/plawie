@@ -4,6 +4,10 @@ typedef NativePythonRunner = Future<Map<String, dynamic>> Function(
   Map<String, dynamic> payload,
 );
 
+typedef NativeNodeRunner = Future<Map<String, dynamic>> Function(
+  Map<String, dynamic> payload,
+);
+
 class NativeSkillExecutionRequest {
   final SkillExecutionDescriptor descriptor;
   final List<SkillExecutionAction> actions;

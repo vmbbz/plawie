@@ -207,6 +207,12 @@ class SkillParityAuditService {
                   .pythonRequirements[_normalizePythonPackageName(package)] ??
               package,
       };
+      final requiredNodePackages = {
+        ...requirements.nodePackages,
+        ...?descriptorDependencies?.nodePackages.map(
+          _normalizeNodePackageName,
+        ),
+      };
       final requiredPlugins = {
         ...requirements.plugins,
         ...?descriptorDependencies?.plugins,
@@ -310,6 +316,31 @@ class SkillParityAuditService {
           }
         }
       }
+      if (requiredNodePackages.isNotEmpty) {
+        final nativeNodePackages =
+            await _scanNodePackages(layout.nativeStateRoot, skill);
+        final nativeHasNode = nativeBins.contains('node');
+        if (!nativeHasNode) {
+          skillGates.add(SkillParityGate(
+            skillId: skill.id,
+            gate: 'missing_native_runtime',
+            owner: 'native',
+            detail:
+                'node is required for package.json but was not found in Native runtime paths.',
+          ));
+        }
+        for (final package in requiredNodePackages) {
+          if (!nativeNodePackages.contains(package)) {
+            skillGates.add(SkillParityGate(
+              skillId: skill.id,
+              gate: 'missing_native_node_package',
+              owner: 'native',
+              detail:
+                  '$package is required by package.json but was not found in Native node_modules.',
+            ));
+          }
+        }
+      }
       if (requiredRuntimes.any(_looksLikeExtendedRuntime)) {
         skillGates.add(SkillParityGate(
           skillId: skill.id,
@@ -341,6 +372,7 @@ class SkillParityAuditService {
         }.toList()
           ..sort(),
         requiredPythonRequirements: requiredPythonRequirements,
+        requiredNodePackages: requiredNodePackages.toList()..sort(),
         requiredPlugins: {
           ...requiredPlugins,
         }.toList()
@@ -614,6 +646,7 @@ class SkillParityAuditService {
     final frontmatter = _parseYamlFrontmatter(body);
     final fromYaml = _requirementsFromYaml(frontmatter);
     final pythonRequirements = await _readPythonRequirements(skill);
+    final nodePackages = await _readNodePackageRequirements(skill);
     final pythonRequirementNames = pythonRequirements.keys.toSet();
     final bins = {
       ...fromYaml.bins.map(_normalizeRequiredBin).whereType<String>(),
@@ -629,8 +662,10 @@ class SkillParityAuditService {
       runtimes: {
         ...fromYaml.runtimes,
         if (pythonRequirements.isNotEmpty) 'python',
+        if (nodePackages.isNotEmpty) 'node',
       },
       pythonRequirements: pythonRequirements,
+      nodePackages: {...fromYaml.nodePackages, ...nodePackages},
       plugins: fromYaml.plugins,
       configKeys: fromYaml.configKeys,
     );
@@ -652,6 +687,10 @@ class SkillParityAuditService {
     final pythonDescriptor =
         await _pythonToolsClassExecutionDescriptor(skill, requirements);
     if (pythonDescriptor != null) return pythonDescriptor;
+
+    final nodeDescriptor =
+        await _nodeModuleExecutionDescriptor(skill, requirements);
+    if (nodeDescriptor != null) return nodeDescriptor;
 
     return _httpEndpointExecutionDescriptor(skill, requirements, body);
   }
@@ -722,6 +761,34 @@ class SkillParityAuditService {
     );
   }
 
+  static Future<SkillExecutionDescriptor?> _nodeModuleExecutionDescriptor(
+    _SkillDiskEntry skill,
+    _SkillRequirements requirements,
+  ) async {
+    if (skill.entity is! Directory) return null;
+    final root = skill.entity as Directory;
+    final packageJsonFile = File(path.join(root.path, 'package.json'));
+    if (!await packageJsonFile.exists()) return null;
+    final packageJson = await _readJson(packageJsonFile);
+    if (packageJson == null) return null;
+    final entrypoint = await _resolveNodeEntrypoint(root, packageJson);
+    if (entrypoint == null) return null;
+    return SkillExecutionDescriptor(
+      skillId: skill.id,
+      rootPath: root.path,
+      source: _skillSource(skill, entrypoint),
+      runtime: SkillExecutionRuntime.node,
+      mode: SkillExecutionMode.nodeModule,
+      entrypoint: entrypoint,
+      dependencies: _dependencyDescriptorFromRequirements(
+        requirements,
+        forceRuntimes: const ['node'],
+        forceBins: const ['node'],
+      ),
+      methods: _nodeMethods(packageJson),
+    );
+  }
+
   static SkillExecutionDescriptor? _httpEndpointExecutionDescriptor(
     _SkillDiskEntry skill,
     _SkillRequirements requirements,
@@ -787,6 +854,32 @@ class SkillParityAuditService {
     }
   }
 
+  static Future<Set<String>> _readNodePackageRequirements(
+    _SkillDiskEntry skill,
+  ) async {
+    if (skill.entity is! Directory) return const <String>{};
+    final file =
+        File(path.join((skill.entity as Directory).path, 'package.json'));
+    try {
+      if (!await file.exists()) return const <String>{};
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map) return const <String>{};
+      final packages = <String>{};
+      for (final key in const ['dependencies', 'optionalDependencies']) {
+        final section = decoded[key];
+        if (section is! Map) continue;
+        for (final name in section.keys) {
+          final normalized = _normalizeNodePackageName(name.toString());
+          if (normalized.isNotEmpty) packages.add(normalized);
+        }
+      }
+      return packages;
+    } catch (error) {
+      debugPrint('[SkillParity] package.json read failed ${file.path}: $error');
+      return const <String>{};
+    }
+  }
+
   static _PythonRequirementLine? _parsePythonRequirement(String rawLine) {
     var line = rawLine.trim();
     if (line.isEmpty || line.startsWith('#')) return null;
@@ -829,6 +922,7 @@ class SkillParityAuditService {
       }.where((bin) => !excludedBins.contains(bin)).toList()
         ..sort(),
       pythonPackages: requirements.pythonPackages.toList()..sort(),
+      nodePackages: requirements.nodePackages.toList()..sort(),
       env: requirements.env.toList()..sort(),
       config: requirements.configKeys.toList()..sort(),
       plugins: requirements.plugins.toList()..sort(),
@@ -900,6 +994,87 @@ class SkillParityAuditService {
       ));
     }
     return methods;
+  }
+
+  static Future<String?> _resolveNodeEntrypoint(
+    Directory root,
+    Map<String, dynamic> packageJson,
+  ) async {
+    final candidates = <String>[];
+    final main = packageJson['main']?.toString().trim();
+    if (main != null && main.isNotEmpty) candidates.add(main);
+    for (final fallback in const [
+      'index.js',
+      'main.js',
+      'skill.js',
+      'tools.js',
+      'src/index.js',
+      'dist/index.js',
+    ]) {
+      if (!candidates.contains(fallback)) candidates.add(fallback);
+    }
+    for (final candidate in candidates) {
+      final normalized = candidate.replaceAll('\\', '/');
+      if (normalized.contains('..')) continue;
+      if (await File(path.join(root.path, normalized)).exists()) {
+        return normalized;
+      }
+    }
+    return null;
+  }
+
+  static List<SkillExecutionMethodDescriptor> _nodeMethods(
+    Map<String, dynamic> packageJson,
+  ) {
+    final methods = _openClawMap(packageJson)['methods'];
+    if (methods is List) {
+      final parsed = methods
+          .whereType<Map>()
+          .map((method) => SkillExecutionMethodDescriptor(
+                name: method['name']?.toString() ?? '',
+                description: method['description']?.toString() ?? '',
+                parameters: _stringMap(method['parameters']),
+                requiredParameters: _stringList(method['requiredParameters']),
+              ))
+          .where((method) => method.name.trim().isNotEmpty)
+          .toList();
+      if (parsed.isNotEmpty) return parsed;
+    }
+    return const [
+      SkillExecutionMethodDescriptor(
+        name: 'execute',
+        description: 'Execute the Node skill module.',
+      ),
+    ];
+  }
+
+  static Map<String, dynamic> _openClawMap(Map<String, dynamic> packageJson) {
+    final direct = packageJson['openclaw'];
+    if (direct is Map) return Map<String, dynamic>.from(direct);
+    final nested = packageJson['metadata'];
+    if (nested is Map && nested['openclaw'] is Map) {
+      return Map<String, dynamic>.from(nested['openclaw'] as Map);
+    }
+    return const <String, dynamic>{};
+  }
+
+  static Map<String, String> _stringMap(dynamic value) {
+    if (value is! Map) return const <String, String>{};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): entry.value?.toString() ?? 'value',
+    };
+  }
+
+  static List<String> _stringList(dynamic value) {
+    if (value is String) return [value];
+    if (value is List) {
+      return value
+          .map((item) => item?.toString().trim() ?? '')
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    return const <String>[];
   }
 
   static List<_ParsedPythonParameter> _parsePythonParameters(String raw) {
@@ -1153,8 +1328,48 @@ class SkillParityAuditService {
     return results;
   }
 
+  static Future<Set<String>> _scanNodePackages(
+    String nativeStateRoot,
+    _SkillDiskEntry skill,
+  ) async {
+    final roots = <Directory>[
+      Directory(path.join(nativeStateRoot, 'node_modules')),
+      Directory(path.join(nativeStateRoot, 'workspace', 'node_modules')),
+    ];
+    if (skill.entity is Directory) {
+      roots.add(Directory(
+          path.join((skill.entity as Directory).path, 'node_modules')));
+    }
+    final packages = <String>{};
+    for (final root in roots) {
+      try {
+        if (!await root.exists()) continue;
+        await for (final entity in root.list(recursive: false)) {
+          if (entity is! Directory) continue;
+          final name = path.basename(entity.path);
+          if (name.isEmpty || name.startsWith('.')) continue;
+          if (name.startsWith('@')) {
+            await for (final scoped in entity.list(recursive: false)) {
+              if (scoped is Directory) {
+                packages.add(_normalizeNodePackageName(
+                  '$name/${path.basename(scoped.path)}',
+                ));
+              }
+            }
+          } else {
+            packages.add(_normalizeNodePackageName(name));
+          }
+        }
+      } catch (_) {}
+    }
+    return packages;
+  }
+
   static String _normalizePythonPackageName(String value) =>
       value.trim().toLowerCase().replaceAll('_', '-');
+
+  static String _normalizeNodePackageName(String value) =>
+      value.trim().toLowerCase();
 
   static String? _normalizeRequiredBin(String value) {
     var normalized = value.trim();
@@ -1378,6 +1593,7 @@ class SkillParityAuditService {
     final bins = <String>{};
     final env = <String>{};
     final runtimes = <String>{};
+    final nodePackages = <String>{};
     final plugins = <String>{};
     final configKeys = <String>{};
 
@@ -1390,6 +1606,14 @@ class SkillParityAuditService {
         env.addAll(_stringSetFromDynamic(candidate['environment']));
         runtimes.addAll(_stringSetFromDynamic(candidate['runtimes']));
         runtimes.addAll(_stringSetFromDynamic(candidate['runtime']));
+        nodePackages.addAll(
+          _stringSetFromDynamic(candidate['nodePackages'])
+              .map(_normalizeNodePackageName),
+        );
+        nodePackages.addAll(
+          _stringSetFromDynamic(candidate['npmPackages'])
+              .map(_normalizeNodePackageName),
+        );
         plugins.addAll(_stringSetFromDynamic(candidate['plugins']));
         configKeys.addAll(_stringSetFromDynamic(candidate['config']));
         configKeys.addAll(_stringSetFromDynamic(candidate['configKeys']));
@@ -1412,6 +1636,7 @@ class SkillParityAuditService {
       bins: bins,
       env: env,
       runtimes: runtimes,
+      nodePackages: nodePackages,
       plugins: plugins,
       configKeys: configKeys,
     );
@@ -1718,7 +1943,8 @@ class SkillParitySnapshot {
               gate.gate == 'missing_native_skill' ||
               gate.gate == 'missing_native_bin' ||
               gate.gate == 'missing_native_runtime' ||
-              gate.gate == 'missing_native_python_package'));
+              gate.gate == 'missing_native_python_package' ||
+              gate.gate == 'missing_native_node_package'));
 
   String get compactLogLine {
     final parts = <String>[
@@ -1875,6 +2101,7 @@ class SkillExecutionMatrixEntry {
   final List<String> requiredRuntimes;
   final List<String> requiredPythonPackages;
   final Map<String, String> requiredPythonRequirements;
+  final List<String> requiredNodePackages;
   final List<String> requiredPlugins;
   final List<String> requiredConfig;
   final SkillExecutionDescriptor? executionDescriptor;
@@ -1889,6 +2116,7 @@ class SkillExecutionMatrixEntry {
     required this.requiredRuntimes,
     required this.requiredPythonPackages,
     this.requiredPythonRequirements = const <String, String>{},
+    this.requiredNodePackages = const <String>[],
     required this.requiredPlugins,
     required this.requiredConfig,
     this.executionDescriptor,
@@ -1902,6 +2130,7 @@ class SkillExecutionMatrixEntry {
     required List<String> requiredRuntimes,
     required List<String> requiredPythonPackages,
     Map<String, String> requiredPythonRequirements = const <String, String>{},
+    List<String> requiredNodePackages = const <String>[],
     required List<String> requiredPlugins,
     required List<String> requiredConfig,
     SkillExecutionDescriptor? executionDescriptor,
@@ -1919,6 +2148,7 @@ class SkillExecutionMatrixEntry {
       requiredPythonPackages: requiredPythonPackages,
       requiredPythonRequirements:
           Map<String, String>.from(requiredPythonRequirements),
+      requiredNodePackages: requiredNodePackages,
       requiredPlugins: requiredPlugins,
       requiredConfig: requiredConfig,
       executionDescriptor: executionDescriptor,
@@ -1938,6 +2168,7 @@ class SkillExecutionMatrixEntry {
     if (gates.contains('missing_native_bin') ||
         gates.contains('missing_native_runtime') ||
         gates.contains('missing_native_python_package') ||
+        gates.contains('missing_native_node_package') ||
         gates.contains('missing_native_plugin')) {
       return SkillExecutionStatus.missingDependency;
     }
@@ -1958,6 +2189,7 @@ class SkillExecutionMatrixEntry {
         'requiredRuntimes': requiredRuntimes,
         'requiredPythonPackages': requiredPythonPackages,
         'requiredPythonRequirements': requiredPythonRequirements,
+        'requiredNodePackages': requiredNodePackages,
         'requiredPlugins': requiredPlugins,
         'requiredConfig': requiredConfig,
         if (executionDescriptor != null)
@@ -1970,6 +2202,7 @@ class _SkillRequirements {
   final Set<String> env;
   final Set<String> runtimes;
   final Map<String, String> pythonRequirements;
+  final Set<String> nodePackages;
   final Set<String> plugins;
   final Set<String> configKeys;
 
@@ -1978,6 +2211,7 @@ class _SkillRequirements {
     this.env = const <String>{},
     this.runtimes = const <String>{},
     this.pythonRequirements = const <String, String>{},
+    this.nodePackages = const <String>{},
     this.plugins = const <String>{},
     this.configKeys = const <String>{},
   });

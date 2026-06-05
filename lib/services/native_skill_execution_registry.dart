@@ -2,16 +2,19 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'adapters/http_endpoint_adapter.dart';
+import 'adapters/node_module_adapter.dart';
 import 'adapters/python_tools_class_adapter.dart';
 import 'native_skill_adapter.dart';
 import 'skill_execution_descriptor.dart';
 
 class NativeSkillExecutionRegistry {
   final NativePythonRunner pythonRunner;
+  final NativeNodeRunner? nodeRunner;
   final Future<String> Function() filesDirProvider;
 
   const NativeSkillExecutionRegistry({
     required this.pythonRunner,
+    this.nodeRunner,
     required this.filesDirProvider,
   });
 
@@ -23,6 +26,8 @@ class NativeSkillExecutionRegistry {
       default:
         final pythonDescriptor = await _pythonToolsClassDescriptor(normalized);
         if (pythonDescriptor != null) return pythonDescriptor;
+        final nodeDescriptor = await _nodeModuleDescriptor(normalized);
+        if (nodeDescriptor != null) return nodeDescriptor;
         return _httpEndpointDescriptor(normalized);
     }
   }
@@ -40,12 +45,15 @@ class NativeSkillExecutionRegistry {
       sitePackages: '$pythonHome/site-packages',
     );
     final httpAdapter = const HttpEndpointAdapter();
+    final nodeAdapter = NodeModuleAdapter(nodeRunner: nodeRunner);
 
     final selectedAdapter = adapter.canExecute(descriptor)
         ? adapter
         : httpAdapter.canExecute(descriptor)
             ? httpAdapter
-            : null;
+            : nodeAdapter.canExecute(descriptor)
+                ? nodeAdapter
+                : null;
 
     if (selectedAdapter == null) {
       return NativeSkillAdapterResult(
@@ -182,6 +190,33 @@ class NativeSkillExecutionRegistry {
     );
   }
 
+  Future<SkillExecutionDescriptor?> _nodeModuleDescriptor(
+    String skillId,
+  ) async {
+    final filesDir = await filesDirProvider();
+    final rootPath = await _resolveSkillRoot(filesDir, skillId);
+    if (rootPath == null) return null;
+    final packageJsonFile = File('$rootPath/package.json');
+    if (!await packageJsonFile.exists()) return null;
+    final packageJson = await _readJsonFile(packageJsonFile);
+    final entrypoint = await _resolveNodeEntrypoint(rootPath, packageJson);
+    if (entrypoint == null) return null;
+    return SkillExecutionDescriptor(
+      skillId: skillId,
+      rootPath: rootPath,
+      source: _sourceForSkillRoot(rootPath, entrypoint),
+      runtime: SkillExecutionRuntime.node,
+      mode: SkillExecutionMode.nodeModule,
+      entrypoint: entrypoint,
+      dependencies: SkillDependencyDescriptor(
+        runtimes: const ['node'],
+        bins: const ['node'],
+        nodePackages: _nodeDependencyNames(packageJson),
+      ),
+      methods: _nodeMethods(packageJson),
+    );
+  }
+
   static String _skillRoot(String filesDir, String skillId) {
     return '$filesDir/native-node-embedded/native-home/.openclaw/workspace/skills/$skillId';
   }
@@ -275,6 +310,110 @@ class NativeSkillExecutionRegistry {
       if (await file.exists()) return file.readAsString();
     }
     return '';
+  }
+
+  static Future<Map<String, dynamic>> _readJsonFile(File file) async {
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    return const <String, dynamic>{};
+  }
+
+  static Future<String?> _resolveNodeEntrypoint(
+    String rootPath,
+    Map<String, dynamic> packageJson,
+  ) async {
+    final candidates = <String>[];
+    final main = packageJson['main']?.toString().trim();
+    if (main != null && main.isNotEmpty) candidates.add(main);
+    for (final fallback in const [
+      'index.js',
+      'main.js',
+      'skill.js',
+      'tools.js',
+      'src/index.js',
+      'dist/index.js',
+    ]) {
+      if (!candidates.contains(fallback)) candidates.add(fallback);
+    }
+    for (final candidate in candidates) {
+      final normalized = candidate.replaceAll('\\', '/');
+      if (normalized.contains('..')) continue;
+      if (await File('$rootPath/$normalized').exists()) return normalized;
+    }
+    return null;
+  }
+
+  static List<String> _nodeDependencyNames(Map<String, dynamic> packageJson) {
+    final names = <String>{};
+    for (final key in const ['dependencies', 'optionalDependencies']) {
+      final section = packageJson[key];
+      if (section is! Map) continue;
+      for (final name in section.keys) {
+        final normalized = _normalizeNodePackageName(name.toString());
+        if (normalized.isNotEmpty) names.add(normalized);
+      }
+    }
+    return names.toList()..sort();
+  }
+
+  static List<SkillExecutionMethodDescriptor> _nodeMethods(
+    Map<String, dynamic> packageJson,
+  ) {
+    final methods = _openClawMap(packageJson)['methods'];
+    if (methods is List) {
+      final parsed = methods
+          .whereType<Map>()
+          .map((method) => SkillExecutionMethodDescriptor(
+                name: method['name']?.toString() ?? '',
+                description: method['description']?.toString() ?? '',
+                parameters: _stringMap(method['parameters']),
+                requiredParameters: _stringList(method['requiredParameters']),
+              ))
+          .where((method) => method.name.trim().isNotEmpty)
+          .toList();
+      if (parsed.isNotEmpty) return parsed;
+    }
+    return const [
+      SkillExecutionMethodDescriptor(
+        name: 'execute',
+        description: 'Execute the Node skill module.',
+      ),
+    ];
+  }
+
+  static Map<String, dynamic> _openClawMap(Map<String, dynamic> packageJson) {
+    final direct = packageJson['openclaw'];
+    if (direct is Map) return Map<String, dynamic>.from(direct);
+    final nested = packageJson['metadata'];
+    if (nested is Map && nested['openclaw'] is Map) {
+      return Map<String, dynamic>.from(nested['openclaw'] as Map);
+    }
+    return const <String, dynamic>{};
+  }
+
+  static Map<String, String> _stringMap(dynamic value) {
+    if (value is! Map) return const <String, String>{};
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): entry.value?.toString() ?? 'value',
+    };
+  }
+
+  static List<String> _stringList(dynamic value) {
+    if (value is String) return [value];
+    if (value is List) {
+      return value
+          .map((item) => item?.toString().trim() ?? '')
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    return const <String>[];
+  }
+
+  static String _normalizeNodePackageName(String value) {
+    return value.trim().toLowerCase();
   }
 
   static String _skillDocumentName(String rootPath) {

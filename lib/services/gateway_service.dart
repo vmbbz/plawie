@@ -4894,6 +4894,8 @@ $message''';
             'pythonPackages=${entry.requiredPythonPackages.join(',')}',
           if (entry.requiredPythonRequirements.isNotEmpty)
             'pythonRequirements=${entry.requiredPythonRequirements.entries.map((entry) => '${entry.key}:${entry.value}').join(',')}',
+          if (entry.requiredNodePackages.isNotEmpty)
+            'nodePackages=${entry.requiredNodePackages.join(',')}',
           if (entry.requiredEnv.isNotEmpty)
             'env=${entry.requiredEnv.join(',')}',
           if (entry.requiredConfig.isNotEmpty)

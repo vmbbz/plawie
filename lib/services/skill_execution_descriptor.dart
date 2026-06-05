@@ -20,7 +20,7 @@ enum SkillExecutionMode {
 class SkillExecutionAction {
   final String label;
   final String method;
-  final Map<String, String> args;
+  final Map<String, dynamic> args;
 
   const SkillExecutionAction({
     required this.label,

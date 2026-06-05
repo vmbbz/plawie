@@ -147,6 +147,45 @@ curl -X POST -H "Content-Type: application/json" -d '{"durationMs": 200}' http:/
     expect(descriptor.methods.single.parameters,
         {'durationMs': 'json body field'});
   });
+
+  test('Node module skill descriptor is discovered from package json',
+      () async {
+    final temp = await Directory.systemTemp.createTemp('node_skill_');
+    addTearDown(() => temp.delete(recursive: true));
+    final skillDir = Directory(
+      '${temp.path}/native-node-embedded/native-home/.openclaw/workspace/skills/nodeish',
+    );
+    await skillDir.create(recursive: true);
+    await File('${skillDir.path}/package.json').writeAsString(jsonEncode({
+      'main': 'index.js',
+      'dependencies': {'left-pad': '^1.3.0'},
+      'openclaw': {
+        'methods': [
+          {
+            'name': 'pad',
+            'parameters': {'value': 'string'},
+            'requiredParameters': ['value'],
+          }
+        ],
+      },
+    }));
+    await File('${skillDir.path}/index.js')
+        .writeAsString('module.exports = {};');
+
+    final registry = NativeSkillExecutionRegistry(
+      filesDirProvider: () async => temp.path,
+      pythonRunner: (_) async => const <String, dynamic>{},
+    );
+
+    final descriptor = await registry.descriptorForSkill('nodeish');
+
+    expect(descriptor, isNotNull);
+    expect(descriptor!.runtime, SkillExecutionRuntime.node);
+    expect(descriptor.mode, SkillExecutionMode.nodeModule);
+    expect(descriptor.entrypoint, 'index.js');
+    expect(descriptor.dependencies.nodePackages, ['left-pad']);
+    expect(descriptor.methods.single.name, 'pad');
+  });
 }
 
 Future<void> _createStocksScript(Directory filesDir) async {

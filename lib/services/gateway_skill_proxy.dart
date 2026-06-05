@@ -1,6 +1,7 @@
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 import '../providers/gateway_provider.dart';
+import 'native_clawhub_skill_execution_service.dart';
 
 /// GatewaySkillProxy — guarded access to optional gateway skill-page RPCs.
 ///
@@ -53,13 +54,7 @@ class GatewaySkillProxy {
 
     try {
       if (!canExecuteGatewaySkills) {
-        throw const SkillProxyException(
-          'This Gateway does not expose direct skill page execution yet. '
-          'That is only a management-page RPC gate; active OpenClaw skills can '
-          'still be used by the chat agent through the normal Gateway agent '
-          'loop. This page needs skills.execute or a native page adapter for '
-          'direct button-driven execution.',
-        );
+        return _executeNativeDirectSkill(skillName, method, params);
       }
 
       final result = await _gatewayProvider!.invoke('skills.execute', {
@@ -82,6 +77,32 @@ class GatewaySkillProxy {
       if (e is SkillProxyException) rethrow;
       throw SkillProxyException('Gateway error for $skillName.$method: $e');
     }
+  }
+
+  Future<Map<String, dynamic>> _executeNativeDirectSkill(
+    String skillName,
+    String method,
+    Map<String, dynamic> params,
+  ) async {
+    final execution = await NativeClawHubSkillExecutionService.instance
+        .executeDirectSkillMethod(
+      skillId: skillName,
+      method: method,
+      params: params,
+    );
+    if (!execution.ok) {
+      final error = execution.result['error'] ??
+          execution.result['message'] ??
+          'Native direct skill execution failed.';
+      throw SkillProxyException(error.toString());
+    }
+    final data = execution.result['data'];
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    return {
+      'result': data ?? execution.result,
+      'nativeDirect': true,
+    };
   }
 
   String _extractError(Map<String, dynamic> result) {

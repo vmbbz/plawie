@@ -95,6 +95,41 @@ class NativeClawHubSkillExecutionService {
     );
   }
 
+  Future<NativeClawHubSkillExecution> executeDirectSkillMethod({
+    required String skillId,
+    required String method,
+    Map<String, dynamic> params = const <String, dynamic>{},
+  }) async {
+    final nativeOwner = await _nativeOwnerProvider();
+    final input = <String, dynamic>{
+      'skill': skillId,
+      'method': method,
+      'params': params,
+      'direct': true,
+    };
+    if (!nativeOwner) {
+      return _failure(
+        toolName: skillId,
+        input: input,
+        code: 'native_owner_not_selected',
+        message:
+            'Native skill execution requires the Native owner. PRoot is manual only and was not used.',
+      );
+    }
+    return executeSkillActions(
+      skillId: skillId,
+      actions: [
+        SkillExecutionAction(
+          label: method,
+          method: method,
+          args: params,
+        ),
+      ],
+      input: input,
+      sourceFallback: skillId,
+    );
+  }
+
   Future<NativeClawHubSkillExecution> executeSkillActions({
     required String skillId,
     required List<SkillExecutionAction> actions,

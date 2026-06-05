@@ -179,6 +179,12 @@ class SkillProvisioningService {
       'missing_native_python_package',
       fallback: entry.requiredPythonPackages,
     );
+    final missingNodePackages = _gateValues(
+      snapshot,
+      entry,
+      'missing_native_node_package',
+      fallback: entry.requiredNodePackages,
+    );
     final missingPlugins = _gateValues(
       snapshot,
       entry,
@@ -194,6 +200,7 @@ class SkillProvisioningService {
     var binaryFullySatisfied = true;
     var runtimeFullySatisfied = true;
     var pythonPackagesFullySatisfied = true;
+    var nodePackagesFullySatisfied = true;
     final pythonCommandBins =
         missingBins.where(_isPythonCommandBin).toList(growable: false);
     final nonRuntimeMissingBins = missingBins
@@ -357,6 +364,17 @@ class SkillProvisioningService {
       ));
     }
 
+    for (final package in missingNodePackages) {
+      nodePackagesFullySatisfied = false;
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.nodePackage,
+        key: package,
+        status: SkillProvisioningActionStatus.missingDependency,
+        message:
+            '$package is required by package.json but is not installed in Native node_modules. Native npm package provisioning is required; PRoot was not used.',
+      ));
+    }
+
     if (gates.contains('disabled')) {
       actions.add(const SkillProvisioningAction(
         type: SkillProvisioningActionType.config,
@@ -396,6 +414,7 @@ class SkillProvisioningService {
       binaryFullySatisfied: binaryFullySatisfied,
       runtimeFullySatisfied: runtimeFullySatisfied,
       pythonPackagesFullySatisfied: pythonPackagesFullySatisfied,
+      nodePackagesFullySatisfied: nodePackagesFullySatisfied,
       missingPlugins: missingPlugins,
       changed: changed,
     );
@@ -429,6 +448,7 @@ class SkillProvisioningService {
     required bool binaryFullySatisfied,
     required bool runtimeFullySatisfied,
     required bool pythonPackagesFullySatisfied,
+    required bool nodePackagesFullySatisfied,
     required List<String> missingPlugins,
     required bool changed,
   }) {
@@ -441,7 +461,9 @@ class SkillProvisioningService {
     if (gates.contains('manual_proot_required')) {
       return SkillProvisioningStatus.manualProotRequired;
     }
-    if (!runtimeFullySatisfied || !pythonPackagesFullySatisfied) {
+    if (!runtimeFullySatisfied ||
+        !pythonPackagesFullySatisfied ||
+        !nodePackagesFullySatisfied) {
       return SkillProvisioningStatus.missingDependency;
     }
     if (!binaryFullySatisfied) return SkillProvisioningStatus.missingBinary;
@@ -2595,6 +2617,7 @@ enum SkillProvisioningActionType {
   binary,
   dependencyPack,
   pythonPackage,
+  nodePackage,
   plugin,
   manifest,
   runtime,
@@ -2609,6 +2632,7 @@ extension SkillProvisioningActionTypeName on SkillProvisioningActionType {
       SkillProvisioningActionType.binary => 'binary',
       SkillProvisioningActionType.dependencyPack => 'dependency_pack',
       SkillProvisioningActionType.pythonPackage => 'python_package',
+      SkillProvisioningActionType.nodePackage => 'node_package',
       SkillProvisioningActionType.plugin => 'plugin',
       SkillProvisioningActionType.manifest => 'manifest',
       SkillProvisioningActionType.runtime => 'runtime',
