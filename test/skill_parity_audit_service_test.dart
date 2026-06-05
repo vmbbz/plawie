@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:clawa/services/skill_parity_audit_service.dart';
+import 'package:clawa/services/skill_execution_descriptor.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 
@@ -95,6 +96,96 @@ requirements:
       matrix['market-data']?.requiredConfig,
       contains('skills.marketData.accountId'),
     );
+  });
+
+  test('audit builds HTTP endpoint descriptors for local bridge skills',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_http_descriptor_test_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeSkills = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+      'skills',
+    ));
+    await nativeSkills.create(recursive: true);
+
+    final battery = Directory(path.join(nativeSkills.path, 'device_battery'));
+    await battery.create(recursive: true);
+    await File(path.join(battery.path, 'SKILL.md')).writeAsString('''
+# Android Battery Status
+
+Run:
+```bash
+curl -s http://127.0.0.1:8765/battery
+```
+''');
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final entry = snapshot.executionMatrix.single;
+    final descriptor = entry.executionDescriptor;
+
+    expect(entry.status, SkillExecutionStatus.ready);
+    expect(entry.requiredBins, isNot(contains('curl')));
+    expect(descriptor, isNotNull);
+    expect(descriptor!.runtime, SkillExecutionRuntime.http);
+    expect(descriptor.mode, SkillExecutionMode.httpEndpoint);
+    expect(descriptor.entrypoint, 'http://127.0.0.1:8765/battery');
+    expect(descriptor.methods.single.name, 'get_device_battery');
+  });
+
+  test('audit builds Python Tools-class descriptors from skill files',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_python_descriptor_test_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeSkills = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+      'workspace',
+      'skills',
+    ));
+    await nativeSkills.create(recursive: true);
+
+    final skill = Directory(path.join(nativeSkills.path, 'weatherish'));
+    await Directory(path.join(skill.path, 'scripts')).create(recursive: true);
+    await File(path.join(skill.path, 'SKILL.md')).writeAsString('# Weatherish');
+    await File(path.join(skill.path, 'requirements.txt')).writeAsString(
+      'requests>=2\n',
+    );
+    await File(path.join(skill.path, 'scripts', 'tools.py')).writeAsString('''
+class Tools:
+    async def current_weather(self, city: str, units="metric"):
+        return city
+''');
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final entry = snapshot.executionMatrix.single;
+    final descriptor = entry.executionDescriptor;
+
+    expect(entry.status, SkillExecutionStatus.missingDependency);
+    expect(entry.requiredBins, containsAll(['pip', 'python3']));
+    expect(entry.requiredPythonPackages, ['requests']);
+    expect(descriptor, isNotNull);
+    expect(descriptor!.runtime, SkillExecutionRuntime.python);
+    expect(descriptor.mode, SkillExecutionMode.pythonToolsClass);
+    expect(descriptor.entrypoint, 'scripts/tools.py');
+    expect(descriptor.methods.single.name, 'current_weather');
+    expect(descriptor.methods.single.requiredParameters, ['city']);
   });
 
   test('audit treats Python requirements as native provisionable gates',

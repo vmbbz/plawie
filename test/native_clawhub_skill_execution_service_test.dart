@@ -6,9 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('stocks intent parses stock and crypto symbols in order', () {
-    final intent =
-        NativeClawHubSkillExecutionService.parseStocksIntent(
-            'Use the stocks skill to get current NVDA and BTC prices.');
+    final intent = NativeClawHubSkillExecutionService.parseStocksIntent(
+        'Use the stocks skill to get current NVDA and BTC prices.');
 
     expect(intent, isNotNull);
     expect(
@@ -48,7 +47,8 @@ void main() {
           'ok': true,
           'exitCode': 0,
           'stdout': jsonEncode({
-            'NVDA': '**NVDA - NVIDIA Corporation**\n\n **Current Price:** \$1.23',
+            'NVDA':
+                '**NVDA - NVIDIA Corporation**\n\n **Current Price:** \$1.23',
             'BTC': '** Cryptocurrency: BTC-USD**\n\n** Current Price:** \$4.56',
           }),
           'stderr': '',

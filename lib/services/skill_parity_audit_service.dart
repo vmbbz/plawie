@@ -9,6 +9,7 @@ import 'package:yaml/yaml.dart';
 
 import 'gateway_tool_catalog.dart';
 import 'native_bridge.dart';
+import 'skill_execution_descriptor.dart';
 
 class SkillParityAuditService {
   SkillParityAuditService._();
@@ -173,7 +174,48 @@ class SkillParityAuditService {
 
       final body = await _readSkillBody(skill);
       final requirements = await _detectSkillRequirements(skill, body);
-      final requiredBins = requirements.bins;
+      final executionDescriptor =
+          await _detectExecutionDescriptor(skill, requirements, body);
+      final descriptorDependencies = executionDescriptor?.dependencies;
+      final requiredBins = {
+        ...requirements.bins,
+        ...?descriptorDependencies?.bins,
+      };
+      if (executionDescriptor?.runtime == SkillExecutionRuntime.http &&
+          executionDescriptor?.mode == SkillExecutionMode.httpEndpoint) {
+        requiredBins.remove('curl');
+      }
+      final requiredEnv = {
+        ...requirements.env,
+        ...?descriptorDependencies?.env,
+      };
+      final requiredRuntimes = {
+        ...requirements.runtimes,
+        ...?descriptorDependencies?.runtimes,
+      };
+      final requiredPythonPackages = {
+        ...requirements.pythonPackages,
+        ...?descriptorDependencies?.pythonPackages.map(
+          _normalizePythonPackageName,
+        ),
+      };
+      final requiredPythonRequirements = {
+        ...requirements.pythonRequirements,
+        for (final package
+            in descriptorDependencies?.pythonPackages ?? const <String>[])
+          _normalizePythonPackageName(package): requirements
+                  .pythonRequirements[_normalizePythonPackageName(package)] ??
+              package,
+      };
+      final requiredPlugins = {
+        ...requirements.plugins,
+        ...?descriptorDependencies?.plugins,
+      };
+      final requiredConfig = {
+        ...requirements.configKeys,
+        ...?descriptorDependencies?.config,
+      };
+
       for (final bin in requiredBins) {
         if (!nativeBins.contains(bin)) {
           final prootHas = prootBins.contains(bin);
@@ -188,7 +230,6 @@ class SkillParityAuditService {
         }
       }
 
-      final requiredEnv = requirements.env;
       for (final envName in requiredEnv) {
         if (!_envValueLooksSet(nativeEnv[envName])) {
           final prootHas = _envValueLooksSet(prootEnv[envName]);
@@ -202,7 +243,7 @@ class SkillParityAuditService {
           ));
         }
       }
-      for (final configKey in requirements.configKeys) {
+      for (final configKey in requiredConfig) {
         if (!_configValueLooksSet(nativeConfig, configKey)) {
           skillGates.add(SkillParityGate(
             skillId: skill.id,
@@ -213,7 +254,7 @@ class SkillParityAuditService {
           ));
         }
       }
-      for (final plugin in requirements.plugins) {
+      for (final plugin in requiredPlugins) {
         if (!nativePluginIds.contains(plugin.toLowerCase())) {
           skillGates.add(SkillParityGate(
             skillId: skill.id,
@@ -224,7 +265,7 @@ class SkillParityAuditService {
           ));
         }
       }
-      if (requirements.pythonPackages.isNotEmpty) {
+      if (requiredPythonPackages.isNotEmpty) {
         final nativePythonPackages =
             await _scanPythonPackages(layout.nativeStateRoot, skill);
         final nativeHasPython =
@@ -238,7 +279,7 @@ class SkillParityAuditService {
                 'python3 is required for requirements.txt but was not found in Native runtime paths.',
           ));
         }
-        for (final requirement in requirements.pythonRequirements.entries) {
+        for (final requirement in requiredPythonRequirements.entries) {
           final package = requirement.key;
           final installedVersion = nativePythonPackages[package];
           if (installedVersion == null) {
@@ -269,13 +310,13 @@ class SkillParityAuditService {
           }
         }
       }
-      if (requirements.requiresExtendedRuntime) {
+      if (requiredRuntimes.any(_looksLikeExtendedRuntime)) {
         skillGates.add(SkillParityGate(
           skillId: skill.id,
           gate: 'manual_proot_required',
           owner: 'native',
           detail:
-              'Skill declares or strongly implies a full Linux runtime dependency (${requirements.runtimes.join(', ')}). Native will not silently fall back to PRoot.',
+              'Skill declares or strongly implies a full Linux runtime dependency (${requiredRuntimes.join(', ')}). Native will not silently fall back to PRoot.',
         ));
       }
 
@@ -283,13 +324,32 @@ class SkillParityAuditService {
       matrix.add(SkillExecutionMatrixEntry.fromGates(
         skillId: skill.id,
         gates: skillGates,
-        requiredBins: requiredBins.toList()..sort(),
-        requiredEnv: requiredEnv.toList()..sort(),
-        requiredRuntimes: requirements.runtimes.toList()..sort(),
-        requiredPythonPackages: requirements.pythonPackages.toList()..sort(),
-        requiredPythonRequirements: requirements.pythonRequirements,
-        requiredPlugins: requirements.plugins.toList()..sort(),
-        requiredConfig: requirements.configKeys.toList()..sort(),
+        requiredBins: {
+          ...requiredBins,
+        }.toList()
+          ..sort(),
+        requiredEnv: {
+          ...requiredEnv,
+        }.toList()
+          ..sort(),
+        requiredRuntimes: {
+          ...requiredRuntimes,
+        }.toList()
+          ..sort(),
+        requiredPythonPackages: {
+          ...requiredPythonPackages,
+        }.toList()
+          ..sort(),
+        requiredPythonRequirements: requiredPythonRequirements,
+        requiredPlugins: {
+          ...requiredPlugins,
+        }.toList()
+          ..sort(),
+        requiredConfig: {
+          ...requiredConfig,
+        }.toList()
+          ..sort(),
+        executionDescriptor: executionDescriptor,
       ));
     }
 
@@ -576,6 +636,137 @@ class SkillParityAuditService {
     );
   }
 
+  static Future<SkillExecutionDescriptor?> _detectExecutionDescriptor(
+    _SkillDiskEntry skill,
+    _SkillRequirements requirements,
+    String body,
+  ) async {
+    final frontmatter = _parseYamlFrontmatter(body);
+    final yamlDescriptor = _executionDescriptorFromYaml(
+      skill,
+      requirements,
+      frontmatter,
+    );
+    if (yamlDescriptor != null) return yamlDescriptor;
+
+    final pythonDescriptor =
+        await _pythonToolsClassExecutionDescriptor(skill, requirements);
+    if (pythonDescriptor != null) return pythonDescriptor;
+
+    return _httpEndpointExecutionDescriptor(skill, requirements, body);
+  }
+
+  static SkillExecutionDescriptor? _executionDescriptorFromYaml(
+    _SkillDiskEntry skill,
+    _SkillRequirements requirements,
+    Map<String, dynamic> yaml,
+  ) {
+    final candidates = <dynamic>[
+      yaml['execution'],
+      _mapPath(yaml, const ['openclaw', 'execution']),
+      _mapPath(yaml, const ['metadata', 'openclaw', 'execution']),
+      _mapPath(yaml, const ['metadata', 'execution']),
+      _mapPath(yaml, const ['skill', 'execution']),
+    ].where((value) => value != null).toList();
+    for (final candidate in candidates) {
+      if (candidate is! Map) continue;
+      final execution = Map<String, dynamic>.from(candidate);
+      final runtime = _runtimeFromString(execution['runtime']?.toString());
+      final mode = _modeFromString(execution['mode']?.toString());
+      final entrypoint = execution['entrypoint']?.toString().trim() ??
+          execution['command']?.toString().trim() ??
+          execution['url']?.toString().trim() ??
+          '';
+      if (runtime == SkillExecutionRuntime.unknown ||
+          mode == SkillExecutionMode.unknown ||
+          entrypoint.isEmpty) {
+        continue;
+      }
+      return SkillExecutionDescriptor(
+        skillId: skill.id,
+        rootPath: _skillRootPath(skill),
+        source: _skillSource(skill, entrypoint),
+        runtime: runtime,
+        mode: mode,
+        entrypoint: entrypoint,
+        className: execution['className']?.toString(),
+        dependencies: _dependencyDescriptorFromRequirements(requirements),
+      );
+    }
+    return null;
+  }
+
+  static Future<SkillExecutionDescriptor?> _pythonToolsClassExecutionDescriptor(
+    _SkillDiskEntry skill,
+    _SkillRequirements requirements,
+  ) async {
+    if (skill.entity is! Directory) return null;
+    final root = skill.entity as Directory;
+    final entrypoint = await _findPythonToolsEntrypoint(root);
+    if (entrypoint == null) return null;
+    final body = await File(path.join(root.path, entrypoint)).readAsString();
+    return SkillExecutionDescriptor(
+      skillId: skill.id,
+      rootPath: root.path,
+      source: _skillSource(skill, entrypoint),
+      runtime: SkillExecutionRuntime.python,
+      mode: SkillExecutionMode.pythonToolsClass,
+      entrypoint: entrypoint,
+      className: 'Tools',
+      dependencies: _dependencyDescriptorFromRequirements(
+        requirements,
+        forceRuntimes: const ['python'],
+        forceBins: const ['python3', 'pip'],
+      ),
+      methods: _parsePythonToolsMethods(body),
+    );
+  }
+
+  static SkillExecutionDescriptor? _httpEndpointExecutionDescriptor(
+    _SkillDiskEntry skill,
+    _SkillRequirements requirements,
+    String body,
+  ) {
+    final match = RegExp(
+      r'https?://(?:127\.0\.0\.1|localhost):8765/[^\s`"\\)]+',
+    ).firstMatch(body);
+    final rawUrl = match?.group(0);
+    if (rawUrl == null || rawUrl.isEmpty) return null;
+    final url = rawUrl.replaceFirst(RegExp(r'[),.]+$'), '');
+    final start = (match!.start - 160).clamp(0, body.length);
+    final end = (match.end + 160).clamp(0, body.length);
+    final commandWindow = body.substring(start, end);
+    final upper = commandWindow.toUpperCase();
+    final httpMethod = RegExp(r'-X\s+POST\b').hasMatch(upper) ||
+            upper.contains('--DATA') ||
+            RegExp(r'(^|\s)-D\s').hasMatch(upper)
+        ? 'POST'
+        : 'GET';
+    final parameters = {
+      ..._queryParameterDescriptors(url),
+      ..._jsonBodyParameterDescriptors(commandWindow),
+    };
+    return SkillExecutionDescriptor(
+      skillId: skill.id,
+      rootPath: _skillRootPath(skill),
+      source: _skillSource(skill, path.basename(skill.entity.path)),
+      runtime: SkillExecutionRuntime.http,
+      mode: SkillExecutionMode.httpEndpoint,
+      entrypoint: url,
+      dependencies: _dependencyDescriptorFromRequirements(
+        requirements,
+        excludeBins: const ['curl'],
+      ),
+      methods: [
+        SkillExecutionMethodDescriptor(
+          name: _safeMethodName('${httpMethod}_${skill.id}'),
+          description: '$httpMethod $url',
+          parameters: parameters,
+        ),
+      ],
+    );
+  }
+
   static Future<Map<String, String>> _readPythonRequirements(
     _SkillDiskEntry skill,
   ) async {
@@ -616,6 +807,200 @@ class SkillParityAuditService {
       name: _normalizePythonPackageName(value),
       raw: line,
     );
+  }
+
+  static SkillDependencyDescriptor _dependencyDescriptorFromRequirements(
+    _SkillRequirements requirements, {
+    List<String> forceRuntimes = const <String>[],
+    List<String> forceBins = const <String>[],
+    List<String> excludeBins = const <String>[],
+  }) {
+    final excludedBins =
+        excludeBins.map(_normalizeRequiredBin).whereType<String>().toSet();
+    return SkillDependencyDescriptor(
+      runtimes: {
+        ...requirements.runtimes,
+        ...forceRuntimes,
+      }.toList()
+        ..sort(),
+      bins: {
+        ...requirements.bins,
+        ...forceBins,
+      }.where((bin) => !excludedBins.contains(bin)).toList()
+        ..sort(),
+      pythonPackages: requirements.pythonPackages.toList()..sort(),
+      env: requirements.env.toList()..sort(),
+      config: requirements.configKeys.toList()..sort(),
+      plugins: requirements.plugins.toList()..sort(),
+    );
+  }
+
+  static Future<String?> _findPythonToolsEntrypoint(Directory root) async {
+    final candidates = <String>[];
+    final preferred = [
+      'main.py',
+      'skill.py',
+      'tools.py',
+      path.join('scripts', 'main.py'),
+      path.join('scripts', 'skill.py'),
+      path.join('scripts', 'tools.py'),
+    ];
+    for (final relative in preferred) {
+      if (await File(path.join(root.path, relative)).exists()) {
+        candidates.add(relative);
+      }
+    }
+    final scripts = Directory(path.join(root.path, 'scripts'));
+    if (await scripts.exists()) {
+      await for (final entity in scripts.list(recursive: false)) {
+        if (entity is File && entity.path.toLowerCase().endsWith('.py')) {
+          final relative = path.join('scripts', path.basename(entity.path));
+          if (!candidates.contains(relative)) candidates.add(relative);
+        }
+      }
+    }
+    await for (final entity in root.list(recursive: false)) {
+      if (entity is File && entity.path.toLowerCase().endsWith('.py')) {
+        final relative = path.basename(entity.path);
+        if (!candidates.contains(relative)) candidates.add(relative);
+      }
+    }
+    for (final relative in candidates) {
+      final body = await File(path.join(root.path, relative)).readAsString();
+      if (RegExp(r'class\s+Tools\b').hasMatch(body)) {
+        return relative.replaceAll('\\', '/');
+      }
+    }
+    return null;
+  }
+
+  static List<SkillExecutionMethodDescriptor> _parsePythonToolsMethods(
+    String body,
+  ) {
+    final classStart = RegExp(r'class\s+Tools\b[^\n]*:').firstMatch(body)?.end;
+    if (classStart == null) return const <SkillExecutionMethodDescriptor>[];
+    final classBody = body.substring(classStart);
+    final methods = <SkillExecutionMethodDescriptor>[];
+    for (final match in RegExp(
+      r'^\s+(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*:',
+      multiLine: true,
+    ).allMatches(classBody)) {
+      final name = match.group(1)!;
+      if (name.startsWith('_')) continue;
+      final parameters = _parsePythonParameters(match.group(2) ?? '');
+      methods.add(SkillExecutionMethodDescriptor(
+        name: name,
+        parameters: {
+          for (final parameter in parameters) parameter.name: 'value',
+        },
+        requiredParameters: parameters
+            .where((parameter) => parameter.required)
+            .map((parameter) => parameter.name)
+            .toList(),
+      ));
+    }
+    return methods;
+  }
+
+  static List<_ParsedPythonParameter> _parsePythonParameters(String raw) {
+    final parameters = <_ParsedPythonParameter>[];
+    for (final part in raw.split(',')) {
+      var parameter = part.trim();
+      if (parameter.isEmpty ||
+          parameter == 'self' ||
+          parameter.startsWith('*')) {
+        continue;
+      }
+      final required = !parameter.contains('=');
+      parameter = parameter.split('=').first.trim();
+      parameter = parameter.split(':').first.trim();
+      if (RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(parameter)) {
+        parameters.add(_ParsedPythonParameter(
+          name: parameter,
+          required: required,
+        ));
+      }
+    }
+    return parameters;
+  }
+
+  static Map<String, String> _queryParameterDescriptors(String url) {
+    final parsed = Uri.tryParse(url);
+    if (parsed == null || parsed.queryParameters.isEmpty) {
+      return const <String, String>{};
+    }
+    return {
+      for (final key in parsed.queryParameters.keys) key: 'query parameter',
+    };
+  }
+
+  static Map<String, String> _jsonBodyParameterDescriptors(String command) {
+    final match =
+        RegExp(r'''(['"])\{(.+?)\}\1''', dotAll: true).firstMatch(command);
+    final jsonText = match == null ? null : '{${match.group(2)}}';
+    if (jsonText == null) return const <String, String>{};
+    try {
+      final decoded = jsonDecode(jsonText);
+      if (decoded is! Map) return const <String, String>{};
+      return {
+        for (final key in decoded.keys) key.toString(): 'json body field',
+      };
+    } catch (_) {
+      return const <String, String>{};
+    }
+  }
+
+  static SkillExecutionRuntime _runtimeFromString(String? value) {
+    final normalized = value?.trim().toLowerCase().replaceAll('-', '_') ?? '';
+    return switch (normalized) {
+      'python' || 'py' => SkillExecutionRuntime.python,
+      'node' || 'nodejs' || 'javascript' || 'js' => SkillExecutionRuntime.node,
+      'shell' || 'bash' || 'sh' || 'command' => SkillExecutionRuntime.shell,
+      'mcp' => SkillExecutionRuntime.mcp,
+      'http' || 'https' || 'rest' => SkillExecutionRuntime.http,
+      _ => SkillExecutionRuntime.unknown,
+    };
+  }
+
+  static SkillExecutionMode _modeFromString(String? value) {
+    final normalized = value?.trim().toLowerCase().replaceAll('-', '_') ?? '';
+    return switch (normalized) {
+      'python_tools_class' ||
+      'tools_class' ||
+      'python_tools' =>
+        SkillExecutionMode.pythonToolsClass,
+      'python_script' || 'script' => SkillExecutionMode.pythonScript,
+      'node_module' || 'module' => SkillExecutionMode.nodeModule,
+      'shell_recipe' || 'shell' || 'command' => SkillExecutionMode.shellRecipe,
+      'mcp_server' || 'mcp' => SkillExecutionMode.mcpServer,
+      'http_endpoint' || 'http' || 'rest' => SkillExecutionMode.httpEndpoint,
+      _ => SkillExecutionMode.unknown,
+    };
+  }
+
+  static String _skillRootPath(_SkillDiskEntry skill) {
+    final entity = skill.entity;
+    if (entity is Directory) return entity.path;
+    return path.dirname(entity.path);
+  }
+
+  static String _skillSource(_SkillDiskEntry skill, String entrypoint) {
+    final root = _skillRootPath(skill).replaceAll('\\', '/');
+    final normalizedEntry = entrypoint.replaceAll('\\', '/');
+    final marker = '/.openclaw/';
+    final index = root.indexOf(marker);
+    if (index < 0) return normalizedEntry;
+    return '${root.substring(index + marker.length)}/$normalizedEntry';
+  }
+
+  static String _safeMethodName(String value) {
+    final normalized = value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    return normalized.isEmpty ? 'execute' : normalized;
   }
 
   static Future<Map<String, String>> _scanPythonPackages(
@@ -1343,6 +1728,7 @@ class SkillParitySnapshot {
       'plugins(native/proot)=$nativePluginCount/$prootPluginCount',
       'toolsAllowParity=$toolsAllowParity',
       'gates=${gates.length}',
+      'descriptors=${executionMatrix.where((entry) => entry.executionDescriptor != null).length}',
       'readiness=${_readinessCountsLine(executionMatrix)}',
     ];
     if (repair.changed) {
@@ -1381,6 +1767,7 @@ Skill parity audit:
 - Plugin inventory Native/PRoot: $nativePluginCount/$prootPluginCount.
 - tools.allow parity: $toolsAllowParity.
 - Native gates found: ${gates.isEmpty ? 'none' : gates.length}.
+- Execution descriptors: ${executionMatrix.where((entry) => entry.executionDescriptor != null).length}/${executionMatrix.length}.
 - Skill readiness: ${readinessLine.isEmpty ? 'none' : readinessLine}.
 $repairLine
 ${gateLines.isEmpty ? '' : gateLines}
@@ -1490,6 +1877,7 @@ class SkillExecutionMatrixEntry {
   final Map<String, String> requiredPythonRequirements;
   final List<String> requiredPlugins;
   final List<String> requiredConfig;
+  final SkillExecutionDescriptor? executionDescriptor;
 
   const SkillExecutionMatrixEntry({
     required this.skillId,
@@ -1503,6 +1891,7 @@ class SkillExecutionMatrixEntry {
     this.requiredPythonRequirements = const <String, String>{},
     required this.requiredPlugins,
     required this.requiredConfig,
+    this.executionDescriptor,
   });
 
   factory SkillExecutionMatrixEntry.fromGates({
@@ -1515,6 +1904,7 @@ class SkillExecutionMatrixEntry {
     Map<String, String> requiredPythonRequirements = const <String, String>{},
     required List<String> requiredPlugins,
     required List<String> requiredConfig,
+    SkillExecutionDescriptor? executionDescriptor,
   }) {
     final gateNames = gates.map((gate) => gate.gate).toList(growable: false);
     final status = _statusForGateNames(gateNames);
@@ -1531,6 +1921,7 @@ class SkillExecutionMatrixEntry {
           Map<String, String>.from(requiredPythonRequirements),
       requiredPlugins: requiredPlugins,
       requiredConfig: requiredConfig,
+      executionDescriptor: executionDescriptor,
     );
   }
 
@@ -1569,6 +1960,8 @@ class SkillExecutionMatrixEntry {
         'requiredPythonRequirements': requiredPythonRequirements,
         'requiredPlugins': requiredPlugins,
         'requiredConfig': requiredConfig,
+        if (executionDescriptor != null)
+          'executionDescriptor': executionDescriptor!.toJson(),
       };
 }
 
@@ -1602,6 +1995,16 @@ class _PythonRequirementLine {
   const _PythonRequirementLine({
     required this.name,
     required this.raw,
+  });
+}
+
+class _ParsedPythonParameter {
+  final String name;
+  final bool required;
+
+  const _ParsedPythonParameter({
+    required this.name,
+    required this.required,
   });
 }
 

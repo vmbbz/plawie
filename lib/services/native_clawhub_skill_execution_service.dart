@@ -1,15 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
 import 'native_bridge.dart';
+import 'native_skill_adapter.dart';
+import 'native_skill_execution_registry.dart';
 import 'openclaw_service.dart';
-
-typedef NativePythonRunner = Future<Map<String, dynamic>> Function(
-  Map<String, dynamic> payload,
-);
+import 'skill_execution_descriptor.dart';
 
 class NativeClawHubSkillExecution {
   final String toolName;
@@ -32,26 +30,8 @@ class NativeClawHubSkillExecution {
       '\x00TOOL_RESULT:$toolName:${jsonEncode(result)}\x00';
 }
 
-class NativeSkillAction {
-  final String label;
-  final String method;
-  final Map<String, String> args;
-
-  const NativeSkillAction({
-    required this.label,
-    required this.method,
-    required this.args,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'label': label,
-        'method': method,
-        'args': args,
-      };
-}
-
 class NativeStocksIntent {
-  final List<NativeSkillAction> actions;
+  final List<SkillExecutionAction> actions;
 
   const NativeStocksIntent(this.actions);
 
@@ -81,8 +61,7 @@ class NativeClawHubSkillExecutionService {
     Future<bool> Function()? nativeOwnerProvider,
   })  : _pythonRunner = pythonRunner,
         _filesDirProvider = filesDirProvider,
-        _nativeOwnerProvider =
-            nativeOwnerProvider ?? (() async => true);
+        _nativeOwnerProvider = nativeOwnerProvider ?? (() async => true);
 
   Future<NativeClawHubSkillExecution?> tryExecuteRequiredIntent(
     String message,
@@ -93,6 +72,7 @@ class NativeClawHubSkillExecutionService {
     final nativeOwner = await _nativeOwnerProvider();
     if (!nativeOwner) {
       return _failure(
+        toolName: 'stocks',
         input: intent.toJson(),
         code: 'native_owner_not_selected',
         message:
@@ -106,83 +86,86 @@ class NativeClawHubSkillExecutionService {
   Future<NativeClawHubSkillExecution> executeStocks(
     NativeStocksIntent intent,
   ) async {
-    final filesDir = await _filesDirProvider();
-    final skillDir = Directory(
-      '$filesDir/native-node-embedded/native-home/.openclaw/workspace/skills/stocks',
+    return executeSkillActions(
+      skillId: 'stocks',
+      actions: intent.actions,
+      input: intent.toJson(),
+      sourceFallback: 'workspace/skills/stocks/scripts/yfinance_ai.py',
+      visibleFormatter: _formatStocksVisibleText,
     );
-    final script = File('${skillDir.path}/scripts/yfinance_ai.py');
-    final sitePackages =
-        '$filesDir/native-node-embedded/native-home/.openclaw/runtimes/python/site-packages';
-    final pythonHome =
-        '$filesDir/native-node-embedded/native-home/.openclaw/runtimes/python';
-    final input = {
-      ...intent.toJson(),
-      'runtime': 'native-clawhub-python',
-      'source': 'workspace/skills/stocks/scripts/yfinance_ai.py',
+  }
+
+  Future<NativeClawHubSkillExecution> executeSkillActions({
+    required String skillId,
+    required List<SkillExecutionAction> actions,
+    Map<String, dynamic>? input,
+    String? sourceFallback,
+    String Function(Map<String, dynamic> data)? visibleFormatter,
+  }) async {
+    final registry = NativeSkillExecutionRegistry(
+      pythonRunner: _pythonRunner,
+      filesDirProvider: _filesDirProvider,
+    );
+    final descriptor = await registry.descriptorForSkill(skillId);
+    final toolInput = <String, dynamic>{
+      'skill': skillId,
+      'actions': actions.map((action) => action.toJson()).toList(),
+      ...?input,
+      'runtime': descriptor == null
+          ? 'native-clawhub'
+          : 'native-clawhub-${descriptor.runtime.name}',
+      if (descriptor != null) 'descriptor': descriptor.toJson(),
+      'source': descriptor?.source ?? sourceFallback ?? skillId,
     };
 
-    if (!await script.exists()) {
+    if (descriptor == null) {
       return _failure(
-        input: input,
+        toolName: skillId,
+        input: toolInput,
         code: 'skill_script_missing',
-        message: 'stocks/scripts/yfinance_ai.py was not found in Native workspace.',
+        message: 'No Native execution descriptor was found for $skillId.',
       );
     }
 
-    final payload = <String, dynamic>{
-      'cwd': skillDir.path,
-      'args': ['-c', _stocksPythonProgram(intent)],
-      'pythonPaths': [sitePackages, '${skillDir.path}/scripts'],
-      'env': {
-        'OPENCLAW_NATIVE_PYTHON_HOME': pythonHome,
-        'OPENCLAW_NATIVE_PYTHON_SITE_PACKAGES': sitePackages,
-      },
-    };
-    final startedAt = DateTime.now();
-    final raw = await _pythonRunner(payload).timeout(
-      const Duration(seconds: 90),
-      onTimeout: () => <String, dynamic>{
-        'ok': false,
-        'exitCode': 124,
-        'stdout': '',
-        'stderr': 'Native stocks skill timed out after 90 seconds.',
-      },
+    final adapterResult = await registry.execute(
+      descriptor: descriptor,
+      actions: actions,
     );
-    final completedAt = DateTime.now();
-    final ok = raw['ok'] == true || raw['exitCode'] == 0;
-    final decoded = _decodeJsonFromStdout(raw['stdout']);
+    final raw = adapterResult.raw;
+    final decoded = adapterResult.data;
     final result = <String, dynamic>{
-      'ok': ok && decoded != null,
-      'skill': 'stocks',
-      'runtime': 'native-clawhub-python',
-      'source': 'workspace/skills/stocks/scripts/yfinance_ai.py',
-      'durationMs': completedAt.difference(startedAt).inMilliseconds,
-      'actions': intent.actions.map((action) => action.toJson()).toList(),
+      'ok': adapterResult.ok,
+      'skill': skillId,
+      'runtime': 'native-clawhub-${descriptor.runtime.name}',
+      'source': descriptor.source,
+      'descriptor': descriptor.toJson(),
+      'durationMs': adapterResult.durationMs,
+      'actions': actions.map((action) => action.toJson()).toList(),
       if (decoded != null) 'data': decoded,
       if (raw['exitCode'] != null) 'exitCode': raw['exitCode'],
+      if (raw['responses'] != null) 'responses': raw['responses'],
       if ((raw['stderr']?.toString().trim() ?? '').isNotEmpty)
         'stderr': _trimForDiagnostics(raw['stderr'].toString()),
-      if (!ok || decoded == null)
-        'error': _nativePythonError(raw, decodedMissing: decoded == null),
+      if (!adapterResult.ok) 'error': adapterResult.error ?? 'unknown error',
     };
 
     if (result['ok'] == true) {
       return NativeClawHubSkillExecution(
-        toolName: 'stocks',
-        input: input,
+        toolName: skillId,
+        input: toolInput,
         result: result,
         ok: true,
-        visibleText: _formatStocksVisibleText(decoded!),
+        visibleText: (visibleFormatter ?? _formatGenericVisibleText)(decoded!),
       );
     }
 
     return NativeClawHubSkillExecution(
-      toolName: 'stocks',
-      input: input,
+      toolName: skillId,
+      input: toolInput,
       result: result,
       ok: false,
       visibleText:
-          'The stocks skill ran but failed: ${result['error'] ?? 'unknown error'}',
+          'The $skillId skill ran but failed: ${result['error'] ?? 'unknown error'}',
     );
   }
 
@@ -194,12 +177,12 @@ class NativeClawHubSkillExecutionService {
     ).hasMatch(lower);
     if (!isFinanceIntent) return null;
 
-    final actions = <NativeSkillAction>[];
+    final actions = <SkillExecutionAction>[];
     final seen = <String>{};
     void addStock(String ticker) {
       final normalized = ticker.trim().toUpperCase();
       if (normalized.isEmpty || !seen.add('stock:$normalized')) return;
-      actions.add(NativeSkillAction(
+      actions.add(SkillExecutionAction(
         label: normalized,
         method: 'get_stock_price',
         args: {'ticker': normalized},
@@ -209,7 +192,7 @@ class NativeClawHubSkillExecutionService {
     void addCrypto(String symbol) {
       final normalized = symbol.trim().toUpperCase();
       if (normalized.isEmpty || !seen.add('crypto:$normalized')) return;
-      actions.add(NativeSkillAction(
+      actions.add(SkillExecutionAction(
         label: normalized,
         method: 'get_crypto_price',
         args: {'symbol': normalized},
@@ -226,8 +209,8 @@ class NativeClawHubSkillExecutionService {
         entry.value();
       }
     }
-    for (final match in RegExp(r'\b[A-Z]{2,6}(?:[-=][A-Z]{2,5})?\b')
-        .allMatches(message)) {
+    for (final match
+        in RegExp(r'\b[A-Z]{2,6}(?:[-=][A-Z]{2,5})?\b').allMatches(message)) {
       final token = match.group(0)!.toUpperCase();
       if (_ignoredUppercaseTokens.contains(token)) continue;
       if (_cryptoSymbols.contains(token)) {
@@ -238,7 +221,7 @@ class NativeClawHubSkillExecutionService {
     }
 
     if (actions.isEmpty && lower.contains('market')) {
-      actions.add(const NativeSkillAction(
+      actions.add(const SkillExecutionAction(
         label: 'market status',
         method: 'get_market_status',
         args: {},
@@ -279,45 +262,6 @@ class NativeClawHubSkillExecutionService {
     'Q',
   };
 
-  static String _stocksPythonProgram(NativeStocksIntent intent) {
-    final actionsJson = jsonEncode(
-      intent.actions.map((action) => action.toJson()).toList(),
-    );
-    return '''
-import asyncio, json, os, sys
-sys.path.insert(0, os.path.join(os.getcwd(), "scripts"))
-from yfinance_ai import Tools
-
-actions = json.loads(${jsonEncode(actionsJson)})
-
-async def main():
-    tools = Tools()
-    output = {}
-    for action in actions:
-        method_name = action["method"]
-        args = action.get("args") or {}
-        method = getattr(tools, method_name)
-        output[action["label"]] = await method(**args)
-    print(json.dumps(output, ensure_ascii=False))
-
-asyncio.run(main())
-''';
-  }
-
-  static Map<String, dynamic>? _decodeJsonFromStdout(dynamic stdoutValue) {
-    final stdout = stdoutValue?.toString().trim() ?? '';
-    if (stdout.isEmpty) return null;
-    for (final line in stdout.split('\n').reversed) {
-      final trimmed = line.trim();
-      if (trimmed.isEmpty) continue;
-      try {
-        final decoded = jsonDecode(trimmed);
-        if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      } catch (_) {}
-    }
-    return null;
-  }
-
   static String _formatStocksVisibleText(Map<String, dynamic> data) {
     final buffer = StringBuffer('Stocks skill result:\n\n');
     var first = true;
@@ -330,17 +274,21 @@ asyncio.run(main())
     return buffer.toString().trimRight();
   }
 
-  static String _nativePythonError(
-    Map<String, dynamic> raw, {
-    required bool decodedMissing,
-  }) {
-    final stderr = raw['stderr']?.toString().trim() ?? '';
-    final stdout = raw['stdout']?.toString().trim() ?? '';
-    if (stderr.isNotEmpty) return _trimForDiagnostics(stderr, maxChars: 1200);
-    if (stdout.isNotEmpty && decodedMissing) {
-      return 'Skill returned non-JSON output: ${_trimForDiagnostics(stdout)}';
+  static String _formatGenericVisibleText(Map<String, dynamic> data) {
+    final buffer = StringBuffer('Skill result:\n\n');
+    var first = true;
+    for (final entry in data.entries) {
+      if (!first) buffer.writeln();
+      first = false;
+      buffer.writeln('${entry.key}:');
+      final value = entry.value;
+      if (value is Map || value is List) {
+        buffer.writeln(const JsonEncoder.withIndent('  ').convert(value));
+      } else {
+        buffer.writeln(value?.toString().trim() ?? 'No result returned.');
+      }
     }
-    return 'Native Python exited with code ${raw['exitCode'] ?? 'unknown'}.';
+    return buffer.toString().trimRight();
   }
 
   static String _trimForDiagnostics(String value, {int maxChars = 1600}) {
@@ -350,22 +298,23 @@ asyncio.run(main())
   }
 
   static NativeClawHubSkillExecution _failure({
+    String toolName = 'skill',
     required Map<String, dynamic> input,
     required String code,
     required String message,
   }) {
     return NativeClawHubSkillExecution(
-      toolName: 'stocks',
+      toolName: toolName,
       input: input,
       result: {
         'ok': false,
-        'skill': 'stocks',
-        'runtime': 'native-clawhub-python',
+        'skill': toolName,
+        'runtime': 'native-clawhub',
         'errorCode': code,
         'error': message,
       },
       ok: false,
-      visibleText: 'The stocks skill could not run: $message',
+      visibleText: 'The $toolName skill could not run: $message',
     );
   }
 }

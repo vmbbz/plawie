@@ -4842,8 +4842,7 @@ $message''';
 
     final snapshot = _lastSkillParitySnapshot;
     final provisioning = _lastSkillProvisioningReport;
-    final hasReadyTarget =
-        (snapshot?.executionMatrix.any((entry) {
+    final hasReadyTarget = (snapshot?.executionMatrix.any((entry) {
               final id = _normalizeSkillLookup(entry.skillId);
               return normalizedTargets.contains(id) &&
                   entry.status == SkillExecutionStatus.ready;
@@ -4851,20 +4850,21 @@ $message''';
             false) ||
         (provisioning?.results.any((result) {
               final id = _normalizeSkillLookup(result.skillId);
-              return normalizedTargets.contains(id) && !result.status.isBlocking;
+              return normalizedTargets.contains(id) &&
+                  !result.status.isBlocking;
             }) ??
             false);
     final targetMatrix = snapshot?.executionMatrix
-            .where((entry) =>
-                normalizedTargets.contains(_normalizeSkillLookup(entry.skillId)))
+            .where((entry) => normalizedTargets
+                .contains(_normalizeSkillLookup(entry.skillId)))
             .take(8)
             .map((entry) =>
                 '${entry.skillId}:${_skillExecutionStatusWireName(entry.status)}')
             .join(',') ??
         '';
     final targetProvisioning = provisioning?.results
-            .where((result) =>
-                normalizedTargets.contains(_normalizeSkillLookup(result.skillId)))
+            .where((result) => normalizedTargets
+                .contains(_normalizeSkillLookup(result.skillId)))
             .take(8)
             .map((result) => '${result.skillId}:${result.status.wireName}')
             .join(',') ??
@@ -4898,6 +4898,10 @@ $message''';
             'env=${entry.requiredEnv.join(',')}',
           if (entry.requiredConfig.isNotEmpty)
             'config=${entry.requiredConfig.join(',')}',
+          if (entry.executionDescriptor != null)
+            'descriptor=${entry.executionDescriptor!.runtime.name}/${entry.executionDescriptor!.mode.name}',
+          if (entry.executionDescriptor?.methods.isNotEmpty == true)
+            'methods=${entry.executionDescriptor!.methods.take(6).map((method) => method.name).join(',')}',
         ];
         lines.add('- ${entry.skillId}: ${details.join(' ')}');
       }
@@ -5060,8 +5064,8 @@ ${lines.join('\n')}
     return false;
   }
 
-  Future<NativeClawHubSkillExecution?>
-      _executeRequiredNativeClawHubSkillIntent(String message) async {
+  Future<NativeClawHubSkillExecution?> _executeRequiredNativeClawHubSkillIntent(
+      String message) async {
     final targets = _targetedSkillIdsForMessage(message);
     if (!targets.map(_normalizeSkillLookup).contains('stocks')) return null;
     if (_targetedSkillHasBlockingGate({'stocks'})) {

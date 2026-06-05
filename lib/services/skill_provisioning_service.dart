@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
 import 'native_bridge.dart';
+import 'skill_execution_descriptor.dart';
 import 'skill_parity_audit_service.dart';
 
 class SkillProvisioningService {
@@ -413,6 +414,7 @@ class SkillProvisioningService {
       readiness: _executionStatusName(entry.status),
       status: status,
       primaryGate: entry.primaryGate,
+      executionDescriptor: entry.executionDescriptor,
       actions: actions,
       changed: changed,
       reloadRecommended: reloadRecommended,
@@ -2496,6 +2498,7 @@ class SkillProvisioningSkillResult {
   final String readiness;
   final SkillProvisioningStatus status;
   final String? primaryGate;
+  final SkillExecutionDescriptor? executionDescriptor;
   final List<SkillProvisioningAction> actions;
   final bool changed;
   final bool reloadRecommended;
@@ -2505,6 +2508,7 @@ class SkillProvisioningSkillResult {
     required this.readiness,
     required this.status,
     required this.primaryGate,
+    this.executionDescriptor,
     required this.actions,
     required this.changed,
     required this.reloadRecommended,
@@ -2515,6 +2519,8 @@ class SkillProvisioningSkillResult {
         'readiness': readiness,
         'status': status.wireName,
         if (primaryGate != null) 'primaryGate': primaryGate,
+        if (executionDescriptor != null)
+          'executionDescriptor': executionDescriptor!.toJson(),
         'changed': changed,
         'reloadRecommended': reloadRecommended,
         'actions': actions.map((action) => action.toJson()).toList(),
