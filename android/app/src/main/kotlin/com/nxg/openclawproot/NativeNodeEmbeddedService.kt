@@ -730,10 +730,11 @@ class NativeNodeEmbeddedService : Service() {
             import os from "node:os";
             import path from "node:path";
             import process from "node:process";
-            import { syncBuiltinESMExports } from "node:module";
+            import { createRequire, syncBuiltinESMExports } from "node:module";
             import { pathToFileURL } from "node:url";
 
             const packageDir = $packageDir;
+            const require = createRequire(import.meta.url);
             const launcherPath = $launcherPath;
             const mobileRunMainPath = path.join(packageDir, "dist/cli/run-main.js");
             const manifestPath = $manifestPath;
@@ -742,11 +743,29 @@ class NativeNodeEmbeddedService : Service() {
             const prootStateDir = $prootStateDir;
             const nativeTmp = $nativeTmp;
             const nativeCache = $nativeCache;
+            const nativeManagedBin = path.join(nativeStateDir, "bin");
+            const nativeRuntimeRoot = path.join(nativeStateDir, "runtimes");
+            const nativePythonRoot = path.join(nativeRuntimeRoot, "python");
+            const nativePythonBin = path.join(nativePythonRoot, "bin");
+            const nativePythonSitePackages = path.join(
+              nativePythonRoot,
+              "site-packages"
+            );
             const host = "$HOST";
             const port = $port;
             const canaryMode = $quotedCanaryMode;
 
-            for (const writableDir of [nativeHome, nativeStateDir, nativeTmp, nativeCache]) {
+            for (const writableDir of [
+              nativeHome,
+              nativeStateDir,
+              nativeManagedBin,
+              nativeRuntimeRoot,
+              nativePythonRoot,
+              nativePythonBin,
+              nativePythonSitePackages,
+              nativeTmp,
+              nativeCache
+            ]) {
               fs.mkdirSync(writableDir, { recursive: true });
             }
 
@@ -885,10 +904,245 @@ class NativeNodeEmbeddedService : Service() {
             process.env.TMPDIR = nativeTmp;
             process.env.TEMP = nativeTmp;
             process.env.TMP = nativeTmp;
+            process.env.PATH = [
+              nativeManagedBin,
+              nativePythonBin,
+              process.env.PATH || "",
+              "/system/bin"
+            ].filter(Boolean).join(":");
+            process.env.PYTHONHOME = nativePythonRoot;
+            process.env.PYTHONPATH = [
+              nativePythonSitePackages,
+              process.env.PYTHONPATH || ""
+            ].filter(Boolean).join(":");
+            process.env.OPENCLAW_NATIVE_MANAGED_BIN = nativeManagedBin;
+            process.env.OPENCLAW_NATIVE_PYTHON_HOME = nativePythonRoot;
+            process.env.OPENCLAW_NATIVE_PYTHON_SITE_PACKAGES =
+              nativePythonSitePackages;
+            process.env.OPENCLAW_NATIVE_PYTHON_RUNNER =
+              "http://127.0.0.1:8765/api/python/exec";
+            process.env.OPENCLAW_NATIVE_PYTHON_BRIDGE = "chaquopy";
             process.env.NODE_DISABLE_COMPILE_CACHE = "1";
             process.env.OPENCLAW_GATEWAY_STARTUP_TRACE = "1";
             process.env.OPENCLAW_DISABLE_CLI_STARTUP_HELP_FAST_PATH = "1";
             process.env.NO_COLOR = "1";
+            const installNativePythonBridge = () => {
+              const childProcess = require("node:child_process");
+              const http = require("node:http");
+              const { EventEmitter } = require("node:events");
+              const { PassThrough, Writable } = require("node:stream");
+              const original = {
+                spawn: childProcess.spawn,
+                execFile: childProcess.execFile,
+                exec: childProcess.exec,
+                spawnSync: childProcess.spawnSync,
+                execFileSync: childProcess.execFileSync,
+                execSync: childProcess.execSync
+              };
+              const bridgeUrl = new URL(process.env.OPENCLAW_NATIVE_PYTHON_RUNNER);
+              const tokenise = (command) => {
+                const out = [];
+                let current = "";
+                let quote = null;
+                let escaped = false;
+                for (const ch of String(command || "")) {
+                  if (escaped) {
+                    current += ch;
+                    escaped = false;
+                  } else if (ch === "\\") {
+                    escaped = true;
+                  } else if (quote) {
+                    if (ch === quote) quote = null;
+                    else current += ch;
+                  } else if (ch === "'" || ch === '"') {
+                    quote = ch;
+                  } else if (/\s/.test(ch)) {
+                    if (current) {
+                      out.push(current);
+                      current = "";
+                    }
+                  } else {
+                    current += ch;
+                  }
+                }
+                if (current) out.push(current);
+                return out;
+              };
+              const pythonKind = (command) => {
+                if (!command) return null;
+                const normalized = String(command).replace(/\\/g, "/");
+                const base = path.basename(normalized).toLowerCase();
+                if (base === "python" || base === "python3") return "python";
+                if (base === "pip" || base === "pip3") return "pip";
+                if (normalized.toLowerCase().endsWith("/.venv/bin/python3") ||
+                    normalized.toLowerCase().endsWith("/.venv/bin/python")) {
+                  return "python";
+                }
+                if (normalized.toLowerCase().endsWith("/.venv/bin/pip") ||
+                    normalized.toLowerCase().endsWith("/.venv/bin/pip3")) {
+                  return "pip";
+                }
+                return null;
+              };
+              const normalizePayloadArgs = (command, args) => {
+                const list = Array.isArray(args) ? args.map((value) => String(value)) : [];
+                return pythonKind(command) === "pip" ? ["-m", "pip", ...list] : list;
+              };
+              const bridgePython = (command, args, options = {}) => new Promise((resolve, reject) => {
+                const payload = JSON.stringify({
+                  command: String(command),
+                  args: normalizePayloadArgs(command, args),
+                  cwd: options && options.cwd ? String(options.cwd) : process.cwd(),
+                  env: options && options.env ? options.env : process.env,
+                  pythonPaths: [
+                    nativePythonSitePackages,
+                    path.join(nativeStateDir, "python", "site-packages")
+                  ]
+                });
+                const request = http.request({
+                  hostname: bridgeUrl.hostname,
+                  port: Number(bridgeUrl.port || 80),
+                  path: bridgeUrl.pathname,
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Content-Length": Buffer.byteLength(payload)
+                  },
+                  timeout: 240000
+                }, (response) => {
+                  let body = "";
+                  response.setEncoding("utf8");
+                  response.on("data", (chunk) => { body += chunk; });
+                  response.on("end", () => {
+                    try {
+                      const decoded = JSON.parse(body || "{}");
+                      if (response.statusCode >= 200 && response.statusCode < 300) {
+                        resolve(decoded);
+                      } else {
+                        const error = new Error(decoded.stderr || decoded.error || body || ("Native Python HTTP " + response.statusCode));
+                        error.result = decoded;
+                        reject(error);
+                      }
+                    } catch (error) {
+                      reject(error);
+                    }
+                  });
+                });
+                request.on("timeout", () => request.destroy(new Error("Native Python bridge timeout")));
+                request.on("error", reject);
+                request.write(payload);
+                request.end();
+              });
+              const makeProcess = (command, args, options = {}) => {
+                const proc = new EventEmitter();
+                proc.stdout = new PassThrough();
+                proc.stderr = new PassThrough();
+                proc.stdin = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+                proc.pid = 0;
+                proc.killed = false;
+                proc.exitCode = null;
+                proc.signalCode = null;
+                proc.kill = () => {
+                  proc.killed = true;
+                  return false;
+                };
+                setImmediate(async () => {
+                  try {
+                    const result = await bridgePython(command, args, options);
+                    const stdout = result.stdout || "";
+                    const stderr = result.stderr || "";
+                    if (stdout) proc.stdout.write(stdout);
+                    if (stderr) proc.stderr.write(stderr);
+                    proc.stdout.end();
+                    proc.stderr.end();
+                    const code = Number.isFinite(Number(result.exitCode)) ? Number(result.exitCode) : (result.ok === false ? 1 : 0);
+                    proc.exitCode = code;
+                    proc.emit("exit", code, null);
+                    proc.emit("close", code, null);
+                  } catch (error) {
+                    const stderr = error?.result?.stderr || error?.message || String(error);
+                    if (stderr) proc.stderr.write(stderr + "\n");
+                    proc.stdout.end();
+                    proc.stderr.end();
+                    proc.exitCode = 1;
+                    proc.emit("error", error);
+                    proc.emit("exit", 1, null);
+                    proc.emit("close", 1, null);
+                  }
+                });
+                return proc;
+              };
+              childProcess.spawn = function(command, args, options) {
+                if (pythonKind(command)) return makeProcess(command, args, options || {});
+                return original.spawn.apply(this, arguments);
+              };
+              childProcess.execFile = function(file, args, options, callback) {
+                let actualArgs = args;
+                let actualOptions = options;
+                let actualCallback = callback;
+                if (typeof actualArgs === "function") {
+                  actualCallback = actualArgs;
+                  actualArgs = [];
+                  actualOptions = {};
+                } else if (typeof actualOptions === "function") {
+                  actualCallback = actualOptions;
+                  actualOptions = {};
+                }
+                if (!pythonKind(file)) return original.execFile.apply(this, arguments);
+                const proc = makeProcess(file, actualArgs || [], actualOptions || {});
+                if (actualCallback) {
+                  let stdout = "";
+                  let stderr = "";
+                  proc.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+                  proc.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+                  proc.on("close", (code) => {
+                    const error = code === 0 ? null : Object.assign(new Error(stderr || ("Native Python exited " + code)), { code });
+                    actualCallback(error, stdout, stderr);
+                  });
+                }
+                return proc;
+              };
+              childProcess.exec = function(command, options, callback) {
+                let actualOptions = options;
+                let actualCallback = callback;
+                if (typeof actualOptions === "function") {
+                  actualCallback = actualOptions;
+                  actualOptions = {};
+                }
+                const tokens = tokenise(command);
+                if (!tokens.length || !pythonKind(tokens[0])) {
+                  return original.exec.apply(this, arguments);
+                }
+                return childProcess.execFile(tokens[0], tokens.slice(1), actualOptions || {}, actualCallback);
+              };
+              const syncBlocked = (command) => {
+                const message = "Native Python bridge does not support synchronous child_process calls; use async spawn/execFile/exec.";
+                const stderr = Buffer.from(message + "\n");
+                if (command === "object") {
+                  return { status: 1, signal: null, pid: 0, stdout: Buffer.alloc(0), stderr, output: [null, Buffer.alloc(0), stderr] };
+                }
+                const error = new Error(message);
+                error.status = 1;
+                error.stderr = stderr;
+                error.stdout = Buffer.alloc(0);
+                throw error;
+              };
+              childProcess.spawnSync = function(command, args, options) {
+                if (pythonKind(command)) return syncBlocked("object");
+                return original.spawnSync.apply(this, arguments);
+              };
+              childProcess.execFileSync = function(file, args, options) {
+                if (pythonKind(file)) return syncBlocked("buffer");
+                return original.execFileSync.apply(this, arguments);
+              };
+              childProcess.execSync = function(command, options) {
+                const tokens = tokenise(command);
+                if (tokens.length && pythonKind(tokens[0])) return syncBlocked("buffer");
+                return original.execSync.apply(this, arguments);
+              };
+              console.error("[NATIVE-PYTHON] child_process bridge installed for python/python3/pip");
+            };
+            installNativePythonBridge();
             try {
               Object.defineProperty(os, "tmpdir", {
                 value: () => nativeTmp,
@@ -949,6 +1203,14 @@ class NativeNodeEmbeddedService : Service() {
                   mobileRunMainPath,
                   manifestPath,
                   nativeConfigStatus,
+                  nativeManagedPaths: {
+                    bin: nativeManagedBin,
+                    pythonHome: nativePythonRoot,
+                    pythonBin: nativePythonBin,
+                    pythonSitePackages: nativePythonSitePackages,
+                    path: process.env.PATH,
+                    pythonPath: process.env.PYTHONPATH
+                  },
                   argv: process.argv.slice(1),
                   node: process.version,
                   platform: process.platform,

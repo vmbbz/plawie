@@ -445,7 +445,9 @@ class ChatRuntimeService extends ChangeNotifier {
               pendingMediaMetadata: _pendingAiSnapMetadata,
             );
             final decodedResult = _tryDecodeJsonMap(resultJson);
-            if (_isLocationToolName(name) && decodedResult != null) {
+            if ((_isLocationToolName(name) ||
+                    _looksLikeLocationResult(decodedResult)) &&
+                decodedResult != null) {
               lastLocationResult = decodedResult;
             }
             toolEvents.add(
@@ -591,7 +593,8 @@ class ChatRuntimeService extends ChangeNotifier {
       copy['base64Bytes'] = base64.length;
       copy['attachedImage'] = true;
     }
-    if (_isMediaToolName(name) && pendingMediaMetadata != null) {
+    if ((_isMediaToolName(name) || _looksLikeMediaResult(copy)) &&
+        pendingMediaMetadata != null) {
       copy.addAll(pendingMediaMetadata);
     }
     return jsonEncode(copy);
@@ -610,6 +613,28 @@ class ChatRuntimeService extends ChangeNotifier {
     return lower.contains('location') || lower.contains('gps');
   }
 
+  bool _looksLikeLocationResult(Map<String, dynamic>? result) {
+    if (result == null) return false;
+    return (result.containsKey('lat') || result.containsKey('latitude')) &&
+        (result.containsKey('lng') || result.containsKey('longitude'));
+  }
+
+  bool _looksLikeMediaResult(Map<String, dynamic>? result) {
+    if (result == null) return false;
+    return result['attachedImage'] == true ||
+        result['base64Omitted'] == true ||
+        result['mimeType']?.toString().startsWith('image/') == true ||
+        result['format']?.toString().toLowerCase() == 'jpg' ||
+        result['format']?.toString().toLowerCase() == 'jpeg' ||
+        result['format']?.toString().toLowerCase() == 'png';
+  }
+
+  bool _toolEventResultLooksLikeMedia(ChatToolEvent event) {
+    final result = event.result;
+    if (result == null || result.trim().isEmpty) return false;
+    return _looksLikeMediaResult(_tryDecodeJsonMap(result));
+  }
+
   bool _shouldRunMediaVisionContinuation(
     String prompt,
     List<ChatToolEvent> events,
@@ -622,7 +647,8 @@ class ChatRuntimeService extends ChangeNotifier {
     ).hasMatch(lower);
     final toolCaptured = events.any((event) {
       final name = event.name.toLowerCase();
-      return event.type == 'tool_result' && _isMediaToolName(name);
+      return event.type == 'tool_result' &&
+          (_isMediaToolName(name) || _toolEventResultLooksLikeMedia(event));
     });
     return toolCaptured && asksVision;
   }

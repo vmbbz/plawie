@@ -57,6 +57,22 @@ class NativeBridge {
     await _channel.invokeMethod('ensureAgentSkillsAwareness');
   }
 
+  static Future<Map<String, dynamic>> runNativePython(
+    Map<String, dynamic> payload,
+  ) async {
+    final raw = await _channel.invokeMethod<String>('runNativePython', {
+      'payloadJson': jsonEncode(payload),
+    });
+    final decoded = jsonDecode(raw ?? '{}');
+    if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    return {
+      'ok': false,
+      'exitCode': 1,
+      'stdout': '',
+      'stderr': 'Native Python bridge returned a non-object response.',
+    };
+  }
+
   static Future<bool> extractRootfs(String tarPath) async {
     return await _channel.invokeMethod('extractRootfs', {'tarPath': tarPath});
   }

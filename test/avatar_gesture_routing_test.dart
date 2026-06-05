@@ -99,6 +99,39 @@ void main() {
     );
   });
 
+  test('obvious mobile commands get required Gateway intent plans', () {
+    final gateway = GatewayService();
+
+    expect(
+      gateway.debugRequiredToolIntentCommandForTesting('healthcheck'),
+      'device.health',
+    );
+    expect(
+      gateway.debugRequiredToolIntentCommandForTesting('where are we'),
+      'location.get',
+    );
+    expect(
+      gateway.debugRequiredToolIntentCommandForTesting('turn on flashlight'),
+      'flash.on',
+    );
+    expect(
+      gateway.debugRequiredToolIntentCommandForTesting('dance'),
+      'avatar.gesture',
+    );
+    expect(
+      gateway.debugRequiredToolIntentCommandForTesting(
+        'cross leg sit for 30 seconds then bow 2',
+      ),
+      'avatar.sequence',
+    );
+    expect(
+      gateway.debugRequiredToolIntentCommandForTesting(
+        'what tools do you have',
+      ),
+      isNull,
+    );
+  });
+
   test('limb VRMAs have humanoid mappings after repair', () {
     final dir = Directory('assets/vrm/animations/limbs');
     final files = dir

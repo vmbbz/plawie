@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
 import 'native_bridge.dart';
@@ -10,6 +13,15 @@ import 'skill_parity_audit_service.dart';
 class SkillProvisioningService {
   SkillProvisioningService._();
   static final SkillProvisioningService instance = SkillProvisioningService._();
+  static const _pythonRuntimeVersion = '3.13';
+  static const _pythonTag = 'cp313';
+  static const _pythonAbiTag = 'cp313';
+  static const _androidWheelAbi = 'arm64_v8a';
+  static const _defaultPythonWheelIndexes = <String>[
+    'https://chaquo.com/pypi-13.1/',
+    'https://pypi.org/simple/',
+    'https://pypi.flet.dev/',
+  ];
 
   Future<SkillProvisioningReport> planSnapshot(
     SkillParitySnapshot snapshot, {
@@ -20,6 +32,7 @@ class SkillProvisioningService {
       skillId: skillId,
       applyValues: false,
       installBundledBinaries: false,
+      installDependencyPacks: false,
     );
   }
 
@@ -30,6 +43,7 @@ class SkillProvisioningService {
     Map<String, dynamic> configValues = const <String, dynamic>{},
     bool applyValues = true,
     bool installBundledBinaries = true,
+    bool installDependencyPacks = true,
   }) {
     return _evaluateSnapshot(
       snapshot,
@@ -38,6 +52,7 @@ class SkillProvisioningService {
       configValues: configValues,
       applyValues: applyValues,
       installBundledBinaries: installBundledBinaries,
+      installDependencyPacks: installDependencyPacks,
     );
   }
 
@@ -49,6 +64,7 @@ class SkillProvisioningService {
     bool repairNativeFromProot = false,
     bool applyValues = true,
     bool installBundledBinaries = true,
+    bool installDependencyPacks = true,
   }) async {
     final snapshot = await SkillParityAuditService.instance.audit(
       filesDir: filesDir ?? await NativeBridge.getFilesDir(),
@@ -62,6 +78,7 @@ class SkillProvisioningService {
       configValues: configValues,
       applyValues: applyValues,
       installBundledBinaries: installBundledBinaries,
+      installDependencyPacks: installDependencyPacks,
     );
   }
 
@@ -72,6 +89,7 @@ class SkillProvisioningService {
     Map<String, dynamic> configValues = const <String, dynamic>{},
     required bool applyValues,
     required bool installBundledBinaries,
+    required bool installDependencyPacks,
   }) async {
     final targetSkill = _normalizeSkillId(skillId);
     final layout = _SkillProvisioningLayout(snapshot.filesDir);
@@ -83,16 +101,23 @@ class SkillProvisioningService {
     final results = <SkillProvisioningSkillResult>[];
     var changed = false;
     var reloadRecommended = false;
+    Future<List<_DependencyPack>>? dependencyPackCatalogFuture;
+    Future<List<_DependencyPack>> loadDependencyPackCatalog() {
+      dependencyPackCatalogFuture ??= _loadDependencyPackCatalog(layout);
+      return dependencyPackCatalogFuture!;
+    }
 
     for (final entry in entries) {
       final result = await _evaluateEntry(
         snapshot,
         entry,
         layout,
+        dependencyPackCatalogLoader: loadDependencyPackCatalog,
         envValues: envValues,
         configValues: configValues,
         applyValues: applyValues,
         installBundledBinaries: installBundledBinaries,
+        installDependencyPacks: installDependencyPacks,
       );
       results.add(result);
       changed = changed || result.changed;
@@ -114,10 +139,13 @@ class SkillProvisioningService {
     SkillParitySnapshot snapshot,
     SkillExecutionMatrixEntry entry,
     _SkillProvisioningLayout layout, {
+    required Future<List<_DependencyPack>> Function()
+        dependencyPackCatalogLoader,
     required Map<String, String> envValues,
     required Map<String, dynamic> configValues,
     required bool applyValues,
     required bool installBundledBinaries,
+    required bool installDependencyPacks,
   }) async {
     final actions = <SkillProvisioningAction>[];
     final missingEnv = _gateValues(
@@ -138,6 +166,18 @@ class SkillProvisioningService {
       'missing_native_bin',
       fallback: entry.requiredBins,
     );
+    var missingRuntimes = _gateValues(
+      snapshot,
+      entry,
+      'missing_native_runtime',
+      fallback: const <String>[],
+    );
+    var missingPythonPackages = _gateValues(
+      snapshot,
+      entry,
+      'missing_native_python_package',
+      fallback: entry.requiredPythonPackages,
+    );
     final missingPlugins = _gateValues(
       snapshot,
       entry,
@@ -151,6 +191,17 @@ class SkillProvisioningService {
     var envFullySatisfied = true;
     var configFullySatisfied = true;
     var binaryFullySatisfied = true;
+    var runtimeFullySatisfied = true;
+    var pythonPackagesFullySatisfied = true;
+    final pythonCommandBins =
+        missingBins.where(_isPythonCommandBin).toList(growable: false);
+    final nonRuntimeMissingBins = missingBins
+        .where((bin) => !_isPythonCommandBin(bin))
+        .toList(growable: false);
+    if (pythonCommandBins.isNotEmpty &&
+        !missingRuntimes.map(_normalizeDependencyName).contains('python')) {
+      missingRuntimes = [...missingRuntimes, 'python'];
+    }
 
     for (final envName in missingEnv) {
       final supplied = envValues[envName];
@@ -200,7 +251,7 @@ class SkillProvisioningService {
       }
     }
 
-    for (final bin in missingBins) {
+    for (final bin in nonRuntimeMissingBins) {
       final target = File(path.join(layout.nativeManagedBinDir.path, bin));
       final source = await _findBundledNativeBinary(layout, bin);
       if (installBundledBinaries && source != null) {
@@ -244,6 +295,67 @@ class SkillProvisioningService {
       ));
     }
 
+    final dependencyAuditPackages = missingPythonPackages.isNotEmpty
+        ? missingPythonPackages
+        : entry.requiredPythonPackages;
+    final shouldAuditPythonClosure =
+        entry.requiredPythonRequirements.isNotEmpty &&
+            dependencyAuditPackages.isNotEmpty;
+
+    if (missingRuntimes.isNotEmpty ||
+        missingPythonPackages.isNotEmpty ||
+        shouldAuditPythonClosure) {
+      final dependencyResult = await _provisionDependencyPacks(
+        entry,
+        layout,
+        missingRuntimes: missingRuntimes,
+        missingPythonPackages: dependencyAuditPackages,
+        requiredPythonRequirements: entry.requiredPythonRequirements,
+        dependencyPackCatalogLoader: dependencyPackCatalogLoader,
+        apply: applyValues && installDependencyPacks,
+      );
+      actions.addAll(dependencyResult.actions);
+      changed = changed || dependencyResult.changed;
+      reloadRecommended =
+          reloadRecommended || dependencyResult.reloadRecommended;
+      missingRuntimes = missingRuntimes
+          .where((runtime) => !dependencyResult.satisfiedRuntimes
+              .contains(_normalizeDependencyName(runtime)))
+          .toList();
+      final remainingAuditedPythonPackages = dependencyAuditPackages
+          .where((package) => !dependencyResult.satisfiedPythonPackages
+              .contains(_normalizeDependencyName(package)))
+          .toList();
+      missingPythonPackages = missingPythonPackages.isNotEmpty
+          ? missingPythonPackages
+              .where((package) => remainingAuditedPythonPackages
+                  .contains(_normalizeDependencyName(package)))
+              .toList()
+          : remainingAuditedPythonPackages;
+    }
+
+    for (final runtime in missingRuntimes) {
+      runtimeFullySatisfied = false;
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.runtime,
+        key: runtime,
+        status: SkillProvisioningActionStatus.missingDependency,
+        message:
+            '$runtime is required by this skill but is not available in the Native managed runtime. Provision a bundled Native runtime; PRoot will not be used automatically.',
+      ));
+    }
+
+    for (final package in missingPythonPackages) {
+      pythonPackagesFullySatisfied = false;
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.pythonPackage,
+        key: package,
+        status: SkillProvisioningActionStatus.missingDependency,
+        message:
+            '$package is required by requirements.txt but is not installed in a Native Python environment for this skill.',
+      ));
+    }
+
     if (gates.contains('disabled')) {
       actions.add(const SkillProvisioningAction(
         type: SkillProvisioningActionType.config,
@@ -281,6 +393,8 @@ class SkillProvisioningService {
       envFullySatisfied: envFullySatisfied,
       configFullySatisfied: configFullySatisfied,
       binaryFullySatisfied: binaryFullySatisfied,
+      runtimeFullySatisfied: runtimeFullySatisfied,
+      pythonPackagesFullySatisfied: pythonPackagesFullySatisfied,
       missingPlugins: missingPlugins,
       changed: changed,
     );
@@ -311,6 +425,8 @@ class SkillProvisioningService {
     required bool envFullySatisfied,
     required bool configFullySatisfied,
     required bool binaryFullySatisfied,
+    required bool runtimeFullySatisfied,
+    required bool pythonPackagesFullySatisfied,
     required List<String> missingPlugins,
     required bool changed,
   }) {
@@ -322,6 +438,9 @@ class SkillProvisioningService {
     }
     if (gates.contains('manual_proot_required')) {
       return SkillProvisioningStatus.manualProotRequired;
+    }
+    if (!runtimeFullySatisfied || !pythonPackagesFullySatisfied) {
+      return SkillProvisioningStatus.missingDependency;
     }
     if (!binaryFullySatisfied) return SkillProvisioningStatus.missingBinary;
     if (missingPlugins.isNotEmpty) return SkillProvisioningStatus.missingPlugin;
@@ -341,7 +460,7 @@ class SkillProvisioningService {
       SkillExecutionStatus.needsConfig =>
         SkillProvisioningStatus.needsUserConfig,
       SkillExecutionStatus.missingDependency =>
-        SkillProvisioningStatus.missingBinary,
+        SkillProvisioningStatus.missingDependency,
       SkillExecutionStatus.disabled => SkillProvisioningStatus.disabled,
       SkillExecutionStatus.unsupportedNative =>
         SkillProvisioningStatus.unsupportedNative,
@@ -373,6 +492,7 @@ class SkillProvisioningService {
     required List<String> fallback,
   }) {
     final values = <String>{};
+    if (!entry.gates.contains(gate)) return const <String>[];
     for (final parityGate in snapshot.gates) {
       if (_normalizeSkillId(parityGate.skillId) !=
           _normalizeSkillId(entry.skillId)) {
@@ -380,15 +500,1792 @@ class SkillProvisioningService {
       }
       if (parityGate.gate != gate) continue;
       final parsed = _parseGateValue(parityGate.detail);
-      if (parsed != null && parsed.isNotEmpty) values.add(parsed);
+      if (parsed != null && parsed.isNotEmpty) {
+        values.add(gate == 'missing_native_runtime'
+            ? _normalizeRuntimeRequirement(parsed)
+            : parsed);
+      }
     }
-    if (values.isEmpty) values.addAll(fallback);
+    if (values.isEmpty) {
+      values.addAll(gate == 'missing_native_runtime'
+          ? fallback.map(_normalizeRuntimeRequirement)
+          : fallback);
+    }
     return values.toList()..sort();
   }
 
   static String? _parseGateValue(String detail) {
     final match = RegExp(r'^([A-Za-z0-9_.@/-]+)\b').firstMatch(detail.trim());
     return match?.group(1);
+  }
+
+  static Future<_DependencyProvisioningResult> _provisionDependencyPacks(
+    SkillExecutionMatrixEntry entry,
+    _SkillProvisioningLayout layout, {
+    required List<String> missingRuntimes,
+    required List<String> missingPythonPackages,
+    required Map<String, String> requiredPythonRequirements,
+    required Future<List<_DependencyPack>> Function()
+        dependencyPackCatalogLoader,
+    required bool apply,
+  }) async {
+    final actions = <SkillProvisioningAction>[];
+    final satisfiedRuntimes = <String>{};
+    final satisfiedPythonPackages = <String>{};
+    var changed = false;
+    var reloadRecommended = false;
+
+    final requiredRuntimes =
+        missingRuntimes.map(_normalizeDependencyName).toSet();
+    final requiredPackages =
+        missingPythonPackages.map(_normalizeDependencyName).toSet();
+    final packs = await dependencyPackCatalogLoader();
+    final selected = _selectDependencyPacks(
+      packs,
+      requiredRuntimes: requiredRuntimes,
+      requiredPythonPackages: requiredPackages,
+    );
+    final needsNativePython = requiredRuntimes.contains('python') ||
+        requiredPackages.isNotEmpty ||
+        requiredPythonRequirements.isNotEmpty;
+    if (needsNativePython) {
+      _DependencyPack? pythonCore;
+      for (final pack in packs) {
+        if (pack.id == 'python-core') {
+          pythonCore = pack;
+          break;
+        }
+      }
+      if (pythonCore != null &&
+          !selected.any((pack) => pack.id == pythonCore!.id) &&
+          await _pythonCoreInstallRequired(layout, pythonCore)) {
+        selected.add(pythonCore);
+        _sortDependencyPacks(selected);
+      }
+    }
+
+    final coveredRuntimes = <String>{};
+    final coveredPackages = <String>{};
+    for (final pack in selected) {
+      coveredRuntimes.addAll(pack.providesRuntimes);
+      coveredPackages.addAll(pack.providesPythonPackages);
+    }
+
+    for (final runtime in requiredRuntimes.difference(coveredRuntimes)) {
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.dependencyPack,
+        key: 'runtime:$runtime',
+        status: SkillProvisioningActionStatus.missingPack,
+        message:
+            'No Native dependency pack advertises runtime "$runtime" for arm64-v8a.',
+      ));
+    }
+    for (final pack in selected) {
+      final receipt = await _readDependencyReceipt(layout, pack.id);
+      if (receipt != null &&
+          receipt.version == pack.version &&
+          receipt.sha256 == pack.sha256 &&
+          await _dependencyPackMarkersPresent(layout, pack)) {
+        final packSatisfiedPackages = await _satisfiedPythonPackagesForPack(
+          layout,
+          pack,
+          requiredPythonRequirements,
+        );
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.dependencyPack,
+          key: pack.id,
+          status: SkillProvisioningActionStatus.ready,
+          message: 'Dependency pack ${pack.id} already installed.',
+        ));
+        satisfiedRuntimes.addAll(pack.providesRuntimes);
+        satisfiedPythonPackages.addAll(packSatisfiedPackages);
+        continue;
+      }
+
+      if (!apply) {
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.dependencyPack,
+          key: pack.id,
+          status: SkillProvisioningActionStatus.missingDependency,
+          message: 'Dependency pack ${pack.id} can satisfy this skill.',
+        ));
+        continue;
+      }
+
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.dependencyPack,
+        key: pack.id,
+        status: SkillProvisioningActionStatus.downloading,
+        message: pack.source == _DependencyPackSource.apk
+            ? 'Installing APK-provided dependency pack ${pack.id}.'
+            : 'Downloading dependency pack ${pack.id}.',
+      ));
+      debugPrint('[DEPS] requested pack=${pack.id} skill=${entry.skillId}');
+
+      final install = await _installDependencyPack(layout, pack, entry);
+      actions.add(install.action);
+      if (install.ok) {
+        changed = true;
+        reloadRecommended = true;
+        satisfiedRuntimes.addAll(pack.providesRuntimes);
+        satisfiedPythonPackages.addAll(
+          await _satisfiedPythonPackagesForPack(
+            layout,
+            pack,
+            requiredPythonRequirements,
+          ),
+        );
+      }
+    }
+
+    final remainingPythonPackages =
+        requiredPackages.difference(satisfiedPythonPackages);
+    if (remainingPythonPackages.isNotEmpty) {
+      final wheelResult = await _provisionPythonWheels(
+        entry,
+        layout,
+        requiredPythonRequirements: {
+          for (final package in remainingPythonPackages)
+            package: requiredPythonRequirements[package] ?? package,
+        },
+        apply: apply,
+      );
+      actions.addAll(wheelResult.actions);
+      changed = changed || wheelResult.changed;
+      reloadRecommended = reloadRecommended || wheelResult.reloadRecommended;
+      satisfiedPythonPackages.addAll(wheelResult.satisfiedPythonPackages);
+    }
+
+    final stillUnverified =
+        requiredPackages.difference(satisfiedPythonPackages);
+    if (apply && stillUnverified.isNotEmpty) {
+      final installed = await _scanInstalledPythonPackageVersions(layout);
+      for (final package in stillUnverified) {
+        final requirement = _pythonRequirementForPackage(
+          requiredPythonRequirements,
+          package,
+        );
+        final version = installed[package];
+        if (version == null ||
+            !_pythonRequirementSatisfied(version, requirement)) {
+          continue;
+        }
+        final smoke = await _smokePythonImport(layout, package);
+        if (smoke.ok) {
+          satisfiedPythonPackages.add(package);
+          actions.add(SkillProvisioningAction(
+            type: SkillProvisioningActionType.pythonPackage,
+            key: package,
+            status: SkillProvisioningActionStatus.ready,
+            message:
+                'Python package $package $version verified after wheel provisioning.',
+          ));
+        } else {
+          actions.add(SkillProvisioningAction(
+            type: SkillProvisioningActionType.pythonPackage,
+            key: package,
+            status: SkillProvisioningActionStatus.failedSmoke,
+            message: 'Python package $package failed import smoke after '
+                'wheel provisioning: '
+                '${smoke.stderr.isEmpty ? smoke.stdout : smoke.stderr}',
+          ));
+        }
+      }
+    }
+
+    for (final package
+        in requiredPackages.difference(satisfiedPythonPackages)) {
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.dependencyPack,
+        key: 'python-package:$package',
+        status: SkillProvisioningActionStatus.missingPack,
+        message:
+            'No verified Native dependency pack or compatible Android wheel satisfied Python package "$package" for arm64-v8a.',
+      ));
+    }
+
+    return _DependencyProvisioningResult(
+      actions: actions,
+      satisfiedRuntimes: satisfiedRuntimes,
+      satisfiedPythonPackages: satisfiedPythonPackages,
+      changed: changed,
+      reloadRecommended: reloadRecommended,
+    );
+  }
+
+  static String _pythonRequirementForPackage(
+    Map<String, String> requirements,
+    String package,
+  ) {
+    final direct = requirements[package];
+    if (direct != null) return direct;
+    for (final entry in requirements.entries) {
+      if (_normalizeDependencyName(entry.key) == package) return entry.value;
+    }
+    return package;
+  }
+
+  static List<_DependencyPack> _selectDependencyPacks(
+    List<_DependencyPack> packs, {
+    required Set<String> requiredRuntimes,
+    required Set<String> requiredPythonPackages,
+  }) {
+    final selected = <_DependencyPack>[];
+    final remainingRuntimes = {...requiredRuntimes};
+    final remainingPackages = {...requiredPythonPackages};
+
+    while (remainingRuntimes.isNotEmpty || remainingPackages.isNotEmpty) {
+      _DependencyPack? best;
+      var bestScore = 0;
+      for (final pack in packs) {
+        if (selected.any((item) => item.id == pack.id)) continue;
+        final score =
+            pack.providesRuntimes.where(remainingRuntimes.contains).length *
+                    10 +
+                pack.providesPythonPackages
+                    .where(remainingPackages.contains)
+                    .length;
+        if (score > bestScore) {
+          best = pack;
+          bestScore = score;
+        }
+      }
+      if (best == null) break;
+      selected.add(best);
+      remainingRuntimes.removeAll(best.providesRuntimes);
+      remainingPackages.removeAll(best.providesPythonPackages);
+    }
+
+    _sortDependencyPacks(selected);
+    return selected;
+  }
+
+  static void _sortDependencyPacks(List<_DependencyPack> selected) {
+    selected.sort((a, b) {
+      if (a.id == 'python-core') return -1;
+      if (b.id == 'python-core') return 1;
+      return a.id.compareTo(b.id);
+    });
+  }
+
+  static Future<List<_DependencyPack>> _loadDependencyPackCatalog(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final packs = <_DependencyPack>[
+      _DependencyPack.apk(
+        id: 'python-core',
+        version: '3.13-chaquopy-17.0.0',
+        providesRuntimes: const {'python'},
+        providesBins: const {'python', 'python3', 'pip'},
+      ),
+    ];
+
+    Future<void> mergeManifest(Map<String, dynamic>? manifest) async {
+      if (manifest == null) return;
+      final rawPacks = manifest['packs'] ?? manifest['items'];
+      if (rawPacks is! List) return;
+      for (final item in rawPacks) {
+        if (item is! Map) continue;
+        final pack = _DependencyPack.fromJson(Map<String, dynamic>.from(item));
+        if (pack != null && !packs.any((existing) => existing.id == pack.id)) {
+          packs.add(pack);
+        }
+      }
+    }
+
+    await mergeManifest(await _readJson(layout.dependencyPackManifestFile));
+    try {
+      final uri = Uri.parse(
+        const String.fromEnvironment(
+          'OPENCLAW_DEPENDENCY_PACK_MANIFEST',
+          defaultValue:
+              'https://clawhub.ai/api/v1/dependency-packs/android/arm64-v8a.json',
+        ),
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          await mergeManifest(Map<String, dynamic>.from(decoded));
+        }
+      }
+    } catch (error) {
+      debugPrint('[DEPS] remote dependency manifest unavailable: $error');
+    }
+
+    return packs;
+  }
+
+  static Future<_DependencyPackInstallResult> _installDependencyPack(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+    SkillExecutionMatrixEntry entry,
+  ) async {
+    try {
+      await layout.dependencyReceiptDir.create(recursive: true);
+      await layout.nativePythonBinDir.create(recursive: true);
+      await layout.nativePythonSitePackagesDir.create(recursive: true);
+
+      if (pack.source == _DependencyPackSource.apk) {
+        await _installApkProvidedPack(layout, pack, entry);
+      } else {
+        await _downloadAndExtractPack(layout, pack);
+      }
+
+      final smoke = await _runDependencyPackSmoke(layout, pack);
+      if (!smoke.ok) {
+        debugPrint('[DEPS] smoke failed pack=${pack.id} error=${smoke.stderr}');
+        return _DependencyPackInstallResult(
+          ok: false,
+          action: SkillProvisioningAction(
+            type: SkillProvisioningActionType.dependencyPack,
+            key: pack.id,
+            status: SkillProvisioningActionStatus.failedSmoke,
+            message: 'Dependency pack ${pack.id} failed smoke test: '
+                '${smoke.stderr.isEmpty ? smoke.stdout : smoke.stderr}',
+          ),
+        );
+      }
+
+      await _writeDependencyReceipt(layout, pack);
+      debugPrint('[DEPS] installed pack=${pack.id} skill=${entry.skillId}');
+      return _DependencyPackInstallResult(
+        ok: true,
+        action: SkillProvisioningAction(
+          type: SkillProvisioningActionType.dependencyPack,
+          key: pack.id,
+          status: SkillProvisioningActionStatus.installed,
+          message: 'Dependency pack ${pack.id} installed and smoke-tested.',
+          changed: true,
+        ),
+      );
+    } catch (error) {
+      debugPrint('[DEPS] install failed pack=${pack.id} error=$error');
+      return _DependencyPackInstallResult(
+        ok: false,
+        action: SkillProvisioningAction(
+          type: SkillProvisioningActionType.dependencyPack,
+          key: pack.id,
+          status: SkillProvisioningActionStatus.missingDependency,
+          message: 'Dependency pack ${pack.id} could not be installed: $error',
+        ),
+      );
+    }
+  }
+
+  static Future<_DependencyProvisioningResult> _provisionPythonWheels(
+    SkillExecutionMatrixEntry entry,
+    _SkillProvisioningLayout layout, {
+    required Map<String, String> requiredPythonRequirements,
+    required bool apply,
+  }) async {
+    final actions = <SkillProvisioningAction>[];
+    final satisfiedPackages = <String>{};
+    var changed = false;
+    var reloadRecommended = false;
+
+    final installed = await _scanInstalledPythonPackageVersions(layout);
+    final rootPackages =
+        requiredPythonRequirements.keys.map(_normalizeDependencyName).toSet();
+    final queue = <_PythonRequirementRequest>[
+      for (final entry in requiredPythonRequirements.entries)
+        _PythonRequirementRequest.fromRaw(
+              entry.value,
+              fallbackName: entry.key,
+              root: true,
+              rootPackage: _normalizeDependencyName(entry.key),
+            ) ??
+            _PythonRequirementRequest(
+              name: _normalizeDependencyName(entry.key),
+              raw: entry.value,
+              root: true,
+              rootPackage: _normalizeDependencyName(entry.key),
+            ),
+    ];
+    final processed = <String>{};
+    final unresolvedPackages = <String>{};
+    final unresolvedRootPackages = <String>{};
+    var iterations = 0;
+
+    void markUnresolved(_PythonRequirementRequest request) {
+      unresolvedPackages.add(request.name);
+      unresolvedRootPackages.add(request.rootPackage ?? request.name);
+    }
+
+    Future<void> enqueueInstalledTransitive(
+      _PythonRequirementRequest request,
+    ) async {
+      final requiresDist = await _readInstalledPythonPackageRequiresDist(
+        layout,
+        request.name,
+      );
+      for (final dependency in requiresDist) {
+        final normalized = _normalizeDependencyName(dependency.name);
+        if (installed.containsKey(normalized) &&
+            _pythonRequirementSatisfied(
+              installed[normalized]!,
+              dependency.raw,
+            )) {
+          continue;
+        }
+        queue.add(dependency.withRootPackage(
+          request.rootPackage ?? request.name,
+        ));
+      }
+    }
+
+    while (queue.isNotEmpty && iterations < 120) {
+      iterations += 1;
+      final request = queue.removeAt(0);
+      final key = '${request.name}:${request.raw}';
+      if (!processed.add(key)) continue;
+
+      final installedVersion = installed[request.name];
+      if (installedVersion != null &&
+          _pythonRequirementSatisfied(installedVersion, request.raw)) {
+        if (rootPackages.contains(request.name)) {
+          satisfiedPackages.add(request.name);
+        }
+        await enqueueInstalledTransitive(request);
+        continue;
+      }
+
+      if (!apply) {
+        markUnresolved(request);
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.pythonPackage,
+          key: request.name,
+          status: SkillProvisioningActionStatus.missingDependency,
+          message:
+              'Python wheel provisioning can satisfy ${request.raw} when dependency repair is applied.',
+        ));
+        continue;
+      }
+
+      final receipt = await _readPythonWheelReceipt(layout, request.name);
+      if (receipt != null &&
+          _pythonWheelReceiptSatisfiesRequest(receipt, request) &&
+          await _pythonPackageMarkerPresent(layout, request.name)) {
+        installed[request.name] = receipt.version;
+        if (rootPackages.contains(request.name)) {
+          satisfiedPackages.add(request.name);
+        }
+        await enqueueInstalledTransitive(request);
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.pythonPackage,
+          key: request.name,
+          status: SkillProvisioningActionStatus.ready,
+          message: receipt.compatibilityOverride
+              ? 'Python package ${request.name} ${receipt.version} already '
+                  'installed from a verified Android compatibility wheel for '
+                  '${receipt.requestedRequirement ?? request.raw}.'
+              : 'Python package ${request.name} ${receipt.version} already installed from a verified wheel.',
+        ));
+        continue;
+      }
+
+      final candidate = await _resolvePythonWheelCandidate(request);
+      if (candidate == null) {
+        debugPrint(
+          '[DEPS] no compatible wheel skill=${entry.skillId} '
+          'package=${request.name} requirement=${request.raw}',
+        );
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.pythonPackage,
+          key: request.name,
+          status: SkillProvisioningActionStatus.missingPack,
+          message:
+              'No compatible Android arm64 wheel found for ${request.raw} on approved Native indexes.',
+        ));
+        markUnresolved(request);
+        continue;
+      }
+
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.pythonPackage,
+        key: request.name,
+        status: SkillProvisioningActionStatus.downloading,
+        message:
+            'Downloading ${candidate.fileName} from ${candidate.indexHost}.',
+      ));
+      debugPrint(
+        '[DEPS] wheel requested skill=${entry.skillId} package=${request.name} version=${candidate.version}',
+      );
+
+      final install = await _downloadAndInstallPythonWheel(
+        layout,
+        request,
+        candidate,
+      );
+      actions.add(install.action);
+      if (!install.ok) {
+        markUnresolved(request);
+        debugPrint(
+          '[DEPS] wheel not installed skill=${entry.skillId} '
+          'package=${request.name} status=${install.action.status.wireName} '
+          'message=${install.action.message}',
+        );
+        continue;
+      }
+
+      changed = true;
+      reloadRecommended = true;
+      installed[request.name] = candidate.version;
+      if (rootPackages.contains(request.name)) {
+        satisfiedPackages.add(request.name);
+      }
+      for (final dependency in install.requiresDist) {
+        final normalized = _normalizeDependencyName(dependency.name);
+        if (installed.containsKey(normalized) &&
+            _pythonRequirementSatisfied(
+                installed[normalized]!, dependency.raw)) {
+          continue;
+        }
+        queue.add(dependency.withRootPackage(
+          request.rootPackage ?? request.name,
+        ));
+      }
+    }
+
+    if (queue.isNotEmpty) {
+      for (final request in queue) {
+        markUnresolved(request);
+      }
+      actions.add(const SkillProvisioningAction(
+        type: SkillProvisioningActionType.pythonPackage,
+        key: 'dependency-closure',
+        status: SkillProvisioningActionStatus.missingDependency,
+        message:
+            'Python dependency closure exceeded the safety limit while resolving wheels.',
+      ));
+    }
+
+    if (unresolvedRootPackages.isNotEmpty) {
+      satisfiedPackages.removeAll(unresolvedRootPackages);
+      final roots = unresolvedRootPackages.toList()..sort();
+      final unresolved = unresolvedPackages.toList()..sort();
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.pythonPackage,
+        key: 'dependency-closure',
+        status: SkillProvisioningActionStatus.missingDependency,
+        message: 'Python dependency closure is incomplete for '
+            '${roots.join(', ')}; unresolved transitive packages: '
+            '${unresolved.join(', ')}.',
+      ));
+    }
+
+    if (apply && satisfiedPackages.isNotEmpty) {
+      for (final package in satisfiedPackages.toList()) {
+        final smoke = await _smokePythonImport(layout, package);
+        if (!smoke.ok) {
+          satisfiedPackages.remove(package);
+          debugPrint(
+            '[DEPS] python import smoke failed skill=${entry.skillId} '
+            'package=$package stderr=${smoke.stderr} stdout=${smoke.stdout}',
+          );
+          actions.add(SkillProvisioningAction(
+            type: SkillProvisioningActionType.pythonPackage,
+            key: package,
+            status: SkillProvisioningActionStatus.failedSmoke,
+            message: 'Python package $package failed import smoke: '
+                '${smoke.stderr.isEmpty ? smoke.stdout : smoke.stderr}',
+          ));
+        }
+      }
+    }
+
+    return _DependencyProvisioningResult(
+      actions: actions,
+      satisfiedRuntimes: const <String>{},
+      satisfiedPythonPackages: satisfiedPackages,
+      changed: changed,
+      reloadRecommended: reloadRecommended,
+    );
+  }
+
+  static Future<_PythonWheelCandidate?> _resolvePythonWheelCandidate(
+    _PythonRequirementRequest request, {
+    bool validatePinnedDependencies = true,
+  }) async {
+    final candidates = <_PythonWheelCandidate>[];
+    for (final index in _defaultPythonWheelIndexes) {
+      final base = Uri.parse(index.endsWith('/') ? index : '$index/');
+      final pageUri = base.resolve('${Uri.encodeComponent(request.name)}/');
+      try {
+        final response =
+            await http.get(pageUri).timeout(const Duration(seconds: 12));
+        if (response.statusCode < 200 || response.statusCode >= 300) continue;
+        candidates.addAll(_parseWheelCandidates(
+          response.body,
+          pageUri,
+          request.name,
+          index,
+        ));
+      } catch (error) {
+        debugPrint('[DEPS] wheel index unavailable $pageUri: $error');
+      }
+    }
+
+    var compatible = candidates
+        .where((candidate) =>
+            _pythonRequirementSatisfied(candidate.version, request.raw))
+        .toList();
+    var usingCompatibilityFallback = false;
+    if (compatible.isEmpty &&
+        _androidCompatibilityWheelFallbackAllowed(request.raw)) {
+      compatible = candidates.toList();
+      usingCompatibilityFallback = compatible.isNotEmpty;
+    }
+    if (!_requirementAllowsPrerelease(request.raw)) {
+      final stable = compatible
+          .where((candidate) => !_isPrereleaseVersion(candidate.version))
+          .toList();
+      if (stable.isNotEmpty) compatible = stable;
+    }
+    compatible.sort((a, b) => _compareVersions(b.version, a.version));
+    if (!validatePinnedDependencies) {
+      return compatible.isEmpty ? null : compatible.first;
+    }
+    for (final candidate in compatible) {
+      if (usingCompatibilityFallback) {
+        debugPrint(
+          '[DEPS] Android compatibility wheel selected package=${request.name} '
+          'requested=${request.raw} actual=${candidate.version}',
+        );
+      }
+      if (await _wheelCandidatePinnedDependenciesResolvable(candidate)) {
+        return candidate;
+      }
+      debugPrint(
+        '[DEPS] wheel candidate skipped package=${candidate.name} '
+        'version=${candidate.version}: exact pinned dependency unavailable',
+      );
+    }
+    return null;
+  }
+
+  static bool _pythonWheelReceiptSatisfiesRequest(
+    _DependencyPackReceipt receipt,
+    _PythonRequirementRequest request,
+  ) {
+    if (_pythonRequirementSatisfied(receipt.version, request.raw)) return true;
+    return receipt.compatibilityOverride &&
+        receipt.smokePassed &&
+        receipt.requestedRequirement == request.raw;
+  }
+
+  static bool _androidCompatibilityWheelFallbackAllowed(String requirement) {
+    final constraints = _pythonVersionConstraints(requirement);
+    if (constraints.isEmpty) return false;
+    return constraints.every((constraint) =>
+        constraint.operator == '>=' || constraint.operator == '>');
+  }
+
+  static Future<bool> _wheelCandidatePinnedDependenciesResolvable(
+    _PythonWheelCandidate candidate,
+  ) async {
+    final metadata = await _fetchWheelMetadata(candidate);
+    if (metadata == null) return true;
+    for (final dependency in _readWheelRequiresDist(metadata)) {
+      if (!_hasExactPythonVersionConstraint(dependency.raw)) continue;
+      final resolved = await _resolvePythonWheelCandidate(
+        dependency,
+        validatePinnedDependencies: false,
+      );
+      if (resolved == null) {
+        debugPrint(
+          '[DEPS] exact dependency unavailable parent=${candidate.name} '
+          'parentVersion=${candidate.version} dependency=${dependency.raw}',
+        );
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static Future<Map<String, String>?> _fetchWheelMetadata(
+    _PythonWheelCandidate candidate,
+  ) async {
+    try {
+      final response = await http.get(candidate.url).timeout(
+            const Duration(minutes: 2),
+          );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+      if (candidate.sha256 != null) {
+        final digest = crypto.sha256.convert(response.bodyBytes).toString();
+        if (digest != candidate.sha256) return null;
+      }
+      return _readWheelMetadata(ZipDecoder().decodeBytes(response.bodyBytes));
+    } catch (error) {
+      debugPrint(
+        '[DEPS] wheel metadata preflight failed '
+        '${candidate.fileName}: $error',
+      );
+      return null;
+    }
+  }
+
+  static List<_PythonWheelCandidate> _parseWheelCandidates(
+    String html,
+    Uri pageUri,
+    String packageName,
+    String index,
+  ) {
+    final candidates = <_PythonWheelCandidate>[];
+    final anchorPattern = RegExp(
+      r'''<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>''',
+      caseSensitive: false,
+      dotAll: true,
+    );
+    for (final match in anchorPattern.allMatches(html)) {
+      final href = (match.group(1) ?? '').replaceAll('&amp;', '&');
+      if (href.isEmpty) continue;
+      final urlWithFragment = pageUri.resolve(href);
+      final url = urlWithFragment.replace(fragment: '');
+      final fileName = path.basename(Uri.decodeComponent(url.path));
+      if (!fileName.toLowerCase().endsWith('.whl')) continue;
+      final wheel = _parseWheelFileName(fileName);
+      if (wheel == null) continue;
+      if (wheel.name != _normalizeDependencyName(packageName)) continue;
+      if (!_wheelIsCompatible(wheel)) continue;
+      final fragment = urlWithFragment.fragment;
+      String? sha256;
+      if (fragment.toLowerCase().startsWith('sha256=')) {
+        sha256 = fragment.substring('sha256='.length).toLowerCase();
+      }
+      candidates.add(_PythonWheelCandidate(
+        name: wheel.name,
+        version: wheel.version,
+        fileName: fileName,
+        url: url,
+        sha256: sha256,
+        indexHost: Uri.parse(index).host,
+      ));
+    }
+    return candidates;
+  }
+
+  static _PythonWheelName? _parseWheelFileName(String fileName) {
+    final stem =
+        fileName.replaceFirst(RegExp(r'\.whl$', caseSensitive: false), '');
+    final parts = stem.split('-');
+    if (parts.length < 5) return null;
+    final name = _normalizeDependencyName(parts[0]);
+    final version = parts[1];
+    final pythonTag = parts[parts.length - 3];
+    final abiTag = parts[parts.length - 2];
+    final platformTag = parts[parts.length - 1];
+    return _PythonWheelName(
+      name: name,
+      version: version,
+      pythonTags: pythonTag.split('.').toSet(),
+      abiTags: abiTag.split('.').toSet(),
+      platformTags: platformTag.split('.').toSet(),
+    );
+  }
+
+  static bool _wheelIsCompatible(_PythonWheelName wheel) {
+    final pythonOk = wheel.pythonTags.any((tag) =>
+        tag == 'py3' || tag == 'py2.py3' || tag == _pythonTag || tag == 'cp3');
+    if (!pythonOk) return false;
+
+    final abiOk = wheel.abiTags.any(
+      (tag) => tag == 'none' || tag == 'abi3' || tag == _pythonAbiTag,
+    );
+    if (!abiOk) return false;
+
+    return wheel.platformTags.any((tag) {
+      if (tag == 'any') return true;
+      final lower = tag.toLowerCase();
+      return lower.startsWith('android_') && lower.endsWith(_androidWheelAbi);
+    });
+  }
+
+  static Future<_PythonWheelInstallResult> _downloadAndInstallPythonWheel(
+    _SkillProvisioningLayout layout,
+    _PythonRequirementRequest request,
+    _PythonWheelCandidate candidate,
+  ) async {
+    try {
+      await layout.nativePythonSitePackagesDir.create(recursive: true);
+      await layout.dependencyTmpDir.create(recursive: true);
+      final response = await http.get(candidate.url).timeout(
+            const Duration(minutes: 4),
+          );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError(
+          'HTTP ${response.statusCode} while downloading ${candidate.url}',
+        );
+      }
+      final digest = crypto.sha256.convert(response.bodyBytes).toString();
+      if (candidate.sha256 != null && digest != candidate.sha256) {
+        return _PythonWheelInstallResult(
+          ok: false,
+          requiresDist: const <_PythonRequirementRequest>[],
+          action: SkillProvisioningAction(
+            type: SkillProvisioningActionType.pythonPackage,
+            key: request.name,
+            status: SkillProvisioningActionStatus.failedVerification,
+            message:
+                'SHA256 verification failed for wheel ${candidate.fileName}.',
+          ),
+        );
+      }
+
+      final archive = ZipDecoder().decodeBytes(response.bodyBytes);
+      final metadata = _readWheelMetadata(archive);
+      final metadataName = _normalizeDependencyName(
+        metadata['name'] ?? candidate.name,
+      );
+      final metadataVersion = metadata['version'] ?? candidate.version;
+      if (metadataName != candidate.name) {
+        return _PythonWheelInstallResult(
+          ok: false,
+          requiresDist: const <_PythonRequirementRequest>[],
+          action: SkillProvisioningAction(
+            type: SkillProvisioningActionType.pythonPackage,
+            key: request.name,
+            status: SkillProvisioningActionStatus.missingPack,
+            message:
+                'Wheel ${candidate.fileName} metadata name "$metadataName" '
+                'does not match ${candidate.name}.',
+          ),
+        );
+      }
+      if (!_pythonRequirementSatisfied(metadataVersion, request.raw)) {
+        if (!_androidCompatibilityWheelFallbackAllowed(request.raw)) {
+          return _PythonWheelInstallResult(
+            ok: false,
+            requiresDist: const <_PythonRequirementRequest>[],
+            action: SkillProvisioningAction(
+              type: SkillProvisioningActionType.pythonPackage,
+              key: request.name,
+              status: SkillProvisioningActionStatus.missingPack,
+              message: 'Wheel ${candidate.fileName} metadata version '
+                  '"$metadataVersion" does not satisfy ${request.raw}.',
+            ),
+          );
+        }
+      }
+
+      final stage = Directory(path.join(
+        layout.dependencyTmpDir.path,
+        'wheel-${candidate.name}-${DateTime.now().microsecondsSinceEpoch}',
+      ));
+      await stage.create(recursive: true);
+      try {
+        for (final archiveFile in archive.files) {
+          final target = File(path.join(stage.path, archiveFile.name));
+          final normalizedTarget = path.normalize(target.path);
+          if (!path.isWithin(stage.path, normalizedTarget) &&
+              path.normalize(stage.path) != normalizedTarget) {
+            throw StateError('Unsafe wheel path: ${archiveFile.name}');
+          }
+          if (archiveFile.isFile) {
+            await target.parent.create(recursive: true);
+            await target.writeAsBytes(
+              archiveFile.content as List<int>,
+              flush: true,
+            );
+          } else {
+            await Directory(target.path).create(recursive: true);
+          }
+        }
+
+        await _removeExistingPythonPackageInstall(
+          layout.nativePythonSitePackagesDir,
+          candidate.name,
+        );
+        await _mergeDirectory(stage, layout.nativePythonSitePackagesDir);
+      } finally {
+        if (await stage.exists()) {
+          try {
+            await stage.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
+
+      final compatibilityOverride =
+          !_pythonRequirementSatisfied(metadataVersion, request.raw);
+      if (compatibilityOverride) {
+        final smoke = await _smokePythonImport(layout, candidate.name);
+        if (!smoke.ok) {
+          await _removeExistingPythonPackageInstall(
+            layout.nativePythonSitePackagesDir,
+            candidate.name,
+          );
+          return _PythonWheelInstallResult(
+            ok: false,
+            requiresDist: const <_PythonRequirementRequest>[],
+            action: SkillProvisioningAction(
+              type: SkillProvisioningActionType.pythonPackage,
+              key: request.name,
+              status: SkillProvisioningActionStatus.failedSmoke,
+              message: 'Android compatibility wheel ${candidate.fileName} '
+                  'failed import smoke for ${request.raw}: '
+                  '${smoke.stderr.isEmpty ? smoke.stdout : smoke.stderr}',
+            ),
+          );
+        }
+        debugPrint(
+          '[DEPS] compatibility smoke passed package=${candidate.name} '
+          'requested=${request.raw} actual=$metadataVersion',
+        );
+      }
+
+      await _writePythonWheelReceipt(
+        layout,
+        request,
+        candidate,
+        sha256: digest,
+        metadataVersion: metadataVersion,
+        compatibilityOverride: compatibilityOverride,
+      );
+      debugPrint(
+        '[DEPS] wheel installed package=${candidate.name} version=$metadataVersion',
+      );
+      return _PythonWheelInstallResult(
+        ok: true,
+        requiresDist: _readWheelRequiresDist(metadata),
+        action: SkillProvisioningAction(
+          type: SkillProvisioningActionType.pythonPackage,
+          key: request.name,
+          status: SkillProvisioningActionStatus.installed,
+          message: compatibilityOverride
+              ? 'Python package ${candidate.name} $metadataVersion installed '
+                  'from a verified Android compatibility wheel for ${request.raw}.'
+              : 'Python package ${candidate.name} $metadataVersion installed from verified wheel.',
+          changed: true,
+        ),
+      );
+    } catch (error) {
+      debugPrint('[DEPS] wheel install failed ${candidate.fileName}: $error');
+      return _PythonWheelInstallResult(
+        ok: false,
+        requiresDist: const <_PythonRequirementRequest>[],
+        action: SkillProvisioningAction(
+          type: SkillProvisioningActionType.pythonPackage,
+          key: request.name,
+          status: SkillProvisioningActionStatus.missingDependency,
+          message:
+              'Python wheel ${candidate.fileName} could not be installed: $error',
+        ),
+      );
+    }
+  }
+
+  static Map<String, String> _readWheelMetadata(Archive archive) {
+    for (final file in archive.files) {
+      if (!file.isFile) continue;
+      if (!file.name.toLowerCase().endsWith('.dist-info/metadata')) continue;
+      final text = utf8.decode(file.content as List<int>, allowMalformed: true);
+      final result = <String, String>{};
+      final requires = <String>[];
+      for (final line in text.split(RegExp(r'\r?\n'))) {
+        if (line.trim().isEmpty) break;
+        if (line.startsWith(' ') || line.startsWith('\t')) continue;
+        final index = line.indexOf(':');
+        if (index <= 0) continue;
+        final key = line.substring(0, index).trim().toLowerCase();
+        final value = line.substring(index + 1).trim();
+        if ((key == 'name' || key == 'version') && !result.containsKey(key)) {
+          result[key] = value;
+        }
+        if (key == 'requires-dist') requires.add(value);
+      }
+      if (requires.isNotEmpty) result['requires-dist'] = jsonEncode(requires);
+      return result;
+    }
+    return const <String, String>{};
+  }
+
+  static List<_PythonRequirementRequest> _readWheelRequiresDist(
+    Map<String, String> metadata,
+  ) {
+    final raw = metadata['requires-dist'];
+    if (raw == null || raw.isEmpty) return const <_PythonRequirementRequest>[];
+    final result = <_PythonRequirementRequest>[];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        for (final item in decoded) {
+          final line = item?.toString() ?? '';
+          if (!_pythonDependencyMarkerApplies(line)) continue;
+          final request = _PythonRequirementRequest.fromRaw(line, root: false);
+          if (request != null) result.add(request);
+        }
+      }
+    } catch (_) {}
+    return result;
+  }
+
+  static bool _pythonDependencyMarkerApplies(String requirement) {
+    final markerIndex = requirement.indexOf(';');
+    if (markerIndex < 0) return true;
+    final marker = requirement.substring(markerIndex + 1).toLowerCase();
+    if (marker.contains('extra ==') || marker.contains('extra==')) {
+      return false;
+    }
+    final pyMatch = RegExp(
+      r'''python_version\s*([<>=!~]{1,2})\s*["']([0-9.]+)["']''',
+    ).firstMatch(marker);
+    if (pyMatch != null) {
+      final operator = pyMatch.group(1) ?? '';
+      final version = pyMatch.group(2) ?? '';
+      return _pythonRequirementSatisfied(
+        _pythonRuntimeVersion,
+        'python$operator$version',
+      );
+    }
+    return true;
+  }
+
+  static Future<Map<String, String>> _scanInstalledPythonPackageVersions(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final result = <String, String>{};
+    final root = layout.nativePythonSitePackagesDir;
+    try {
+      if (!await root.exists()) return result;
+      await for (final entity in root.list(recursive: false)) {
+        final name = path.basename(entity.path);
+        final lower = name.toLowerCase();
+        if (entity is Directory &&
+            (lower.endsWith('.dist-info') || lower.endsWith('.egg-info'))) {
+          final metadata = await _readPythonPackageMetadata(entity);
+          final parsed = _parsePythonDistInfoName(lower);
+          final packageName = _normalizeDependencyName(
+            metadata['name'] ?? parsed?.name ?? lower.split('-').first,
+          );
+          final version = metadata['version'] ?? parsed?.version ?? '';
+          result[packageName] = version;
+        }
+      }
+    } catch (_) {}
+    return result;
+  }
+
+  static Future<Map<String, String>> _readPythonPackageMetadata(
+    Directory distInfo,
+  ) async {
+    final metadata = File(path.join(distInfo.path, 'METADATA'));
+    try {
+      if (!await metadata.exists()) return const <String, String>{};
+      final result = <String, String>{};
+      for (final line in await metadata.readAsLines()) {
+        if (line.trim().isEmpty) break;
+        final index = line.indexOf(':');
+        if (index <= 0) continue;
+        final key = line.substring(0, index).trim().toLowerCase();
+        if (key != 'name' && key != 'version') continue;
+        final value = line.substring(index + 1).trim();
+        if (value.isNotEmpty) result.putIfAbsent(key, () => value);
+      }
+      return result;
+    } catch (_) {
+      return const <String, String>{};
+    }
+  }
+
+  static Future<List<_PythonRequirementRequest>>
+      _readInstalledPythonPackageRequiresDist(
+    _SkillProvisioningLayout layout,
+    String packageName,
+  ) async {
+    final normalized = _normalizeDependencyName(packageName);
+    final root = layout.nativePythonSitePackagesDir;
+    try {
+      if (!await root.exists()) return const <_PythonRequirementRequest>[];
+      await for (final entity in root.list(recursive: false)) {
+        if (entity is! Directory) continue;
+        final name = path.basename(entity.path).toLowerCase();
+        if (!name.endsWith('.dist-info') && !name.endsWith('.egg-info')) {
+          continue;
+        }
+        final parsed = _parsePythonDistInfoName(name);
+        final metadata = await _readPythonPackageMetadata(entity);
+        final actualName = _normalizeDependencyName(
+          metadata['name'] ?? parsed?.name ?? name.split('-').first,
+        );
+        if (actualName != normalized) continue;
+        final metadataFile = File(path.join(entity.path, 'METADATA'));
+        if (!await metadataFile.exists()) {
+          return const <_PythonRequirementRequest>[];
+        }
+        final requires = <String>[];
+        for (final line in await metadataFile.readAsLines()) {
+          if (line.trim().isEmpty) break;
+          if (line.startsWith(' ') || line.startsWith('\t')) continue;
+          final index = line.indexOf(':');
+          if (index <= 0) continue;
+          final key = line.substring(0, index).trim().toLowerCase();
+          if (key == 'requires-dist') {
+            requires.add(line.substring(index + 1).trim());
+          }
+        }
+        if (requires.isEmpty) return const <_PythonRequirementRequest>[];
+        return _readWheelRequiresDist({
+          'requires-dist': jsonEncode(requires),
+        });
+      }
+    } catch (_) {}
+    return const <_PythonRequirementRequest>[];
+  }
+
+  static _PythonInstalledPackage? _parsePythonDistInfoName(String name) {
+    final cleaned = name.replaceFirst(
+        RegExp(r'\.(dist|egg)-info$', caseSensitive: false), '');
+    final match =
+        RegExp(r'^(.+)-([0-9][A-Za-z0-9.!+_-]*)$').firstMatch(cleaned);
+    if (match == null) return null;
+    return _PythonInstalledPackage(
+      name: _normalizeDependencyName(match.group(1) ?? ''),
+      version: match.group(2) ?? '',
+    );
+  }
+
+  static Future<void> _removeExistingPythonPackageInstall(
+    Directory sitePackages,
+    String packageName,
+  ) async {
+    final normalized = _normalizeDependencyName(packageName);
+    final underscore = normalized.replaceAll('-', '_');
+    if (!await sitePackages.exists()) return;
+
+    final payloadNames = <String>{
+      normalized,
+      underscore,
+      '$normalized.py',
+      '$underscore.py',
+      '$normalized.libs',
+      '$underscore.libs',
+    };
+    final metadataDirs = <Directory>[];
+
+    await for (final entity in sitePackages.list(recursive: false)) {
+      final name = path.basename(entity.path).toLowerCase();
+      if (entity is Directory &&
+          (name.endsWith('.dist-info') || name.endsWith('.egg-info'))) {
+        final parsed = _parsePythonDistInfoName(name);
+        final metadata = await _readPythonPackageMetadata(entity);
+        final actualName = _normalizeDependencyName(
+          metadata['name'] ?? parsed?.name ?? '',
+        );
+        final prefixMatches =
+            name.startsWith('$normalized-') || name.startsWith('$underscore-');
+        if (actualName == normalized || prefixMatches) {
+          metadataDirs.add(entity);
+          final record = File(path.join(entity.path, 'RECORD'));
+          if (await record.exists()) {
+            try {
+              for (final line in await record.readAsLines()) {
+                final rawPath = line.split(',').first.trim();
+                if (rawPath.isEmpty || rawPath.contains('..')) continue;
+                final firstSegment = rawPath.split('/').first.trim();
+                if (_pythonWheelPayloadNameLooksSafe(firstSegment)) {
+                  payloadNames.add(firstSegment);
+                }
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    }
+
+    for (final name in payloadNames) {
+      if (!_pythonWheelPayloadNameLooksSafe(name)) continue;
+      final targetPath = path.normalize(path.join(sitePackages.path, name));
+      if (!path.isWithin(sitePackages.path, targetPath)) continue;
+      final file = File(targetPath);
+      final dir = Directory(targetPath);
+      try {
+        if (await file.exists()) {
+          await file.delete();
+        } else if (await dir.exists()) {
+          await dir.delete(recursive: true);
+        }
+      } catch (error) {
+        debugPrint(
+          '[DEPS] failed removing stale Python package payload '
+          '$packageName path=$targetPath error=$error',
+        );
+      }
+    }
+
+    for (final dir in metadataDirs) {
+      try {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
+  static bool _pythonWheelPayloadNameLooksSafe(String name) {
+    if (name.isEmpty || name == '.' || name == '..') return false;
+    if (name.contains('/') || name.contains(r'\')) return false;
+    if (name == 'bin' || name == '__pycache__') return false;
+    return RegExp(r'^[A-Za-z0-9_.+-]+$').hasMatch(name);
+  }
+
+  static Future<void> _mergeDirectory(
+      Directory source, Directory target) async {
+    await target.create(recursive: true);
+    await for (final entity in source.list(recursive: false)) {
+      final targetPath = path.join(target.path, path.basename(entity.path));
+      if (entity is Directory) {
+        final targetDir = Directory(targetPath);
+        if (await targetDir.exists()) {
+          await _mergeDirectory(entity, targetDir);
+        } else {
+          await entity.rename(targetPath);
+        }
+      } else if (entity is File) {
+        await File(targetPath).parent.create(recursive: true);
+        if (await File(targetPath).exists()) {
+          await File(targetPath).delete();
+        }
+        await entity.rename(targetPath);
+      }
+    }
+  }
+
+  static Future<bool> _pythonPackageMarkerPresent(
+    _SkillProvisioningLayout layout,
+    String packageName,
+  ) async {
+    final normalized = _normalizeDependencyName(packageName);
+    final installed = await _scanInstalledPythonPackageVersions(layout);
+    return installed.containsKey(normalized);
+  }
+
+  static Future<_DependencyPackReceipt?> _readPythonWheelReceipt(
+    _SkillProvisioningLayout layout,
+    String packageName,
+  ) async {
+    final file = File(path.join(
+      layout.pythonWheelReceiptDir.path,
+      '${_normalizeDependencyName(packageName)}.json',
+    ));
+    final json = await _readJson(file);
+    return json == null ? null : _DependencyPackReceipt.fromJson(json);
+  }
+
+  static Future<void> _writePythonWheelReceipt(
+    _SkillProvisioningLayout layout,
+    _PythonRequirementRequest request,
+    _PythonWheelCandidate candidate, {
+    required String sha256,
+    required String metadataVersion,
+    required bool compatibilityOverride,
+  }) async {
+    await layout.pythonWheelReceiptDir.create(recursive: true);
+    await File(path.join(
+      layout.pythonWheelReceiptDir.path,
+      '${candidate.name}.json',
+    )).writeAsString(
+      '${const JsonEncoder.withIndent('  ').convert({
+            'id': candidate.name,
+            'version': metadataVersion,
+            'sha256': sha256,
+            'source': 'wheel',
+            'url': candidate.url.toString(),
+            'fileName': candidate.fileName,
+            'python': _pythonRuntimeVersion,
+            'requestedRequirement': request.raw,
+            'compatibilityOverride': compatibilityOverride,
+            'smokePassed': true,
+            'installedAt': DateTime.now().toIso8601String(),
+          })}\n',
+      flush: true,
+    );
+  }
+
+  static Future<_PythonSmokeResult> _smokePythonImport(
+    _SkillProvisioningLayout layout,
+    String packageName,
+  ) async {
+    if (!Platform.isAndroid) {
+      return const _PythonSmokeResult(ok: true, stdout: '', stderr: '');
+    }
+    final module = packageName.replaceAll('-', '_');
+    final result = await NativeBridge.runNativePython({
+      'args': ['-c', 'import $module'],
+      'cwd': layout.nativeStateRoot,
+      'env': {
+        'HOME': layout.nativeStateRoot,
+        'OPENCLAW_NATIVE_PYTHON_HOME': layout.nativePythonRoot.path,
+        'OPENCLAW_NATIVE_PYTHON_SITE_PACKAGES':
+            layout.nativePythonSitePackagesDir.path,
+      },
+      'pythonPaths': [layout.nativePythonSitePackagesDir.path],
+    });
+    return _PythonSmokeResult(
+      ok: result['ok'] == true || result['exitCode'] == 0,
+      stdout: result['stdout']?.toString() ?? '',
+      stderr: result['stderr']?.toString() ?? '',
+    );
+  }
+
+  static bool _pythonRequirementSatisfied(
+    String installedVersion,
+    String requirement,
+  ) {
+    final constraints = _pythonVersionConstraints(requirement);
+    if (constraints.isEmpty) return true;
+    if (installedVersion.trim().isEmpty) return false;
+    for (final constraint in constraints) {
+      final operator = constraint.operator;
+      final required = constraint.version;
+      if (operator == '==') {
+        if (required.endsWith('.*')) {
+          final prefix = required.substring(0, required.length - 2);
+          if (!installedVersion.startsWith(prefix)) return false;
+        } else if (_compareVersions(installedVersion, required) != 0) {
+          return false;
+        }
+      } else if (operator == '!=') {
+        if (_compareVersions(installedVersion, required) == 0) return false;
+      } else if (operator == '>=') {
+        if (_compareVersions(installedVersion, required) < 0) return false;
+      } else if (operator == '>') {
+        if (_compareVersions(installedVersion, required) <= 0) return false;
+      } else if (operator == '<=') {
+        if (_compareVersions(installedVersion, required) > 0) return false;
+      } else if (operator == '<') {
+        if (_compareVersions(installedVersion, required) >= 0) return false;
+      } else if (operator == '~=') {
+        if (_compareVersions(installedVersion, required) < 0) return false;
+        final upper = _compatibleReleaseUpperBound(required);
+        if (upper != null && _compareVersions(installedVersion, upper) >= 0) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  static List<_PythonVersionConstraint> _pythonVersionConstraints(
+    String requirement,
+  ) {
+    final markerIndex = requirement.indexOf(';');
+    final withoutMarker =
+        markerIndex >= 0 ? requirement.substring(0, markerIndex) : requirement;
+    final constraints = <_PythonVersionConstraint>[];
+    final pattern = RegExp(r'(===|==|~=|!=|<=|>=|<|>)\s*([A-Za-z0-9.!+_*+-]+)');
+    for (final match in pattern.allMatches(withoutMarker)) {
+      final operator = match.group(1);
+      final version = match.group(2);
+      if (operator != null && version != null && version.isNotEmpty) {
+        constraints.add(_PythonVersionConstraint(operator, version));
+      }
+    }
+    return constraints;
+  }
+
+  static String? _compatibleReleaseUpperBound(String version) {
+    final parts = version
+        .split('.')
+        .where((part) => part.isNotEmpty)
+        .map((part) => int.tryParse(RegExp(r'^\d+').stringMatch(part) ?? ''))
+        .toList();
+    if (parts.isEmpty || parts.any((part) => part == null)) return null;
+    final numbers = parts.cast<int>().toList();
+    final bumpIndex = numbers.length > 2 ? numbers.length - 2 : 0;
+    numbers[bumpIndex] += 1;
+    for (var i = bumpIndex + 1; i < numbers.length; i++) {
+      numbers[i] = 0;
+    }
+    return numbers.join('.');
+  }
+
+  static int _compareVersions(String left, String right) {
+    final a = _versionParts(left);
+    final b = _versionParts(right);
+    final length = a.length > b.length ? a.length : b.length;
+    for (var i = 0; i < length; i++) {
+      final leftPart = i < a.length ? a[i] : 0;
+      final rightPart = i < b.length ? b[i] : 0;
+      if (leftPart != rightPart) return leftPart.compareTo(rightPart);
+    }
+    return 0;
+  }
+
+  static List<int> _versionParts(String version) {
+    final release = version
+        .split(RegExp(r'[+!-]'))
+        .first
+        .split(RegExp(r'[^0-9]+'))
+        .where((part) => part.isNotEmpty)
+        .map((part) => int.tryParse(part) ?? 0)
+        .toList();
+    return release.isEmpty ? const [0] : release;
+  }
+
+  static Future<void> _installApkProvidedPack(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+    SkillExecutionMatrixEntry entry,
+  ) async {
+    if (pack.providesRuntimes.contains('python')) {
+      await _resetPythonEnvironmentIfRuntimeChanged(layout, pack);
+      await _writePythonBridgeMarker(layout, pack);
+      await _writePythonCommandShims(layout.nativePythonBinDir);
+      await _writePythonCommandShims(layout.nativeManagedBinDir);
+      for (final skillDir in layout.nativeSkillDirs(entry.skillId)) {
+        if (await skillDir.exists()) {
+          await _writePythonCommandShims(
+            Directory(path.join(skillDir.path, '.venv', 'bin')),
+          );
+        }
+      }
+    }
+    for (final package in pack.providesPythonPackages) {
+      await _writePythonPackageMarker(
+        layout.nativePythonSitePackagesDir,
+        package,
+        pack.version,
+      );
+    }
+  }
+
+  static Future<void> _resetPythonEnvironmentIfRuntimeChanged(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    final marker = await _readJson(layout.nativePythonBridgeMarker);
+    final current = marker?['python']?.toString();
+    final currentVersion = marker?['version']?.toString();
+    if (current == _pythonRuntimeVersion && currentVersion == pack.version) {
+      return;
+    }
+    for (final target in [
+      layout.nativePythonSitePackagesDir,
+      layout.pythonWheelReceiptDir,
+    ]) {
+      try {
+        if (await target.exists()) {
+          await target.delete(recursive: true);
+        }
+      } catch (error) {
+        debugPrint(
+          '[DEPS] failed clearing stale Python $current environment '
+          '${target.path}: $error',
+        );
+      }
+    }
+    await layout.nativePythonSitePackagesDir.create(recursive: true);
+    await layout.pythonWheelReceiptDir.create(recursive: true);
+    debugPrint(
+      '[DEPS] cleared stale Native Python environment '
+      'from ${current ?? 'unknown'}:${currentVersion ?? 'unknown'} '
+      'to $_pythonRuntimeVersion:${pack.version}',
+    );
+  }
+
+  static Future<void> _writePythonBridgeMarker(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    await layout.nativePythonBridgeMarker.parent.create(recursive: true);
+    await layout.nativePythonBridgeMarker.writeAsString(
+      '${const JsonEncoder.withIndent('  ').convert({
+            'runtime': 'chaquopy',
+            'python': _pythonRuntimeVersion,
+            'pack': pack.id,
+            'version': pack.version,
+            'runner': 'http://127.0.0.1:8765/api/python/exec',
+            'installedAt': DateTime.now().toIso8601String(),
+          })}\n',
+      flush: true,
+    );
+  }
+
+  static Future<void> _writePythonCommandShims(Directory binDir) async {
+    await binDir.create(recursive: true);
+    for (final name in const ['python', 'python3', 'pip', 'pip3']) {
+      final file = File(path.join(binDir.path, name));
+      await file.writeAsString(
+        '#!/system/bin/sh\n'
+        'echo "OpenClaw Native Python is executed through the Gateway bridge; direct shell execution is not supported." >&2\n'
+        'exit 126\n',
+        flush: true,
+      );
+      if (!Platform.isWindows) {
+        try {
+          await Process.run('chmod', ['755', file.path]);
+        } catch (_) {}
+      }
+    }
+  }
+
+  static Future<void> _writePythonPackageMarker(
+    Directory sitePackages,
+    String package,
+    String version,
+  ) async {
+    final normalized = _normalizeDependencyName(package);
+    final dir =
+        Directory(path.join(sitePackages.path, '$normalized.dist-info'));
+    await dir.create(recursive: true);
+    await File(path.join(dir.path, 'METADATA')).writeAsString(
+      'Name: $normalized\nVersion: $version\nInstaller: openclaw-native-deps\n',
+      flush: true,
+    );
+  }
+
+  static Future<void> _downloadAndExtractPack(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    final url = pack.url;
+    if (url == null || url.isEmpty) {
+      throw StateError('Pack ${pack.id} does not include a download URL.');
+    }
+    await layout.dependencyTmpDir.create(recursive: true);
+    final bytes = await _readDependencyPackBytes(url);
+    if (pack.maxBytes != null && bytes.length > pack.maxBytes!) {
+      throw StateError('Pack ${pack.id} exceeds maxBytes=${pack.maxBytes}.');
+    }
+    final digest = crypto.sha256.convert(bytes).toString();
+    if (pack.sha256.isNotEmpty && digest.toLowerCase() != pack.sha256) {
+      throw StateError('SHA256 mismatch for ${pack.id}.');
+    }
+
+    final stage = Directory(path.join(
+      layout.dependencyTmpDir.path,
+      '${pack.id}-${DateTime.now().microsecondsSinceEpoch}',
+    ));
+    await stage.create(recursive: true);
+    try {
+      final archive = _decodeDependencyArchive(pack, bytes);
+      for (final file in archive.files) {
+        final target = File(path.join(stage.path, file.name));
+        final normalizedTarget = path.normalize(target.path);
+        if (!path.isWithin(stage.path, normalizedTarget) &&
+            path.normalize(stage.path) != normalizedTarget) {
+          throw StateError('Unsafe archive path: ${file.name}');
+        }
+        if (file.isFile) {
+          await target.parent.create(recursive: true);
+          await target.writeAsBytes(file.content as List<int>, flush: true);
+        } else {
+          await Directory(target.path).create(recursive: true);
+        }
+      }
+
+      final installDir = layout.resolveInstallPath(pack.installPath);
+      if (path.equals(
+        path.normalize(installDir.path),
+        path.normalize(layout.nativePythonSitePackagesDir.path),
+      )) {
+        await _mergeDirectory(stage, installDir);
+      } else {
+        if (await installDir.exists()) {
+          await installDir.delete(recursive: true);
+        }
+        await installDir.parent.create(recursive: true);
+        await stage.rename(installDir.path);
+      }
+    } finally {
+      if (await stage.exists()) {
+        try {
+          await stage.delete(recursive: true);
+        } catch (_) {}
+      }
+    }
+  }
+
+  static Future<List<int>> _readDependencyPackBytes(String url) async {
+    final uri = Uri.parse(url);
+    if (uri.scheme == 'file') {
+      return File.fromUri(uri).readAsBytes();
+    }
+    final response = await http.get(uri).timeout(const Duration(minutes: 4));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('HTTP ${response.statusCode} while downloading $url');
+    }
+    return response.bodyBytes;
+  }
+
+  static Archive _decodeDependencyArchive(
+    _DependencyPack pack,
+    List<int> bytes,
+  ) {
+    final lower = (pack.archiveType ?? pack.url ?? '').toLowerCase();
+    if (lower.endsWith('.zip') || lower == 'zip') {
+      return ZipDecoder().decodeBytes(bytes);
+    }
+    if (lower.endsWith('.tar.gz') ||
+        lower.endsWith('.tgz') ||
+        lower == 'tar.gz' ||
+        lower == 'tgz') {
+      return TarDecoder().decodeBytes(GZipDecoder().decodeBytes(bytes));
+    }
+    throw StateError('Unsupported dependency archive type for ${pack.id}.');
+  }
+
+  static Future<_PythonSmokeResult> _runDependencyPackSmoke(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    if (pack.smokeImports.isEmpty) {
+      return const _PythonSmokeResult(ok: true, stdout: '', stderr: '');
+    }
+    if (!Platform.isAndroid) {
+      return const _PythonSmokeResult(ok: true, stdout: '', stderr: '');
+    }
+    final code = pack.smokeImports.map((name) => 'import $name').join('; ');
+    final result = await NativeBridge.runNativePython({
+      'args': ['-c', code],
+      'cwd': layout.nativeStateRoot,
+      'env': {
+        'HOME': layout.nativeStateRoot,
+        'OPENCLAW_NATIVE_PYTHON_HOME': layout.nativePythonRoot.path,
+        'OPENCLAW_NATIVE_PYTHON_SITE_PACKAGES':
+            layout.nativePythonSitePackagesDir.path,
+      },
+      'pythonPaths': [layout.nativePythonSitePackagesDir.path],
+    });
+    return _PythonSmokeResult(
+      ok: result['ok'] == true || result['exitCode'] == 0,
+      stdout: result['stdout']?.toString() ?? '',
+      stderr: result['stderr']?.toString() ?? '',
+    );
+  }
+
+  static Future<bool> _dependencyPackMarkersPresent(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    if (pack.providesRuntimes.contains('python')) {
+      if (!await _pythonBridgeMarkerMatchesPack(layout, pack)) {
+        return false;
+      }
+    }
+    for (final package in pack.providesPythonPackages) {
+      final marker = Directory(path.join(
+        layout.nativePythonSitePackagesDir.path,
+        '${_normalizeDependencyName(package)}.dist-info',
+      ));
+      if (!await marker.exists()) return false;
+    }
+    return true;
+  }
+
+  static Future<bool> _pythonCoreInstallRequired(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    if (!pack.providesRuntimes.contains('python')) return false;
+    if (!await _pythonBridgeMarkerMatchesPack(layout, pack)) return true;
+    final receipt = await _readDependencyReceipt(layout, pack.id);
+    if (receipt == null ||
+        receipt.version != pack.version ||
+        receipt.sha256 != pack.sha256) {
+      return true;
+    }
+    return !await _dependencyPackMarkersPresent(layout, pack);
+  }
+
+  static Future<bool> _pythonBridgeMarkerMatchesPack(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    final marker = await _readJson(layout.nativePythonBridgeMarker);
+    return marker?['python']?.toString() == _pythonRuntimeVersion &&
+        marker?['pack']?.toString() == pack.id &&
+        marker?['version']?.toString() == pack.version;
+  }
+
+  static Future<Set<String>> _satisfiedPythonPackagesForPack(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+    Map<String, String> requiredPythonRequirements,
+  ) async {
+    if (pack.providesPythonPackages.isEmpty) return const <String>{};
+    final installed = await _scanInstalledPythonPackageVersions(layout);
+    final satisfied = <String>{};
+    for (final package in pack.providesPythonPackages) {
+      final requirement = requiredPythonRequirements[package] ?? package;
+      final version = installed[package];
+      if (version != null &&
+          _pythonRequirementSatisfied(version, requirement)) {
+        satisfied.add(package);
+      }
+    }
+    return satisfied;
+  }
+
+  static Future<_DependencyPackReceipt?> _readDependencyReceipt(
+    _SkillProvisioningLayout layout,
+    String id,
+  ) async {
+    final file = File(path.join(layout.dependencyReceiptDir.path, '$id.json'));
+    final json = await _readJson(file);
+    return json == null ? null : _DependencyPackReceipt.fromJson(json);
+  }
+
+  static Future<void> _writeDependencyReceipt(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    await layout.dependencyReceiptDir.create(recursive: true);
+    await File(path.join(layout.dependencyReceiptDir.path, '${pack.id}.json'))
+        .writeAsString(
+      '${const JsonEncoder.withIndent('  ').convert({
+            'id': pack.id,
+            'version': pack.version,
+            'sha256': pack.sha256,
+            'source': pack.source.name,
+            'provides': {
+              'runtimes': pack.providesRuntimes.toList()..sort(),
+              'bins': pack.providesBins.toList()..sort(),
+              'pythonPackages': pack.providesPythonPackages.toList()..sort(),
+            },
+            'installedAt': DateTime.now().toIso8601String(),
+          })}\n',
+      flush: true,
+    );
+  }
+
+  static String _normalizeDependencyName(String value) =>
+      value.trim().toLowerCase().replaceAll('_', '-');
+
+  static String _normalizeRuntimeRequirement(String value) {
+    final normalized = _normalizeDependencyName(path.basename(value));
+    if (_isPythonCommandBin(normalized)) return 'python';
+    return normalized;
+  }
+
+  static bool _isPythonCommandBin(String value) {
+    final normalized = _normalizeDependencyName(path.basename(value));
+    return normalized == 'python' ||
+        normalized == 'python3' ||
+        normalized == 'pip' ||
+        normalized == 'pip3';
+  }
+
+  static bool _requirementAllowsPrerelease(String requirement) {
+    return _pythonVersionConstraints(
+      requirement,
+    ).any((constraint) => _isPrereleaseVersion(constraint.version));
+  }
+
+  static bool _hasExactPythonVersionConstraint(String requirement) {
+    return _pythonVersionConstraints(requirement).any((constraint) {
+      if (constraint.operator != '==' && constraint.operator != '===') {
+        return false;
+      }
+      return !constraint.version.endsWith('.*');
+    });
+  }
+
+  static bool _isPrereleaseVersion(String version) {
+    return RegExp(
+      r'(?:\d(?:a|b|rc)\d*)|(?:[._-](?:alpha|beta|pre|preview|dev)\d*)',
+      caseSensitive: false,
+    ).hasMatch(version);
   }
 
   static Future<File?> _findBundledNativeBinary(
@@ -652,6 +2549,7 @@ enum SkillProvisioningStatus {
   ready,
   satisfied,
   needsUserConfig,
+  missingDependency,
   missingBinary,
   missingPlugin,
   disabled,
@@ -665,6 +2563,7 @@ extension SkillProvisioningStatusName on SkillProvisioningStatus {
       SkillProvisioningStatus.ready => 'ready',
       SkillProvisioningStatus.satisfied => 'satisfied',
       SkillProvisioningStatus.needsUserConfig => 'needs_user_config',
+      SkillProvisioningStatus.missingDependency => 'missing_dependency',
       SkillProvisioningStatus.missingBinary => 'missing_binary',
       SkillProvisioningStatus.missingPlugin => 'missing_plugin',
       SkillProvisioningStatus.disabled => 'disabled',
@@ -688,6 +2587,8 @@ enum SkillProvisioningActionType {
   env,
   config,
   binary,
+  dependencyPack,
+  pythonPackage,
   plugin,
   manifest,
   runtime,
@@ -700,6 +2601,8 @@ extension SkillProvisioningActionTypeName on SkillProvisioningActionType {
       SkillProvisioningActionType.env => 'env',
       SkillProvisioningActionType.config => 'config',
       SkillProvisioningActionType.binary => 'binary',
+      SkillProvisioningActionType.dependencyPack => 'dependency_pack',
+      SkillProvisioningActionType.pythonPackage => 'python_package',
       SkillProvisioningActionType.plugin => 'plugin',
       SkillProvisioningActionType.manifest => 'manifest',
       SkillProvisioningActionType.runtime => 'runtime',
@@ -710,8 +2613,15 @@ extension SkillProvisioningActionTypeName on SkillProvisioningActionType {
 enum SkillProvisioningActionStatus {
   ready,
   satisfied,
+  downloading,
+  verified,
+  installed,
   needsUserConfig,
+  missingDependency,
   missingBinary,
+  missingPack,
+  failedVerification,
+  failedSmoke,
   missingPlugin,
   disabled,
   unsupportedNative,
@@ -723,8 +2633,15 @@ extension SkillProvisioningActionStatusName on SkillProvisioningActionStatus {
     return switch (this) {
       SkillProvisioningActionStatus.ready => 'ready',
       SkillProvisioningActionStatus.satisfied => 'satisfied',
+      SkillProvisioningActionStatus.downloading => 'downloading',
+      SkillProvisioningActionStatus.verified => 'verified',
+      SkillProvisioningActionStatus.installed => 'installed',
       SkillProvisioningActionStatus.needsUserConfig => 'needs_user_config',
+      SkillProvisioningActionStatus.missingDependency => 'missing_dependency',
       SkillProvisioningActionStatus.missingBinary => 'missing_binary',
+      SkillProvisioningActionStatus.missingPack => 'missing_pack',
+      SkillProvisioningActionStatus.failedVerification => 'failed_verification',
+      SkillProvisioningActionStatus.failedSmoke => 'failed_smoke',
       SkillProvisioningActionStatus.missingPlugin => 'missing_plugin',
       SkillProvisioningActionStatus.disabled => 'disabled',
       SkillProvisioningActionStatus.unsupportedNative => 'unsupported_native',
@@ -746,6 +2663,41 @@ class _SkillProvisioningLayout {
       File(path.join(nativeStateRoot, 'openclaw.json'));
   Directory get nativeManagedBinDir =>
       Directory(path.join(nativeStateRoot, 'bin'));
+  Directory get nativePythonRoot =>
+      Directory(path.join(nativeStateRoot, 'runtimes', 'python'));
+  Directory get nativePythonBinDir =>
+      Directory(path.join(nativePythonRoot.path, 'bin'));
+  Directory get nativePythonSitePackagesDir =>
+      Directory(path.join(nativePythonRoot.path, 'site-packages'));
+  File get nativePythonBridgeMarker =>
+      File(path.join(nativePythonRoot.path, 'bridge.json'));
+  Directory get dependencyRoot =>
+      Directory(path.join(nativeStateRoot, 'dependencies'));
+  Directory get dependencyReceiptDir =>
+      Directory(path.join(dependencyRoot.path, 'receipts'));
+  Directory get pythonWheelReceiptDir =>
+      Directory(path.join(dependencyReceiptDir.path, 'python-wheels'));
+  Directory get dependencyTmpDir =>
+      Directory(path.join(dependencyRoot.path, 'tmp'));
+  File get dependencyPackManifestFile =>
+      File(path.join(dependencyRoot.path, 'dependency_packs.json'));
+
+  List<Directory> nativeSkillDirs(String skillId) => [
+        Directory(path.join(nativeStateRoot, 'skills', skillId)),
+        Directory(path.join(nativeStateRoot, 'workspace', 'skills', skillId)),
+      ];
+
+  Directory resolveInstallPath(String? installPath) {
+    final relative = (installPath == null || installPath.trim().isEmpty)
+        ? path.join('dependencies', 'packs')
+        : installPath.trim();
+    if (path.isAbsolute(relative) ||
+        relative.contains('..') ||
+        relative.contains(RegExp(r'^[A-Za-z]:'))) {
+      throw ArgumentError('Unsafe dependency pack installPath: $installPath');
+    }
+    return Directory(path.normalize(path.join(nativeStateRoot, relative)));
+  }
 
   List<Directory> get bundledBinaryRoots => [
         Directory(path.join(
@@ -767,4 +2719,312 @@ class _SkillProvisioningLayout {
           'bin',
         )),
       ];
+}
+
+enum _DependencyPackSource { apk, remote }
+
+class _DependencyProvisioningResult {
+  final List<SkillProvisioningAction> actions;
+  final Set<String> satisfiedRuntimes;
+  final Set<String> satisfiedPythonPackages;
+  final bool changed;
+  final bool reloadRecommended;
+
+  const _DependencyProvisioningResult({
+    required this.actions,
+    required this.satisfiedRuntimes,
+    required this.satisfiedPythonPackages,
+    required this.changed,
+    required this.reloadRecommended,
+  });
+}
+
+class _DependencyPackInstallResult {
+  final bool ok;
+  final SkillProvisioningAction action;
+
+  const _DependencyPackInstallResult({
+    required this.ok,
+    required this.action,
+  });
+}
+
+class _PythonSmokeResult {
+  final bool ok;
+  final String stdout;
+  final String stderr;
+
+  const _PythonSmokeResult({
+    required this.ok,
+    required this.stdout,
+    required this.stderr,
+  });
+}
+
+class _PythonRequirementRequest {
+  final String name;
+  final String raw;
+  final bool root;
+  final String? rootPackage;
+
+  const _PythonRequirementRequest({
+    required this.name,
+    required this.raw,
+    required this.root,
+    this.rootPackage,
+  });
+
+  static _PythonRequirementRequest? fromRaw(
+    String raw, {
+    String? fallbackName,
+    bool root = false,
+    String? rootPackage,
+  }) {
+    var line = raw.trim();
+    if (line.isEmpty || line.startsWith('#')) {
+      final fallback = fallbackName?.trim();
+      if (fallback == null || fallback.isEmpty) return null;
+      return _PythonRequirementRequest(
+        name: SkillProvisioningService._normalizeDependencyName(fallback),
+        raw: fallback,
+        root: root,
+        rootPackage: rootPackage,
+      );
+    }
+    final hash = line.indexOf('#');
+    if (hash >= 0) line = line.substring(0, hash).trim();
+    if (line.isEmpty ||
+        line.startsWith('-') ||
+        line.startsWith('git+') ||
+        line.startsWith('http://') ||
+        line.startsWith('https://') ||
+        line == '.') {
+      return null;
+    }
+    final match = RegExp(r'^([A-Za-z0-9_.-]+)(?:\[[^\]]+\])?').firstMatch(line);
+    final name = match?.group(1);
+    if (name == null || name.isEmpty) {
+      final fallback = fallbackName?.trim();
+      if (fallback == null || fallback.isEmpty) return null;
+      return _PythonRequirementRequest(
+        name: SkillProvisioningService._normalizeDependencyName(fallback),
+        raw: line,
+        root: root,
+        rootPackage: rootPackage,
+      );
+    }
+    return _PythonRequirementRequest(
+      name: SkillProvisioningService._normalizeDependencyName(name),
+      raw: line,
+      root: root,
+      rootPackage: rootPackage,
+    );
+  }
+
+  _PythonRequirementRequest withRootPackage(String rootPackage) {
+    return _PythonRequirementRequest(
+      name: name,
+      raw: raw,
+      root: root,
+      rootPackage: SkillProvisioningService._normalizeDependencyName(
+        rootPackage,
+      ),
+    );
+  }
+}
+
+class _PythonWheelCandidate {
+  final String name;
+  final String version;
+  final String fileName;
+  final Uri url;
+  final String? sha256;
+  final String indexHost;
+
+  const _PythonWheelCandidate({
+    required this.name,
+    required this.version,
+    required this.fileName,
+    required this.url,
+    required this.sha256,
+    required this.indexHost,
+  });
+}
+
+class _PythonWheelName {
+  final String name;
+  final String version;
+  final Set<String> pythonTags;
+  final Set<String> abiTags;
+  final Set<String> platformTags;
+
+  const _PythonWheelName({
+    required this.name,
+    required this.version,
+    required this.pythonTags,
+    required this.abiTags,
+    required this.platformTags,
+  });
+}
+
+class _PythonWheelInstallResult {
+  final bool ok;
+  final SkillProvisioningAction action;
+  final List<_PythonRequirementRequest> requiresDist;
+
+  const _PythonWheelInstallResult({
+    required this.ok,
+    required this.action,
+    required this.requiresDist,
+  });
+}
+
+class _PythonInstalledPackage {
+  final String name;
+  final String version;
+
+  const _PythonInstalledPackage({
+    required this.name,
+    required this.version,
+  });
+}
+
+class _PythonVersionConstraint {
+  final String operator;
+  final String version;
+
+  const _PythonVersionConstraint(this.operator, this.version);
+}
+
+class _DependencyPackReceipt {
+  final String id;
+  final String version;
+  final String sha256;
+  final String? requestedRequirement;
+  final bool compatibilityOverride;
+  final bool smokePassed;
+
+  const _DependencyPackReceipt({
+    required this.id,
+    required this.version,
+    required this.sha256,
+    this.requestedRequirement,
+    this.compatibilityOverride = false,
+    this.smokePassed = false,
+  });
+
+  factory _DependencyPackReceipt.fromJson(Map<String, dynamic> json) {
+    return _DependencyPackReceipt(
+      id: json['id']?.toString() ?? '',
+      version: json['version']?.toString() ?? '',
+      sha256: json['sha256']?.toString() ?? '',
+      requestedRequirement: json['requestedRequirement']?.toString(),
+      compatibilityOverride: json['compatibilityOverride'] == true,
+      smokePassed: json['smokePassed'] == true,
+    );
+  }
+}
+
+class _DependencyPack {
+  final String id;
+  final String version;
+  final _DependencyPackSource source;
+  final String? url;
+  final String sha256;
+  final int? maxBytes;
+  final String? archiveType;
+  final String? installPath;
+  final Set<String> providesRuntimes;
+  final Set<String> providesBins;
+  final Set<String> providesPythonPackages;
+  final List<String> smokeImports;
+
+  const _DependencyPack({
+    required this.id,
+    required this.version,
+    required this.source,
+    required this.url,
+    required this.sha256,
+    required this.maxBytes,
+    required this.archiveType,
+    required this.installPath,
+    required this.providesRuntimes,
+    required this.providesBins,
+    required this.providesPythonPackages,
+    required this.smokeImports,
+  });
+
+  factory _DependencyPack.apk({
+    required String id,
+    required String version,
+    Set<String> providesRuntimes = const <String>{},
+    Set<String> providesBins = const <String>{},
+    Set<String> providesPythonPackages = const <String>{},
+    List<String> smokeImports = const <String>[],
+  }) {
+    return _DependencyPack(
+      id: id,
+      version: version,
+      source: _DependencyPackSource.apk,
+      url: null,
+      sha256: 'apk',
+      maxBytes: null,
+      archiveType: null,
+      installPath: null,
+      providesRuntimes: providesRuntimes
+          .map(SkillProvisioningService._normalizeDependencyName)
+          .toSet(),
+      providesBins: providesBins
+          .map(SkillProvisioningService._normalizeDependencyName)
+          .toSet(),
+      providesPythonPackages: providesPythonPackages
+          .map(SkillProvisioningService._normalizeDependencyName)
+          .toSet(),
+      smokeImports: smokeImports,
+    );
+  }
+
+  static _DependencyPack? fromJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString().trim();
+    final version = json['version']?.toString().trim();
+    if (id == null || id.isEmpty || version == null || version.isEmpty) {
+      return null;
+    }
+    final provides = json['provides'] is Map
+        ? Map<String, dynamic>.from(json['provides'] as Map)
+        : <String, dynamic>{};
+    final sourceName = json['source']?.toString().toLowerCase();
+    final source = sourceName == 'apk'
+        ? _DependencyPackSource.apk
+        : _DependencyPackSource.remote;
+    return _DependencyPack(
+      id: id,
+      version: version,
+      source: source,
+      url: json['url']?.toString(),
+      sha256: json['sha256']?.toString().toLowerCase() ?? '',
+      maxBytes: (json['maxBytes'] as num?)?.toInt(),
+      archiveType: json['archiveType']?.toString(),
+      installPath: json['installPath']?.toString(),
+      providesRuntimes: _stringSet(provides['runtimes']),
+      providesBins: _stringSet(provides['bins']),
+      providesPythonPackages: _stringSet(provides['pythonPackages']),
+      smokeImports: _stringList(json['smokeImports']),
+    );
+  }
+
+  static Set<String> _stringSet(dynamic value) => _stringList(value)
+      .map(SkillProvisioningService._normalizeDependencyName)
+      .toSet();
+
+  static List<String> _stringList(dynamic value) {
+    if (value is String) return [value];
+    if (value is List) {
+      return value
+          .map((item) => item?.toString().trim() ?? '')
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    return const <String>[];
+  }
 }

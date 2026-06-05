@@ -68,6 +68,11 @@ class AppNativeChatToolRouter {
   List<Map<String, dynamic>>? parseAvatarSequenceForTesting(String text) =>
       _avatarSequence(text.toLowerCase());
 
+  String? requiredToolCommandForTesting(String message) {
+    final plan = _requiredToolPlan(message);
+    return plan?.command;
+  }
+
   Future<AppNativeChatToolExecution?> tryExecute(
     String message, {
     required bool directGatewayRegistrationAvailable,
@@ -86,6 +91,60 @@ class AppNativeChatToolRouter {
       ok: ok,
       visibleText: _visibleText(plan, result, ok),
     );
+  }
+
+  Future<AppNativeChatToolExecution?> tryExecuteRequiredToolIntent(
+    String message,
+  ) async {
+    final plan = _requiredToolPlan(message);
+    if (plan == null) return null;
+
+    final result = await _execute(plan);
+    final ok = _resultOk(plan, result);
+    return AppNativeChatToolExecution(
+      toolName: plan.toolName,
+      input: plan.input,
+      result: result,
+      ok: ok,
+      visibleText: _visibleText(plan, result, ok),
+    );
+  }
+
+  _AppNativeToolPlan? _requiredToolPlan(String message) {
+    final plan = _plan(message);
+    if (plan == null || !_isRequiredMobileCommand(plan)) return null;
+    final input = <String, dynamic>{
+      ...plan.input,
+      'source': 'gateway-required-tool-intent',
+    };
+    return _AppNativeToolPlan(
+      toolName: plan.toolName,
+      command: plan.command,
+      input: input,
+    );
+  }
+
+  bool _isRequiredMobileCommand(_AppNativeToolPlan plan) {
+    return switch (plan.command) {
+      'avatar.gesture' ||
+      'avatar.sequence' ||
+      'haptic.vibrate' ||
+      'flash.on' ||
+      'flash.off' ||
+      'flash.toggle' ||
+      'flash.status' ||
+      'camera.snap' ||
+      'camera.list' ||
+      'location.get' ||
+      'device.health' ||
+      'device.status' ||
+      'device.info' ||
+      'device.permissions' ||
+      'sensor.list' ||
+      'sensor.read' =>
+        true,
+      _ => false,
+    };
   }
 
   _AppNativeToolPlan? _plan(String message) {
@@ -433,13 +492,9 @@ class AppNativeChatToolRouter {
       case 'camera.snap':
         return 'Done. I took a photo and attached it to this reply.';
       case 'location.get':
-        final lat = result['lat'];
-        final lng = result['lng'];
-        return lat != null && lng != null
-            ? 'Current location retrieved: $lat, $lng.'
-            : 'Location retrieved.';
+        return _locationVisibleText(result);
       case 'device.health':
-        return 'Device health check completed.';
+        return _deviceHealthVisibleText(result);
       case 'device.status':
       case 'device.info':
         return 'Device status retrieved.';
@@ -506,6 +561,67 @@ class AppNativeChatToolRouter {
       if (value != null && value.isNotEmpty) return value;
     }
     return 'Unknown error';
+  }
+
+  String _locationVisibleText(Map<String, dynamic> result) {
+    final lat = result['lat'];
+    final lng = result['lng'];
+    final accuracy = result['accuracy'];
+    final address = _addressText(result);
+    final coordinates = lat != null && lng != null ? '$lat, $lng' : null;
+    if (address != null && coordinates != null) {
+      final accuracyText = accuracy == null ? '' : ' (accuracy ~$accuracy m)';
+      return 'Current location: $address. Coordinates: $coordinates$accuracyText.';
+    }
+    if (coordinates != null) {
+      final accuracyText = accuracy == null ? '' : ' (accuracy ~$accuracy m)';
+      return 'Current location retrieved: $coordinates$accuracyText.';
+    }
+    return 'Location retrieved.';
+  }
+
+  String? _addressText(Map<String, dynamic> result) {
+    final direct = result['address']?.toString().trim();
+    if (direct != null && direct.isNotEmpty) return direct;
+    final parts = <String>[];
+    for (final key in const [
+      'street',
+      'subLocality',
+      'locality',
+      'city',
+      'administrativeArea',
+      'country',
+    ]) {
+      final value = result[key]?.toString().trim();
+      if (value != null && value.isNotEmpty && !parts.contains(value)) {
+        parts.add(value);
+      }
+    }
+    return parts.isEmpty ? null : parts.join(', ');
+  }
+
+  String _deviceHealthVisibleText(Map<String, dynamic> result) {
+    final nativeCount = result['nativeSkillCount'];
+    final prootCount = result['prootSkillCount'];
+    final gateCount = result['skillGateCount'];
+    final readiness = result['skillReadiness'];
+    final permissions = result['permissions'];
+    final parts = <String>['Device health check completed'];
+    if (nativeCount != null) parts.add('native skills: $nativeCount');
+    if (prootCount != null) parts.add('PRoot skills: $prootCount');
+    if (gateCount != null) parts.add('skill gates: $gateCount');
+    if (readiness is Map && readiness.isNotEmpty) {
+      parts.add(
+          'readiness: ${_compactJson(Map<String, dynamic>.from(readiness))}');
+    }
+    if (permissions is Map && permissions.isNotEmpty) {
+      final camera = permissions['camera'];
+      final location = permissions['location'];
+      final microphone = permissions['microphone'];
+      parts.add(
+          'permissions: camera=$camera, location=$location, microphone=$microphone');
+    }
+    return '${parts.join('; ')}.';
   }
 
   String _compactJson(Map<String, dynamic> value) {
@@ -662,6 +778,8 @@ class AppNativeChatToolRouter {
 
   bool _wantsLocation(String lower) {
     return lower.contains('where am i') ||
+        lower.contains('where are we') ||
+        lower.contains('where we are') ||
         lower.contains('current location') ||
         lower.contains('my location') ||
         lower.contains('gps location') ||

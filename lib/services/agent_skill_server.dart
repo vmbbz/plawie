@@ -8,6 +8,7 @@ import 'skills_service.dart';
 import 'tts_service.dart';
 import 'gateway_service.dart';
 import 'gateway_tool_catalog.dart';
+import 'native_bridge.dart';
 import 'native_gateway_smoke_service.dart';
 import 'capabilities/avatar_capability.dart';
 import 'capabilities/camera_capability.dart';
@@ -211,6 +212,8 @@ class AgentSkillServer {
       await _handleAppNativeChatToolSmoke(request);
     } else if (request.method == 'POST' && path == '/api/tools/execute') {
       await _handleToolsExecute(request);
+    } else if (request.method == 'POST' && path == '/api/python/exec') {
+      await _handleNativePythonExec(request);
     } else if (request.method == 'POST' && path == '/api/avatar/control') {
       await _handleAvatarControl(request);
     } else if (request.method == 'POST' && path == '/api/avatar/equip') {
@@ -2026,6 +2029,25 @@ class AgentSkillServer {
       }
     } catch (e) {
       _sendError(request, e.toString());
+    }
+  }
+
+  Future<void> _handleNativePythonExec(HttpRequest request) async {
+    try {
+      final body = await _readJsonBody(request);
+      final result = await NativeBridge.runNativePython(body);
+      _sendJson(request, result);
+    } catch (e) {
+      _sendJson(
+        request,
+        {
+          'ok': false,
+          'exitCode': 1,
+          'stdout': '',
+          'stderr': 'Native Python bridge failed: $e',
+        },
+        statusCode: HttpStatus.internalServerError,
+      );
     }
   }
 

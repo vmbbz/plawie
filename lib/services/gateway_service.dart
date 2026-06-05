@@ -18,6 +18,7 @@ import 'local_llm_service.dart';
 import 'model_provider_catalog.dart';
 import 'gateway_tool_catalog.dart';
 import 'app_native_chat_tool_router.dart';
+import 'native_clawhub_skill_execution_service.dart';
 import 'native_gateway_smoke_service.dart';
 import 'native_gateway_shadow_parity_service.dart';
 import 'skill_parity_audit_service.dart';
@@ -158,7 +159,10 @@ class GatewayService {
   int _appNativeSkillCatalogCount = 0;
   DateTime? _lastSkillsRegisterUnavailableLogAt;
   DateTime? _lastSkillParityAuditAt;
+  DateTime? _lastPostReadySkillParityAuditAt;
   String? _lastSkillParityPromptBlock;
+  SkillParitySnapshot? _lastSkillParitySnapshot;
+  SkillProvisioningReport? _lastSkillProvisioningReport;
   bool _skillParityAuditInFlight = false;
   static const Duration _runtimeHardeningCooldown = Duration(minutes: 10);
   static const Duration _gatewaySettleWindow = Duration(seconds: 90);
@@ -1522,6 +1526,7 @@ class GatewayService {
       debugPrint('[GATEWAY] Existing gateway detected — attaching...');
       _rpcDiscoveryDone = false;
       _gatewayInteractiveReadyAt = null;
+      _lastPostReadySkillParityAuditAt = null;
       _updateState(_state.copyWith(
         status: GatewayStatus.starting,
         isInteractiveReady: false,
@@ -1589,6 +1594,7 @@ class GatewayService {
     _isStarting = true;
     _rpcDiscoveryDone = false; // ensure discovery runs on this new session
     _gatewayInteractiveReadyAt = null;
+    _lastPostReadySkillParityAuditAt = null;
     debugPrint('[GATEWAY] Starting gateway process...');
     _updateState(_state.copyWith(
       status: GatewayStatus.starting,
@@ -2927,6 +2933,7 @@ HEARTBEAT_OK.
     required String reason,
     bool repair = false,
     bool reloadIfChanged = false,
+    bool bypassCooldown = false,
   }) async {
     if (_runtime.id !=
         GatewayRuntimeRegistry.nativeNodeFullGatewayProduction.id) {
@@ -2935,7 +2942,8 @@ HEARTBEAT_OK.
     if (_skillParityAuditInFlight) return;
     final now = DateTime.now();
     final last = _lastSkillParityAuditAt;
-    if (!repair &&
+    if (!bypassCooldown &&
+        !repair &&
         last != null &&
         now.difference(last) < _skillParityAuditCooldown) {
       return;
@@ -2943,19 +2951,43 @@ HEARTBEAT_OK.
 
     _skillParityAuditInFlight = true;
     try {
-      final snapshot = await SkillParityAuditService.instance
+      var snapshot = await SkillParityAuditService.instance
           .audit(repairNativeFromProot: repair)
           .timeout(const Duration(seconds: 20));
-      final provisioning = await SkillProvisioningService.instance
-          .planSnapshot(snapshot)
-          .timeout(const Duration(seconds: 10));
+      var provisioning = await SkillProvisioningService.instance
+          .provisionSnapshot(snapshot)
+          .timeout(const Duration(minutes: 4));
+      final provisioningChanged = provisioning.changed;
+      final provisioningReloadRecommended = provisioning.reloadRecommended;
+      if (provisioningChanged || provisioningReloadRecommended) {
+        final refreshedSnapshot = await SkillParityAuditService.instance
+            .audit(
+              repairNativeFromProot: false,
+              cacheTtl: Duration.zero,
+            )
+            .timeout(const Duration(seconds: 20));
+        final refreshedProvisioning = await SkillProvisioningService.instance
+            .planSnapshot(refreshedSnapshot)
+            .timeout(const Duration(seconds: 20));
+        _addActivity(
+          '[SKILL-PROVISION] refreshed after repair: '
+          '${refreshedProvisioning.compactLogLine} reason=$reason',
+        );
+        snapshot = refreshedSnapshot;
+        provisioning = refreshedProvisioning;
+      }
       _lastSkillParityAuditAt = DateTime.now();
+      _lastSkillParitySnapshot = snapshot;
+      _lastSkillProvisioningReport = provisioning;
       _lastSkillParityPromptBlock = [
-        snapshot.toPromptBlock(),
-        provisioning.toPromptBlock(),
+        snapshot.toPromptBlock(maxGates: 0),
+        provisioning.toPromptBlock(maxSkills: 0),
       ].where((block) => block.trim().isNotEmpty).join('\n');
       _addActivity('${snapshot.compactLogLine} reason=$reason');
       _addActivity('${provisioning.compactLogLine} reason=$reason');
+      for (final line in _skillProvisioningActivityLines(provisioning)) {
+        _addActivity(line);
+      }
       if (snapshot.repair.errors.isNotEmpty) {
         _addActivity(
           '[SKILL-PARITY] repair errors: '
@@ -2969,10 +3001,40 @@ HEARTBEAT_OK.
         await applyActiveOwnerConfigChange('native skill parity mirror')
             .timeout(const Duration(seconds: 35), onTimeout: () {});
       }
+      if (provisioningReloadRecommended && reloadIfChanged) {
+        _addActivity(
+          '[SKILL-PROVISION] Native dependency files changed; reloading Gateway.',
+        );
+        await applyActiveOwnerConfigChange(
+                'native skill dependency provisioning')
+            .timeout(const Duration(seconds: 35), onTimeout: () {});
+      }
     } catch (e) {
       _addActivity('[SKILL-PARITY] audit failed ($reason): $e');
     } finally {
       _skillParityAuditInFlight = false;
+    }
+  }
+
+  Iterable<String> _skillProvisioningActivityLines(
+    SkillProvisioningReport report,
+  ) sync* {
+    var emitted = 0;
+    for (final result in report.results) {
+      if (emitted >= 16) break;
+      final notable = result.actions.where((action) {
+        return action.changed ||
+            action.status == SkillProvisioningActionStatus.installed ||
+            action.status == SkillProvisioningActionStatus.failedSmoke ||
+            action.status == SkillProvisioningActionStatus.failedVerification ||
+            action.status == SkillProvisioningActionStatus.missingPack;
+      });
+      for (final action in notable) {
+        if (emitted >= 16) break;
+        emitted += 1;
+        yield '[DEPS] ${result.skillId} ${action.type.wireName}/${action.key} '
+            'status=${action.status.wireName} changed=${action.changed}';
+      }
     }
   }
 
@@ -4049,6 +4111,16 @@ HEARTBEAT_OK.
         }
 
         if (_rpcDiscoveryDone) {
+          if (_lastPostReadySkillParityAuditAt == null &&
+              _runtime.id ==
+                  GatewayRuntimeRegistry.nativeNodeFullGatewayProduction.id) {
+            _lastPostReadySkillParityAuditAt = DateTime.now();
+            unawaited(_auditNativeSkillParity(
+              reason: 'gateway-rpc-ready',
+              bypassCooldown: true,
+              reloadIfChanged: true,
+            ));
+          }
           unawaited(_ensureNodeConnectedAfterGatewayReady(
             reason: 'gateway-rpc-ready',
           ));
@@ -4663,11 +4735,13 @@ $message''';
     }
 
     final parityBlock = _lastSkillParityPromptBlock?.trim() ?? '';
+    final targetedGateBlock = _targetedSkillGatePromptBlock(message);
 
     if (activeSkills.isEmpty &&
         primitiveTools.isEmpty &&
         appNativeCatalog.isEmpty &&
-        parityBlock.isEmpty) {
+        parityBlock.isEmpty &&
+        targetedGateBlock.isEmpty) {
       return message;
     }
 
@@ -4735,9 +4809,9 @@ Definitions:
 - Device capabilities are Android node actions such as camera, location, sensors, haptics, flashlight, canvas, and avatar gestures.
 - App-native skills are Flutter-local bundled helpers exposed by AgentSkillServer on 127.0.0.1:8765; they are not the same thing as the Gateway/OpenClaw skill registry.
 Do not confuse these categories. If the user asks what skills are available, answer from Active skills, not from Device capabilities alone.
-Do not claim an active skill is unavailable just because its name is not also a primitive tool function name. Use the Gateway agent loop and closest available Gateway/node primitive.
+Do not claim an active skill is unavailable just because its name is not also a primitive tool function name. Use the Gateway agent loop. If a default skill is gated, report the exact gate for repair; do not silently substitute another primitive.
 Only report a skill as blocked when there is a real gate: disabled/ineligible from skills.status, missing dependency/bin/env/config from parity audit, unsupported platform, or tool policy denial.
-If the app-native bridge is not registered, do not call app-native names such as avatar-control, tts-voice, or device-node directly. For phone/avatar/haptic/flash/sensor/camera actions, use the Android node/Gateway tool path when available. Local app-native fallback is explicit fallback only.
+If the app-native bridge is not registered, do not call app-native names such as avatar-control, tts-voice, or device-node directly. For phone/avatar/haptic/flash/sensor/camera actions, use the Android node/Gateway tool path when available. Local app-native debug execution is only for explicit /local-tool or /app-native requests.
 
 Active skills (${activeSkills.length}):
 ${skillLines.isEmpty ? '- none reported by Gateway yet' : skillLines}$skillCountSuffix
@@ -4753,11 +4827,137 @@ Bridge status: $appNativeBridgeLine
 ${appNativeSkillLines.isEmpty ? '- none reported by Flutter' : appNativeSkillLines.join('\n')}$appNativeCountSuffix
 
 ${parityBlock.isEmpty ? '' : parityBlock}
+${targetedGateBlock.isEmpty ? '' : targetedGateBlock}
 
-Financial routing note: for stock, ticker, market, earnings, dividend, crypto, or finance questions, prefer the installed stocks/financial-data skill path when active. If no dedicated finance skill is active or ready, use Gateway web/search/browser primitives with a timestamped answer. Do not dead-end with "listed but not executable" while another Gateway primitive can answer.
+Financial routing note: for stock, ticker, market, earnings, dividend, crypto, or finance questions, use the installed stocks/financial-data skill path when active. Do not substitute or offer web/search/browser primitives for a gated default finance skill unless the user explicitly asks for that after seeing the gate; report the exact Gateway/parity gate so the native dependency/config path can be repaired.
 </openclaw_runtime_capabilities>
 
 $message''';
+  }
+
+  String _targetedSkillGatePromptBlock(String message) {
+    final targets = _targetedSkillIdsForMessage(message);
+    if (targets.isEmpty) return '';
+    final normalizedTargets = targets.map(_normalizeSkillLookup).toSet();
+
+    final snapshot = _lastSkillParitySnapshot;
+    final provisioning = _lastSkillProvisioningReport;
+    final hasReadyTarget =
+        (snapshot?.executionMatrix.any((entry) {
+              final id = _normalizeSkillLookup(entry.skillId);
+              return normalizedTargets.contains(id) &&
+                  entry.status == SkillExecutionStatus.ready;
+            }) ??
+            false) ||
+        (provisioning?.results.any((result) {
+              final id = _normalizeSkillLookup(result.skillId);
+              return normalizedTargets.contains(id) && !result.status.isBlocking;
+            }) ??
+            false);
+    final targetMatrix = snapshot?.executionMatrix
+            .where((entry) =>
+                normalizedTargets.contains(_normalizeSkillLookup(entry.skillId)))
+            .take(8)
+            .map((entry) =>
+                '${entry.skillId}:${_skillExecutionStatusWireName(entry.status)}')
+            .join(',') ??
+        '';
+    final targetProvisioning = provisioning?.results
+            .where((result) =>
+                normalizedTargets.contains(_normalizeSkillLookup(result.skillId)))
+            .take(8)
+            .map((result) => '${result.skillId}:${result.status.wireName}')
+            .join(',') ??
+        '';
+    _addActivity(
+      '[SKILL-TARGET] targets=${targets.join(',')} ready=$hasReadyTarget '
+      'matrix=${targetMatrix.isEmpty ? 'none' : targetMatrix} '
+      'provisioning=${targetProvisioning.isEmpty ? 'none' : targetProvisioning}',
+    );
+    if (hasReadyTarget) return '';
+
+    final lines = <String>[];
+
+    if (snapshot != null) {
+      for (final entry in snapshot.executionMatrix) {
+        final id = _normalizeSkillLookup(entry.skillId);
+        if (!normalizedTargets.contains(id)) continue;
+        if (entry.status == SkillExecutionStatus.ready) continue;
+        final details = <String>[
+          'status=${_skillExecutionStatusWireName(entry.status)}',
+          if (entry.gates.isNotEmpty) 'gates=${entry.gates.join(',')}',
+          if (entry.requiredBins.isNotEmpty)
+            'bins=${entry.requiredBins.join(',')}',
+          if (entry.requiredRuntimes.isNotEmpty)
+            'runtimes=${entry.requiredRuntimes.join(',')}',
+          if (entry.requiredPythonPackages.isNotEmpty)
+            'pythonPackages=${entry.requiredPythonPackages.join(',')}',
+          if (entry.requiredPythonRequirements.isNotEmpty)
+            'pythonRequirements=${entry.requiredPythonRequirements.entries.map((entry) => '${entry.key}:${entry.value}').join(',')}',
+          if (entry.requiredEnv.isNotEmpty)
+            'env=${entry.requiredEnv.join(',')}',
+          if (entry.requiredConfig.isNotEmpty)
+            'config=${entry.requiredConfig.join(',')}',
+        ];
+        lines.add('- ${entry.skillId}: ${details.join(' ')}');
+      }
+    }
+
+    if (provisioning != null) {
+      for (final result in provisioning.results) {
+        final id = _normalizeSkillLookup(result.skillId);
+        if (!normalizedTargets.contains(id)) continue;
+        if (!result.status.isBlocking) continue;
+        final actions = result.actions
+            .where((action) =>
+                action.status != SkillProvisioningActionStatus.ready &&
+                action.status != SkillProvisioningActionStatus.satisfied)
+            .take(8)
+            .map((action) =>
+                '${action.key}:${action.type.wireName}/${action.status.wireName}')
+            .join('; ');
+        lines.add(
+          '- ${result.skillId}: provisioning=${result.status.wireName}${actions.isEmpty ? '' : ' actions=$actions'}',
+        );
+      }
+    }
+
+    if (lines.isEmpty) return '';
+    return '''
+Targeted skill readiness for this request:
+${lines.join('\n')}
+''';
+  }
+
+  Set<String> _targetedSkillIdsForMessage(String message) {
+    final lower = message.toLowerCase();
+    final targets = <String>{};
+    if (RegExp(
+      r'\b(stock|stocks|ticker|market|earnings|dividend|finance|financial|crypto|bitcoin|btc|ethereum|eth|nvda|nvidia|nasdaq|s&p|price)\b',
+    ).hasMatch(lower)) {
+      targets.addAll(const <String>{
+        'stocks',
+        'stock',
+        'financial-data',
+        'finance',
+        'market-data',
+      });
+    }
+    return targets;
+  }
+
+  static String _normalizeSkillLookup(String value) =>
+      value.trim().toLowerCase().replaceAll('_', '-');
+
+  static String _skillExecutionStatusWireName(SkillExecutionStatus status) {
+    return switch (status) {
+      SkillExecutionStatus.ready => 'ready',
+      SkillExecutionStatus.needsConfig => 'needs_config',
+      SkillExecutionStatus.missingDependency => 'missing_dependency',
+      SkillExecutionStatus.disabled => 'disabled',
+      SkillExecutionStatus.unsupportedNative => 'unsupported_native',
+      SkillExecutionStatus.manualProotRequired => 'manual_proot_required',
+    };
   }
 
   Future<String> _decorateMessageWithRuntimeContext(String message) async {
@@ -4797,6 +4997,87 @@ $message''';
       }
     }
     return null;
+  }
+
+  String? debugRequiredToolIntentCommandForTesting(String message) {
+    return AppNativeChatToolRouter.instance.requiredToolCommandForTesting(
+      message,
+    );
+  }
+
+  Future<AppNativeChatToolExecution?> _executeRequiredMobileToolIntent(
+    String message,
+  ) async {
+    final node = NodeService();
+    final nodeReady =
+        node.state.isPaired && node.isConnected && !node.isConnectionStale;
+    if (!nodeReady) {
+      if (AppNativeChatToolRouter.instance
+              .requiredToolCommandForTesting(message) !=
+          null) {
+        _addActivity(
+          '[TOOLS] Required mobile command detected, but Android node is not ready '
+          '(paired=${node.state.isPaired}, connected=${node.isConnected}, '
+          'stale=${node.isConnectionStale}).',
+        );
+        unawaited(_ensureNodeConnectedAfterGatewayReady(
+          reason: 'required-mobile-tool-intent',
+        ));
+      }
+      return null;
+    }
+
+    final execution =
+        await AppNativeChatToolRouter.instance.tryExecuteRequiredToolIntent(
+      message,
+    );
+    if (execution == null) return null;
+    _addActivity(
+      '[TOOLS] Gateway-required mobile command: ${execution.toolName} '
+      'ok=${execution.ok}',
+    );
+    return execution;
+  }
+
+  bool _targetedSkillHasBlockingGate(Set<String> targets) {
+    final normalizedTargets = targets.map(_normalizeSkillLookup).toSet();
+    final snapshot = _lastSkillParitySnapshot;
+    if (snapshot != null) {
+      for (final entry in snapshot.executionMatrix) {
+        final id = _normalizeSkillLookup(entry.skillId);
+        if (!normalizedTargets.contains(id)) continue;
+        if (entry.status != SkillExecutionStatus.ready) return true;
+      }
+    }
+    final provisioning = _lastSkillProvisioningReport;
+    if (provisioning != null) {
+      for (final result in provisioning.results) {
+        final id = _normalizeSkillLookup(result.skillId);
+        if (!normalizedTargets.contains(id)) continue;
+        if (result.status.isBlocking) return true;
+      }
+    }
+    return false;
+  }
+
+  Future<NativeClawHubSkillExecution?>
+      _executeRequiredNativeClawHubSkillIntent(String message) async {
+    final targets = _targetedSkillIdsForMessage(message);
+    if (!targets.map(_normalizeSkillLookup).contains('stocks')) return null;
+    if (_targetedSkillHasBlockingGate({'stocks'})) {
+      _addActivity(
+        '[SKILL-EXEC] stocks intent detected but readiness matrix has a blocking gate; preserving Gateway gate report.',
+      );
+      return null;
+    }
+
+    final execution = await NativeClawHubSkillExecutionService.instance
+        .tryExecuteRequiredIntent(message);
+    if (execution == null) return null;
+    _addActivity(
+      '[SKILL-EXEC] ${execution.toolName} native workspace run ok=${execution.ok}',
+    );
+    return execution;
   }
 
   @visibleForTesting
@@ -14356,6 +14637,24 @@ $message''';
     var wsOk = await _ensureWebSocket(token);
     Map<String, dynamic> modelSyncChanges = <String, dynamic>{};
     if (wsOk) {
+      final requiredNativeSkillExecution =
+          await _executeRequiredNativeClawHubSkillIntent(message);
+      if (requiredNativeSkillExecution != null) {
+        yield requiredNativeSkillExecution.toolUseChunk;
+        yield requiredNativeSkillExecution.toolResultChunk;
+        yield requiredNativeSkillExecution.visibleText;
+        return;
+      }
+
+      final requiredMobileToolExecution =
+          await _executeRequiredMobileToolIntent(message);
+      if (requiredMobileToolExecution != null) {
+        yield requiredMobileToolExecution.toolUseChunk;
+        yield requiredMobileToolExecution.toolResultChunk;
+        yield requiredMobileToolExecution.visibleText;
+        return;
+      }
+
       // HOT-SWITCHING: If user changed model, update gateway config
       final changes = await _syncModelToConfig(model);
       if (changes.isNotEmpty) {
@@ -14376,6 +14675,24 @@ $message''';
             'Please wait a moment and try again. Plawie did not use the '
             'fallback HTTP chat route because it bypasses OpenClaw tools and '
             'mobile node context.';
+        return;
+      }
+
+      final requiredMobileToolExecution =
+          await _executeRequiredMobileToolIntent(message);
+      if (requiredMobileToolExecution != null) {
+        yield requiredMobileToolExecution.toolUseChunk;
+        yield requiredMobileToolExecution.toolResultChunk;
+        yield requiredMobileToolExecution.visibleText;
+        return;
+      }
+
+      final requiredNativeSkillExecution =
+          await _executeRequiredNativeClawHubSkillIntent(message);
+      if (requiredNativeSkillExecution != null) {
+        yield requiredNativeSkillExecution.toolUseChunk;
+        yield requiredNativeSkillExecution.toolResultChunk;
+        yield requiredNativeSkillExecution.visibleText;
         return;
       }
 
@@ -15978,6 +16295,17 @@ $message''';
     }
     m = ModelProviderCatalog.canonicalizeModelId(m);
 
+    if (_isVariableOpenRouterRouterModel(m)) {
+      final fallback = ModelProviderCatalog.defaultCloudFallbackModel;
+      if (m != fallback) {
+        _addActivity(
+          '[MODEL] Replacing variable OpenRouter router model "$m" with '
+          '"$fallback" for Gateway chat/tool reliability.',
+        );
+      }
+      m = fallback;
+    }
+
     // Force cloud/gateway lane unless the user explicitly enabled local chat
     // from the Local LLM page.
     if (ModelProviderCatalog.isDirectLocalModelId(m) &&
@@ -15993,6 +16321,13 @@ $message''';
       }
     }
     return m;
+  }
+
+  bool _isVariableOpenRouterRouterModel(String model) {
+    final normalized = model.trim().toLowerCase();
+    return normalized == 'openrouter/auto' ||
+        normalized == 'openrouter/free' ||
+        normalized == 'openrouter/openrouter/free';
   }
 
   /// Disconnect the persistent WS connection so the next sendMessage() opens a

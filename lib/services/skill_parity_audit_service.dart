@@ -15,21 +15,63 @@ class SkillParityAuditService {
   static final SkillParityAuditService instance = SkillParityAuditService._();
 
   static const _mirrorMarkerName = '.plawie-native-mirror.json';
+  static const _nativePythonRuntimeVersion = '3.13';
   static final _skillNamePattern = RegExp(r'^@?[a-zA-Z0-9][a-zA-Z0-9._@-]*$');
   static final _envPattern = RegExp(
     r'\b[A-Z][A-Z0-9_]{2,}(?:API_KEY|TOKEN|SECRET|CLIENT_ID|CLIENT_SECRET|AUTH|KEY|URL|HOST|PASSWORD)\b'
     r'|\b(?:[A-Z][A-Z0-9_]{2,}_(?:API_KEY|TOKEN|SECRET|CLIENT_ID|CLIENT_SECRET|AUTH|KEY|URL|HOST|PASSWORD))\b',
   );
   static const _knownBins = <String>{
+    'bash',
     'bun',
+    'curl',
     'ffmpeg',
+    'git',
     'jq',
     'magick',
+    'node',
+    'npm',
+    'npx',
+    'pip',
+    'pip3',
     'python',
     'python3',
     'rg',
+    'sh',
     'sqlite3',
+    'tar',
+    'unzip',
     'yt-dlp',
+  };
+  static const _knownPythonPackageNames = <String>{
+    'annotated-types',
+    'beautifulsoup4',
+    'bs4',
+    'certifi',
+    'charset-normalizer',
+    'curl-cffi',
+    'dateutils',
+    'frozendict',
+    'html5lib',
+    'idna',
+    'multitasking',
+    'numpy',
+    'pandas',
+    'peewee',
+    'platformdirs',
+    'pydantic',
+    'pydantic-core',
+    'python-dateutil',
+    'pytz',
+    'requests',
+    'six',
+    'soupsieve',
+    'typing-extensions',
+    'typing-inspection',
+    'tzdata',
+    'urllib3',
+    'websockets',
+    'yfinance',
   };
 
   SkillParitySnapshot? _cachedSnapshot;
@@ -130,7 +172,7 @@ class SkillParityAuditService {
       }
 
       final body = await _readSkillBody(skill);
-      final requirements = _detectSkillRequirements(body);
+      final requirements = await _detectSkillRequirements(skill, body);
       final requiredBins = requirements.bins;
       for (final bin in requiredBins) {
         if (!nativeBins.contains(bin)) {
@@ -182,6 +224,51 @@ class SkillParityAuditService {
           ));
         }
       }
+      if (requirements.pythonPackages.isNotEmpty) {
+        final nativePythonPackages =
+            await _scanPythonPackages(layout.nativeStateRoot, skill);
+        final nativeHasPython =
+            nativeBins.contains('python3') || nativeBins.contains('python');
+        if (!nativeHasPython) {
+          skillGates.add(SkillParityGate(
+            skillId: skill.id,
+            gate: 'missing_native_runtime',
+            owner: 'native',
+            detail:
+                'python3 is required for requirements.txt but was not found in Native runtime paths.',
+          ));
+        }
+        for (final requirement in requirements.pythonRequirements.entries) {
+          final package = requirement.key;
+          final installedVersion = nativePythonPackages[package];
+          if (installedVersion == null) {
+            skillGates.add(SkillParityGate(
+              skillId: skill.id,
+              gate: 'missing_native_python_package',
+              owner: 'native',
+              detail:
+                  '$package is required by requirements.txt (${requirement.value}) but was not found in a Native Python environment.',
+            ));
+          } else if (!_pythonRequirementSatisfied(
+                installedVersion,
+                requirement.value,
+              ) &&
+              !await _pythonCompatibilityReceiptSatisfied(
+                layout.nativeStateRoot,
+                package,
+                requirement.value,
+                installedVersion,
+              )) {
+            skillGates.add(SkillParityGate(
+              skillId: skill.id,
+              gate: 'missing_native_python_package',
+              owner: 'native',
+              detail:
+                  '$package version $installedVersion does not satisfy requirements.txt (${requirement.value}).',
+            ));
+          }
+        }
+      }
       if (requirements.requiresExtendedRuntime) {
         skillGates.add(SkillParityGate(
           skillId: skill.id,
@@ -199,6 +286,8 @@ class SkillParityAuditService {
         requiredBins: requiredBins.toList()..sort(),
         requiredEnv: requiredEnv.toList()..sort(),
         requiredRuntimes: requirements.runtimes.toList()..sort(),
+        requiredPythonPackages: requirements.pythonPackages.toList()..sort(),
+        requiredPythonRequirements: requirements.pythonRequirements,
         requiredPlugins: requirements.plugins.toList()..sort(),
         requiredConfig: requirements.configKeys.toList()..sort(),
       ));
@@ -397,12 +486,56 @@ class SkillParityAuditService {
     for (final root in roots) {
       try {
         if (!await root.exists()) continue;
+        final validPythonBridge =
+            await _validNativePythonBridgeForBinRoot(root);
+        if (validPythonBridge) {
+          bins.addAll(const ['python', 'python3', 'pip', 'pip3']);
+        }
         await for (final entity in root.list(recursive: false)) {
-          if (entity is File) bins.add(path.basename(entity.path));
+          if (entity is File && await _fileLooksExecutable(entity)) {
+            final name = path.basename(entity.path);
+            if (_isPythonCommandBin(name) && !validPythonBridge) continue;
+            bins.add(name);
+          }
         }
       } catch (_) {}
     }
     return bins;
+  }
+
+  static Future<bool> _validNativePythonBridgeForBinRoot(Directory root) async {
+    final candidates = [
+      File(path.join(root.parent.path, 'bridge.json')),
+      File(path.join(root.parent.path, 'runtimes', 'python', 'bridge.json')),
+    ];
+    for (final candidate in candidates) {
+      if (await _validNativePythonBridge(candidate)) return true;
+    }
+    return false;
+  }
+
+  static Future<bool> _validNativePythonBridge(File marker) async {
+    final json = await _readJson(marker);
+    return json?['runtime']?.toString() == 'chaquopy' &&
+        json?['python']?.toString() == _nativePythonRuntimeVersion;
+  }
+
+  static bool _isPythonCommandBin(String value) {
+    final normalized = path.basename(value).trim().toLowerCase();
+    return normalized == 'python' ||
+        normalized == 'python3' ||
+        normalized == 'pip' ||
+        normalized == 'pip3';
+  }
+
+  static Future<bool> _fileLooksExecutable(File file) async {
+    if (Platform.isWindows) return true;
+    try {
+      final stat = await file.stat();
+      return stat.type == FileSystemEntityType.file && (stat.mode & 0x49) != 0;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<String> _readSkillBody(_SkillDiskEntry skill) async {
@@ -414,31 +547,364 @@ class SkillParityAuditService {
     return '';
   }
 
-  static _SkillRequirements _detectSkillRequirements(String body) {
+  static Future<_SkillRequirements> _detectSkillRequirements(
+    _SkillDiskEntry skill,
+    String body,
+  ) async {
     final frontmatter = _parseYamlFrontmatter(body);
     final fromYaml = _requirementsFromYaml(frontmatter);
+    final pythonRequirements = await _readPythonRequirements(skill);
+    final pythonRequirementNames = pythonRequirements.keys.toSet();
+    final bins = {
+      ...fromYaml.bins.map(_normalizeRequiredBin).whereType<String>(),
+      ..._detectRequiredBins(body),
+    }..removeWhere((bin) {
+        final normalized = _normalizePythonPackageName(bin);
+        return pythonRequirementNames.contains(normalized) ||
+            _knownPythonPackageNames.contains(normalized);
+      });
     return _SkillRequirements(
-      bins: {...fromYaml.bins, ..._detectRequiredBins(body)},
+      bins: bins,
       env: {...fromYaml.env, ..._detectRequiredEnv(body)},
-      runtimes: fromYaml.runtimes,
+      runtimes: {
+        ...fromYaml.runtimes,
+        if (pythonRequirements.isNotEmpty) 'python',
+      },
+      pythonRequirements: pythonRequirements,
       plugins: fromYaml.plugins,
       configKeys: fromYaml.configKeys,
     );
   }
 
+  static Future<Map<String, String>> _readPythonRequirements(
+    _SkillDiskEntry skill,
+  ) async {
+    if (skill.entity is! Directory) return const <String, String>{};
+    final file =
+        File(path.join((skill.entity as Directory).path, 'requirements.txt'));
+    try {
+      if (!await file.exists()) return const <String, String>{};
+      final requirements = <String, String>{};
+      for (final rawLine in await file.readAsLines()) {
+        final parsed = _parsePythonRequirement(rawLine);
+        if (parsed != null) requirements[parsed.name] = parsed.raw;
+      }
+      return requirements;
+    } catch (error) {
+      debugPrint('[SkillParity] requirements read failed ${file.path}: $error');
+      return const <String, String>{};
+    }
+  }
+
+  static _PythonRequirementLine? _parsePythonRequirement(String rawLine) {
+    var line = rawLine.trim();
+    if (line.isEmpty || line.startsWith('#')) return null;
+    final hash = line.indexOf('#');
+    if (hash >= 0) line = line.substring(0, hash).trim();
+    if (line.isEmpty ||
+        line.startsWith('-') ||
+        line.startsWith('git+') ||
+        line.startsWith('http://') ||
+        line.startsWith('https://') ||
+        line == '.') {
+      return null;
+    }
+    final match = RegExp(r'^([A-Za-z0-9_.-]+)(?:\[[^\]]+\])?').firstMatch(line);
+    final value = match?.group(1);
+    if (value == null || value.isEmpty) return null;
+    return _PythonRequirementLine(
+      name: _normalizePythonPackageName(value),
+      raw: line,
+    );
+  }
+
+  static Future<Map<String, String>> _scanPythonPackages(
+    String nativeStateRoot,
+    _SkillDiskEntry skill,
+  ) async {
+    final roots = <Directory>[];
+    final managedPythonRoot = Directory(path.join(
+      nativeStateRoot,
+      'runtimes',
+      'python',
+    ));
+    if (await _validNativePythonBridge(
+      File(path.join(managedPythonRoot.path, 'bridge.json')),
+    )) {
+      roots.add(Directory(path.join(managedPythonRoot.path, 'site-packages')));
+    }
+    roots.add(Directory(path.join(nativeStateRoot, 'python', 'site-packages')));
+    if (skill.entity is Directory) {
+      final skillDir = skill.entity as Directory;
+      roots.addAll(await _findSitePackagesRoots(skillDir));
+      roots
+          .add(Directory(path.join(skillDir.path, '.python', 'site-packages')));
+      roots.add(Directory(path.join(skillDir.path, 'site-packages')));
+    }
+    final packages = <String, String>{};
+    for (final root in roots) {
+      try {
+        if (!await root.exists()) continue;
+        await for (final entity in root.list(recursive: false)) {
+          final name = path.basename(entity.path);
+          if (name.startsWith('.') || name.isEmpty) continue;
+          final lower = name.toLowerCase();
+          if (entity is Directory || entity is File) {
+            if (lower.endsWith('.dist-info') || lower.endsWith('.egg-info')) {
+              final metadata = entity is Directory
+                  ? await _readPythonPackageMetadata(entity)
+                  : const <String, String>{};
+              final parsed = _parsePythonDistInfoName(lower);
+              final packageName =
+                  metadata['name'] ?? parsed?.name ?? lower.split('-').first;
+              final version = metadata['version'] ?? parsed?.version ?? '';
+              packages[_normalizePythonPackageName(packageName)] = version;
+            } else if (!lower.contains('.')) {
+              packages.putIfAbsent(_normalizePythonPackageName(name), () => '');
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return packages;
+  }
+
+  static Future<bool> _pythonCompatibilityReceiptSatisfied(
+    String nativeStateRoot,
+    String packageName,
+    String requirement,
+    String installedVersion,
+  ) async {
+    final normalized = _normalizePythonPackageName(packageName);
+    final file = File(path.join(
+      nativeStateRoot,
+      'dependencies',
+      'receipts',
+      'python-wheels',
+      '$normalized.json',
+    ));
+    try {
+      if (!await file.exists()) return false;
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map) return false;
+      final receipt = Map<String, dynamic>.from(decoded);
+      return _normalizePythonPackageName(receipt['id']?.toString() ?? '') ==
+              normalized &&
+          receipt['version']?.toString() == installedVersion &&
+          receipt['python']?.toString() == _nativePythonRuntimeVersion &&
+          receipt['requestedRequirement']?.toString() == requirement &&
+          receipt['compatibilityOverride'] == true &&
+          receipt['smokePassed'] == true;
+    } catch (error) {
+      debugPrint(
+        '[SkillParity] compatibility receipt read failed '
+        '$packageName: $error',
+      );
+      return false;
+    }
+  }
+
+  static Future<Map<String, String>> _readPythonPackageMetadata(
+    Directory distInfo,
+  ) async {
+    final metadata = File(path.join(distInfo.path, 'METADATA'));
+    try {
+      if (!await metadata.exists()) return const <String, String>{};
+      final result = <String, String>{};
+      for (final line in await metadata.readAsLines()) {
+        if (line.trim().isEmpty) break;
+        final index = line.indexOf(':');
+        if (index <= 0) continue;
+        final key = line.substring(0, index).trim().toLowerCase();
+        if (key != 'name' && key != 'version') continue;
+        final value = line.substring(index + 1).trim();
+        if (value.isNotEmpty) result.putIfAbsent(key, () => value);
+      }
+      return result;
+    } catch (_) {
+      return const <String, String>{};
+    }
+  }
+
+  static _PythonInstalledPackage? _parsePythonDistInfoName(String name) {
+    final cleaned = name.replaceFirst(
+        RegExp(r'\.(dist|egg)-info$', caseSensitive: false), '');
+    final match =
+        RegExp(r'^(.+)-([0-9][A-Za-z0-9.!+_-]*)$').firstMatch(cleaned);
+    if (match == null) return null;
+    return _PythonInstalledPackage(
+      name: _normalizePythonPackageName(match.group(1) ?? ''),
+      version: match.group(2) ?? '',
+    );
+  }
+
+  static Future<List<Directory>> _findSitePackagesRoots(Directory root) async {
+    final results = <Directory>[];
+    Future<void> visit(Directory dir, int depth) async {
+      if (depth > 5) return;
+      try {
+        if (path.basename(dir.path) == 'site-packages') {
+          results.add(dir);
+          return;
+        }
+        await for (final entity in dir.list(recursive: false)) {
+          if (entity is Directory) {
+            final name = path.basename(entity.path);
+            if (name == '.venv' ||
+                name == 'lib' ||
+                name == 'lib64' ||
+                name.startsWith('python') ||
+                name == '__pypackages__' ||
+                RegExp(r'^\d+\.\d+$').hasMatch(name)) {
+              await visit(entity, depth + 1);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    await visit(Directory(path.join(root.path, '.venv')), 0);
+    await visit(Directory(path.join(root.path, '__pypackages__')), 0);
+    return results;
+  }
+
+  static String _normalizePythonPackageName(String value) =>
+      value.trim().toLowerCase().replaceAll('_', '-');
+
+  static String? _normalizeRequiredBin(String value) {
+    var normalized = value.trim();
+    if (normalized.isEmpty) return null;
+    normalized = normalized.split(RegExp(r'[/\\]')).last;
+    normalized = normalized.replaceFirst(
+      RegExp(r'\.(exe|cmd|bat|sh)$', caseSensitive: false),
+      '',
+    );
+    normalized = normalized.trim().toLowerCase();
+    return normalized.isEmpty ? null : normalized;
+  }
+
+  static bool _pythonRequirementSatisfied(
+    String installedVersion,
+    String requirement,
+  ) {
+    final constraints = _pythonVersionConstraints(requirement);
+    if (constraints.isEmpty) return true;
+    if (installedVersion.trim().isEmpty) return false;
+
+    for (final constraint in constraints) {
+      final operator = constraint.operator;
+      final required = constraint.version;
+      if (operator == '==') {
+        if (required.endsWith('.*')) {
+          final prefix = required.substring(0, required.length - 2);
+          if (!installedVersion.startsWith(prefix)) return false;
+        } else if (_compareVersions(installedVersion, required) != 0) {
+          return false;
+        }
+      } else if (operator == '!=') {
+        if (_compareVersions(installedVersion, required) == 0) return false;
+      } else if (operator == '>=') {
+        if (_compareVersions(installedVersion, required) < 0) return false;
+      } else if (operator == '>') {
+        if (_compareVersions(installedVersion, required) <= 0) return false;
+      } else if (operator == '<=') {
+        if (_compareVersions(installedVersion, required) > 0) return false;
+      } else if (operator == '<') {
+        if (_compareVersions(installedVersion, required) >= 0) return false;
+      } else if (operator == '~=') {
+        if (_compareVersions(installedVersion, required) < 0) return false;
+        final upper = _compatibleReleaseUpperBound(required);
+        if (upper != null && _compareVersions(installedVersion, upper) >= 0) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  static List<_PythonVersionConstraint> _pythonVersionConstraints(
+    String requirement,
+  ) {
+    final markerIndex = requirement.indexOf(';');
+    final withoutMarker =
+        markerIndex >= 0 ? requirement.substring(0, markerIndex) : requirement;
+    final constraints = <_PythonVersionConstraint>[];
+    final pattern = RegExp(r'(===|==|~=|!=|<=|>=|<|>)\s*([A-Za-z0-9.!+_*+-]+)');
+    for (final match in pattern.allMatches(withoutMarker)) {
+      final operator = match.group(1);
+      final version = match.group(2);
+      if (operator != null && version != null && version.isNotEmpty) {
+        constraints.add(_PythonVersionConstraint(operator, version));
+      }
+    }
+    return constraints;
+  }
+
+  static String? _compatibleReleaseUpperBound(String version) {
+    final parts = version
+        .split('.')
+        .where((part) => part.isNotEmpty)
+        .map((part) => int.tryParse(RegExp(r'^\d+').stringMatch(part) ?? ''))
+        .toList();
+    if (parts.isEmpty || parts.any((part) => part == null)) return null;
+    final numbers = parts.cast<int>().toList();
+    final bumpIndex = numbers.length > 2 ? numbers.length - 2 : 0;
+    numbers[bumpIndex] += 1;
+    for (var i = bumpIndex + 1; i < numbers.length; i++) {
+      numbers[i] = 0;
+    }
+    return numbers.join('.');
+  }
+
+  static int _compareVersions(String left, String right) {
+    final a = _versionParts(left);
+    final b = _versionParts(right);
+    final length = a.length > b.length ? a.length : b.length;
+    for (var i = 0; i < length; i++) {
+      final leftPart = i < a.length ? a[i] : 0;
+      final rightPart = i < b.length ? b[i] : 0;
+      if (leftPart != rightPart) return leftPart.compareTo(rightPart);
+    }
+    return 0;
+  }
+
+  static List<int> _versionParts(String version) {
+    final release = version
+        .split(RegExp(r'[+!-]'))
+        .first
+        .split(RegExp(r'[^0-9]+'))
+        .where((part) => part.isNotEmpty)
+        .map((part) => int.tryParse(part) ?? 0)
+        .toList();
+    return release.isEmpty ? const [0] : release;
+  }
+
   static Set<String> _detectRequiredBins(String body) {
     if (body.trim().isEmpty) return const <String>{};
     final bins = <String>{};
+    var inCommandFence = false;
     for (final line in body.split(RegExp(r'\r?\n'))) {
-      final lower = line.toLowerCase();
-      final highConfidence = lower.contains('required') ||
-          lower.contains('requires') ||
-          lower.contains('must install') ||
-          lower.contains('dependency') ||
-          lower.contains('binary') ||
-          lower.contains('command-line') ||
-          lower.contains('cli tool');
-      if (!highConfidence) continue;
+      final trimmed = line.trim();
+      final fence = trimmed.toLowerCase();
+      if (fence.startsWith('```')) {
+        if (inCommandFence) {
+          inCommandFence = false;
+        } else {
+          final language = fence.substring(3).trim();
+          inCommandFence = language.isEmpty ||
+              language == 'bash' ||
+              language == 'sh' ||
+              language == 'shell' ||
+              language == 'console' ||
+              language == 'terminal' ||
+              language == 'zsh';
+        }
+        continue;
+      }
+      if (!inCommandFence && !_looksLikeCommandInvocation(trimmed)) {
+        continue;
+      }
+      final lower = trimmed.toLowerCase();
       for (final bin in _knownBins) {
         final pattern = RegExp(
           r'(^|[^a-z0-9_-])' + RegExp.escape(bin) + r'([^a-z0-9_-]|$)',
@@ -447,6 +913,32 @@ class SkillParityAuditService {
       }
     }
     return bins;
+  }
+
+  static bool _looksLikeCommandInvocation(String line) {
+    var trimmed = line.trim();
+    if (trimmed.isEmpty || trimmed.startsWith('#')) return false;
+    if (trimmed.startsWith('- ')) trimmed = trimmed.substring(2).trim();
+    if (trimmed.startsWith('* ')) trimmed = trimmed.substring(2).trim();
+    if (trimmed.startsWith(r'$')) trimmed = trimmed.substring(1).trim();
+    if (trimmed.startsWith('> ')) trimmed = trimmed.substring(2).trim();
+    if (trimmed.startsWith('`') && trimmed.endsWith('`')) {
+      trimmed = trimmed.substring(1, trimmed.length - 1).trim();
+    }
+    if (trimmed.startsWith('sudo ')) trimmed = trimmed.substring(5).trim();
+    while (RegExp(r'^[A-Za-z_][A-Za-z0-9_]*=').hasMatch(trimmed)) {
+      final index = trimmed.indexOf(' ');
+      if (index < 0) return false;
+      trimmed = trimmed.substring(index + 1).trim();
+    }
+    final match = RegExp(r'^([A-Za-z0-9_./\\-]+)(?:\s|$)').firstMatch(trimmed);
+    var command = match?.group(1)?.toLowerCase();
+    if (command != null) {
+      command = command.split(RegExp(r'[/\\]')).last;
+      command = command.replaceFirst(
+          RegExp(r'\.(exe|cmd|bat|sh)$', caseSensitive: false), '');
+    }
+    return command != null && _knownBins.contains(command);
   }
 
   static Set<String> _detectRequiredEnv(String body) {
@@ -609,9 +1101,7 @@ class SkillParityAuditService {
   static bool _looksLikeExtendedRuntime(String value) {
     return value.contains('ubuntu') ||
         value.contains('linux') ||
-        value.contains('python') ||
         value.contains('apt') ||
-        value.contains('pip') ||
         value.contains('native-addon') ||
         value.contains('node-gyp');
   }
@@ -841,7 +1331,9 @@ class SkillParitySnapshot {
           (gate.gate == 'disabled' ||
               gate.gate == 'missing_manifest' ||
               gate.gate == 'missing_native_skill' ||
-              gate.gate == 'missing_native_bin'));
+              gate.gate == 'missing_native_bin' ||
+              gate.gate == 'missing_native_runtime' ||
+              gate.gate == 'missing_native_python_package'));
 
   String get compactLogLine {
     final parts = <String>[
@@ -994,6 +1486,8 @@ class SkillExecutionMatrixEntry {
   final List<String> requiredBins;
   final List<String> requiredEnv;
   final List<String> requiredRuntimes;
+  final List<String> requiredPythonPackages;
+  final Map<String, String> requiredPythonRequirements;
   final List<String> requiredPlugins;
   final List<String> requiredConfig;
 
@@ -1005,6 +1499,8 @@ class SkillExecutionMatrixEntry {
     required this.requiredBins,
     required this.requiredEnv,
     required this.requiredRuntimes,
+    required this.requiredPythonPackages,
+    this.requiredPythonRequirements = const <String, String>{},
     required this.requiredPlugins,
     required this.requiredConfig,
   });
@@ -1015,6 +1511,8 @@ class SkillExecutionMatrixEntry {
     required List<String> requiredBins,
     required List<String> requiredEnv,
     required List<String> requiredRuntimes,
+    required List<String> requiredPythonPackages,
+    Map<String, String> requiredPythonRequirements = const <String, String>{},
     required List<String> requiredPlugins,
     required List<String> requiredConfig,
   }) {
@@ -1028,6 +1526,9 @@ class SkillExecutionMatrixEntry {
       requiredBins: requiredBins,
       requiredEnv: requiredEnv,
       requiredRuntimes: requiredRuntimes,
+      requiredPythonPackages: requiredPythonPackages,
+      requiredPythonRequirements:
+          Map<String, String>.from(requiredPythonRequirements),
       requiredPlugins: requiredPlugins,
       requiredConfig: requiredConfig,
     );
@@ -1044,6 +1545,8 @@ class SkillExecutionMatrixEntry {
       return SkillExecutionStatus.needsConfig;
     }
     if (gates.contains('missing_native_bin') ||
+        gates.contains('missing_native_runtime') ||
+        gates.contains('missing_native_python_package') ||
         gates.contains('missing_native_plugin')) {
       return SkillExecutionStatus.missingDependency;
     }
@@ -1062,6 +1565,8 @@ class SkillExecutionMatrixEntry {
         'requiredBins': requiredBins,
         'requiredEnv': requiredEnv,
         'requiredRuntimes': requiredRuntimes,
+        'requiredPythonPackages': requiredPythonPackages,
+        'requiredPythonRequirements': requiredPythonRequirements,
         'requiredPlugins': requiredPlugins,
         'requiredConfig': requiredConfig,
       };
@@ -1071,6 +1576,7 @@ class _SkillRequirements {
   final Set<String> bins;
   final Set<String> env;
   final Set<String> runtimes;
+  final Map<String, String> pythonRequirements;
   final Set<String> plugins;
   final Set<String> configKeys;
 
@@ -1078,12 +1584,42 @@ class _SkillRequirements {
     this.bins = const <String>{},
     this.env = const <String>{},
     this.runtimes = const <String>{},
+    this.pythonRequirements = const <String, String>{},
     this.plugins = const <String>{},
     this.configKeys = const <String>{},
   });
 
+  Set<String> get pythonPackages => pythonRequirements.keys.toSet();
+
   bool get requiresExtendedRuntime =>
       runtimes.any(SkillParityAuditService._looksLikeExtendedRuntime);
+}
+
+class _PythonRequirementLine {
+  final String name;
+  final String raw;
+
+  const _PythonRequirementLine({
+    required this.name,
+    required this.raw,
+  });
+}
+
+class _PythonInstalledPackage {
+  final String name;
+  final String version;
+
+  const _PythonInstalledPackage({
+    required this.name,
+    required this.version,
+  });
+}
+
+class _PythonVersionConstraint {
+  final String operator;
+  final String version;
+
+  const _PythonVersionConstraint(this.operator, this.version);
 }
 
 class SkillParityGate {
@@ -1184,6 +1720,9 @@ class _SkillParityLayout {
           '.bin',
         )),
         Directory(path.join(nativeStateRoot, 'bin')),
+        Directory(path.join(nativeStateRoot, 'runtimes', 'python', 'bin')),
+        Directory('/system/bin'),
+        Directory('/system/xbin'),
       ];
   List<Directory> get prootBinRoots => [
         Directory(path.join(filesDir, 'rootfs', 'ubuntu', 'usr', 'bin')),

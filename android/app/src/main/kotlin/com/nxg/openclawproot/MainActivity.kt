@@ -48,6 +48,8 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
 import java.util.Locale
 
 class MainActivity : FlutterActivity() {
@@ -288,6 +290,19 @@ class MainActivity : FlutterActivity() {
                     } else {
                         result.error("INVALID_ARGS", "command required", null)
                     }
+                }
+                "runNativePython" -> {
+                    val payloadJson = call.argument<String>("payloadJson") ?: "{}"
+                    Thread {
+                        try {
+                            val output = runOpenClawNativePython(payloadJson)
+                            runOnUiThread { result.success(output) }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.error("NATIVE_PYTHON_ERROR", e.message, null)
+                            }
+                        }
+                    }.start()
                 }
                 "destroyShell" -> {
                     processManager.destroyShell()
@@ -965,6 +980,16 @@ class MainActivity : FlutterActivity() {
                 )
             }
         }
+    }
+
+    private fun runOpenClawNativePython(payloadJson: String): String {
+        if (!Python.isStarted()) {
+            Python.start(AndroidPlatform(applicationContext))
+        }
+        val py = Python.getInstance()
+        return py.getModule("openclaw_python_runner")
+            .callAttr("run", payloadJson)
+            .toString()
     }
 
     private fun speakNativeTts(text: String, speed: Float, result: MethodChannel.Result) {
