@@ -396,9 +396,7 @@ yfinance>=1.0.0
       sitePackages.path,
       'yfinance-1.4.1.dist-info',
       'METADATA',
-    ))
-        .create(recursive: true)
-        .then((file) => file.writeAsString('''
+    )).create(recursive: true).then((file) => file.writeAsString('''
 Name: yfinance
 Version: 1.4.1
 Requires-Dist: curl_cffi>=0.15
@@ -438,4 +436,228 @@ Body text that must not be parsed as headers.
       contains('curl-cffi'),
     );
   });
+
+  test('provisioning installs Native npm packages with transitive deps',
+      () async {
+    final temp = await Directory.systemTemp.createTemp('skill_provision_npm_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    await _writeNodeShim(nativeRoot);
+    await _writeNodeSkill(
+      nativeRoot,
+      skillId: 'node-skill',
+      dependencies: const {'left-pad': '^1.0.0'},
+    );
+
+    final leftPad = await _createNpmTarball(
+      temp,
+      name: 'left-pad',
+      version: '1.3.0',
+      dependencies: const {'pad-core': '~2.0.0'},
+    );
+    final padCore = await _createNpmTarball(
+      temp,
+      name: 'pad-core',
+      version: '2.0.1',
+    );
+    await _writeNodePackageManifest(nativeRoot, [leftPad, padCore]);
+
+    final before = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    expect(
+      before.executionMatrix
+          .singleWhere((entry) => entry.skillId == 'node-skill')
+          .gates,
+      contains('missing_native_node_package'),
+    );
+
+    final first = await SkillProvisioningService.instance.provisionSnapshot(
+      before,
+      skillId: 'node-skill',
+    );
+
+    expect(first.changed, isTrue);
+    expect(first.reloadRecommended, isTrue);
+    expect(first.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(
+      first.results.single.actions
+          .where((action) =>
+              action.type == SkillProvisioningActionType.nodePackage)
+          .map((action) => action.key),
+      containsAll(['left-pad', 'pad-core']),
+    );
+    expect(
+      await File(path.join(
+        nativeRoot,
+        'node_modules',
+        'left-pad',
+        'package.json',
+      )).exists(),
+      isTrue,
+    );
+    expect(
+      await File(path.join(
+        nativeRoot,
+        'dependencies',
+        'receipts',
+        'node-packages',
+        'left-pad.json',
+      )).exists(),
+      isTrue,
+    );
+
+    final after = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    expect(
+      after.executionMatrix
+          .singleWhere((entry) => entry.skillId == 'node-skill')
+          .status,
+      SkillExecutionStatus.ready,
+    );
+
+    final second = await SkillProvisioningService.instance.provisionSnapshot(
+      after,
+      skillId: 'node-skill',
+    );
+    expect(second.changed, isFalse);
+    expect(second.results.single.status, SkillProvisioningStatus.ready);
+  });
+
+  test('provisioning rejects bad npm package integrity without PRoot fallback',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_npm_bad_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    await _writeNodeShim(nativeRoot);
+    await _writeNodeSkill(
+      nativeRoot,
+      skillId: 'bad-node-skill',
+      dependencies: const {'bad-pkg': '^1.0.0'},
+    );
+
+    final badPkg = await _createNpmTarball(
+      temp,
+      name: 'bad-pkg',
+      version: '1.0.0',
+    );
+    await _writeNodePackageManifest(nativeRoot, [
+      {...badPkg, 'integrity': 'sha512-${base64.encode(List.filled(64, 7))}'},
+    ]);
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      snapshot,
+      skillId: 'bad-node-skill',
+    );
+    final result = report.results.single;
+
+    expect(result.status, SkillProvisioningStatus.missingDependency);
+    expect(
+      result.actions.map((action) => action.status),
+      contains(SkillProvisioningActionStatus.failedVerification),
+    );
+    expect(
+      result.actions.map((action) => action.message).join('\n'),
+      contains('PRoot was not used'),
+    );
+    expect(
+      await File(path.join(
+        nativeRoot,
+        'node_modules',
+        'bad-pkg',
+        'package.json',
+      )).exists(),
+      isFalse,
+    );
+  });
+}
+
+Future<void> _writeNodeShim(String nativeRoot) async {
+  final node = File(path.join(nativeRoot, 'bin', 'node'));
+  await node.create(recursive: true);
+  await node.writeAsString('native node shim');
+}
+
+Future<void> _writeNodeSkill(
+  String nativeRoot, {
+  required String skillId,
+  required Map<String, String> dependencies,
+}) async {
+  final skill =
+      Directory(path.join(nativeRoot, 'workspace', 'skills', skillId));
+  await skill.create(recursive: true);
+  await File(path.join(skill.path, 'SKILL.md')).writeAsString('# $skillId\n');
+  await File(path.join(skill.path, 'index.js')).writeAsString(
+    'export function execute(input) { return input; }\n',
+  );
+  await File(path.join(skill.path, 'package.json')).writeAsString(jsonEncode({
+    'name': skillId,
+    'version': '1.0.0',
+    'main': 'index.js',
+    'dependencies': dependencies,
+  }));
+}
+
+Future<Map<String, dynamic>> _createNpmTarball(
+  Directory root, {
+  required String name,
+  required String version,
+  Map<String, String> dependencies = const <String, String>{},
+}) async {
+  final packageJson = utf8.encode(jsonEncode({
+    'name': name,
+    'version': version,
+    'main': 'index.js',
+    if (dependencies.isNotEmpty) 'dependencies': dependencies,
+  }));
+  final index = utf8.encode('module.exports = {};\n');
+  final archive = Archive()
+    ..addFile(
+        ArchiveFile('package/package.json', packageJson.length, packageJson))
+    ..addFile(ArchiveFile('package/index.js', index.length, index));
+  final tarBytes = TarEncoder().encode(archive);
+  final tgzBytes = GZipEncoder().encode(tarBytes);
+  final file = File(path.join(root.path, '$name-$version.tgz'));
+  await file.writeAsBytes(tgzBytes, flush: true);
+  return {
+    'name': name,
+    'version': version,
+    'url': Uri.file(file.path).toString(),
+    'integrity':
+        'sha512-${base64.encode(crypto.sha512.convert(tgzBytes).bytes)}',
+    if (dependencies.isNotEmpty) 'dependencies': dependencies,
+  };
+}
+
+Future<void> _writeNodePackageManifest(
+  String nativeRoot,
+  List<Map<String, dynamic>> packages,
+) async {
+  final manifest =
+      File(path.join(nativeRoot, 'dependencies', 'node_packages.json'));
+  await manifest.create(recursive: true);
+  await manifest.writeAsString(jsonEncode({'packages': packages}));
 }

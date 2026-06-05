@@ -79,6 +79,11 @@
             android:process=":native_node_smoke" />
 
         <service
+            android:name=".NativeNodeSkillRunnerService"
+            android:exported="false"
+            android:process=":native_node_runner" />
+
+        <service
             android:name=".PlawieForegroundService"
             android:exported="false"
             android:foregroundServiceType="specialUse" />

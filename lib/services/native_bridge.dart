@@ -73,6 +73,18 @@ class NativeBridge {
     };
   }
 
+  static Future<bool> startNativeNodeSkillRunnerRuntime() async {
+    return await _channel.invokeMethod('startNativeNodeSkillRunnerRuntime');
+  }
+
+  static Future<bool> stopNativeNodeSkillRunnerRuntime() async {
+    return await _channel.invokeMethod('stopNativeNodeSkillRunnerRuntime');
+  }
+
+  static Future<String> getNativeNodeSkillRunnerRuntimeLogs() async {
+    return await _channel.invokeMethod('getNativeNodeSkillRunnerRuntimeLogs');
+  }
+
   static Future<bool> extractRootfs(String tarPath) async {
     return await _channel.invokeMethod('extractRootfs', {'tarPath': tarPath});
   }

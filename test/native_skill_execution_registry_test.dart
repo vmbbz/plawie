@@ -186,6 +186,64 @@ curl -X POST -H "Content-Type: application/json" -d '{"durationMs": 200}' http:/
     expect(descriptor.dependencies.nodePackages, ['left-pad']);
     expect(descriptor.methods.single.name, 'pad');
   });
+
+  test('registry executes Node module descriptor through NativeNodeRunner',
+      () async {
+    final temp = await Directory.systemTemp.createTemp('node_skill_exec_');
+    addTearDown(() => temp.delete(recursive: true));
+    final skillDir = Directory(
+      '${temp.path}/native-node-embedded/native-home/.openclaw/workspace/skills/nodeish',
+    );
+    await skillDir.create(recursive: true);
+    await File('${skillDir.path}/package.json').writeAsString(jsonEncode({
+      'main': 'index.js',
+      'openclaw': {
+        'methods': [
+          {'name': 'echo'}
+        ],
+      },
+    }));
+    await File('${skillDir.path}/index.js')
+        .writeAsString('export function echo(input) { return input; }');
+
+    Map<String, dynamic>? capturedPayload;
+    final registry = NativeSkillExecutionRegistry(
+      filesDirProvider: () async => temp.path,
+      pythonRunner: (_) async => const <String, dynamic>{},
+      nodeRunner: (payload) async {
+        capturedPayload = payload;
+        return {
+          'ok': true,
+          'data': {
+            'responses': [
+              {
+                'ok': true,
+                'data': {'message': 'hi'}
+              }
+            ],
+          },
+        };
+      },
+    );
+    final descriptor = await registry.descriptorForSkill('nodeish');
+
+    final result = await registry.execute(
+      descriptor: descriptor!,
+      actions: const [
+        SkillExecutionAction(
+          label: 'echo',
+          method: 'echo',
+          args: {'message': 'hi'},
+        ),
+      ],
+    );
+
+    expect(result.ok, isTrue);
+    expect(result.data?['responses'], isA<List>());
+    expect(capturedPayload?['cwd'], skillDir.path);
+    expect(capturedPayload?['entrypoint'], 'index.js');
+    expect(capturedPayload?['actions'].toString(), contains('message'));
+  });
 }
 
 Future<void> _createStocksScript(Directory filesDir) async {

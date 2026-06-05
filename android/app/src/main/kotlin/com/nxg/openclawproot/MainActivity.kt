@@ -419,6 +419,17 @@ class MainActivity : FlutterActivity() {
                 "getNativeNodeSmokeRuntimeLogs" -> {
                     result.success(nativeNodeSmokeProcess.getRecentLogs())
                 }
+                "startNativeNodeSkillRunnerRuntime" -> {
+                    result.success(NativeNodeSkillRunnerService.start(applicationContext))
+                }
+                "stopNativeNodeSkillRunnerRuntime" -> {
+                    result.success(NativeNodeSkillRunnerService.stop(applicationContext))
+                }
+                "getNativeNodeSkillRunnerRuntimeLogs" -> {
+                    result.success(
+                        NativeNodeSkillRunnerService.getRecentLogs(applicationContext)
+                    )
+                }
                 "startTerminalService" -> {
                     try {
                         TerminalSessionService.start(applicationContext)

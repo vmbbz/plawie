@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'native_bridge.dart';
+import 'native_node_skill_runner.dart';
 import 'native_skill_adapter.dart';
 import 'native_skill_execution_registry.dart';
 import 'openclaw_service.dart';
@@ -46,20 +47,24 @@ class NativeClawHubSkillExecutionService {
       NativeClawHubSkillExecutionService._internal();
 
   final NativePythonRunner _pythonRunner;
+  final NativeNodeRunner? _nodeRunner;
   final Future<String> Function() _filesDirProvider;
   final Future<bool> Function() _nativeOwnerProvider;
 
   NativeClawHubSkillExecutionService._internal()
       : _pythonRunner = NativeBridge.runNativePython,
+        _nodeRunner = NativeNodeSkillRunner.instance.run,
         _filesDirProvider = NativeBridge.getFilesDir,
         _nativeOwnerProvider = OpenClawCommandService.isNativeOwnerSelected;
 
   @visibleForTesting
   NativeClawHubSkillExecutionService.test({
     required NativePythonRunner pythonRunner,
+    NativeNodeRunner? nodeRunner,
     required Future<String> Function() filesDirProvider,
     Future<bool> Function()? nativeOwnerProvider,
   })  : _pythonRunner = pythonRunner,
+        _nodeRunner = nodeRunner,
         _filesDirProvider = filesDirProvider,
         _nativeOwnerProvider = nativeOwnerProvider ?? (() async => true);
 
@@ -139,6 +144,7 @@ class NativeClawHubSkillExecutionService {
   }) async {
     final registry = NativeSkillExecutionRegistry(
       pythonRunner: _pythonRunner,
+      nodeRunner: _nodeRunner,
       filesDirProvider: _filesDirProvider,
     );
     final descriptor = await registry.descriptorForSkill(skillId);

@@ -179,7 +179,7 @@ class SkillProvisioningService {
       'missing_native_python_package',
       fallback: entry.requiredPythonPackages,
     );
-    final missingNodePackages = _gateValues(
+    var missingNodePackages = _gateValues(
       snapshot,
       entry,
       'missing_native_node_package',
@@ -353,6 +353,22 @@ class SkillProvisioningService {
       ));
     }
 
+    if (missingNodePackages.isNotEmpty) {
+      final nodeResult = await _provisionNodePackages(
+        entry,
+        layout,
+        missingNodePackages: missingNodePackages,
+        apply: applyValues && installDependencyPacks,
+      );
+      actions.addAll(nodeResult.actions);
+      changed = changed || nodeResult.changed;
+      reloadRecommended = reloadRecommended || nodeResult.reloadRecommended;
+      missingNodePackages = missingNodePackages
+          .where((package) => !nodeResult.satisfiedNodePackages
+              .contains(_normalizeNodePackageName(package)))
+          .toList();
+    }
+
     for (final package in missingPythonPackages) {
       pythonPackagesFullySatisfied = false;
       actions.add(SkillProvisioningAction(
@@ -371,7 +387,7 @@ class SkillProvisioningService {
         key: package,
         status: SkillProvisioningActionStatus.missingDependency,
         message:
-            '$package is required by package.json but is not installed in Native node_modules. Native npm package provisioning is required; PRoot was not used.',
+            '$package is required by package.json but could not be installed in Native node_modules. PRoot was not used.',
       ));
     }
 
@@ -735,6 +751,693 @@ class SkillProvisioningService {
       changed: changed,
       reloadRecommended: reloadRecommended,
     );
+  }
+
+  static Future<_NodeProvisioningResult> _provisionNodePackages(
+    SkillExecutionMatrixEntry entry,
+    _SkillProvisioningLayout layout, {
+    required List<String> missingNodePackages,
+    required bool apply,
+  }) async {
+    final actions = <SkillProvisioningAction>[];
+    final satisfiedPackages = <String>{};
+    final rootPackages =
+        missingNodePackages.map(_normalizeNodePackageName).toSet();
+    final rootRequirements = await _readNodePackageRequirementsForEntry(entry);
+    final queue = <_NodePackageRequest>[
+      for (final package in rootPackages)
+        _NodePackageRequest(
+          name: package,
+          raw: rootRequirements[package] ?? '*',
+          root: true,
+          rootPackage: package,
+        ),
+    ];
+    final catalog = await _loadNodePackageCatalog(layout);
+    final processed = <String>{};
+    final unresolvedPackages = <String>{};
+    final unresolvedRootPackages = <String>{};
+    var changed = false;
+    var reloadRecommended = false;
+    var iterations = 0;
+
+    void markUnresolved(_NodePackageRequest request) {
+      unresolvedPackages.add(request.name);
+      unresolvedRootPackages.add(request.rootPackage ?? request.name);
+    }
+
+    Future<void> enqueueInstalledDependencies(
+      _NodePackageRequest request,
+    ) async {
+      final dependencies = await _readInstalledNodePackageDependencies(
+        layout,
+        request.name,
+      );
+      for (final dependency in dependencies.entries) {
+        final normalized = _normalizeNodePackageName(dependency.key);
+        if (await _nodePackageMarkerPresent(layout, normalized)) {
+          continue;
+        }
+        queue.add(_NodePackageRequest(
+          name: normalized,
+          raw: dependency.value,
+          root: false,
+          rootPackage: request.rootPackage ?? request.name,
+        ));
+      }
+    }
+
+    while (queue.isNotEmpty && iterations < 240) {
+      iterations += 1;
+      final request = queue.removeAt(0);
+      final key = '${request.name}:${request.raw}';
+      if (!processed.add(key)) continue;
+
+      final installed = await _readInstalledNodePackageVersion(
+        layout,
+        request.name,
+      );
+      if (installed != null &&
+          _nodeRequirementSatisfied(installed, request.raw)) {
+        if (rootPackages.contains(request.name)) {
+          satisfiedPackages.add(request.name);
+        }
+        await enqueueInstalledDependencies(request);
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.nodePackage,
+          key: request.name,
+          status: SkillProvisioningActionStatus.ready,
+          message: 'Node package ${request.name} $installed already installed.',
+        ));
+        continue;
+      }
+
+      if (!apply) {
+        markUnresolved(request);
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.nodePackage,
+          key: request.name,
+          status: SkillProvisioningActionStatus.missingDependency,
+          message:
+              'Node package provisioning can satisfy ${request.name}@${request.raw} when dependency repair is applied.',
+        ));
+        continue;
+      }
+
+      final receipt = await _readNodePackageReceipt(layout, request.name);
+      if (receipt != null &&
+          _nodeRequirementSatisfied(receipt.version, request.raw) &&
+          await _nodePackageMarkerPresent(layout, request.name)) {
+        if (rootPackages.contains(request.name)) {
+          satisfiedPackages.add(request.name);
+        }
+        await enqueueInstalledDependencies(request);
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.nodePackage,
+          key: request.name,
+          status: SkillProvisioningActionStatus.ready,
+          message:
+              'Node package ${request.name} ${receipt.version} already installed from receipt.',
+        ));
+        continue;
+      }
+
+      final candidate =
+          await _resolveNodePackageCandidate(request, catalog: catalog);
+      if (candidate == null) {
+        markUnresolved(request);
+        debugPrint(
+          '[DEPS] no compatible npm package skill=${entry.skillId} '
+          'package=${request.name} range=${request.raw}',
+        );
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.nodePackage,
+          key: request.name,
+          status: SkillProvisioningActionStatus.missingPack,
+          message:
+              'No compatible Native npm package tarball found for ${request.name}@${request.raw}.',
+        ));
+        continue;
+      }
+
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.nodePackage,
+        key: request.name,
+        status: SkillProvisioningActionStatus.downloading,
+        message:
+            'Downloading npm package ${candidate.name}@${candidate.version} from ${candidate.url.host.isEmpty ? candidate.url.scheme : candidate.url.host}.',
+      ));
+      debugPrint(
+        '[DEPS] npm requested skill=${entry.skillId} '
+        'package=${candidate.name} version=${candidate.version}',
+      );
+
+      final install = await _downloadAndInstallNodePackage(
+        layout,
+        request,
+        candidate,
+      );
+      actions.add(install.action);
+      if (!install.ok) {
+        markUnresolved(request);
+        continue;
+      }
+
+      changed = true;
+      reloadRecommended = true;
+      if (rootPackages.contains(request.name)) {
+        satisfiedPackages.add(request.name);
+      }
+      for (final dependency in install.dependencies.entries) {
+        final normalized = _normalizeNodePackageName(dependency.key);
+        if (await _nodePackageMarkerPresent(layout, normalized)) {
+          continue;
+        }
+        queue.add(_NodePackageRequest(
+          name: normalized,
+          raw: dependency.value,
+          root: false,
+          rootPackage: request.rootPackage ?? request.name,
+        ));
+      }
+    }
+
+    if (queue.isNotEmpty) {
+      for (final request in queue) {
+        markUnresolved(request);
+      }
+      actions.add(const SkillProvisioningAction(
+        type: SkillProvisioningActionType.nodePackage,
+        key: 'dependency-closure',
+        status: SkillProvisioningActionStatus.missingDependency,
+        message:
+            'Node package dependency closure exceeded the safety limit while resolving npm tarballs.',
+      ));
+    }
+
+    if (unresolvedRootPackages.isNotEmpty) {
+      satisfiedPackages.removeAll(unresolvedRootPackages);
+      final roots = unresolvedRootPackages.toList()..sort();
+      final unresolved = unresolvedPackages.toList()..sort();
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.nodePackage,
+        key: 'dependency-closure',
+        status: SkillProvisioningActionStatus.missingDependency,
+        message: 'Node dependency closure is incomplete for '
+            '${roots.join(', ')}; unresolved packages: '
+            '${unresolved.join(', ')}.',
+      ));
+    }
+
+    return _NodeProvisioningResult(
+      actions: actions,
+      satisfiedNodePackages: satisfiedPackages,
+      changed: changed,
+      reloadRecommended: reloadRecommended,
+    );
+  }
+
+  static Future<Map<String, String>> _readNodePackageRequirementsForEntry(
+    SkillExecutionMatrixEntry entry,
+  ) async {
+    final descriptor = entry.executionDescriptor;
+    final root = descriptor?.rootPath;
+    if (root == null || root.trim().isEmpty) return const <String, String>{};
+    final file = File(path.join(root, 'package.json'));
+    final decoded = await _readJson(file);
+    if (decoded == null) return const <String, String>{};
+    return _nodeDependencyMap(decoded);
+  }
+
+  static Future<List<_NodePackageCandidate>> _loadNodePackageCatalog(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final manifest = await _readJson(layout.nodePackageManifestFile);
+    final rawPackages = manifest?['packages'] ?? manifest?['items'];
+    if (rawPackages is! List) return const <_NodePackageCandidate>[];
+    final candidates = <_NodePackageCandidate>[];
+    for (final item in rawPackages) {
+      if (item is! Map) continue;
+      final candidate =
+          _NodePackageCandidate.fromJson(Map<String, dynamic>.from(item));
+      if (candidate != null) candidates.add(candidate);
+    }
+    return candidates;
+  }
+
+  static Future<_NodePackageCandidate?> _resolveNodePackageCandidate(
+    _NodePackageRequest request, {
+    required List<_NodePackageCandidate> catalog,
+  }) async {
+    final local = catalog
+        .where((candidate) =>
+            candidate.name == request.name &&
+            _nodeRequirementSatisfied(candidate.version, request.raw))
+        .toList()
+      ..sort((a, b) => _compareVersions(b.version, a.version));
+    if (local.isNotEmpty) return local.first;
+
+    final encodedName = request.name.startsWith('@')
+        ? request.name.replaceFirst('/', '%2f')
+        : Uri.encodeComponent(request.name);
+    final registry = Uri.parse(
+      const String.fromEnvironment(
+        'OPENCLAW_NPM_REGISTRY',
+        defaultValue: 'https://registry.npmjs.org/',
+      ),
+    );
+    final packageUri = registry.resolve(encodedName);
+    try {
+      final response =
+          await http.get(packageUri).timeout(const Duration(seconds: 12));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) return null;
+      final metadata = Map<String, dynamic>.from(decoded);
+      final versions = metadata['versions'];
+      if (versions is! Map) return null;
+      final candidates = <_NodePackageCandidate>[];
+      for (final entry in versions.entries) {
+        if (entry.value is! Map) continue;
+        final version = entry.key.toString();
+        if (!_nodeRequirementSatisfied(version, request.raw)) continue;
+        final item = Map<String, dynamic>.from(entry.value as Map);
+        final dist = item['dist'] is Map
+            ? Map<String, dynamic>.from(item['dist'] as Map)
+            : const <String, dynamic>{};
+        final tarball = dist['tarball']?.toString();
+        if (tarball == null || tarball.isEmpty) continue;
+        candidates.add(_NodePackageCandidate(
+          name: request.name,
+          version: version,
+          url: Uri.parse(tarball),
+          integrity: dist['integrity']?.toString(),
+          shasum: dist['shasum']?.toString(),
+          dependencies: _nodeDependencyMap(item),
+          maxBytes: (item['openclawMaxBytes'] as num?)?.toInt(),
+        ));
+      }
+      candidates.sort((a, b) => _compareVersions(b.version, a.version));
+      return candidates.isEmpty ? null : candidates.first;
+    } catch (error) {
+      debugPrint('[DEPS] npm registry unavailable $packageUri: $error');
+      return null;
+    }
+  }
+
+  static Future<_NodePackageInstallResult> _downloadAndInstallNodePackage(
+    _SkillProvisioningLayout layout,
+    _NodePackageRequest request,
+    _NodePackageCandidate candidate,
+  ) async {
+    Directory? backup;
+    final target = layout.nodePackageInstallDir(candidate.name);
+    try {
+      await layout.nodeModulesDir.create(recursive: true);
+      await layout.dependencyTmpDir.create(recursive: true);
+      final bytes = await _readDependencyPackBytes(candidate.url.toString());
+      if (candidate.maxBytes != null && bytes.length > candidate.maxBytes!) {
+        throw StateError(
+          'Package ${candidate.name} exceeds maxBytes=${candidate.maxBytes}.',
+        );
+      }
+      final verification = _verifyNodePackageBytes(candidate, bytes);
+      if (verification != null) {
+        return _NodePackageInstallResult(
+          ok: false,
+          dependencies: const <String, String>{},
+          action: SkillProvisioningAction(
+            type: SkillProvisioningActionType.nodePackage,
+            key: request.name,
+            status: SkillProvisioningActionStatus.failedVerification,
+            message: verification,
+          ),
+        );
+      }
+
+      final stage = Directory(path.join(
+        layout.dependencyTmpDir.path,
+        'npm-${candidate.safeId}-${DateTime.now().microsecondsSinceEpoch}',
+      ));
+      await stage.create(recursive: true);
+      try {
+        final archive =
+            TarDecoder().decodeBytes(GZipDecoder().decodeBytes(bytes));
+        for (final archiveFile in archive.files) {
+          final stripped = _stripNpmPackagePrefix(archiveFile.name);
+          if (stripped == null) continue;
+          final targetPath = path.normalize(path.join(stage.path, stripped));
+          if (!path.isWithin(stage.path, targetPath) &&
+              path.normalize(stage.path) != targetPath) {
+            throw StateError('Unsafe npm package path: ${archiveFile.name}');
+          }
+          if (archiveFile.isFile) {
+            final file = File(targetPath);
+            await file.parent.create(recursive: true);
+            await file.writeAsBytes(
+              archiveFile.content as List<int>,
+              flush: true,
+            );
+          } else {
+            await Directory(targetPath).create(recursive: true);
+          }
+        }
+
+        final packageJson = File(path.join(stage.path, 'package.json'));
+        if (!await packageJson.exists()) {
+          throw StateError('npm tarball missing package.json');
+        }
+        final installedJson = await _readJson(packageJson);
+        final installedName = _normalizeNodePackageName(
+          installedJson?['name']?.toString() ?? candidate.name,
+        );
+        final installedVersion =
+            installedJson?['version']?.toString() ?? candidate.version;
+        if (installedName != candidate.name) {
+          throw StateError(
+            'npm tarball name "$installedName" does not match ${candidate.name}',
+          );
+        }
+        if (!_nodeRequirementSatisfied(installedVersion, request.raw)) {
+          throw StateError(
+            'npm tarball version "$installedVersion" does not satisfy ${request.raw}',
+          );
+        }
+
+        if (await target.exists()) {
+          backup = Directory(path.join(
+            layout.dependencyTmpDir.path,
+            'npm-backup-${candidate.safeId}-${DateTime.now().microsecondsSinceEpoch}',
+          ));
+          await target.rename(backup.path);
+        }
+        await target.parent.create(recursive: true);
+        await stage.rename(target.path);
+
+        final dependencies = {
+          ...candidate.dependencies,
+          ..._nodeDependencyMap(installedJson ?? const <String, dynamic>{}),
+        };
+        await _writeNodePackageReceipt(
+          layout,
+          request,
+          candidate,
+          installedVersion: installedVersion,
+          dependencies: dependencies,
+        );
+        if (backup != null && await backup.exists()) {
+          await backup.delete(recursive: true);
+        }
+        debugPrint(
+          '[DEPS] npm installed package=${candidate.name} version=$installedVersion',
+        );
+        return _NodePackageInstallResult(
+          ok: true,
+          dependencies: dependencies,
+          action: SkillProvisioningAction(
+            type: SkillProvisioningActionType.nodePackage,
+            key: request.name,
+            status: SkillProvisioningActionStatus.installed,
+            message:
+                'Node package ${candidate.name} $installedVersion installed from verified npm tarball.',
+            changed: true,
+          ),
+        );
+      } finally {
+        if (await stage.exists()) {
+          try {
+            await stage.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
+    } catch (error) {
+      if (backup != null && await backup.exists() && !await target.exists()) {
+        try {
+          await backup.rename(target.path);
+        } catch (_) {}
+      }
+      debugPrint(
+        '[DEPS] npm install failed ${candidate.name}@${candidate.version}: $error',
+      );
+      return _NodePackageInstallResult(
+        ok: false,
+        dependencies: const <String, String>{},
+        action: SkillProvisioningAction(
+          type: SkillProvisioningActionType.nodePackage,
+          key: request.name,
+          status: SkillProvisioningActionStatus.missingDependency,
+          message:
+              'Node package ${candidate.name}@${candidate.version} could not be installed: $error',
+        ),
+      );
+    }
+  }
+
+  static String? _verifyNodePackageBytes(
+    _NodePackageCandidate candidate,
+    List<int> bytes,
+  ) {
+    final integrity = candidate.integrity?.trim();
+    if (integrity != null && integrity.isNotEmpty) {
+      final parts = integrity.split('-');
+      if (parts.length == 2) {
+        final algorithm = parts[0].toLowerCase();
+        final expected = parts[1];
+        final digest = switch (algorithm) {
+          'sha512' => crypto.sha512.convert(bytes).bytes,
+          'sha384' => crypto.sha384.convert(bytes).bytes,
+          'sha256' => crypto.sha256.convert(bytes).bytes,
+          'sha1' => crypto.sha1.convert(bytes).bytes,
+          _ => const <int>[],
+        };
+        if (digest.isNotEmpty && base64.encode(digest) != expected) {
+          return 'Integrity verification failed for npm package ${candidate.name}.';
+        }
+      }
+    }
+    if (candidate.sha512 != null && candidate.sha512!.isNotEmpty) {
+      final digest = crypto.sha512.convert(bytes).toString();
+      if (digest.toLowerCase() != candidate.sha512) {
+        return 'SHA512 verification failed for npm package ${candidate.name}.';
+      }
+    }
+    if (candidate.sha256 != null && candidate.sha256!.isNotEmpty) {
+      final digest = crypto.sha256.convert(bytes).toString();
+      if (digest.toLowerCase() != candidate.sha256) {
+        return 'SHA256 verification failed for npm package ${candidate.name}.';
+      }
+    }
+    if (candidate.shasum != null && candidate.shasum!.isNotEmpty) {
+      final digest = crypto.sha1.convert(bytes).toString();
+      if (digest.toLowerCase() != candidate.shasum) {
+        return 'SHA1 shasum verification failed for npm package ${candidate.name}.';
+      }
+    }
+    return null;
+  }
+
+  static String? _stripNpmPackagePrefix(String rawName) {
+    final normalized = rawName.replaceAll('\\', '/');
+    if (normalized.isEmpty || normalized == 'package') return null;
+    final parts =
+        normalized.split('/').where((part) => part.isNotEmpty).toList();
+    if (parts.isEmpty) return null;
+    if (parts.first == 'package') parts.removeAt(0);
+    if (parts.isEmpty) return null;
+    if (parts.any((part) => part == '..' || part.contains(':'))) return null;
+    return parts.join('/');
+  }
+
+  static Future<String?> _readInstalledNodePackageVersion(
+    _SkillProvisioningLayout layout,
+    String packageName,
+  ) async {
+    final json = await _readJson(
+      File(path.join(
+          layout.nodePackageInstallDir(packageName).path, 'package.json')),
+    );
+    return json?['version']?.toString();
+  }
+
+  static Future<Map<String, String>> _readInstalledNodePackageDependencies(
+    _SkillProvisioningLayout layout,
+    String packageName,
+  ) async {
+    final json = await _readJson(
+      File(path.join(
+          layout.nodePackageInstallDir(packageName).path, 'package.json')),
+    );
+    return _nodeDependencyMap(json ?? const <String, dynamic>{});
+  }
+
+  static Future<bool> _nodePackageMarkerPresent(
+    _SkillProvisioningLayout layout,
+    String packageName,
+  ) async {
+    return File(
+      path.join(layout.nodePackageInstallDir(packageName).path, 'package.json'),
+    ).exists();
+  }
+
+  static Future<_DependencyPackReceipt?> _readNodePackageReceipt(
+    _SkillProvisioningLayout layout,
+    String packageName,
+  ) async {
+    final file = File(path.join(
+      layout.nodePackageReceiptDir.path,
+      '${_nodePackageReceiptName(packageName)}.json',
+    ));
+    final json = await _readJson(file);
+    return json == null ? null : _DependencyPackReceipt.fromJson(json);
+  }
+
+  static Future<void> _writeNodePackageReceipt(
+    _SkillProvisioningLayout layout,
+    _NodePackageRequest request,
+    _NodePackageCandidate candidate, {
+    required String installedVersion,
+    required Map<String, String> dependencies,
+  }) async {
+    await layout.nodePackageReceiptDir.create(recursive: true);
+    await File(path.join(
+      layout.nodePackageReceiptDir.path,
+      '${_nodePackageReceiptName(candidate.name)}.json',
+    )).writeAsString(
+      '${const JsonEncoder.withIndent('  ').convert({
+            'id': candidate.name,
+            'version': installedVersion,
+            'sha256': candidate.sha256 ?? '',
+            'sha512': candidate.sha512 ?? '',
+            'shasum': candidate.shasum ?? '',
+            'integrity': candidate.integrity ?? '',
+            'source': 'npm',
+            'url': candidate.url.toString(),
+            'requestedRequirement': request.raw,
+            'dependencies': dependencies,
+            'installedAt': DateTime.now().toIso8601String(),
+          })}\n',
+      flush: true,
+    );
+  }
+
+  static Map<String, String> _nodeDependencyMap(Map<String, dynamic> json) {
+    final dependencies = <String, String>{};
+    for (final sectionName in const ['dependencies', 'optionalDependencies']) {
+      final section = json[sectionName];
+      if (section is! Map) continue;
+      for (final entry in section.entries) {
+        final name = _normalizeNodePackageName(entry.key.toString());
+        final range = entry.value?.toString().trim() ?? '*';
+        if (_nodePackageNameLooksSafe(name)) {
+          dependencies[name] = range.isEmpty ? '*' : range;
+        }
+      }
+    }
+    return dependencies;
+  }
+
+  static bool _nodeRequirementSatisfied(String version, String requirement) {
+    final raw = requirement.trim();
+    if (raw.isEmpty ||
+        raw == '*' ||
+        raw == 'latest' ||
+        raw == 'x' ||
+        raw == 'X') {
+      return true;
+    }
+    if (raw.contains('||')) {
+      return raw
+          .split('||')
+          .any((part) => _nodeRequirementSatisfied(version, part));
+    }
+    final parts = raw
+        .split(RegExp(r'\s+'))
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.length > 1) {
+      return parts.every((part) => _nodeRequirementSatisfied(version, part));
+    }
+    final single = parts.isEmpty ? raw : parts.single;
+    if (single.startsWith('^')) {
+      return _nodeCaretRequirementSatisfied(version, single.substring(1));
+    }
+    if (single.startsWith('~')) {
+      return _nodeTildeRequirementSatisfied(version, single.substring(1));
+    }
+    final match = RegExp(r'^(>=|<=|>|<|=)?\s*([0-9][A-Za-z0-9.!+_*xX-]*)$')
+        .firstMatch(single);
+    if (match == null) return true;
+    final operator = match.group(1) ?? '=';
+    final required = match.group(2) ?? '';
+    if (required.contains('*') ||
+        required.toLowerCase().contains('x') ||
+        required.isEmpty) {
+      return true;
+    }
+    final comparison = _compareVersions(version, required);
+    return switch (operator) {
+      '>=' => comparison >= 0,
+      '>' => comparison > 0,
+      '<=' => comparison <= 0,
+      '<' => comparison < 0,
+      '=' => comparison == 0,
+      _ => comparison == 0,
+    };
+  }
+
+  static bool _nodeCaretRequirementSatisfied(String version, String required) {
+    if (!_nodeRequirementSatisfied(version, '>=$required')) return false;
+    final parts = _versionParts(required);
+    if (parts.isEmpty) return true;
+    final upper = <int>[...parts];
+    if (upper[0] > 0) {
+      upper[0] += 1;
+      for (var i = 1; i < upper.length; i++) {
+        upper[i] = 0;
+      }
+    } else if (upper.length > 1 && upper[1] > 0) {
+      upper[1] += 1;
+      for (var i = 2; i < upper.length; i++) {
+        upper[i] = 0;
+      }
+    } else if (upper.length > 2) {
+      upper[2] += 1;
+    } else {
+      return true;
+    }
+    return _compareVersions(version, upper.join('.')) < 0;
+  }
+
+  static bool _nodeTildeRequirementSatisfied(String version, String required) {
+    if (!_nodeRequirementSatisfied(version, '>=$required')) return false;
+    final parts = _versionParts(required);
+    if (parts.length < 2) return true;
+    final upper = <int>[...parts];
+    upper[1] += 1;
+    for (var i = 2; i < upper.length; i++) {
+      upper[i] = 0;
+    }
+    return _compareVersions(version, upper.join('.')) < 0;
+  }
+
+  static String _normalizeNodePackageName(String value) =>
+      value.trim().toLowerCase();
+
+  static bool _nodePackageNameLooksSafe(String name) {
+    if (name.isEmpty || name.length > 214) return false;
+    if (name.startsWith('@')) {
+      return RegExp(r'^@[a-z0-9_.-]+/[a-z0-9_.-]+$').hasMatch(name);
+    }
+    return RegExp(r'^[a-z0-9_.-]+$').hasMatch(name);
+  }
+
+  static String _nodePackageReceiptName(String packageName) {
+    return _normalizeNodePackageName(packageName)
+        .replaceAll('@', '_scope_')
+        .replaceAll('/', '__');
   }
 
   static String _pythonRequirementForPackage(
@@ -2707,10 +3410,16 @@ class _SkillProvisioningLayout {
       Directory(path.join(dependencyRoot.path, 'receipts'));
   Directory get pythonWheelReceiptDir =>
       Directory(path.join(dependencyReceiptDir.path, 'python-wheels'));
+  Directory get nodePackageReceiptDir =>
+      Directory(path.join(dependencyReceiptDir.path, 'node-packages'));
   Directory get dependencyTmpDir =>
       Directory(path.join(dependencyRoot.path, 'tmp'));
   File get dependencyPackManifestFile =>
       File(path.join(dependencyRoot.path, 'dependency_packs.json'));
+  File get nodePackageManifestFile =>
+      File(path.join(dependencyRoot.path, 'node_packages.json'));
+  Directory get nodeModulesDir =>
+      Directory(path.join(nativeStateRoot, 'node_modules'));
 
   List<Directory> nativeSkillDirs(String skillId) => [
         Directory(path.join(nativeStateRoot, 'skills', skillId)),
@@ -2727,6 +3436,20 @@ class _SkillProvisioningLayout {
       throw ArgumentError('Unsafe dependency pack installPath: $installPath');
     }
     return Directory(path.normalize(path.join(nativeStateRoot, relative)));
+  }
+
+  Directory nodePackageInstallDir(String packageName) {
+    final normalized = SkillProvisioningService._normalizeNodePackageName(
+      packageName,
+    );
+    if (!SkillProvisioningService._nodePackageNameLooksSafe(normalized)) {
+      throw ArgumentError('Unsafe node package name: $packageName');
+    }
+    if (normalized.startsWith('@')) {
+      final parts = normalized.split('/');
+      return Directory(path.join(nodeModulesDir.path, parts[0], parts[1]));
+    }
+    return Directory(path.join(nodeModulesDir.path, normalized));
   }
 
   List<Directory> get bundledBinaryRoots => [
@@ -2764,6 +3487,20 @@ class _DependencyProvisioningResult {
     required this.actions,
     required this.satisfiedRuntimes,
     required this.satisfiedPythonPackages,
+    required this.changed,
+    required this.reloadRecommended,
+  });
+}
+
+class _NodeProvisioningResult {
+  final List<SkillProvisioningAction> actions;
+  final Set<String> satisfiedNodePackages;
+  final bool changed;
+  final bool reloadRecommended;
+
+  const _NodeProvisioningResult({
+    required this.actions,
+    required this.satisfiedNodePackages,
     required this.changed,
     required this.reloadRecommended,
   });
@@ -2924,6 +3661,85 @@ class _PythonVersionConstraint {
   final String version;
 
   const _PythonVersionConstraint(this.operator, this.version);
+}
+
+class _NodePackageRequest {
+  final String name;
+  final String raw;
+  final bool root;
+  final String? rootPackage;
+
+  const _NodePackageRequest({
+    required this.name,
+    required this.raw,
+    required this.root,
+    this.rootPackage,
+  });
+}
+
+class _NodePackageCandidate {
+  final String name;
+  final String version;
+  final Uri url;
+  final String? integrity;
+  final String? sha512;
+  final String? sha256;
+  final String? shasum;
+  final int? maxBytes;
+  final Map<String, String> dependencies;
+
+  const _NodePackageCandidate({
+    required this.name,
+    required this.version,
+    required this.url,
+    this.integrity,
+    this.sha512,
+    this.sha256,
+    this.shasum,
+    this.maxBytes,
+    this.dependencies = const <String, String>{},
+  });
+
+  String get safeId => SkillProvisioningService._nodePackageReceiptName(name);
+
+  static _NodePackageCandidate? fromJson(Map<String, dynamic> json) {
+    final name = SkillProvisioningService._normalizeNodePackageName(
+      json['name']?.toString() ?? json['id']?.toString() ?? '',
+    );
+    final version = json['version']?.toString().trim() ?? '';
+    final url = json['url']?.toString().trim() ??
+        json['tarball']?.toString().trim() ??
+        '';
+    if (!SkillProvisioningService._nodePackageNameLooksSafe(name) ||
+        version.isEmpty ||
+        url.isEmpty) {
+      return null;
+    }
+    return _NodePackageCandidate(
+      name: name,
+      version: version,
+      url: Uri.parse(url),
+      integrity: json['integrity']?.toString(),
+      sha512: json['sha512']?.toString().toLowerCase(),
+      sha256: json['sha256']?.toString().toLowerCase(),
+      shasum: json['shasum']?.toString().toLowerCase() ??
+          json['sha1']?.toString().toLowerCase(),
+      maxBytes: (json['maxBytes'] as num?)?.toInt(),
+      dependencies: SkillProvisioningService._nodeDependencyMap(json),
+    );
+  }
+}
+
+class _NodePackageInstallResult {
+  final bool ok;
+  final SkillProvisioningAction action;
+  final Map<String, String> dependencies;
+
+  const _NodePackageInstallResult({
+    required this.ok,
+    required this.action,
+    required this.dependencies,
+  });
 }
 
 class _DependencyPackReceipt {
