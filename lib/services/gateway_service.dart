@@ -18,7 +18,6 @@ import 'local_llm_service.dart';
 import 'model_provider_catalog.dart';
 import 'gateway_tool_catalog.dart';
 import 'app_native_chat_tool_router.dart';
-import 'native_clawhub_skill_execution_service.dart';
 import 'native_gateway_smoke_service.dart';
 import 'native_gateway_shadow_parity_service.dart';
 import 'skill_parity_audit_service.dart';
@@ -5041,47 +5040,6 @@ ${lines.join('\n')}
     _addActivity(
       '[TOOLS] Gateway-required mobile command: ${execution.toolName} '
       'ok=${execution.ok}',
-    );
-    return execution;
-  }
-
-  bool _targetedSkillHasBlockingGate(Set<String> targets) {
-    final normalizedTargets = targets.map(_normalizeSkillLookup).toSet();
-    final snapshot = _lastSkillParitySnapshot;
-    if (snapshot != null) {
-      for (final entry in snapshot.executionMatrix) {
-        final id = _normalizeSkillLookup(entry.skillId);
-        if (!normalizedTargets.contains(id)) continue;
-        if (entry.status != SkillExecutionStatus.ready) return true;
-      }
-    }
-    final provisioning = _lastSkillProvisioningReport;
-    if (provisioning != null) {
-      for (final result in provisioning.results) {
-        final id = _normalizeSkillLookup(result.skillId);
-        if (!normalizedTargets.contains(id)) continue;
-        if (result.status.isBlocking) return true;
-      }
-    }
-    return false;
-  }
-
-  Future<NativeClawHubSkillExecution?> _executeRequiredNativeClawHubSkillIntent(
-      String message) async {
-    final targets = _targetedSkillIdsForMessage(message);
-    if (!targets.map(_normalizeSkillLookup).contains('stocks')) return null;
-    if (_targetedSkillHasBlockingGate({'stocks'})) {
-      _addActivity(
-        '[SKILL-EXEC] stocks intent detected but readiness matrix has a blocking gate; preserving Gateway gate report.',
-      );
-      return null;
-    }
-
-    final execution = await NativeClawHubSkillExecutionService.instance
-        .tryExecuteRequiredIntent(message);
-    if (execution == null) return null;
-    _addActivity(
-      '[SKILL-EXEC] ${execution.toolName} native workspace run ok=${execution.ok}',
     );
     return execution;
   }
@@ -14643,15 +14601,6 @@ ${lines.join('\n')}
     var wsOk = await _ensureWebSocket(token);
     Map<String, dynamic> modelSyncChanges = <String, dynamic>{};
     if (wsOk) {
-      final requiredNativeSkillExecution =
-          await _executeRequiredNativeClawHubSkillIntent(message);
-      if (requiredNativeSkillExecution != null) {
-        yield requiredNativeSkillExecution.toolUseChunk;
-        yield requiredNativeSkillExecution.toolResultChunk;
-        yield requiredNativeSkillExecution.visibleText;
-        return;
-      }
-
       final requiredMobileToolExecution =
           await _executeRequiredMobileToolIntent(message);
       if (requiredMobileToolExecution != null) {
@@ -14690,15 +14639,6 @@ ${lines.join('\n')}
         yield requiredMobileToolExecution.toolUseChunk;
         yield requiredMobileToolExecution.toolResultChunk;
         yield requiredMobileToolExecution.visibleText;
-        return;
-      }
-
-      final requiredNativeSkillExecution =
-          await _executeRequiredNativeClawHubSkillIntent(message);
-      if (requiredNativeSkillExecution != null) {
-        yield requiredNativeSkillExecution.toolUseChunk;
-        yield requiredNativeSkillExecution.toolResultChunk;
-        yield requiredNativeSkillExecution.visibleText;
         return;
       }
 
