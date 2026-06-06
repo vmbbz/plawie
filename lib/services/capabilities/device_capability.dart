@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../models/node_frame.dart';
+import '../android_skill_readiness_service.dart';
 import '../native_bridge.dart';
 import '../skill_parity_audit_service.dart';
 import '../skill_provisioning_service.dart';
@@ -74,9 +75,14 @@ class DeviceCapability extends CapabilityHandler {
       );
       final provisioning =
           await SkillProvisioningService.instance.planSnapshot(parity);
+      final androidReadiness = AndroidSkillReadinessService.instance.summarize(
+        snapshot: parity,
+        provisioning: provisioning,
+      );
       return NodeFrame.response('', payload: {
         'status': status.payload,
         'permissions': permissions.payload,
+        'androidDefaultReadiness': androidReadiness.toHealthJson(),
         'skillReadiness': parity.readinessCounts,
         'skillProvisioning': provisioning.toHealthJson(maxResults: 12),
         'skillGateCount': parity.gates.length,

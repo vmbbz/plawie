@@ -40,7 +40,7 @@ class AndroidSkillReadinessService {
       final normalizedSkillId = _normalizeSkillId(entry.skillId);
       final matrixEntry = matrixBySkillId[normalizedSkillId];
       final provisioningResult = provisioningBySkillId[normalizedSkillId];
-      final ready = _isReady(matrixEntry, provisioningResult);
+      final ready = _isReady(entry, matrixEntry, provisioningResult);
       final releaseRelevant =
           entry.status == AndroidSkillSupportStatus.readyRequired;
       if (releaseRelevant) {
@@ -54,9 +54,7 @@ class AndroidSkillReadinessService {
 
       skills.add({
         ...entry.toJson(),
-        'runtimeStatus': matrixEntry == null
-            ? 'not_installed'
-            : _executionStatusWireName(matrixEntry.status),
+        'runtimeStatus': _runtimeStatus(entry, matrixEntry),
         if (matrixEntry?.primaryGate != null)
           'primaryGate': matrixEntry!.primaryGate,
         if (matrixEntry != null && matrixEntry.gates.isNotEmpty)
@@ -84,9 +82,13 @@ class AndroidSkillReadinessService {
   }
 
   static bool _isReady(
+    AndroidSkillSupportEntry manifestEntry,
     SkillExecutionMatrixEntry? matrixEntry,
     SkillProvisioningSkillResult? provisioningResult,
   ) {
+    if (_isAppNativeReady(manifestEntry, matrixEntry, provisioningResult)) {
+      return true;
+    }
     if (matrixEntry?.status == SkillExecutionStatus.ready) return true;
     return switch (provisioningResult?.status) {
       SkillProvisioningStatus.ready ||
@@ -94,6 +96,27 @@ class AndroidSkillReadinessService {
         true,
       _ => false,
     };
+  }
+
+  static String _runtimeStatus(
+    AndroidSkillSupportEntry manifestEntry,
+    SkillExecutionMatrixEntry? matrixEntry,
+  ) {
+    if (matrixEntry == null && _isAppNativeReady(manifestEntry, null, null)) {
+      return 'app_native_ready';
+    }
+    if (matrixEntry == null) return 'not_installed';
+    return _executionStatusWireName(matrixEntry.status);
+  }
+
+  static bool _isAppNativeReady(
+    AndroidSkillSupportEntry manifestEntry,
+    SkillExecutionMatrixEntry? matrixEntry,
+    SkillProvisioningSkillResult? provisioningResult,
+  ) {
+    if (matrixEntry != null || provisioningResult != null) return false;
+    return manifestEntry.ownerLayer == AndroidSkillOwnerLayer.androidBridge ||
+        manifestEntry.ownerLayer == AndroidSkillOwnerLayer.appNativeCapability;
   }
 
   static String _executionStatusWireName(SkillExecutionStatus status) {

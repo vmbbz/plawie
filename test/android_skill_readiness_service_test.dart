@@ -82,6 +82,28 @@ void main() {
     expect(summary.releaseGatePass, isFalse);
     expect(summary.countsByClass['unsupported_on_android'], 1);
   });
+
+  test('app-native bridge skills are ready outside the OpenClaw skill matrix',
+      () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith(const <SkillExecutionMatrixEntry>[]),
+      provisioning: provisioningWith(const <SkillProvisioningSkillResult>[]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        bridgeManifestEntry('battery'),
+        bridgeManifestEntry('sensors'),
+        appNativeManifestEntry('healthcheck'),
+      ]),
+    );
+
+    expect(summary.readyRequiredTotal, 3);
+    expect(summary.readyRequiredReady, 3);
+    expect(summary.unexpectedMissingDependency, 0);
+    expect(summary.releaseGatePass, isTrue);
+    expect(
+      summary.skills.map((skill) => skill['runtimeStatus']).toSet(),
+      {'app_native_ready'},
+    );
+  });
 }
 
 SkillParitySnapshot snapshotWith(List<SkillExecutionMatrixEntry> entries) {
@@ -206,6 +228,28 @@ AndroidSkillSupportEntry readyManifestEntry(String skillId) {
     status: AndroidSkillSupportStatus.readyRequired,
     ownerLayer: AndroidSkillOwnerLayer.openclawSkill,
     executionMode: AndroidSkillExecutionMode.gatewayTool,
+    smokePrompt: 'smoke $skillId',
+    launchCritical: true,
+  );
+}
+
+AndroidSkillSupportEntry bridgeManifestEntry(String skillId) {
+  return AndroidSkillSupportEntry(
+    skillId: skillId,
+    status: AndroidSkillSupportStatus.readyRequired,
+    ownerLayer: AndroidSkillOwnerLayer.androidBridge,
+    executionMode: AndroidSkillExecutionMode.androidBridge,
+    smokePrompt: 'smoke $skillId',
+    launchCritical: true,
+  );
+}
+
+AndroidSkillSupportEntry appNativeManifestEntry(String skillId) {
+  return AndroidSkillSupportEntry(
+    skillId: skillId,
+    status: AndroidSkillSupportStatus.readyRequired,
+    ownerLayer: AndroidSkillOwnerLayer.appNativeCapability,
+    executionMode: AndroidSkillExecutionMode.appNativeTool,
     smokePrompt: 'smoke $skillId',
     launchCritical: true,
   );
