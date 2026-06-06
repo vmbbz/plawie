@@ -6,6 +6,13 @@ Scope: Native/libnode default runtime, OpenClaw Gateway skills, ClawHub-installe
 
 This document is intentionally dense. It records what was proven on device, why the previous failure happened, what the current fix actually does, what it does not yet solve globally, and the full production war path to make Native skill execution industrial-grade for default skills and future ClawHub installs.
 
+GTM correction: this war path is the broad platform roadmap, not the narrower
+Android launch gate. The launch plan is now documented in
+`docs/GTM_ANDROID_DEFAULT_SKILL_READINESS_PLAN_2026-06-07.md`: keep every
+Android-viable default skill in scope, classify desktop-only/config/pack/PRoot
+cases explicitly, and require `unexpected_missing_dependency: 0` for the Android
+launch set.
+
 ## Executive Position
 
 Native is the default owner.
@@ -1138,4 +1145,3 @@ Chat request -> ready skill intent -> Native workspace skill script -> Native Py
 ```
 
 The war path is to make that path universal, metadata-driven, dependency-aware, Gateway-visible, and testable for every default and installed ClawHub skill.
-
