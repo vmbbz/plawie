@@ -311,6 +311,63 @@ Release gate: PASS
 The important number is `unexpected_missing_dependency`. It must be zero for
 the Android launch set.
 
+### Implemented Health Payload
+
+Implemented on 2026-06-07 in `device.health` as:
+
+```text
+androidDefaultReadiness.totalManifestSkills
+androidDefaultReadiness.installedNativeSkills
+androidDefaultReadiness.readyRequired.ready
+androidDefaultReadiness.readyRequired.total
+androidDefaultReadiness.countsByClass
+androidDefaultReadiness.unexpectedMissingDependency
+androidDefaultReadiness.unexpectedMissingDependencySkillIds
+androidDefaultReadiness.releaseGatePass
+androidDefaultReadiness.skills
+```
+
+Raw diagnostics remain present as separate fields:
+
+```text
+skillReadiness
+skillProvisioning
+skillGateCount
+nativeSkillCount
+prootSkillCount
+```
+
+Device smoke on 2026-06-07 installed the freshly built debug APK on
+`RZCX30KA9AW`, launched `com.nxg.openclawproot`, forwarded phone port `8765`,
+and read `http://127.0.0.1:28765/device/health`.
+
+Observed Android default readiness:
+
+```text
+totalManifestSkills: 61
+installedNativeSkills: 65
+readyRequired: 9/13
+countsByClass:
+  ready_required: 13
+  needs_config: 16
+  needs_pack: 22
+  unsupported_on_android: 6
+  manual_proot_compat: 2
+  hidden_desktop_only: 2
+unexpectedMissingDependency: 4
+unexpectedMissingDependencySkillIds:
+  canvas
+  clawhub
+  meme-maker
+  weather
+releaseGatePass: false
+```
+
+This is the desired contract shape: app-native Android bridge skills such as
+`avatar_forge`, `battery`, `sensors`, and `vibrate` now report
+`app_native_ready` instead of pretending they are missing OpenClaw skill
+folders, while the remaining launch blockers are named exactly.
+
 ## Golden Android Runtime And Adapter Pack
 
 The shorter reliable path is not a tiny pilot and not a universal builder. It
