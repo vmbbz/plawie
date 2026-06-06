@@ -368,6 +368,31 @@ This is the desired contract shape: app-native Android bridge skills such as
 `app_native_ready` instead of pretending they are missing OpenClaw skill
 folders, while the remaining launch blockers are named exactly.
 
+### Progress Check: Skills Manager Surface
+
+Round 5 on 2026-06-07 exposed the readiness contract into app state and the
+Skills Manager:
+
+- `GatewayState` now carries `skillProvisioning` and
+  `androidDefaultReadiness`.
+- `GatewayService` updates both fields after the finalized parity/provisioning
+  snapshot.
+- `GatewayProvider` exposes both summaries for UI consumers.
+- Skills Manager now shows an Android default readiness panel and dependency
+  status chips for installed skills.
+
+Verification for this round:
+
+- `dart analyze lib/models/gateway_state.dart lib/services/gateway_service.dart
+  lib/screens/management/skills_manager.dart lib/providers/gateway_provider.dart`
+  returned no issues.
+- `flutter build apk --debug` produced
+  `build\app\outputs\flutter-apk\app-debug.apk`.
+- The fresh debug APK was installed on `RZCX30KA9AW`, launched, and
+  `/device/health` still reported the Android readiness payload with
+  `readyRequired: 9/13` and blockers `canvas`, `clawhub`, `meme-maker`, and
+  `weather`.
+
 ## Golden Android Runtime And Adapter Pack
 
 The shorter reliable path is not a tiny pilot and not a universal builder. It

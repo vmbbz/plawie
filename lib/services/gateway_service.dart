@@ -20,6 +20,7 @@ import 'gateway_tool_catalog.dart';
 import 'app_native_chat_tool_router.dart';
 import 'native_gateway_smoke_service.dart';
 import 'native_gateway_shadow_parity_service.dart';
+import 'android_skill_readiness_service.dart';
 import 'skill_parity_audit_service.dart';
 import 'skill_provisioning_service.dart';
 import '../constants/openclaw_paths.dart';
@@ -2978,6 +2979,14 @@ HEARTBEAT_OK.
       _lastSkillParityAuditAt = DateTime.now();
       _lastSkillParitySnapshot = snapshot;
       _lastSkillProvisioningReport = provisioning;
+      final androidReadiness = AndroidSkillReadinessService.instance.summarize(
+        snapshot: snapshot,
+        provisioning: provisioning,
+      );
+      _updateState(_state.copyWith(
+        skillProvisioning: provisioning.toJson(),
+        androidDefaultReadiness: androidReadiness.toHealthJson(),
+      ));
       _lastSkillParityPromptBlock = [
         snapshot.toPromptBlock(maxGates: 0),
         provisioning.toPromptBlock(maxSkills: 0),

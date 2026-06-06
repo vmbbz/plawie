@@ -14,6 +14,8 @@ class GatewayState {
   final Map<String, dynamic>? detailedHealth;
   final List<Map<String, dynamic>>? activeSkills;
   final List<String>? capabilities;
+  final Map<String, dynamic>? skillProvisioning;
+  final Map<String, dynamic>? androidDefaultReadiness;
   final bool isWebsocketConnected;
 
   /// True only after HTTP, operator WebSocket, RPC health, skills, and tool
@@ -39,6 +41,8 @@ class GatewayState {
     this.detailedHealth,
     this.activeSkills,
     this.capabilities,
+    this.skillProvisioning,
+    this.androidDefaultReadiness,
     this.isWebsocketConnected = false,
     this.isInteractiveReady = false,
     this.isRepairing = false,
@@ -62,6 +66,10 @@ class GatewayState {
     bool clearActiveSkills = false,
     List<String>? capabilities,
     bool clearCapabilities = false,
+    Map<String, dynamic>? skillProvisioning,
+    bool clearSkillProvisioning = false,
+    Map<String, dynamic>? androidDefaultReadiness,
+    bool clearAndroidDefaultReadiness = false,
     bool? isWebsocketConnected,
     bool? isInteractiveReady,
     bool? isRepairing,
@@ -82,6 +90,12 @@ class GatewayState {
           clearActiveSkills ? null : (activeSkills ?? this.activeSkills),
       capabilities:
           clearCapabilities ? null : (capabilities ?? this.capabilities),
+      skillProvisioning: clearSkillProvisioning
+          ? null
+          : (skillProvisioning ?? this.skillProvisioning),
+      androidDefaultReadiness: clearAndroidDefaultReadiness
+          ? null
+          : (androidDefaultReadiness ?? this.androidDefaultReadiness),
       isWebsocketConnected: isWebsocketConnected ?? this.isWebsocketConnected,
       isInteractiveReady: isInteractiveReady ?? this.isInteractiveReady,
       isRepairing: isRepairing ?? this.isRepairing,

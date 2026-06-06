@@ -704,6 +704,9 @@ class _MySkillsTabState extends State<_MySkillsTab> {
     final gatewayState = context.watch<GatewayProvider>().state;
     final rawSkills = gatewayState.activeSkills ?? [];
     final isLoading = gatewayState.status == GatewayStatus.starting;
+    final provisioningById =
+        _provisioningBadgesBySkillId(gatewayState.skillProvisioning);
+    final androidReadiness = gatewayState.androidDefaultReadiness;
 
     // Build installed ID set from gateway live data; fall back to CLI result
     final installedIds = rawSkills.isNotEmpty
@@ -780,6 +783,15 @@ class _MySkillsTabState extends State<_MySkillsTab> {
             ),
           ),
         ),
+        if (androidReadiness != null)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              child: _AndroidDefaultReadinessPanel(
+                readiness: androidReadiness,
+              ),
+            ),
+          ),
         // ── Premium skills grid — always shows all cards ─────────────────
         // Uses SliverToBoxAdapter + LayoutBuilder-based grid to avoid the
         // SliverGrid zero-height bug inside NestedScrollView bodies.
@@ -835,6 +847,8 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                                       id.contains(skill.id) ||
                                       id.contains(
                                           skill.id.replaceAll('-', '_'))),
+                              provisioning:
+                                  _provisioningFor(provisioningById, skill.id),
                               onTap: () {
                                 final installed =
                                     installedIds.contains(skill.id) ||
@@ -900,7 +914,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
         ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
-          sliver: _buildWorkspaceList(rawSkills, isLoading),
+          sliver: _buildWorkspaceList(rawSkills, isLoading, provisioningById),
         ),
       ],
     );
@@ -909,6 +923,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
   Widget _buildWorkspaceList(
     List<Map<String, dynamic>> rawSkills,
     bool isLoading,
+    Map<String, _SkillProvisioningBadgeData> provisioningById,
   ) {
     if (isLoading) {
       return const SliverToBoxAdapter(
@@ -951,6 +966,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
               (skill['description'] ?? 'SKILL.yaml Workspace Binding')
                   .toString();
           final isPremium = _premiumSkills.any((s) => s.id == skillId);
+          final provisioning = _provisioningFor(provisioningById, skillId);
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Container(
@@ -1012,6 +1028,10 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (provisioning != null) ...[
+                      _ProvisioningChip(data: provisioning),
+                      const SizedBox(width: 6),
+                    ],
                     // Info chip
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -2349,21 +2369,456 @@ class _RateLimitBanner extends StatelessWidget {
       );
 }
 
+// ── Android default readiness helpers ───────────────────────────────────────
+
+class _AndroidDefaultReadinessPanel extends StatelessWidget {
+  final Map<String, dynamic> readiness;
+
+  const _AndroidDefaultReadinessPanel({required this.readiness});
+
+  @override
+  Widget build(BuildContext context) {
+    final readyRequired = _mapValue(readiness['readyRequired']);
+    final ready = _intValue(readyRequired['ready']);
+    final total = _intValue(readyRequired['total']);
+    final unexpected = _intValue(readiness['unexpectedMissingDependency']);
+    final releasePass = readiness['releaseGatePass'] == true;
+    final counts = _mapValue(readiness['countsByClass']);
+    final blockers =
+        _stringList(readiness['unexpectedMissingDependencySkillIds']);
+    final accent = releasePass ? AppColors.statusGreen : AppColors.statusAmber;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.045),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accent.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                releasePass
+                    ? Icons.verified_rounded
+                    : Icons.report_problem_rounded,
+                size: 16,
+                color: accent,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'ANDROID DEFAULT READINESS',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.82),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
+              _ReadinessPill(
+                label: releasePass ? 'PASS' : 'BLOCKED',
+                color: accent,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _ReadinessMetric(
+                label: 'READY REQUIRED',
+                value: '$ready/$total',
+                color: ready == total ? AppColors.statusGreen : accent,
+              ),
+              _ReadinessMetric(
+                label: 'UNEXPECTED',
+                value: '$unexpected',
+                color: unexpected == 0 ? AppColors.statusGreen : accent,
+              ),
+              _ReadinessMetric(
+                label: 'NEEDS CONFIG',
+                value: '${_intValue(counts['needs_config'])}',
+                color: AppColors.statusAmber,
+              ),
+              _ReadinessMetric(
+                label: 'NEEDS PACK',
+                value: '${_intValue(counts['needs_pack'])}',
+                color: Colors.cyanAccent,
+              ),
+              _ReadinessMetric(
+                label: 'UNSUPPORTED',
+                value: '${_intValue(counts['unsupported_on_android'])}',
+                color: Colors.white54,
+              ),
+              _ReadinessMetric(
+                label: 'PROOT COMPAT',
+                value: '${_intValue(counts['manual_proot_compat'])}',
+                color: Colors.white54,
+              ),
+            ],
+          ),
+          if (blockers.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.flag_rounded, size: 13, color: accent),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    blockers.join('  ·  '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: accent.withValues(alpha: 0.88),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReadinessMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _ReadinessMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.54),
+              fontSize: 8,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReadinessPill extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _ReadinessPill({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 8,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.7,
+        ),
+      ),
+    );
+  }
+}
+
+Map<String, dynamic> _mapValue(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) return Map<String, dynamic>.from(value);
+  return const <String, dynamic>{};
+}
+
+int _intValue(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+List<String> _stringList(dynamic value) {
+  if (value is List) {
+    return value
+        .map((item) => item?.toString().trim() ?? '')
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+  return const <String>[];
+}
+
+// ── Provisioning status helpers ─────────────────────────────────────────────
+
+String _normalizeProvisioningSkillId(String value) => value
+    .trim()
+    .toLowerCase()
+    .replaceAll('_', '-')
+    .replaceAll(RegExp(r'^@openclaw/'), '');
+
+Map<String, _SkillProvisioningBadgeData> _provisioningBadgesBySkillId(
+  Map<String, dynamic>? report,
+) {
+  final results = report?['results'];
+  if (results is! List) return const {};
+  final badges = <String, _SkillProvisioningBadgeData>{};
+  for (final raw in results) {
+    if (raw is! Map) continue;
+    final json = Map<String, dynamic>.from(raw);
+    final skillId = _normalizeProvisioningSkillId(
+      json['skillId']?.toString() ?? '',
+    );
+    if (skillId.isEmpty) continue;
+    badges[skillId] = _SkillProvisioningBadgeData.fromJson(json);
+  }
+  return badges;
+}
+
+_SkillProvisioningBadgeData? _provisioningFor(
+  Map<String, _SkillProvisioningBadgeData> badges,
+  String skillId,
+) {
+  if (badges.isEmpty) return null;
+  final normalized = _normalizeProvisioningSkillId(skillId);
+  if (normalized.isEmpty) return null;
+  final exact = badges[normalized] ?? badges[normalized.replaceAll('-', '_')];
+  if (exact != null) return exact;
+  for (final entry in badges.entries) {
+    if (entry.key == normalized ||
+        entry.key.endsWith('/$normalized') ||
+        normalized.endsWith('/${entry.key}')) {
+      return entry.value;
+    }
+  }
+  return null;
+}
+
+class _SkillProvisioningBadgeData {
+  final String status;
+  final String label;
+  final String detail;
+  final Color color;
+  final IconData icon;
+
+  const _SkillProvisioningBadgeData({
+    required this.status,
+    required this.label,
+    required this.detail,
+    required this.color,
+    required this.icon,
+  });
+
+  factory _SkillProvisioningBadgeData.fromJson(Map<String, dynamic> json) {
+    final status = (json['status'] ?? 'unknown').toString();
+    final primaryGate = json['primaryGate']?.toString() ?? '';
+    final action = _mostRelevantProvisioningAction(json['actions']);
+    final actionStatus = action?['status']?.toString() ?? '';
+    final actionMessage = action?['message']?.toString() ?? '';
+    final actionKey = action?['key']?.toString() ?? '';
+    final effective = actionStatus == 'downloading' ? actionStatus : status;
+    final detail = actionMessage.isNotEmpty
+        ? actionMessage
+        : primaryGate.isNotEmpty
+            ? primaryGate
+            : status.replaceAll('_', ' ');
+
+    return switch (effective) {
+      'ready' || 'satisfied' => _SkillProvisioningBadgeData(
+          status: status,
+          label: 'READY',
+          detail: 'Native dependencies ready',
+          color: AppColors.statusGreen,
+          icon: Icons.check_circle_rounded,
+        ),
+      'downloading' => _SkillProvisioningBadgeData(
+          status: status,
+          label: 'INSTALLING DEPS',
+          detail: actionKey.isEmpty ? 'Installing dependencies' : actionKey,
+          color: Colors.cyanAccent,
+          icon: Icons.downloading_rounded,
+        ),
+      'needs_user_config' => _SkillProvisioningBadgeData(
+          status: status,
+          label: 'NEEDS CONFIG',
+          detail: detail,
+          color: AppColors.statusAmber,
+          icon: Icons.tune_rounded,
+        ),
+      'missing_dependency' ||
+      'missing_binary' ||
+      'missing_plugin' ||
+      'missing_pack' =>
+        _SkillProvisioningBadgeData(
+          status: status,
+          label: 'MISSING DEPS',
+          detail: detail,
+          color: AppColors.statusAmber,
+          icon: Icons.build_circle_rounded,
+        ),
+      'failed_verification' || 'failed_smoke' => _SkillProvisioningBadgeData(
+          status: status,
+          label: 'DEPS FAILED',
+          detail: detail,
+          color: AppColors.statusRed,
+          icon: Icons.error_rounded,
+        ),
+      'disabled' => _SkillProvisioningBadgeData(
+          status: status,
+          label: 'DISABLED',
+          detail: detail,
+          color: AppColors.statusRed,
+          icon: Icons.block_rounded,
+        ),
+      'unsupported_native' => _SkillProvisioningBadgeData(
+          status: status,
+          label: 'UNSUPPORTED',
+          detail: detail,
+          color: AppColors.statusRed,
+          icon: Icons.report_problem_rounded,
+        ),
+      'manual_proot_required' => _SkillProvisioningBadgeData(
+          status: status,
+          label: 'MANUAL PROOT',
+          detail: detail,
+          color: Colors.white54,
+          icon: Icons.alt_route_rounded,
+        ),
+      _ => _SkillProvisioningBadgeData(
+          status: status,
+          label: status.replaceAll('_', ' ').toUpperCase(),
+          detail: detail,
+          color: Colors.white54,
+          icon: Icons.info_outline_rounded,
+        ),
+    };
+  }
+
+  static Map<String, dynamic>? _mostRelevantProvisioningAction(dynamic raw) {
+    if (raw is! List) return null;
+    final actions = raw
+        .whereType<Map>()
+        .map((entry) => Map<String, dynamic>.from(entry))
+        .toList();
+    if (actions.isEmpty) return null;
+    const priority = <String>[
+      'downloading',
+      'failed_verification',
+      'failed_smoke',
+      'missing_pack',
+      'missing_dependency',
+      'missing_binary',
+      'missing_plugin',
+      'needs_user_config',
+      'installed',
+      'verified',
+    ];
+    for (final status in priority) {
+      for (final action in actions) {
+        if (action['status']?.toString() == status) return action;
+      }
+    }
+    return actions.first;
+  }
+}
+
+class _ProvisioningChip extends StatelessWidget {
+  final _SkillProvisioningBadgeData data;
+
+  const _ProvisioningChip({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: data.color.withValues(alpha: 0.11),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: data.color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(data.icon, size: 12, color: data.color),
+          const SizedBox(width: 4),
+          Text(
+            data.label,
+            style: TextStyle(
+              color: data.color,
+              fontSize: 8,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Installed skill card (My Skills grid) ────────────────────────────────────
 
 class _ServiceCard extends StatelessWidget {
   final _SkillEntry skill;
   final bool isInstalled;
+  final _SkillProvisioningBadgeData? provisioning;
   final VoidCallback onTap;
 
   const _ServiceCard({
     required this.skill,
     required this.isInstalled,
+    this.provisioning,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final badge = isInstalled ? provisioning : null;
+    final badgeColor = badge?.color ??
+        (isInstalled ? skill.color : Colors.white.withValues(alpha: 0.54));
+    final badgeLabel = badge?.label ?? (isInstalled ? 'ACTIVE' : 'INSTALL');
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.05),
@@ -2411,6 +2866,27 @@ class _ServiceCard extends StatelessWidget {
                           fontSize: 10,
                           fontWeight: FontWeight.w500),
                     ),
+                    if (isInstalled && badge != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(badge.icon, size: 10, color: badge.color),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              badge.detail,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: badge.color.withValues(alpha: 0.78),
+                                  fontSize: 8.5,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.2),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     if (skill.description.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -2435,19 +2911,19 @@ class _ServiceCard extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
                     color: isInstalled
-                        ? skill.color.withValues(alpha: 0.15)
+                        ? badgeColor.withValues(alpha: 0.15)
                         : Colors.white.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: isInstalled
-                          ? skill.color.withValues(alpha: 0.4)
+                          ? badgeColor.withValues(alpha: 0.4)
                           : Colors.white.withValues(alpha: 0.2),
                     ),
                   ),
                   child: Text(
-                    isInstalled ? 'ACTIVE' : 'INSTALL',
+                    badgeLabel,
                     style: TextStyle(
-                      color: isInstalled ? skill.color : Colors.white54,
+                      color: badgeColor,
                       fontSize: 8,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 0.5,

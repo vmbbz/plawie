@@ -23,6 +23,13 @@ class GatewayProvider extends ChangeNotifier {
   /// Detailed health metrics from the gateway RPC.
   Map<String, dynamic>? get detailedHealth => _state.detailedHealth;
 
+  /// Native dependency provisioning results for installed/default skills.
+  Map<String, dynamic>? get skillProvisioning => _state.skillProvisioning;
+
+  /// Android default skill readiness summary for GTM launch gates.
+  Map<String, dynamic>? get androidDefaultReadiness =>
+      _state.androidDefaultReadiness;
+
   /// Active skills reported by the gateway.
   List<Map<String, dynamic>>? get activeSkills => _state.activeSkills;
 
