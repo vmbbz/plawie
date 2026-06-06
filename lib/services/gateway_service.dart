@@ -5053,6 +5053,40 @@ ${lines.join('\n')}
     );
   }
 
+  Future<AppNativeChatToolExecution?> _executeRequiredMobileToolIntent(
+    String message,
+  ) async {
+    final node = NodeService();
+    final nodeReady =
+        node.state.isPaired && node.isConnected && !node.isConnectionStale;
+    if (!nodeReady) {
+      if (AppNativeChatToolRouter.instance
+              .requiredToolCommandForTesting(message) !=
+          null) {
+        _addActivity(
+          '[TOOLS] Required mobile command detected, but Android node is not ready '
+          '(paired=${node.state.isPaired}, connected=${node.isConnected}, '
+          'stale=${node.isConnectionStale}).',
+        );
+        unawaited(_ensureNodeConnectedAfterGatewayReady(
+          reason: 'required-mobile-tool-intent',
+        ));
+      }
+      return null;
+    }
+
+    final execution =
+        await AppNativeChatToolRouter.instance.tryExecuteRequiredToolIntent(
+      message,
+    );
+    if (execution == null) return null;
+    _addActivity(
+      '[TOOLS] Gateway-required mobile command: ${execution.toolName} '
+      'ok=${execution.ok}',
+    );
+    return execution;
+  }
+
   @visibleForTesting
   bool debugIsExplicitAppNativeFallbackForTesting(String message) {
     return _explicitAppNativeFallbackPayload(message) != null;
@@ -14610,6 +14644,15 @@ ${lines.join('\n')}
     var wsOk = await _ensureWebSocket(token);
     Map<String, dynamic> modelSyncChanges = <String, dynamic>{};
     if (wsOk) {
+      final requiredMobileToolExecution =
+          await _executeRequiredMobileToolIntent(message);
+      if (requiredMobileToolExecution != null) {
+        yield requiredMobileToolExecution.toolUseChunk;
+        yield requiredMobileToolExecution.toolResultChunk;
+        yield requiredMobileToolExecution.visibleText;
+        return;
+      }
+
       // HOT-SWITCHING: If user changed model, update gateway config
       final changes = await _syncModelToConfig(model);
       if (changes.isNotEmpty) {
@@ -14630,6 +14673,15 @@ ${lines.join('\n')}
             'Please wait a moment and try again. Plawie did not use the '
             'fallback HTTP chat route because it bypasses OpenClaw tools and '
             'mobile node context.';
+        return;
+      }
+
+      final requiredMobileToolExecution =
+          await _executeRequiredMobileToolIntent(message);
+      if (requiredMobileToolExecution != null) {
+        yield requiredMobileToolExecution.toolUseChunk;
+        yield requiredMobileToolExecution.toolResultChunk;
+        yield requiredMobileToolExecution.visibleText;
         return;
       }
 

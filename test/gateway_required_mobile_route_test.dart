@@ -1,0 +1,79 @@
+import 'dart:io';
+
+import 'package:clawa/services/app_native_chat_tool_router.dart';
+import 'package:clawa/services/gateway_service.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  test('healthcheck is a required mobile tool intent', () {
+    final gateway = GatewayService();
+
+    expect(
+      gateway
+          .debugRequiredToolIntentCommandForTesting('device healthcheck now'),
+      'device.health',
+    );
+    expect(
+      gateway.debugRequiredToolIntentCommandForTesting(
+        'check the phone health status',
+      ),
+      'device.health',
+    );
+  });
+
+  test('required healthcheck intent produces device-node tool chips', () async {
+    final execution =
+        await AppNativeChatToolRouter.instance.tryExecuteRequiredToolIntent(
+      'device healthcheck now',
+    );
+
+    expect(execution, isNotNull);
+    expect(execution!.toolName, 'device-node');
+    expect(execution.input['command'], 'device.health');
+    expect(execution.input['source'], 'gateway-required-tool-intent');
+    expect(execution.toolUseChunk, startsWith('\x00TOOL_USE:device-node:'));
+    expect(
+      execution.toolResultChunk,
+      startsWith('\x00TOOL_RESULT:device-node:'),
+    );
+  });
+
+  test('sendMessage keeps required mobile command execution before chat.send',
+      () async {
+    final source =
+        await File('lib/services/gateway_service.dart').readAsString();
+    final methodStart = source.indexOf('Stream<String> sendMessage(');
+    expect(methodStart, isNonNegative);
+    final methodEnd = source.indexOf(
+        '  Future<Map<String, dynamic>> '
+        '_syncModelToConfig',
+        methodStart);
+    expect(methodEnd, isNonNegative);
+
+    final sendMessageSource = source.substring(methodStart, methodEnd);
+    final requiredIntentCalls =
+        RegExp(r'_executeRequiredMobileToolIntent\(message\)')
+            .allMatches(sendMessageSource)
+            .length;
+
+    expect(
+      requiredIntentCalls,
+      greaterThanOrEqualTo(2),
+      reason: 'sendMessage must execute required mobile commands after the '
+          'initial WS connection and after WS repair, before provider chat.',
+    );
+
+    final firstRequiredIntent =
+        sendMessageSource.indexOf('_executeRequiredMobileToolIntent(message)');
+    final firstProviderSend =
+        sendMessageSource.indexOf("NodeFrame.request('chat.send'");
+    expect(firstRequiredIntent, isNonNegative);
+    expect(firstProviderSend, isNonNegative);
+    expect(
+      firstRequiredIntent,
+      lessThan(firstProviderSend),
+      reason: 'Required health/device/avatar commands must not fall through to '
+          'provider freestyle before the tool/result chips are emitted.',
+    );
+  });
+}
