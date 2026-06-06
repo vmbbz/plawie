@@ -4615,10 +4615,14 @@ HEARTBEAT_OK.
     return null;
   }
 
-  Future<String> _decorateMessageWithMobileNodeContext(String message) async {
+  Future<String> _decorateMessageWithMobileNodeContext(
+    String message, {
+    String? userMessage,
+  }) async {
+    final routingMessage = userMessage ?? message;
     final nodeHandle = await _resolveMobileNodeHandleForToolRouting();
     if (nodeHandle == null || nodeHandle.isEmpty) {
-      if (_looksLikeMobileNodeToolRequest(message)) {
+      if (_looksLikeMobileNodeToolRequest(routingMessage)) {
         _addActivity('[CHAT] Mobile node tool context skipped: no node id');
       }
       return message;
@@ -4626,7 +4630,42 @@ HEARTBEAT_OK.
 
     _addActivity('[CHAT] Mobile node tool context attached ($nodeHandle)');
 
-    final lower = message.toLowerCase();
+    final lower = routingMessage.toLowerCase();
+    final requiredNodeTarget =
+        AppNativeChatToolRouter.instance.requiredGatewayNodeTarget(
+      routingMessage,
+    );
+    final requiredNodeCallInput =
+        requiredNodeTarget == null || requiredNodeTarget['nodesInput'] is! Map
+            ? null
+            : <String, dynamic>{
+                ...Map<String, dynamic>.from(
+                  requiredNodeTarget['nodesInput'] as Map,
+                ),
+                'node': nodeHandle,
+              };
+    final requiredNodeCommand =
+        requiredNodeTarget?['command']?.toString().trim() ?? '';
+    final requiredNodeBlock = requiredNodeCallInput == null
+        ? ''
+        : '''
+<openclaw_required_android_node_call>
+The current user request matches a live Android node command.
+The Android node handshake declares this command and gateway.nodes.allowCommands allows it.
+Tool to call: nodes
+Required command: $requiredNodeCommand
+Required input JSON: ${jsonEncode(requiredNodeCallInput)}
+You must call the nodes tool with this input before producing the visible answer.
+Do not answer from memory. Do not claim the command is unsupported or unavailable unless the nodes TOOL_RESULT for this exact call reports failure.
+After the TOOL_RESULT arrives, summarize the actual result in normal user-facing language.
+</openclaw_required_android_node_call>
+''';
+    if (requiredNodeCallInput != null) {
+      _addActivity(
+        '[CHAT] Required mobile node target attached '
+        'command=$requiredNodeCommand node=$nodeHandle',
+      );
+    }
     final wantsCamera = RegExp(
       r'\b(camera|photo|picture|selfie|snapshot|image)\b',
     ).hasMatch(lower);
@@ -4660,6 +4699,7 @@ If the user asks what tools or phone abilities are available, include these Andr
 Do not print hidden planning markers such as "(gesture: ...)" or "(image: ...)" in the visible answer. Use tools instead.
 </plawie_mobile_tool_context>
 
+$requiredNodeBlock
 $message''';
   }
 
@@ -4967,7 +5007,10 @@ ${lines.join('\n')}
 
   Future<String> _decorateMessageWithRuntimeContext(String message) async {
     final withSkills = await _decorateMessageWithGatewaySkillContext(message);
-    return _decorateMessageWithMobileNodeContext(withSkills);
+    return _decorateMessageWithMobileNodeContext(
+      withSkills,
+      userMessage: message,
+    );
   }
 
   String? _nativePrimaryCanaryPayload(String message, String model) {
@@ -5008,40 +5051,6 @@ ${lines.join('\n')}
     return AppNativeChatToolRouter.instance.requiredToolCommandForTesting(
       message,
     );
-  }
-
-  Future<AppNativeChatToolExecution?> _executeRequiredMobileToolIntent(
-    String message,
-  ) async {
-    final node = NodeService();
-    final nodeReady =
-        node.state.isPaired && node.isConnected && !node.isConnectionStale;
-    if (!nodeReady) {
-      if (AppNativeChatToolRouter.instance
-              .requiredToolCommandForTesting(message) !=
-          null) {
-        _addActivity(
-          '[TOOLS] Required mobile command detected, but Android node is not ready '
-          '(paired=${node.state.isPaired}, connected=${node.isConnected}, '
-          'stale=${node.isConnectionStale}).',
-        );
-        unawaited(_ensureNodeConnectedAfterGatewayReady(
-          reason: 'required-mobile-tool-intent',
-        ));
-      }
-      return null;
-    }
-
-    final execution =
-        await AppNativeChatToolRouter.instance.tryExecuteRequiredToolIntent(
-      message,
-    );
-    if (execution == null) return null;
-    _addActivity(
-      '[TOOLS] Gateway-required mobile command: ${execution.toolName} '
-      'ok=${execution.ok}',
-    );
-    return execution;
   }
 
   @visibleForTesting
@@ -14601,15 +14610,6 @@ ${lines.join('\n')}
     var wsOk = await _ensureWebSocket(token);
     Map<String, dynamic> modelSyncChanges = <String, dynamic>{};
     if (wsOk) {
-      final requiredMobileToolExecution =
-          await _executeRequiredMobileToolIntent(message);
-      if (requiredMobileToolExecution != null) {
-        yield requiredMobileToolExecution.toolUseChunk;
-        yield requiredMobileToolExecution.toolResultChunk;
-        yield requiredMobileToolExecution.visibleText;
-        return;
-      }
-
       // HOT-SWITCHING: If user changed model, update gateway config
       final changes = await _syncModelToConfig(model);
       if (changes.isNotEmpty) {
@@ -14630,15 +14630,6 @@ ${lines.join('\n')}
             'Please wait a moment and try again. Plawie did not use the '
             'fallback HTTP chat route because it bypasses OpenClaw tools and '
             'mobile node context.';
-        return;
-      }
-
-      final requiredMobileToolExecution =
-          await _executeRequiredMobileToolIntent(message);
-      if (requiredMobileToolExecution != null) {
-        yield requiredMobileToolExecution.toolUseChunk;
-        yield requiredMobileToolExecution.toolResultChunk;
-        yield requiredMobileToolExecution.visibleText;
         return;
       }
 

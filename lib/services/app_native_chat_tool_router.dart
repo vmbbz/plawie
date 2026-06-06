@@ -73,6 +73,18 @@ class AppNativeChatToolRouter {
     return plan?.command;
   }
 
+  Map<String, dynamic>? requiredGatewayNodeTarget(String message) {
+    final plan = _requiredToolPlan(message);
+    if (plan == null) return null;
+    final input = _gatewayNodeInput(plan);
+    return {
+      'tool': 'nodes',
+      'appNativeToolName': plan.toolName,
+      'command': plan.command,
+      'nodesInput': input,
+    };
+  }
+
   Future<AppNativeChatToolExecution?> tryExecute(
     String message, {
     required bool directGatewayRegistrationAvailable,
@@ -145,6 +157,78 @@ class AppNativeChatToolRouter {
         true,
       _ => false,
     };
+  }
+
+  Map<String, dynamic> _gatewayNodeInput(_AppNativeToolPlan plan) {
+    switch (plan.command) {
+      case 'camera.snap':
+        return {
+          'action': 'camera_snap',
+          'facing': plan.input['facing'] ?? 'back',
+          'quality': 85,
+        };
+      case 'camera.list':
+        return const {'action': 'camera_list'};
+      case 'location.get':
+        return const {'action': 'location_get'};
+      case 'device.health':
+        return const {'action': 'device_health'};
+      case 'device.status':
+      case 'device.info':
+        return const {'action': 'device_status'};
+      case 'device.permissions':
+        return const {'action': 'device_permissions'};
+      case 'sensor.list':
+        return const {'action': 'invoke', 'invokeCommand': 'sensor.list'};
+      case 'sensor.read':
+        return {
+          'action': 'invoke',
+          'invokeCommand': 'sensor.read',
+          'invokeParamsJson': jsonEncode({
+            'sensor': plan.input['sensor_type'] ?? 'accelerometer',
+          }),
+        };
+      case 'haptic.vibrate':
+        return {
+          'action': 'invoke',
+          'invokeCommand': 'haptic.vibrate',
+          'invokeParamsJson': jsonEncode({
+            'durationMs': plan.input['durationMs'] ?? 220,
+          }),
+        };
+      case 'flash.on':
+      case 'flash.off':
+      case 'flash.toggle':
+      case 'flash.status':
+        return {
+          'action': 'invoke',
+          'invokeCommand': plan.command,
+        };
+      case 'avatar.gesture':
+        final params = Map<String, dynamic>.from(plan.input)
+          ..remove('action')
+          ..remove('source');
+        return {
+          'action': 'invoke',
+          'invokeCommand': 'avatar.gesture',
+          'invokeParamsJson': jsonEncode(params),
+        };
+      case 'avatar.sequence':
+        return {
+          'action': 'invoke',
+          'invokeCommand': 'avatar.sequence',
+          'invokeParamsJson': jsonEncode({
+            'interruptCurrent': plan.input['interruptCurrent'] ?? true,
+            'steps': plan.input['steps'] ?? const [],
+          }),
+        };
+      default:
+        return {
+          'action': 'invoke',
+          'invokeCommand': plan.command,
+          if (plan.input.isNotEmpty) 'invokeParamsJson': jsonEncode(plan.input),
+        };
+    }
   }
 
   _AppNativeToolPlan? _plan(String message) {

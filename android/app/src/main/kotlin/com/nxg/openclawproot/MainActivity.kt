@@ -213,6 +213,35 @@ class MainActivity : FlutterActivity() {
                 "getNativeLibDir" -> {
                     result.success(nativeLibDir)
                 }
+                "getDeviceId" -> {
+                    val androidId = Settings.Secure.getString(
+                        contentResolver,
+                        Settings.Secure.ANDROID_ID
+                    )
+                    result.success(androidId ?: "unknown")
+                }
+                "getDeviceBrand" -> {
+                    result.success(Build.BRAND ?: Build.MANUFACTURER ?: "unknown")
+                }
+                "getDeviceModel" -> {
+                    result.success(Build.MODEL ?: "unknown")
+                }
+                "getAppVersion" -> {
+                    try {
+                        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            packageManager.getPackageInfo(
+                                packageName,
+                                PackageManager.PackageInfoFlags.of(0)
+                            )
+                        } else {
+                            @Suppress("DEPRECATION")
+                            packageManager.getPackageInfo(packageName, 0)
+                        }
+                        result.success(info.versionName ?: "unknown")
+                    } catch (e: Exception) {
+                        result.success("unknown")
+                    }
+                }
                 "isBootstrapComplete" -> {
                     result.success(bootstrapManager.isBootstrapComplete())
                 }
