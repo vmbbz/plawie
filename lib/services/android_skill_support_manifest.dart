@@ -349,10 +349,11 @@ final List<AndroidSkillSupportEntry> _entries =
     mode: AndroidSkillExecutionMode.androidBridge,
     smoke: 'Read Android sensor availability through the bridge.',
   ),
-  _needsConfig(
+  _readyOptional(
     'session-logs',
-    config: ['SESSION_LOGS_ROOT'],
-    smoke: 'Summarize logs from a configured session-log directory.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.appNativeTool,
+    smoke: 'List, read, or search app-owned chat sessions through Gateway.',
   ),
   _needsPack(
     'sherpa-onnx-tts',

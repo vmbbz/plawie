@@ -203,9 +203,16 @@ class ChatPersistenceService {
 
   /// Load messages for the active session.
   Future<List<ChatMessage>> loadMessages() async {
-    if (_activeSessionId == null) return [];
+    final sessionId = _activeSessionId;
+    if (sessionId == null) return [];
+    return loadMessagesForSession(sessionId);
+  }
+
+  /// Load messages for a specific app-owned chat session.
+  Future<List<ChatMessage>> loadMessagesForSession(String sessionId) async {
+    if (!_sessions.any((session) => session.id == sessionId)) return [];
     try {
-      final file = await _sessionFile(_activeSessionId!);
+      final file = await _sessionFile(sessionId);
       if (!await file.exists()) return [];
       final contents = await file.readAsString();
       final List<dynamic> jsonList = jsonDecode(contents);

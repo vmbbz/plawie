@@ -66,6 +66,7 @@ molt-launch
 valeo-sentinel
 moonpay
 blogwatcher
+session-logs
 camsnap
 summarize
 xurl
@@ -74,7 +75,8 @@ xurl
 The current Android node command allowlist contains avatar, camera, canvas,
 weather, ClawHub metadata, flashlight/torch, location, screen recording, sensor,
 simple meme image creation, blogwatcher RSS/Atom feed checks, camsnap camera
-capture, provided-text summarization, xurl HTTP requests, and haptic commands.
+capture, app-owned session log queries, provided-text summarization, xurl HTTP
+requests, and haptic commands.
 It does not currently prove a generic third-party app launcher or a safe
 WhatsApp message-sending command.
 
@@ -82,6 +84,12 @@ WhatsApp message-sending command.
 uses GET-only HTTP, blocks non-HTTP, loopback, private, and link-local targets,
 caps response size, and returns bounded item previews. It is not a persistent
 scheduler or notification system.
+
+`session-logs` is a named app-native adapter for app-owned chat sessions. It
+lists sessions, reads the active or selected session, and searches bounded
+message previews through `session-logs.query`. It does not expose arbitrary log
+directories, raw gateway session keys, raw image payloads, full reasoning
+blocks, or full tool result payloads.
 
 `xurl.request` is a generic HTTP adapter with a release safety boundary:
 absolute `http`/`https` URLs only, bounded response previews, and no loopback
@@ -132,7 +140,7 @@ Why this shape:
 | ID family | Correct home |
 | --- | --- |
 | `twilio`, `crypto`, `base`, `calculator`, `calendar` | OpenClaw skill install/load path |
-| `blogwatcher.check`, `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `summarize.text`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
+| `blogwatcher.check`, `session-logs.query`, `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `summarize.text`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
 | local NDK helper names | `LocalLlmService` direct local tool schemas |
 
 If Gateway logs `tools.allow allowlist contains unknown entries`, treat the
@@ -152,6 +160,7 @@ Device capabilities belong in node command policy, for example:
         "camera.list",
         "camsnap",
         "blogwatcher.check",
+        "session-logs.query",
         "clawhub.search",
         "clawhub.info",
         "meme-maker.create",

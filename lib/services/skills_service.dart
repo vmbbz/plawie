@@ -61,6 +61,9 @@ class SkillsService {
     'moon pay': 'moonpay',
     'blogwatcher_check': 'blogwatcher',
     'blogwatcher.check': 'blogwatcher',
+    'session_logs': 'session-logs',
+    'session_logs_query': 'session-logs',
+    'session-logs.query': 'session-logs',
     'camera_snap': 'camsnap',
     'camera snap': 'camsnap',
     'camera.snapshot': 'camsnap',
@@ -149,6 +152,7 @@ class SkillsService {
       _createTtsVoiceSkill(),
       _createDeviceNodeSkill(),
       _createBlogWatcherSkill(),
+      _createSessionLogsSkill(),
       _createCamsnapSkill(),
       _createAvatarOverlaySkill(),
       _createBaseChainSkill(),
@@ -204,6 +208,8 @@ class SkillsService {
         return await _executeTtsVoiceSkill(skill, params, ctx);
       case 'feed':
         return await _executeBlogWatcherSkill(skill, params, ctx);
+      case 'session':
+        return await _executeSessionLogsSkill(skill, params, ctx);
       case 'device':
         return await _executeDeviceNodeSkill(skill, params, ctx);
       case 'camera':
@@ -574,6 +580,23 @@ class SkillsService {
       return SkillResult.error('Blogwatcher fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Blogwatcher unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeSessionLogsSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('Session logs fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('Session logs unreachable: $e');
     }
   }
 
@@ -1006,6 +1029,18 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createSessionLogsSkill() => Skill(
+      id: 'session-logs',
+      name: 'session-logs',
+      description:
+          'Query app-owned chat session logs with bounded previews and metadata.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'session',
+      tags: ['chat', 'session', 'logs'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createCamsnapSkill() => Skill(
       id: 'camsnap',
       name: 'camsnap',
@@ -1302,6 +1337,46 @@ class SkillsService {
               },
             },
             'required': ['url'],
+          },
+        };
+      case 'session-logs':
+        return {
+          'name': skill.id,
+          'description':
+              'Query app-owned chat session logs with bounded previews and metadata.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['list', 'read', 'search'],
+                'description':
+                    'List sessions, read a session, or search message previews.',
+              },
+              'sessionId': {
+                'type': 'string',
+                'description':
+                    'Optional app chat session id. Defaults to active for read.',
+              },
+              'query': {
+                'type': 'string',
+                'description': 'Search text. Required when action is search.',
+              },
+              'limit': {
+                'type': 'integer',
+                'minimum': 1,
+                'maximum': 100,
+                'description':
+                    'Maximum sessions, messages, or matches to return.',
+              },
+              'maxMessageChars': {
+                'type': 'integer',
+                'minimum': 40,
+                'maximum': 2000,
+                'description': 'Maximum characters per message preview.',
+              },
+            },
+            'required': ['action'],
           },
         };
       case 'camsnap':

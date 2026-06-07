@@ -19,6 +19,7 @@ import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/sensor_capability.dart';
+import 'capabilities/session_logs_capability.dart';
 import 'capabilities/summarize_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
@@ -77,6 +78,7 @@ class AgentSkillServer {
   final LocationCapability _locationCapability = LocationCapability();
   final MemeMakerCapability _memeMakerCapability = MemeMakerCapability();
   final SensorCapability _sensorCapability = SensorCapability();
+  final SessionLogsCapability _sessionLogsCapability = SessionLogsCapability();
   final SummarizeCapability _summarizeCapability = SummarizeCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
   final WeatherCapability _weatherCapability = WeatherCapability();
@@ -1946,6 +1948,10 @@ class AgentSkillServer {
       'blogwatcher': 'blogwatcher.check',
       'blogwatcher_check': 'blogwatcher.check',
       'blogwatcher.check': 'blogwatcher.check',
+      'session-logs': 'session-logs.query',
+      'session_logs': 'session-logs.query',
+      'session_logs_query': 'session-logs.query',
+      'session-logs.query': 'session-logs.query',
       'camsnap': 'camera.snap',
       'camera_snap': 'camera.snap',
       'camera_clip': 'camera.clip',
@@ -2096,6 +2102,27 @@ class AgentSkillServer {
               ? 'blogwatcher.check arguments are dispatchable'
               : 'blogwatcher.check requires an absolute http or https URL',
         );
+      case 'session-logs.query':
+        final action = (input['action'] ?? 'list')
+            .toString()
+            .trim()
+            .toLowerCase()
+            .replaceAll('_', '-');
+        final query = input['query']?.toString().trim();
+        final actionOk =
+            action == 'list' || action == 'read' || action == 'search';
+        final queryOk = action != 'search' || query?.isNotEmpty == true;
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: actionOk && queryOk,
+          code: !actionOk
+              ? 'invalid_action'
+              : queryOk
+                  ? 'ok'
+                  : 'missing_query',
+          message: actionOk && queryOk
+              ? 'session-logs.query arguments are dispatchable'
+              : 'session-logs.query requires action list/read/search and a query for search',
+        );
       case 'camera.snap':
       case 'camera.clip':
       case 'camera.list':
@@ -2147,6 +2174,8 @@ class AgentSkillServer {
         return 'AvatarCapability';
       case 'blogwatcher':
         return 'BlogWatcherCapability';
+      case 'session-logs':
+        return 'SessionLogsCapability';
       case 'camera':
         return 'CameraCapability';
       case 'canvas':
@@ -2251,6 +2280,15 @@ class AgentSkillServer {
         case 'blogwatcher.check':
           final frame = await _blogWatcherCapability.handle(
             'blogwatcher.check',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'session-logs':
+        case 'session_logs':
+        case 'session_logs_query':
+        case 'session-logs.query':
+          final frame = await _sessionLogsCapability.handle(
+            'session-logs.query',
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);

@@ -54,8 +54,9 @@ Source delta pending the next batched APK/device smoke:
 ```text
 blogwatcher: needs_pack -> ready_optional
 camsnap: needs_pack -> ready_optional
+session-logs: needs_config -> ready_optional
 summarize: needs_config -> ready_optional
-source product-class counts: ready_optional 4, needs_config 15, needs_pack 19
+source product-class counts: ready_optional 5, needs_config 14, needs_pack 19
 ```
 
 Do not replace the live device-health block above until the app is rebuilt,
@@ -124,6 +125,7 @@ fresh-user launch-critical gate:
 ```text
 blogwatcher
 camsnap
+session-logs
 summarize
 xurl
 ```
@@ -143,6 +145,15 @@ native `/api/tools` catalog, routes `/api/tools/execute` through
 `TOOL_USE:camsnap` / `TOOL_RESULT:camsnap` while delegating the actual phone
 action to `camera.snap`. It is optional, not launch-required, because camera
 permission prompts and user comfort should not block fresh-app launch.
+
+`session-logs` now runs as a named app-native adapter over app-owned chat
+session persistence. It is exposed as a real `session-logs` tool in the native
+`/api/tools` catalog, routes `/api/tools/execute` through `AgentSkillServer`,
+and supports explicit prompts like `session-logs list`, `session-logs read`,
+and `session-logs search gateway limit 5`. It returns bounded metadata and
+message previews only. It does not expose arbitrary filesystem roots, raw
+gateway session keys, raw image payloads, full reasoning blocks, or the old
+`SESSION_LOGS_ROOT` directory-summarization behavior.
 
 `summarize` now runs as a bounded app-native extractive text summarizer for
 provided text. It is exposed as a real `summarize` tool in the native
@@ -176,7 +187,6 @@ notion: NOTION_TOKEN
 openai-whisper-api: OPENAI_API_KEY
 ordercli: ORDERCLI_API_KEY
 sag: SAG_API_KEY
-session-logs: SESSION_LOGS_ROOT
 slack: SLACK_BOT_TOKEN, channels.slack
 trello: TRELLO_API_KEY, TRELLO_TOKEN
 voice-call: VOICE_CALL_PROVIDER, VOICE_CALL_ACCOUNT
@@ -319,10 +329,10 @@ Minimum GTM surface:
 
 ```text
 Android Default Skills
-Ready now by product class: 17/51 Native Android-relevant
+Ready now by product class: 18/51 Native Android-relevant
 Launch gate: 13/13 pass
-Ready optional: 4
-Needs config: 15
+Ready optional: 5
+Needs config: 14
 Needs pack: 19
 Unsupported Android: 6
 Manual PRoot: 2
@@ -368,6 +378,11 @@ summarize
 Ready optional
 Runtime: app-native extractive text adapter
 Action: Use through Gateway-visible summarize
+
+session-logs
+Ready optional
+Runtime: app-native app-chat session log adapter
+Action: Use through Gateway-visible session-logs
 
 apple-notes
 Unsupported on Android
@@ -663,6 +678,33 @@ Result: 6/6 passing
 Device proof is intentionally deferred to the next batched install to save
 data. The required smoke is `/api/tools`, `/api/tools/execute name=blogwatcher`,
 and one explicit chat/UI prompt against a small public feed.
+
+Fifth adapter landed locally, pending batched device smoke:
+
+```text
+session-logs
+status: ready_optional
+runtime: app-native app-chat session log adapter
+Gateway tool: session-logs
+command underneath: session-logs.query
+manifest movement: needs_config -> ready_optional
+scope: app-owned chat sessions only, no arbitrary log root
+safety: gateway session keys, raw image payloads, full reasoning blocks, and
+full tool payloads are not returned
+```
+
+Local proof:
+
+```text
+flutter test test/session_logs_app_native_adapter_test.dart --no-pub
+
+Result: 9/9 passing
+```
+
+Device proof is intentionally deferred to the next batched install to save
+data. The required smoke is `/api/tools`,
+`/api/tools/execute name=session-logs`, and one explicit chat/UI prompt such as
+`session-logs search gateway limit 5`.
 
 ### Phase 5: Verified Dependency Packs
 

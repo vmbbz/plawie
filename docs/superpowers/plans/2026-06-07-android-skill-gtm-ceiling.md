@@ -242,6 +242,15 @@ loopback, private, and link-local feed targets. It does not claim persistent
 watching, notifications, or full CLI parity. Device smoke is deferred to the
 next batched install.
 
+`session-logs` local adapter is implemented as a ready-optional named tool for
+app-owned chat sessions. It keeps `TOOL_USE:session-logs` identity for explicit
+`session-logs list/read/search` prompts, advertises a `/api/tools` schema, and
+routes `/api/tools/execute` through `AgentSkillServer`. It returns bounded
+session metadata and message previews only; it does not expose arbitrary
+`SESSION_LOGS_ROOT` directories, raw gateway session keys, raw image payloads,
+full reasoning blocks, or full tool result payloads. Device smoke is deferred
+to the next batched install.
+
 ### Task 5: Verified Pack Lane
 
 **Files:**

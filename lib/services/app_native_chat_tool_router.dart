@@ -11,6 +11,7 @@ import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/sensor_capability.dart';
+import 'capabilities/session_logs_capability.dart';
 import 'capabilities/summarize_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
@@ -56,16 +57,20 @@ class AppNativeChatToolRouter {
 
   AppNativeChatToolRouter._internal({
     BlogWatcherCapability? blogWatcher,
+    SessionLogsCapability? sessionLogs,
     XurlCapability? xurl,
   })  : _blogWatcher = blogWatcher ?? BlogWatcherCapability(),
+        _sessionLogs = sessionLogs ?? SessionLogsCapability(),
         _xurl = xurl ?? XurlCapability();
 
   factory AppNativeChatToolRouter.forTesting({
     BlogWatcherCapability? blogWatcher,
+    SessionLogsCapability? sessionLogs,
     XurlCapability? xurl,
   }) =>
       AppNativeChatToolRouter._internal(
         blogWatcher: blogWatcher,
+        sessionLogs: sessionLogs,
         xurl: xurl,
       );
 
@@ -78,6 +83,7 @@ class AppNativeChatToolRouter {
   final LocationCapability _location = LocationCapability();
   final MemeMakerCapability _memeMaker = MemeMakerCapability();
   final SensorCapability _sensor = SensorCapability();
+  final SessionLogsCapability _sessionLogs;
   final SummarizeCapability _summarize = SummarizeCapability();
   final VibrationCapability _vibration = VibrationCapability();
   final WeatherCapability _weather = WeatherCapability();
@@ -185,6 +191,7 @@ class AppNativeChatToolRouter {
       'clawhub.search' ||
       'clawhub.info' ||
       'meme-maker.create' ||
+      'session-logs.query' ||
       'summarize.text' ||
       'xurl.request' =>
         true,
@@ -232,6 +239,7 @@ class AppNativeChatToolRouter {
       case 'weather.current':
       case 'weather.forecast':
       case 'blogwatcher.check':
+      case 'session-logs.query':
       case 'summarize.text':
       case 'xurl.request':
         return {
@@ -438,6 +446,9 @@ class AppNativeChatToolRouter {
     final blogWatcherPlan = _blogWatcherPlan(trimmed);
     if (blogWatcherPlan != null) return blogWatcherPlan;
 
+    final sessionLogsPlan = _sessionLogsPlan(trimmed);
+    if (sessionLogsPlan != null) return sessionLogsPlan;
+
     final xurlPlan = _xurlPlan(trimmed);
     if (xurlPlan != null) return xurlPlan;
 
@@ -524,6 +535,11 @@ class AppNativeChatToolRouter {
           ));
         case 'blogwatcher.check':
           return _frameToMap(await _blogWatcher.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'session-logs.query':
+          return _frameToMap(await _sessionLogs.handle(
             plan.command,
             plan.input,
           ));
@@ -690,6 +706,16 @@ class AppNativeChatToolRouter {
         final count = result['itemCount'] ?? 0;
         final title = result['feedTitle']?.toString().trim();
         return 'Blogwatcher checked${title?.isNotEmpty == true ? ' $title' : ''}: $count item(s).';
+      case 'session-logs.query':
+        final action = result['action']?.toString();
+        return switch (action) {
+          'read' =>
+            'Session logs read ${result['returnedMessageCount'] ?? 0} message(s).',
+          'search' =>
+            'Session logs found ${result['matchCount'] ?? 0} match(es).',
+          _ =>
+            'Session logs listed ${result['returnedSessionCount'] ?? 0} session(s).',
+        };
       case 'clawhub.search':
         final count = result['count'];
         return 'ClawHub search retrieved${count == null ? '' : ' $count result(s)'}.';
@@ -1117,6 +1143,55 @@ class AppNativeChatToolRouter {
         'source': 'app-native-chat-router',
         if (limit != null) 'limit': limit,
       },
+    );
+  }
+
+  _AppNativeToolPlan? _sessionLogsPlan(String message) {
+    final match = RegExp(
+      r'^\s*session[-\s]logs\s*:?\s*(.*)$',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (match == null) return null;
+    final body = (match.group(1) ?? '').trim();
+    final lowerBody = body.toLowerCase();
+    final limitMatch = RegExp(
+      r'\blimit\s+(\d{1,3})\b',
+      caseSensitive: false,
+    ).firstMatch(body);
+    final limit = int.tryParse(limitMatch?.group(1) ?? '');
+    final input = <String, dynamic>{
+      'action': 'list',
+      'source': 'app-native-chat-router',
+      if (limit != null) 'limit': limit,
+    };
+
+    if (lowerBody.startsWith('search ')) {
+      final query = body
+          .substring('search'.length)
+          .replaceFirst(
+              RegExp(r'\blimit\s+\d{1,3}\b', caseSensitive: false), '')
+          .trim();
+      if (query.isEmpty) return null;
+      input['action'] = 'search';
+      input['query'] = query;
+    } else if (lowerBody.startsWith('read') ||
+        lowerBody.startsWith('show') ||
+        lowerBody.startsWith('active')) {
+      input['action'] = 'read';
+      final idMatch = RegExp(
+        r'\b(?:id|session)\s+([A-Za-z0-9._:-]+)\b',
+        caseSensitive: false,
+      ).firstMatch(body);
+      final sessionId = idMatch?.group(1);
+      if (sessionId != null && sessionId.isNotEmpty) {
+        input['sessionId'] = sessionId;
+      }
+    }
+
+    return _AppNativeToolPlan(
+      toolName: 'session-logs',
+      command: 'session-logs.query',
+      input: input,
     );
   }
 
