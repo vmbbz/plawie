@@ -11,9 +11,9 @@ void main() {
       'unexpectedMissingDependency': 0,
       'countsByClass': {
         'ready_required': 13,
-        'ready_optional': 1,
+        'ready_optional': 2,
         'needs_config': 16,
-        'needs_pack': 21,
+        'needs_pack': 20,
         'unsupported_on_android': 6,
         'manual_proot_compat': 2,
         'hidden_desktop_only': 2,
@@ -26,8 +26,8 @@ void main() {
         },
         {
           'skillId': 'diagram-maker',
-          'androidSupport': 'needs_pack',
-          'requiredPacks': ['android-cli-core-pack'],
+          'androidSupport': 'ready_optional',
+          'runtimeStatus': 'ready',
           'ready': true,
         },
         {
@@ -65,8 +65,8 @@ void main() {
     expect(model.manifestTotal, 61);
     expect(model.androidRelevantTotal, 51);
     expect(model.readyRequiredLabel, '13/13');
-    expect(model.readyOptionalCount, 1);
-    expect(model.readyOptionalLabel, '1');
+    expect(model.readyOptionalCount, 2);
+    expect(model.readyOptionalLabel, '2');
     expect(model.androidRelevantReady, 3);
     expect(model.releaseGatePass, isTrue);
     expect(model.topNeedsConfig.single.skillId, 'github');

@@ -52,11 +52,17 @@ xurl
 Initial policy buckets:
 
 - `ready_required`: `avatar_forge`, `battery`, `canvas`, `clawhub`, `healthcheck`, `meme-maker`, `sensors`, `skill-creator`, `spike`, `taskflow`, `taskflow-inbox-triage`, `vibrate`, `weather`
+- `ready_optional`: `diagram-maker`
 - `needs_config`: `1password`, `discord`, `gh-issues`, `github`, `gog`, `goplaces`, `mcporter`, `notion`, `openai-whisper-api`, `ordercli`, `sag`, `session-logs`, `slack`, `summarize`, `trello`, `voice-call`
-- `needs_pack`: `blogwatcher`, `blucli`, `camsnap`, `coding-agent`, `diagram-maker`, `eightctl`, `gemini`, `gifgrep`, `himalaya`, `nano-pdf`, `node-inspect-debugger`, `openai-whisper`, `openhue`, `python-debugpy`, `sherpa-onnx-tts`, `songsee`, `sonoscli`, `spotify-player`, `tmux`, `video-frames`, `wacli`, `xurl`
+- `needs_pack`: `blogwatcher`, `blucli`, `camsnap`, `coding-agent`, `eightctl`, `gemini`, `gifgrep`, `himalaya`, `nano-pdf`, `node-inspect-debugger`, `openai-whisper`, `openhue`, `python-debugpy`, `sherpa-onnx-tts`, `songsee`, `sonoscli`, `spotify-player`, `tmux`, `video-frames`, `wacli`, `xurl`
 - `unsupported_on_android`: `apple-notes`, `apple-reminders`, `bear-notes`, `imsg`, `peekaboo`, `things-mac`
 - `manual_proot_compat`: `node-connect`, `oracle`
 - `hidden_desktop_only`: `model-usage`, `obsidian`
+
+Current correction after the later Phase 5 audit: `diagram-maker` is not a
+pack-gated CLI skill. Its bundled `SKILL.md` has no binary/runtime requirement,
+so the active manifest class is `ready_optional` with `instructionOnly`
+execution. Do not put it back into `android-cli-core-pack`.
 
 ## Task 1: Android Support Manifest
 

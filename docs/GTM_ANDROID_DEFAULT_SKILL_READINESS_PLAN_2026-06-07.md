@@ -28,7 +28,8 @@ Hide or demote skills that are not Android-release safe.
 
 ## Current Device Truth
 
-Live device health on 2026-06-07 after the Phase 4 milestone install reported:
+Live device health on 2026-06-07 after the Phase 5 `diagram-maker`
+classification install reported:
 
 ```text
 Classified default manifest: 61
@@ -38,9 +39,9 @@ Launch-required ready: 13/13
 Ready within Android default manifest: 22
 
 ready_required: 13
-ready_optional: 6
+ready_optional: 7
 needs_config: 14
-needs_pack: 18
+needs_pack: 17
 unsupported_on_android: 6
 manual_proot_compat: 2
 hidden_desktop_only: 2
@@ -58,8 +59,9 @@ camsnap: needs_pack -> ready_optional
 nano-pdf: needs_pack -> ready_optional
 session-logs: needs_config -> ready_optional
 summarize: needs_config -> ready_optional
+diagram-maker: needs_pack -> ready_optional
 direct execute: summarize, session-logs, nano-pdf, xurl, camsnap, blogwatcher
-product-class counts: ready_optional 6, needs_config 14, needs_pack 18
+product-class counts: ready_optional 7, needs_config 14, needs_pack 17
 ```
 
 The `/api/debug/app-native-chat-tool-smoke` endpoint remains unreliable for
@@ -72,9 +74,9 @@ Read this carefully:
 
 - `61` is the classified default skill manifest.
 - `13/13` is the current launch-required pass gate.
-- `22 ready` means 13 launch-ready plus 6 app-native ready-optional adapters,
-  plus `diagram-maker`, `spotify-player`, and `node-connect` on the current
-  device.
+- `22 ready` means 13 launch-ready plus 7 ready-optional skills
+  (`diagram-maker` plus the 6 app-native optional adapters), plus
+  `spotify-player` and `node-connect` on the current device.
 - `xurl`, `camsnap`, `summarize`, `blogwatcher`, `session-logs`, and
   `nano-pdf` are now app-native ready optional: usable through
   Gateway-visible tool execution, but not part of the launch-critical gate.
@@ -133,11 +135,18 @@ fresh-user launch-critical gate:
 ```text
 blogwatcher
 camsnap
+diagram-maker
 nano-pdf
 session-logs
 summarize
 xurl
 ```
+
+`diagram-maker` is an instruction-only OpenClaw skill, not a CLI renderer pack.
+Its bundled `SKILL.md` has no binary/runtime requirement, so Android should let
+the Gateway/agent skill loop use the instructions to create diagram artifacts
+instead of blocking it behind `android-cli-core-pack`. It stays optional because
+a richer app-native renderer/export adapter can still improve the UX later.
 
 `blogwatcher` now runs as a bounded app-native RSS/Atom feed checker. It is
 exposed as a real `blogwatcher` tool in the native `/api/tools` catalog, routes
@@ -231,7 +240,6 @@ These are Android-relevant, but need verified runtime/binary/media packs:
 ```text
 blucli: android-cli-core-pack
 coding-agent: android-node-debug-pack
-diagram-maker: android-cli-core-pack
 eightctl: android-cli-core-pack
 gemini: android-node-debug-pack
 gifgrep: android-vision-media-runtime
@@ -854,9 +862,10 @@ target: filesDir/native-node-embedded/provisioning/bin
 The debug APK now carries the CLI-core asset directory and the native bootstrap
 copies any non-dot files from that directory into the provisioning bin with
 executable permissions. Current APK payload audit still shows no real CLI-core
-binary names (`blucli`, `diagram-maker`, `eightctl`, `himalaya`, `openhue`,
-`sonoscli`, `wacli`). That means this round prepares the install lane but does
-not yet move live device skill counts.
+binary names (`blucli`, `eightctl`, `himalaya`, `openhue`, `sonoscli`,
+`wacli`). `diagram-maker` was removed from this pack lane after its `SKILL.md`
+audit proved it is instruction-only. That means the payload lane prepares
+installation for true CLI binaries but does not invent a renderer binary.
 
 Local proof:
 
@@ -884,6 +893,21 @@ signed by a production key, or safe to install for users. It means APK-provided
 CLI-core binaries can now be discovered, selected as a dependency pack, copied
 into managed Native state, receipted, and reinstalled if the managed file
 disappears.
+
+Classification correction landed after the CLI SKILL audit:
+
+```text
+diagram-maker
+from: needs_pack / android-cli-core-pack
+to: ready_optional / openclawSkill / instructionOnly
+reason: bundled SKILL.md has no requires.bins or runtime dependency
+device proof: ready true, runtimeStatus ready, provisioningStatus ready
+```
+
+This did not raise the raw "ready within manifest" count because
+`diagram-maker` was already runtime-ready on the current device. It did improve
+the product truth: fresh users should no longer see it as blocked by a pack it
+does not need.
 
 ### Phase 6: Fresh-User Proof
 

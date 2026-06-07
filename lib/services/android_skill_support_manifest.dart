@@ -207,10 +207,11 @@ final List<AndroidSkillSupportEntry> _entries =
     packs: ['android-node-debug-pack'],
     smoke: 'Run a dry coding-agent command in the app-owned workspace.',
   ),
-  _needsPack(
+  _readyOptional(
     'diagram-maker',
-    packs: ['android-cli-core-pack'],
-    smoke: 'Render a tiny diagram using the verified Android renderer pack.',
+    owner: AndroidSkillOwnerLayer.openclawSkill,
+    mode: AndroidSkillExecutionMode.instructionOnly,
+    smoke: 'Create a tiny standalone diagram artifact from instructions.',
   ),
   _needsConfig(
     'discord',

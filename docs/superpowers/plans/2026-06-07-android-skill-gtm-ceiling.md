@@ -333,6 +333,29 @@ flutter build apk --debug
 Result: analyzer clean; 11/11 tests passed; debug APK built; APK payload audit
 shows no real CLI-core binary names yet.
 
+- [x] **Step 6: Correct diagram-maker classification**
+
+Audited the bundled `diagram-maker/SKILL.md` and confirmed it has no
+`requirements.bins` or runtime dependency. Reclassified it from
+`needs_pack/android-cli-core-pack` to `ready_optional/instructionOnly` and
+removed it from the APK-provided CLI-core binary resolver.
+
+Focused proof:
+
+```powershell
+flutter analyze lib/services/android_skill_support_manifest.dart lib/services/skill_provisioning_service.dart test/android_skill_support_manifest_test.dart test/android_skill_readiness_view_model_test.dart test/skill_provisioning_service_test.dart
+flutter test test/android_skill_support_manifest_test.dart test/android_skill_readiness_view_model_test.dart test/skill_provisioning_service_test.dart --no-pub
+flutter build apk --debug
+adb -s RZCX30KA9AW install -r build\app\outputs\flutter-apk\app-debug.apk
+adb -s RZCX30KA9AW forward tcp:8765 tcp:8765
+Invoke-RestMethod http://127.0.0.1:8765/device/health
+```
+
+Result: analyzer clean; 14/14 focused tests passed; debug APK built and
+installed over existing app data; device health reported releaseGatePass true,
+ready_required 13, ready_optional 7, needs_config 14, needs_pack 17, and
+`diagram-maker` ready with `runtimeStatus: ready`.
+
 ### Task 6: Fresh-User Proof
 
 **Files:**

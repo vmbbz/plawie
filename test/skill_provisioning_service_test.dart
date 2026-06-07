@@ -200,6 +200,71 @@ requirements:
     );
   });
 
+  test('provisioning does not advertise diagram-maker as CLI-core binary',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_diagram_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills =
+        Directory(path.join(nativeRoot, 'workspace', 'skills'));
+    final bundledBinDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'bin',
+    ));
+    await nativeSkills.create(recursive: true);
+    await bundledBinDir.create(recursive: true);
+
+    final diagram = Directory(path.join(nativeSkills.path, 'diagram-maker'));
+    await diagram.create(recursive: true);
+    await File(path.join(diagram.path, 'SKILL.md')).writeAsString('''
+---
+requirements:
+  bins:
+    - diagram-maker
+---
+# Diagram Maker
+''');
+    await File(path.join(bundledBinDir.path, 'diagram-maker')).writeAsString(
+      '#!/system/bin/sh\nprintf "diagram-maker test\\n"\n',
+      flush: true,
+    );
+
+    final before = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      before,
+      skillId: 'diagram-maker',
+    );
+
+    expect(report.changed, isTrue);
+    expect(report.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(
+      report.results.single.actions
+          .where((action) =>
+              action.type == SkillProvisioningActionType.dependencyPack)
+          .map((action) => action.key),
+      isNot(contains('android-cli-core-pack')),
+    );
+    expect(
+      report.results.single.actions
+          .where((action) => action.type == SkillProvisioningActionType.binary)
+          .map((action) => action.key),
+      contains('diagram-maker'),
+    );
+  });
+
   test('provisioning can apply supplied native env and config values',
       () async {
     final temp =

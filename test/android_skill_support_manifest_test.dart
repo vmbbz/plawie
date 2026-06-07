@@ -102,6 +102,15 @@ void main() {
       'launchCritical': false,
       'smokePrompt': 'Run xurl GET against a local HTTP fixture.',
     });
+    expect(manifest.entryFor('diagram-maker')!.toJson(), {
+      'skillId': 'diagram-maker',
+      'androidSupport': 'ready_optional',
+      'ownerLayer': 'openclawSkill',
+      'executionMode': 'instructionOnly',
+      'launchCritical': false,
+      'smokePrompt':
+          'Create a tiny standalone diagram artifact from instructions.',
+    });
     expect(
       manifest.entryFor('apple-notes')!.status,
       AndroidSkillSupportStatus.unsupportedOnAndroid,

@@ -23,7 +23,6 @@ class SkillProvisioningService {
   static const _androidCliCorePackVersion = 'apk-bundled-v1';
   static const _androidCliCorePackBins = <String>{
     'blucli',
-    'diagram-maker',
     'eightctl',
     'himalaya',
     'openhue',
