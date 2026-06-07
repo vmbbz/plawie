@@ -66,13 +66,11 @@ class AndroidSkillReadinessViewModel {
 
   static List<AndroidSkillGateSummary> _topGateSummaries(
     List<Map<String, dynamic>> skills,
-    String androidSupport, {
-    int limit = 4,
-  }) {
+    String androidSupport,
+  ) {
     return skills
         .where((skill) => skill['androidSupport']?.toString() == androidSupport)
         .where((skill) => skill['ready'] != true)
-        .take(limit)
         .map(AndroidSkillGateSummary.fromSkill)
         .toList(growable: false);
   }

@@ -468,7 +468,7 @@ Plan:
 ### Phase 1: Make The App Explain The Truth
 
 Goal: the Skills page should clearly show launch readiness, Android-relevant
-ceiling, and top gate categories.
+ceiling, and gate categories.
 
 Work:
 
@@ -480,7 +480,7 @@ manifest total - unsupported - manual PRoot - hidden desktop
 ```
 
 - Show ready-now within that relevant set.
-- Show short lists of blocked `needs_config` and `needs_pack` examples.
+- Show the full blocked `needs_config` and `needs_pack` lists, not a teaser.
 - Explain that config and pack are different gates.
 
 ### Phase 2: Config Wizard
@@ -500,6 +500,9 @@ Implemented in-app path:
 - `AndroidSkillConfigFormModel` parses readiness JSON into env credentials and
   dotted OpenClaw config keys.
 - Skills page config-gate chips open `AndroidSkillConfigSheet`.
+- Skills page gate previews now keep every blocked config and pack item visible
+  from readiness JSON, so fresh users can see the whole remaining path without
+  reading device logs.
 - The sheet writes values through
   `GatewayProvider.configureAndroidDefaultSkill`, which delegates to
   `SkillProvisioningService.auditAndProvision`.

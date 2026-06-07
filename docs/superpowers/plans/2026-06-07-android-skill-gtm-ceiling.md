@@ -81,6 +81,10 @@ expect(model.androidRelevantTotal, 51);
 
 The panel must show launch gate, Android-relevant ceiling, excluded/outside-GTM count, config gates, and pack gates.
 
+Later correction: gate previews must not truncate the remaining work to four
+items. The view model now exposes every blocked config and pack gate from the
+readiness JSON so the Skills page can show the full user-facing release path.
+
 - [x] **Step 6: Verify and commit**
 
 Run:

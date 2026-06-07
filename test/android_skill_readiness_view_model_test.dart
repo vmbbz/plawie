@@ -74,4 +74,52 @@ void main() {
     expect(model.topNeedsConfig.single.detail, contains('missing_native_bin'));
     expect(model.topNeedsPack, isEmpty);
   });
+
+  test('keeps every blocked config and pack gate visible to the UI', () {
+    final model = AndroidSkillReadinessViewModel.fromReadiness({
+      'totalManifestSkills': 12,
+      'readyRequired': {'ready': 1, 'total': 1},
+      'releaseGatePass': true,
+      'unexpectedMissingDependency': 0,
+      'countsByClass': {
+        'ready_required': 1,
+        'ready_optional': 0,
+        'needs_config': 5,
+        'needs_pack': 6,
+        'unsupported_on_android': 0,
+        'manual_proot_compat': 0,
+        'hidden_desktop_only': 0,
+      },
+      'skills': [
+        {
+          'skillId': 'weather',
+          'androidSupport': 'ready_required',
+          'ready': true,
+        },
+        for (var i = 1; i <= 5; i++)
+          {
+            'skillId': 'config-$i',
+            'androidSupport': 'needs_config',
+            'requiredConfig': ['CONFIG_$i'],
+            'ready': false,
+          },
+        for (var i = 1; i <= 6; i++)
+          {
+            'skillId': 'pack-$i',
+            'androidSupport': 'needs_pack',
+            'requiredPacks': ['pack-$i-runtime'],
+            'ready': false,
+          },
+      ],
+    });
+
+    expect(
+      model.topNeedsConfig.map((item) => item.skillId),
+      ['config-1', 'config-2', 'config-3', 'config-4', 'config-5'],
+    );
+    expect(
+      model.topNeedsPack.map((item) => item.skillId),
+      ['pack-1', 'pack-2', 'pack-3', 'pack-4', 'pack-5', 'pack-6'],
+    );
+  });
 }
