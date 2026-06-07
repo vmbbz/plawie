@@ -15,6 +15,7 @@ import 'capabilities/blog_watcher_capability.dart';
 import 'capabilities/camera_capability.dart';
 import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
+import 'capabilities/discord_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/github_capability.dart';
 import 'capabilities/goplaces_capability.dart';
@@ -78,6 +79,7 @@ class AgentSkillServer {
   final CameraCapability _cameraCapability = CameraCapability();
   final ClawHubCapability _clawHubCapability = ClawHubCapability();
   final DeviceCapability _deviceCapability = DeviceCapability();
+  final DiscordCapability _discordCapability = DiscordCapability();
   final FlashCapability _flashCapability = FlashCapability();
   final GitHubCapability _githubCapability = GitHubCapability();
   final GoPlacesCapability _goPlacesCapability = GoPlacesCapability();
@@ -1966,6 +1968,11 @@ class AgentSkillServer {
       'camera_list': 'camera.list',
       'clawhub_search': 'clawhub.search',
       'clawhub_info': 'clawhub.info',
+      'discord': 'discord.me',
+      'discord_me': 'discord.me',
+      'discord.me': 'discord.me',
+      'discord_status': 'discord.me',
+      'discord.status': 'discord.me',
       'github': 'github.user',
       'github_user': 'github.user',
       'github.user': 'github.user',
@@ -2151,6 +2158,12 @@ class AgentSkillServer {
           message: actionOk && queryOk
               ? 'session-logs.query arguments are dispatchable'
               : 'session-logs.query requires action list/read/search and a query for search',
+        );
+      case 'discord.me':
+        return const _NativeGatewayDryRunArgumentValidation(
+          ok: true,
+          code: 'ok',
+          message: 'discord.me arguments are dispatchable',
         );
       case 'github.user':
         return const _NativeGatewayDryRunArgumentValidation(
@@ -2373,6 +2386,16 @@ class AgentSkillServer {
         case 'session-logs.query':
           final frame = await _sessionLogsCapability.handle(
             'session-logs.query',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'discord':
+        case 'discord_me':
+        case 'discord.me':
+        case 'discord_status':
+        case 'discord.status':
+          final frame = await _discordCapability.handle(
+            'discord.me',
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);

@@ -216,7 +216,10 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsConfig(
     'discord',
     config: ['DISCORD_BOT_TOKEN'],
-    smoke: 'Read Discord bot status after token config.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke:
+        'Read Discord bot status metadata through the app-native REST adapter.',
   ),
   _needsPack(
     'eightctl',

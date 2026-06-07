@@ -61,6 +61,12 @@ class SkillsService {
     'moon pay': 'moonpay',
     'blogwatcher_check': 'blogwatcher',
     'blogwatcher.check': 'blogwatcher',
+    'discord_me': 'discord',
+    'discord me': 'discord',
+    'discord.me': 'discord',
+    'discord_status': 'discord',
+    'discord status': 'discord',
+    'discord.status': 'discord',
     'session_logs': 'session-logs',
     'session_logs_query': 'session-logs',
     'session-logs.query': 'session-logs',
@@ -172,6 +178,7 @@ class SkillsService {
       _createTtsVoiceSkill(),
       _createDeviceNodeSkill(),
       _createBlogWatcherSkill(),
+      _createDiscordSkill(),
       _createSessionLogsSkill(),
       _createNanoPdfSkill(),
       _createCamsnapSkill(),
@@ -233,6 +240,8 @@ class SkillsService {
         return await _executeTtsVoiceSkill(skill, params, ctx);
       case 'feed':
         return await _executeBlogWatcherSkill(skill, params, ctx);
+      case 'discord':
+        return await _executeDiscordSkill(skill, params, ctx);
       case 'session':
         return await _executeSessionLogsSkill(skill, params, ctx);
       case 'pdf':
@@ -613,6 +622,23 @@ class SkillsService {
       return SkillResult.error('Blogwatcher fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Blogwatcher unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeDiscordSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('Discord skill fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('Discord skill unreachable: $e');
     }
   }
 
@@ -1130,6 +1156,18 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createDiscordSkill() => Skill(
+      id: 'discord',
+      name: 'discord',
+      description:
+          'Read Discord bot status metadata with a bounded app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'discord',
+      tags: ['discord', 'bot', 'rest'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createSessionLogsSkill() => Skill(
       id: 'session-logs',
       name: 'session-logs',
@@ -1498,6 +1536,24 @@ class SkillsService {
               },
             },
             'required': ['url'],
+          },
+        };
+      case 'discord':
+        return {
+          'name': skill.id,
+          'description':
+              'Read Discord bot status metadata through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['me', 'status'],
+                'description':
+                    'Use me or status to read the configured bot metadata.',
+              },
+            },
+            'required': ['action'],
           },
         };
       case 'session-logs':

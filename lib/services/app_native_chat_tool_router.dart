@@ -7,6 +7,7 @@ import 'capabilities/blog_watcher_capability.dart';
 import 'capabilities/camera_capability.dart';
 import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
+import 'capabilities/discord_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/github_capability.dart';
 import 'capabilities/goplaces_capability.dart';
@@ -61,12 +62,14 @@ class AppNativeChatToolRouter {
 
   AppNativeChatToolRouter._internal({
     BlogWatcherCapability? blogWatcher,
+    DiscordCapability? discord,
     GitHubCapability? github,
     GoPlacesCapability? goplaces,
     NotionCapability? notion,
     SessionLogsCapability? sessionLogs,
     XurlCapability? xurl,
   })  : _blogWatcher = blogWatcher ?? BlogWatcherCapability(),
+        _discord = discord ?? DiscordCapability(),
         _github = github ?? GitHubCapability(),
         _goplaces = goplaces ?? GoPlacesCapability(),
         _notion = notion ?? NotionCapability(),
@@ -75,6 +78,7 @@ class AppNativeChatToolRouter {
 
   factory AppNativeChatToolRouter.forTesting({
     BlogWatcherCapability? blogWatcher,
+    DiscordCapability? discord,
     GitHubCapability? github,
     GoPlacesCapability? goplaces,
     NotionCapability? notion,
@@ -83,6 +87,7 @@ class AppNativeChatToolRouter {
   }) =>
       AppNativeChatToolRouter._internal(
         blogWatcher: blogWatcher,
+        discord: discord,
         github: github,
         goplaces: goplaces,
         notion: notion,
@@ -95,6 +100,7 @@ class AppNativeChatToolRouter {
   final CameraCapability _camera = CameraCapability();
   final ClawHubCapability _clawHub = ClawHubCapability();
   final DeviceCapability _device = DeviceCapability();
+  final DiscordCapability _discord;
   final FlashCapability _flash = FlashCapability();
   final GitHubCapability _github;
   final GoPlacesCapability _goplaces;
@@ -192,6 +198,7 @@ class AppNativeChatToolRouter {
       'avatar.gesture' ||
       'avatar.sequence' ||
       'blogwatcher.check' ||
+      'discord.me' ||
       'haptic.vibrate' ||
       'flash.on' ||
       'flash.off' ||
@@ -264,6 +271,7 @@ class AppNativeChatToolRouter {
       case 'weather.current':
       case 'weather.forecast':
       case 'blogwatcher.check':
+      case 'discord.me':
       case 'github.user':
       case 'gh-issues.list':
       case 'goplaces.search':
@@ -476,6 +484,9 @@ class AppNativeChatToolRouter {
     final blogWatcherPlan = _blogWatcherPlan(trimmed);
     if (blogWatcherPlan != null) return blogWatcherPlan;
 
+    final discordPlan = _discordPlan(trimmed);
+    if (discordPlan != null) return discordPlan;
+
     final githubPlan = _githubPlan(trimmed);
     if (githubPlan != null) return githubPlan;
 
@@ -577,6 +588,11 @@ class AppNativeChatToolRouter {
           ));
         case 'blogwatcher.check':
           return _frameToMap(await _blogWatcher.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'discord.me':
+          return _frameToMap(await _discord.handle(
             plan.command,
             plan.input,
           ));
@@ -769,6 +785,11 @@ class AppNativeChatToolRouter {
         final count = result['itemCount'] ?? 0;
         final title = result['feedTitle']?.toString().trim();
         return 'Blogwatcher checked${title?.isNotEmpty == true ? ' $title' : ''}: $count item(s).';
+      case 'discord.me':
+        final username = result['username']?.toString().trim();
+        return username?.isNotEmpty == true
+            ? 'Discord bot status retrieved for $username.'
+            : 'Discord bot status retrieved.';
       case 'github.user':
         final login = result['login']?.toString().trim();
         return login?.isNotEmpty == true
@@ -1224,6 +1245,22 @@ class AppNativeChatToolRouter {
         'url': url,
         'source': 'app-native-chat-router',
         if (limit != null) 'limit': limit,
+      },
+    );
+  }
+
+  _AppNativeToolPlan? _discordPlan(String message) {
+    final match = RegExp(
+      r'^\s*discord(?:\s+(?:bot\s+)?(?:status|me|user))?\s*$',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (match == null) return null;
+    return const _AppNativeToolPlan(
+      toolName: 'discord',
+      command: 'discord.me',
+      input: {
+        'action': 'me',
+        'source': 'app-native-chat-router',
       },
     );
   }

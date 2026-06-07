@@ -72,6 +72,8 @@ gh-issues: needs_config + stale missing_native_bin -> needs_config app-native co
 goplaces: needs_config + stale missing_native_bin -> needs_config app-native config-only
 notion: needs_config + stale missing_native_bin -> needs_config app-native config-only
   local build/test proof complete; device install proof pending ADB visibility
+discord: needs_config + stale missing_native_bin -> needs_config app-native config-only
+  local build/test proof complete; device install proof pending ADB visibility
 
 /api/tools after install:
 toolCount: 19
@@ -98,11 +100,14 @@ gh-issues: HTTP 400 MISSING_GITHUB_TOKEN, no secret leak
 goplaces: HTTP 400 MISSING_GOOGLE_PLACES_API_KEY, no secret leak
 ```
 
-The Notion adapter is locally built and verified but not yet installed on the
-phone in this round because `adb devices` returned no Android devices after
-refreshing the ADB server. Expected post-install `/api/tools` count is `20`,
-with `notion` present and `/api/tools/execute name=notion` returning
-`MISSING_NOTION_TOKEN` until the user configures `NOTION_TOKEN`.
+The Notion and Discord adapters are locally built and verified but not yet
+installed on the phone in these rounds because `adb devices` returned no
+Android devices after refreshing the ADB server. Expected post-install
+`/api/tools` count is `21`, with `notion` and `discord` present.
+`/api/tools/execute name=notion` should return `MISSING_NOTION_TOKEN` until
+the user configures `NOTION_TOKEN`; `/api/tools/execute name=discord` should
+return `MISSING_DISCORD_BOT_TOKEN` until the user configures
+`DISCORD_BOT_TOKEN`.
 
 The `/api/debug/app-native-chat-tool-smoke` endpoint remains unreliable for
 final-response proof. During the milestone smoke it timed out once and then
@@ -120,7 +125,7 @@ Read this carefully:
 - `xurl`, `camsnap`, `summarize`, `blogwatcher`, `session-logs`, and
   `nano-pdf` are now app-native ready optional: usable through
   Gateway-visible tool execution, but not part of the launch-critical gate.
-- `github`, `gh-issues`, `goplaces`, and `notion` are still needs-config
+- `github`, `gh-issues`, `goplaces`, `notion`, and `discord` are still needs-config
   skills, but no longer depend on Native CLI binaries once their env keys are
   present. They use bounded app-native REST adapters through the same
   Gateway-visible tool path.
@@ -267,8 +272,8 @@ runtime gate. On the current device, several Class B skills also report
 `missing_native_bin`.
 
 Important second correction: app-native config-gated adapters must not keep
-stale OpenClaw binary gates. `github`, `gh-issues`, `goplaces`, and `notion`
-are the first adapter cases: until their env keys exist they show
+stale OpenClaw binary gates. `github`, `gh-issues`, `goplaces`, `notion`, and
+`discord` are the first adapter cases: until their env keys exist they show
 `needs_config`; after the keys exist they become app-native ready without
 requiring CLI binaries.
 
@@ -305,6 +310,13 @@ User config: NOTION_TOKEN
 Runtime gate before token: needs_config
 Runtime gate after token: app_native_ready
 Next action: configure NOTION_TOKEN in the Skills page
+
+Skill: discord
+Product class: Needs config
+User config: DISCORD_BOT_TOKEN
+Runtime gate before token: needs_config
+Runtime gate after token: app_native_ready
+Next action: configure DISCORD_BOT_TOKEN in the Skills page
 ```
 
 `github` reads bounded authenticated profile metadata through `github.user`.
@@ -313,7 +325,8 @@ Next action: configure NOTION_TOKEN in the Skills page
 using an explicit response field mask.
 `notion` performs bounded Notion workspace search metadata through
 `notion.search`.
-All four are exposed in `/api/tools`, route `/api/tools/execute` through
+`discord` reads bounded Discord bot status metadata through `discord.me`.
+All five are exposed in `/api/tools`, route `/api/tools/execute` through
 `AgentSkillServer`, and keep tokens/API keys out of tool input, result
 payloads, and visible chat chunks.
 
@@ -1055,13 +1068,85 @@ Next device proof once the phone is visible:
 ```text
 adb install -r build/app/outputs/flutter-apk/app-debug.apk
 adb forward tcp:8765 tcp:8765
-/api/tools: notion schema present, expected toolCount 20
+/api/tools: notion and discord schemas present, expected toolCount 21
 /device/health:
   notion runtimeStatus: needs_config
   notion provisioningStatus: needs_user_config
   notion primaryGate/gates: absent
+  discord runtimeStatus: needs_config
+  discord provisioningStatus: needs_user_config
+  discord primaryGate/gates: absent
 /api/tools/execute name=notion:
   HTTP 400 MISSING_NOTION_TOKEN, no secret leak
+/api/tools/execute name=discord:
+  HTTP 400 MISSING_DISCORD_BOT_TOKEN, no secret leak
+```
+
+Tenth adapter landed:
+
+```text
+discord
+status: needs_config
+runtime after config: app-native Discord REST adapter
+Gateway tool: discord
+command underneath: discord.me
+manifest movement: stale missing_native_bin -> app-native config-only
+scope: Discord bot status metadata only
+safety: DISCORD_BOT_TOKEN is read from Native .env, never accepted in tool
+input, and never returned in payloads or chat chunks
+```
+
+Local proof:
+
+```text
+flutter test test/discord_app_native_adapter_test.dart --no-pub
+
+Result: 6/6 passing
+```
+
+Combined local proof after formatting:
+
+```text
+flutter test test/android_skill_readiness_service_test.dart \
+  test/discord_app_native_adapter_test.dart \
+  test/github_app_native_adapter_test.dart \
+  test/goplaces_app_native_adapter_test.dart \
+  test/notion_app_native_adapter_test.dart \
+  test/android_skill_support_manifest_test.dart --no-pub
+
+Result: 37/37 passing
+```
+
+Analyzer proof:
+
+```text
+flutter analyze lib/services/capabilities/discord_capability.dart \
+  lib/services/app_native_chat_tool_router.dart \
+  lib/services/agent_skill_server.dart \
+  lib/services/gateway_tool_catalog.dart \
+  lib/services/android_skill_support_manifest.dart \
+  lib/services/skills_service.dart \
+  test/discord_app_native_adapter_test.dart
+
+Result: No issues found
+```
+
+Build proof:
+
+```text
+flutter build apk --debug
+
+Result: built build/app/outputs/flutter-apk/app-debug.apk
+```
+
+Device proof status for this Discord round:
+
+```text
+adb devices -l
+Result: no Android devices listed
+
+flutter devices
+Result: Windows, Chrome, and Edge only
 ```
 
 Host inspection note: for the phone-owned `AgentSkillServer` bridge on port
