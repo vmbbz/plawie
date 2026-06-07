@@ -81,6 +81,9 @@ class SkillsService {
     'xurl.request': 'xurl',
     'summarize_text': 'summarize',
     'summarize.text': 'summarize',
+    'trello_boards': 'trello',
+    'trello boards': 'trello',
+    'trello.boards': 'trello',
     'github_user': 'github',
     'github user': 'github',
     'github.user': 'github',
@@ -196,6 +199,7 @@ class SkillsService {
       _createMoonPaySkill(),
       _createXurlSkill(),
       _createSummarizeSkill(),
+      _createTrelloSkill(),
     ];
     for (final s in bundled) {
       _skills[s.id] = s;
@@ -274,6 +278,8 @@ class SkillsService {
         return await _executeHttpSkill(skill, params, ctx);
       case 'summary':
         return await _executeSummarizeSkill(skill, params, ctx);
+      case 'trello':
+        return await _executeTrelloSkill(skill, params, ctx);
       default:
         return SkillResult.error('No executor for category: ${skill.category}');
     }
@@ -741,6 +747,23 @@ class SkillsService {
       return SkillResult.error('Notion skill fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Notion skill unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeTrelloSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('Trello skill fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('Trello skill unreachable: $e');
     }
   }
 
@@ -1351,6 +1374,18 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createTrelloSkill() => Skill(
+      id: 'trello',
+      name: 'trello',
+      description:
+          'Read Trello board summaries with a bounded app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'trello',
+      tags: ['trello', 'boards', 'rest'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
 
   Future<void> _registerNativeSkills() async {
     try {
@@ -1928,6 +1963,35 @@ class SkillsService {
               },
             },
             'required': ['text'],
+          },
+        };
+      case 'trello':
+        return {
+          'name': skill.id,
+          'description':
+              'Read bounded Trello board summaries through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['boards', 'summary'],
+                'description':
+                    'Use boards or summary to read configured member boards.',
+              },
+              'filter': {
+                'type': 'string',
+                'enum': ['open', 'closed', 'all'],
+                'description': 'Board filter. Defaults to open.',
+              },
+              'limit': {
+                'type': 'integer',
+                'minimum': 1,
+                'maximum': 20,
+                'description': 'Maximum boards to return.',
+              },
+            },
+            'required': ['action'],
           },
         };
       default:

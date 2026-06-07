@@ -440,7 +440,10 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsConfig(
     'trello',
     config: ['TRELLO_API_KEY', 'TRELLO_TOKEN'],
-    smoke: 'Read a configured Trello board summary.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke:
+        'Read bounded Trello board summaries through the app-native REST adapter.',
   ),
   _ready(
     'vibrate',

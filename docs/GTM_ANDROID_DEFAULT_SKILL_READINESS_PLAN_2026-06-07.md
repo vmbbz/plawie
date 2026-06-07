@@ -71,15 +71,17 @@ github: needs_config + stale missing_native_bin -> needs_config app-native confi
 gh-issues: needs_config + stale missing_native_bin -> needs_config app-native config-only
 goplaces: needs_config + stale missing_native_bin -> needs_config app-native config-only
 notion: needs_config + stale missing_native_bin -> needs_config app-native config-only
-  local build/test proof complete; device install proof pending ADB visibility
 discord: needs_config + stale missing_native_bin -> needs_config app-native config-only
-  local build/test proof complete; device install proof pending ADB visibility
+trello: needs_config + stale missing_native_bin -> needs_config app-native config-only
 
 /api/tools after install:
-toolCount: 19
+toolCount: 22
 github present: true
 gh-issues present: true
 goplaces present: true
+notion present: true
+discord present: true
+trello present: true
 
 /device/health after install:
 releaseGatePass: true
@@ -93,21 +95,26 @@ gh-issues: runtimeStatus needs_config, provisioningStatus needs_user_config,
 primaryGate absent, gates absent
 goplaces: runtimeStatus needs_config, provisioningStatus needs_user_config,
 primaryGate absent, gates absent
+notion: runtimeStatus needs_config, provisioningStatus needs_user_config,
+primaryGate absent, gates absent
+discord: runtimeStatus needs_config, provisioningStatus needs_user_config,
+primaryGate absent, gates absent
+trello: runtimeStatus needs_config, provisioningStatus needs_user_config,
+primaryGate absent, gates absent
 
 /api/tools/execute missing-config proof:
 github: HTTP 400 MISSING_GITHUB_TOKEN, no secret leak
 gh-issues: HTTP 400 MISSING_GITHUB_TOKEN, no secret leak
 goplaces: HTTP 400 MISSING_GOOGLE_PLACES_API_KEY, no secret leak
+notion: HTTP 400 MISSING_NOTION_TOKEN, no secret value leak
+discord: HTTP 400 MISSING_DISCORD_BOT_TOKEN, no secret value leak
+trello: HTTP 400 MISSING_TRELLO_CONFIG, no secret value leak
 ```
 
-The Notion and Discord adapters are locally built and verified but not yet
-installed on the phone in these rounds because `adb devices` returned no
-Android devices after refreshing the ADB server. Expected post-install
-`/api/tools` count is `21`, with `notion` and `discord` present.
-`/api/tools/execute name=notion` should return `MISSING_NOTION_TOKEN` until
-the user configures `NOTION_TOKEN`; `/api/tools/execute name=discord` should
-return `MISSING_DISCORD_BOT_TOKEN` until the user configures
-`DISCORD_BOT_TOKEN`.
+The Notion, Discord, and Trello adapters were installed together on
+`RZCX30KA9AW` after the Trello debug build. The installed app exposes 22 tools
+through `/api/tools`; all three new config adapters show `needs_config` with
+no stale `primaryGate` or `gates`.
 
 The `/api/debug/app-native-chat-tool-smoke` endpoint remains unreliable for
 final-response proof. During the milestone smoke it timed out once and then
@@ -125,10 +132,10 @@ Read this carefully:
 - `xurl`, `camsnap`, `summarize`, `blogwatcher`, `session-logs`, and
   `nano-pdf` are now app-native ready optional: usable through
   Gateway-visible tool execution, but not part of the launch-critical gate.
-- `github`, `gh-issues`, `goplaces`, `notion`, and `discord` are still needs-config
-  skills, but no longer depend on Native CLI binaries once their env keys are
-  present. They use bounded app-native REST adapters through the same
-  Gateway-visible tool path.
+- `github`, `gh-issues`, `goplaces`, `notion`, `discord`, and `trello` are
+  still needs-config skills, but no longer depend on Native CLI binaries once
+  their env keys are present. They use bounded app-native REST adapters through
+  the same Gateway-visible tool path.
 - `node-connect` is manual PRoot compatibility, so it must not count as a
   Native fresh-user Android promise.
 - The honest Android-release-relevant ceiling today is:
@@ -272,10 +279,10 @@ runtime gate. On the current device, several Class B skills also report
 `missing_native_bin`.
 
 Important second correction: app-native config-gated adapters must not keep
-stale OpenClaw binary gates. `github`, `gh-issues`, `goplaces`, `notion`, and
-`discord` are the first adapter cases: until their env keys exist they show
-`needs_config`; after the keys exist they become app-native ready without
-requiring CLI binaries.
+stale OpenClaw binary gates. `github`, `gh-issues`, `goplaces`, `notion`,
+`discord`, and `trello` are the first adapter cases: until their env keys exist
+they show `needs_config`; after the keys exist they become app-native ready
+without requiring CLI binaries.
 
 Therefore the app must show layered gates:
 
@@ -317,6 +324,13 @@ User config: DISCORD_BOT_TOKEN
 Runtime gate before token: needs_config
 Runtime gate after token: app_native_ready
 Next action: configure DISCORD_BOT_TOKEN in the Skills page
+
+Skill: trello
+Product class: Needs config
+User config: TRELLO_API_KEY, TRELLO_TOKEN
+Runtime gate before credentials: needs_config
+Runtime gate after credentials: app_native_ready
+Next action: configure TRELLO_API_KEY and TRELLO_TOKEN in the Skills page
 ```
 
 `github` reads bounded authenticated profile metadata through `github.user`.
@@ -326,7 +340,8 @@ using an explicit response field mask.
 `notion` performs bounded Notion workspace search metadata through
 `notion.search`.
 `discord` reads bounded Discord bot status metadata through `discord.me`.
-All five are exposed in `/api/tools`, route `/api/tools/execute` through
+`trello` reads bounded Trello board summaries through `trello.boards`.
+All six are exposed in `/api/tools`, route `/api/tools/execute` through
 `AgentSkillServer`, and keep tokens/API keys out of tool input, result
 payloads, and visible chat chunks.
 
@@ -1053,33 +1068,39 @@ flutter build apk --debug
 Result: built build/app/outputs/flutter-apk/app-debug.apk
 ```
 
-Device proof status for this Notion round:
-
-```text
-adb start-server; adb devices -l
-Result: no Android devices listed
-
-flutter devices
-Result: Windows, Chrome, and Edge only
-```
-
-Next device proof once the phone is visible:
+Combined device proof after Trello install:
 
 ```text
 adb install -r build/app/outputs/flutter-apk/app-debug.apk
 adb forward tcp:8765 tcp:8765
-/api/tools: notion and discord schemas present, expected toolCount 21
+
+/api/tools:
+  toolCount: 22
+  notion schema present
+  discord schema present
+  trello schema present
+
 /device/health:
+  releaseGatePass: true
+  ready_required: 13/13
+  classified default manifest: 61
+  installed Native workspace skills: 65
   notion runtimeStatus: needs_config
   notion provisioningStatus: needs_user_config
   notion primaryGate/gates: absent
   discord runtimeStatus: needs_config
   discord provisioningStatus: needs_user_config
   discord primaryGate/gates: absent
+  trello runtimeStatus: needs_config
+  trello provisioningStatus: needs_user_config
+  trello primaryGate/gates: absent
+
 /api/tools/execute name=notion:
-  HTTP 400 MISSING_NOTION_TOKEN, no secret leak
+  HTTP 400 MISSING_NOTION_TOKEN, no secret value leak
 /api/tools/execute name=discord:
-  HTTP 400 MISSING_DISCORD_BOT_TOKEN, no secret leak
+  HTTP 400 MISSING_DISCORD_BOT_TOKEN, no secret value leak
+/api/tools/execute name=trello:
+  HTTP 400 MISSING_TRELLO_CONFIG, no secret value leak
 ```
 
 Tenth adapter landed:
@@ -1139,14 +1160,68 @@ flutter build apk --debug
 Result: built build/app/outputs/flutter-apk/app-debug.apk
 ```
 
-Device proof status for this Discord round:
+Device proof for this Discord round:
 
 ```text
-adb devices -l
-Result: no Android devices listed
+Covered by the combined installed proof above.
+```
 
-flutter devices
-Result: Windows, Chrome, and Edge only
+Eleventh adapter landed:
+
+```text
+trello
+status: needs_config
+runtime after config: app-native Trello REST adapter
+Gateway tool: trello
+command underneath: trello.boards
+manifest movement: stale missing_native_bin -> app-native config-only
+scope: Trello board summaries only, bounded result previews
+safety: TRELLO_API_KEY and TRELLO_TOKEN are read from Native .env, never
+accepted in tool input, and never returned in payloads or chat chunks
+```
+
+Local proof:
+
+```text
+flutter test test/trello_app_native_adapter_test.dart --no-pub
+
+Result: 6/6 passing
+```
+
+Combined local proof after formatting:
+
+```text
+flutter test test/android_skill_readiness_service_test.dart \
+  test/discord_app_native_adapter_test.dart \
+  test/github_app_native_adapter_test.dart \
+  test/goplaces_app_native_adapter_test.dart \
+  test/notion_app_native_adapter_test.dart \
+  test/trello_app_native_adapter_test.dart \
+  test/android_skill_support_manifest_test.dart --no-pub
+
+Result: 43/43 passing
+```
+
+Analyzer proof:
+
+```text
+flutter analyze lib/services/capabilities/trello_capability.dart \
+  lib/services/app_native_chat_tool_router.dart \
+  lib/services/agent_skill_server.dart \
+  lib/services/gateway_tool_catalog.dart \
+  lib/services/android_skill_support_manifest.dart \
+  lib/services/skills_service.dart \
+  test/trello_app_native_adapter_test.dart
+
+Result: No issues found
+```
+
+Build proof:
+
+```text
+flutter build apk --debug
+
+Result: built build/app/outputs/flutter-apk/app-debug.apk
 ```
 
 Host inspection note: for the phone-owned `AgentSkillServer` bridge on port

@@ -26,6 +26,7 @@ import 'capabilities/notion_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/session_logs_capability.dart';
 import 'capabilities/summarize_capability.dart';
+import 'capabilities/trello_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
 import 'capabilities/xurl_capability.dart';
@@ -90,6 +91,7 @@ class AgentSkillServer {
   final SensorCapability _sensorCapability = SensorCapability();
   final SessionLogsCapability _sessionLogsCapability = SessionLogsCapability();
   final SummarizeCapability _summarizeCapability = SummarizeCapability();
+  final TrelloCapability _trelloCapability = TrelloCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
   final WeatherCapability _weatherCapability = WeatherCapability();
   final XurlCapability _xurlCapability = XurlCapability();
@@ -2023,6 +2025,9 @@ class AgentSkillServer {
       'summarize': 'summarize.text',
       'summarize_text': 'summarize.text',
       'summarize.text': 'summarize.text',
+      'trello': 'trello.boards',
+      'trello_boards': 'trello.boards',
+      'trello.boards': 'trello.boards',
       'xurl': 'xurl.request',
       'xurl_request': 'xurl.request',
       'xurl.request': 'xurl.request',
@@ -2204,6 +2209,12 @@ class AgentSkillServer {
           message: ok
               ? 'notion.search arguments are dispatchable'
               : 'notion.search requires a query',
+        );
+      case 'trello.boards':
+        return const _NativeGatewayDryRunArgumentValidation(
+          ok: true,
+          code: 'ok',
+          message: 'trello.boards arguments are dispatchable',
         );
       case 'nano-pdf.extract':
         final pdfBase64 =
@@ -2450,6 +2461,14 @@ class AgentSkillServer {
         case 'summarize.text':
           final frame = await _summarizeCapability.handle(
             'summarize.text',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'trello':
+        case 'trello_boards':
+        case 'trello.boards':
+          final frame = await _trelloCapability.handle(
+            'trello.boards',
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);

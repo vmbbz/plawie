@@ -18,6 +18,7 @@ import 'capabilities/notion_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/session_logs_capability.dart';
 import 'capabilities/summarize_capability.dart';
+import 'capabilities/trello_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
 import 'capabilities/xurl_capability.dart';
@@ -67,6 +68,7 @@ class AppNativeChatToolRouter {
     GoPlacesCapability? goplaces,
     NotionCapability? notion,
     SessionLogsCapability? sessionLogs,
+    TrelloCapability? trello,
     XurlCapability? xurl,
   })  : _blogWatcher = blogWatcher ?? BlogWatcherCapability(),
         _discord = discord ?? DiscordCapability(),
@@ -74,6 +76,7 @@ class AppNativeChatToolRouter {
         _goplaces = goplaces ?? GoPlacesCapability(),
         _notion = notion ?? NotionCapability(),
         _sessionLogs = sessionLogs ?? SessionLogsCapability(),
+        _trello = trello ?? TrelloCapability(),
         _xurl = xurl ?? XurlCapability();
 
   factory AppNativeChatToolRouter.forTesting({
@@ -83,6 +86,7 @@ class AppNativeChatToolRouter {
     GoPlacesCapability? goplaces,
     NotionCapability? notion,
     SessionLogsCapability? sessionLogs,
+    TrelloCapability? trello,
     XurlCapability? xurl,
   }) =>
       AppNativeChatToolRouter._internal(
@@ -92,6 +96,7 @@ class AppNativeChatToolRouter {
         goplaces: goplaces,
         notion: notion,
         sessionLogs: sessionLogs,
+        trello: trello,
         xurl: xurl,
       );
 
@@ -111,6 +116,7 @@ class AppNativeChatToolRouter {
   final SensorCapability _sensor = SensorCapability();
   final SessionLogsCapability _sessionLogs;
   final SummarizeCapability _summarize = SummarizeCapability();
+  final TrelloCapability _trello;
   final VibrationCapability _vibration = VibrationCapability();
   final WeatherCapability _weather = WeatherCapability();
   final XurlCapability _xurl;
@@ -225,6 +231,7 @@ class AppNativeChatToolRouter {
       'nano-pdf.extract' ||
       'session-logs.query' ||
       'summarize.text' ||
+      'trello.boards' ||
       'xurl.request' =>
         true,
       _ => false,
@@ -279,6 +286,7 @@ class AppNativeChatToolRouter {
       case 'nano-pdf.extract':
       case 'session-logs.query':
       case 'summarize.text':
+      case 'trello.boards':
       case 'xurl.request':
         return {
           'action': 'invoke',
@@ -496,6 +504,9 @@ class AppNativeChatToolRouter {
     final notionPlan = _notionPlan(trimmed);
     if (notionPlan != null) return notionPlan;
 
+    final trelloPlan = _trelloPlan(trimmed);
+    if (trelloPlan != null) return trelloPlan;
+
     final sessionLogsPlan = _sessionLogsPlan(trimmed);
     if (sessionLogsPlan != null) return sessionLogsPlan;
 
@@ -635,6 +646,11 @@ class AppNativeChatToolRouter {
           ));
         case 'summarize.text':
           return _frameToMap(await _summarize.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'trello.boards':
+          return _frameToMap(await _trello.handle(
             plan.command,
             plan.input,
           ));
@@ -837,6 +853,9 @@ class AppNativeChatToolRouter {
         return summary?.isNotEmpty == true
             ? 'Summary: $summary'
             : 'Summary generated.';
+      case 'trello.boards':
+        final count = result['count'] ?? 0;
+        return 'Trello board summary retrieved: $count board(s).';
       case 'xurl.request':
         final statusCode = result['statusCode'] ?? 'unknown';
         final method = result['method'] ?? plan.input['method'] ?? 'GET';
@@ -1370,6 +1389,24 @@ class AppNativeChatToolRouter {
       input: {
         'query': query,
         if (object != null) 'object': object,
+        if (limit != null) 'limit': limit,
+        'source': 'app-native-chat-router',
+      },
+    );
+  }
+
+  _AppNativeToolPlan? _trelloPlan(String message) {
+    final match = RegExp(
+      r'^\s*trello(?:\s+(?:boards|summary))?(?:\s+limit\s+(\d{1,2}))?\s*$',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (match == null) return null;
+    final limit = int.tryParse(match.group(1) ?? '');
+    return _AppNativeToolPlan(
+      toolName: 'trello',
+      command: 'trello.boards',
+      input: {
+        'action': 'boards',
         if (limit != null) 'limit': limit,
         'source': 'app-native-chat-router',
       },
