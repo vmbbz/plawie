@@ -216,31 +216,35 @@ execution returned `success: true`, `runtime: app-native-http`, and
 `statusCode: 200`. The chat-smoke debug endpoint timed out during this round, so
 manual chat UI final-response polish remains a follow-up.
 
-- [ ] **Step 5: Repeat for `blogwatcher`, `nano-pdf`, `session-logs`, `summarize`, `stocks`, `camsnap`**
+- [x] **Step 5: Repeat for `blogwatcher`, `nano-pdf`, `session-logs`, `summarize`, `stocks`, `camsnap`**
 
-Each adapter gets a focused test and a device smoke before reclassification.
+Each default-manifest adapter got a focused test and direct device smoke before
+or immediately after reclassification. `stocks` is not in the Android default
+manifest; keep it in the required Native ClawHub route/provisioning lane.
 
 `camsnap` local adapter is implemented as a ready-optional named tool over
 Android `CameraCapability`. It keeps `TOOL_USE:camsnap` identity for explicit
 prompts, advertises a `/api/tools` schema, routes `/api/tools/execute` through
 `AgentSkillServer`, and omits raw `base64` from HTTP JSON responses. Device
-smoke is deferred to the next batched install to save data, so the step remains
-open for the remaining candidates and final device proof.
+smoke after the Phase 4 milestone install returned `success: true` and
+`base64Omitted: true`.
 
 `summarize` local adapter is implemented as a ready-optional named tool for
 provided text. It uses a bounded deterministic extractive adapter, keeps
 `TOOL_USE:summarize` identity for explicit `summarize: <text>` prompts,
 advertises a `/api/tools` schema, and routes `/api/tools/execute` through
 `AgentSkillServer`. It does not claim provider-backed URL/file/long-document
-summarization. Device smoke is deferred to the next batched install.
+summarization. Device smoke after the Phase 4 milestone install returned
+`success: true` and `runtime: app-native-extractive-summary`.
 
 `blogwatcher` local adapter is implemented as a ready-optional named tool for
 small public RSS/Atom feeds. It keeps `TOOL_USE:blogwatcher` identity for
 explicit `blogwatcher <url> limit N` prompts, advertises a `/api/tools` schema,
 routes `/api/tools/execute` through `AgentSkillServer`, and blocks non-HTTP,
 loopback, private, and link-local feed targets. It does not claim persistent
-watching, notifications, or full CLI parity. Device smoke is deferred to the
-next batched install.
+watching, notifications, or full CLI parity. Device smoke after the Phase 4
+milestone install returned `success: true`, `runtime: app-native-feed-check`,
+and `feedTitle: W3C - News`.
 
 `session-logs` local adapter is implemented as a ready-optional named tool for
 app-owned chat sessions. It keeps `TOOL_USE:session-logs` identity for explicit
@@ -248,8 +252,9 @@ app-owned chat sessions. It keeps `TOOL_USE:session-logs` identity for explicit
 routes `/api/tools/execute` through `AgentSkillServer`. It returns bounded
 session metadata and message previews only; it does not expose arbitrary
 `SESSION_LOGS_ROOT` directories, raw gateway session keys, raw image payloads,
-full reasoning blocks, or full tool result payloads. Device smoke is deferred
-to the next batched install.
+full reasoning blocks, or full tool result payloads. Device smoke after the
+Phase 4 milestone install returned `success: true`,
+`runtime: app-native-session-logs`, and `returnedSessionCount: 3`.
 
 `nano-pdf` local adapter is implemented as a ready-optional named tool for
 small text-based PDF bytes. It keeps `TOOL_USE:nano-pdf` identity for explicit
@@ -257,8 +262,9 @@ small text-based PDF bytes. It keeps `TOOL_USE:nano-pdf` identity for explicit
 routes `/api/tools/execute` through `AgentSkillServer`. It rejects missing,
 invalid, and encrypted PDFs, returns bounded text-layer output, and does not
 claim OCR/scanned PDF support, arbitrary file paths, complex font/CMap
-extraction, or full parser parity. Device smoke is deferred to the next batched
-install.
+extraction, or full parser parity. Device smoke after the Phase 4 milestone
+install returned `success: true`, `runtime: app-native-pdf-text`, and
+`chars: 35`.
 
 ### Task 5: Verified Pack Lane
 

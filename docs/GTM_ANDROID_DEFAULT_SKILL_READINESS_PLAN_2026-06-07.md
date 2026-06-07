@@ -28,19 +28,19 @@ Hide or demote skills that are not Android-release safe.
 
 ## Current Device Truth
 
-Live device health on 2026-06-07 reported:
+Live device health on 2026-06-07 after the Phase 4 milestone install reported:
 
 ```text
 Classified default manifest: 61
 Installed Native workspace skills: 65
 
 Launch-required ready: 13/13
-Ready within Android default manifest: 17
+Ready within Android default manifest: 22
 
 ready_required: 13
-ready_optional: 1
-needs_config: 16
-needs_pack: 21
+ready_optional: 6
+needs_config: 14
+needs_pack: 18
 unsupported_on_android: 6
 manual_proot_compat: 2
 hidden_desktop_only: 2
@@ -49,7 +49,8 @@ unexpected_missing_dependency: 0
 Release gate: PASS
 ```
 
-Source delta pending the next batched APK/device smoke:
+Phase 4 adapter movement now proven on device through `/api/tools` and
+`/api/tools/execute`:
 
 ```text
 blogwatcher: needs_pack -> ready_optional
@@ -57,20 +58,26 @@ camsnap: needs_pack -> ready_optional
 nano-pdf: needs_pack -> ready_optional
 session-logs: needs_config -> ready_optional
 summarize: needs_config -> ready_optional
-source product-class counts: ready_optional 6, needs_config 14, needs_pack 18
+direct execute: summarize, session-logs, nano-pdf, xurl, camsnap, blogwatcher
+product-class counts: ready_optional 6, needs_config 14, needs_pack 18
 ```
 
-Do not replace the live device-health block above until the app is rebuilt,
-installed, and smoked on device. This keeps data use low without blurring proof.
+The `/api/debug/app-native-chat-tool-smoke` endpoint remains unreliable for
+final-response proof. During the milestone smoke it timed out once and then
+returned a stale visible response on the next prompt. Do not count that endpoint
+as chat proof. The direct registered tool execution path is device-proven, and
+the explicit chat tool-use/tool-result chunk route is covered by focused tests.
 
 Read this carefully:
 
 - `61` is the classified default skill manifest.
 - `13/13` is the current launch-required pass gate.
-- `17 ready` means 13 launch-ready plus `diagram-maker`,
-  `spotify-player`, `xurl`, and `node-connect` on the current device.
-- `xurl` is now app-native ready optional: usable through Gateway-visible tool
-  execution, but not part of the launch-critical gate.
+- `22 ready` means 13 launch-ready plus 6 app-native ready-optional adapters,
+  plus `diagram-maker`, `spotify-player`, and `node-connect` on the current
+  device.
+- `xurl`, `camsnap`, `summarize`, `blogwatcher`, `session-logs`, and
+  `nano-pdf` are now app-native ready optional: usable through
+  Gateway-visible tool execution, but not part of the launch-critical gate.
 - `node-connect` is manual PRoot compatibility, so it must not count as a
   Native fresh-user Android promise.
 - The honest Android-release-relevant ceiling today is:
@@ -616,7 +623,7 @@ chat-router tool-use/tool-result path is covered by focused unit tests. A longer
 manual chat UI smoke remains useful before calling the user-facing chat wording
 fully polished.
 
-Second adapter landed locally, pending batched device smoke:
+Second adapter landed and device-smoked:
 
 ```text
 camsnap
@@ -640,11 +647,15 @@ flutter test test/android_skill_support_manifest_test.dart \
 Result: 25/25 passing
 ```
 
-Device proof is intentionally deferred to the next batched install to save
-data. The required smoke is `/api/tools`, `/api/tools/execute name=camsnap`, and
-one chat/UI prompt with camera permission behavior observed.
+Device proof after Phase 4 milestone install:
 
-Third adapter landed locally, pending batched device smoke:
+```text
+/api/tools: camsnap schema present
+/api/tools/execute name=camsnap: success true
+base64Omitted: true
+```
+
+Third adapter landed and device-smoked:
 
 ```text
 summarize
@@ -664,11 +675,15 @@ flutter test test/summarize_app_native_adapter_test.dart --no-pub
 Result: 6/6 passing
 ```
 
-Device proof is intentionally deferred to the next batched install to save
-data. The required smoke is `/api/tools`, `/api/tools/execute name=summarize`,
-and one explicit chat/UI prompt such as `summarize: <text>`.
+Device proof after Phase 4 milestone install:
 
-Fourth adapter landed locally, pending batched device smoke:
+```text
+/api/tools: summarize schema present
+/api/tools/execute name=summarize: success true
+runtime: app-native-extractive-summary
+```
+
+Fourth adapter landed and device-smoked:
 
 ```text
 blogwatcher
@@ -689,11 +704,20 @@ flutter test test/blogwatcher_app_native_adapter_test.dart --no-pub
 Result: 6/6 passing
 ```
 
-Device proof is intentionally deferred to the next batched install to save
-data. The required smoke is `/api/tools`, `/api/tools/execute name=blogwatcher`,
-and one explicit chat/UI prompt against a small public feed.
+Device proof after Phase 4 milestone install:
 
-Fifth adapter landed locally, pending batched device smoke:
+```text
+/api/tools: blogwatcher schema present
+/api/tools/execute name=blogwatcher
+url: https://www.w3.org/blog/news/feed/
+success: true
+runtime: app-native-feed-check
+feedTitle: W3C - News
+itemCount: 1
+statusCode: 200
+```
+
+Fifth adapter landed and device-smoked:
 
 ```text
 session-logs
@@ -715,12 +739,18 @@ flutter test test/session_logs_app_native_adapter_test.dart --no-pub
 Result: 9/9 passing
 ```
 
-Device proof is intentionally deferred to the next batched install to save
-data. The required smoke is `/api/tools`,
-`/api/tools/execute name=session-logs`, and one explicit chat/UI prompt such as
-`session-logs search gateway limit 5`.
+Device proof after Phase 4 milestone install:
 
-Sixth adapter landed locally, pending batched device smoke:
+```text
+/api/tools: session-logs schema present
+/api/tools/execute name=session-logs
+action: list
+success: true
+runtime: app-native-session-logs
+returnedSessionCount: 3
+```
+
+Sixth adapter landed and device-smoked:
 
 ```text
 nano-pdf
@@ -742,9 +772,15 @@ flutter test test/nano_pdf_app_native_adapter_test.dart --no-pub
 Result: 7/7 passing
 ```
 
-Device proof is intentionally deferred to the next batched install to save
-data. The required smoke is `/api/tools`, `/api/tools/execute name=nano-pdf`,
-and one explicit chat/UI prompt with a tiny text-PDF base64 fixture.
+Device proof after Phase 4 milestone install:
+
+```text
+/api/tools: nano-pdf schema present
+/api/tools/execute name=nano-pdf
+success: true
+runtime: app-native-pdf-text
+chars: 35
+```
 
 ### Phase 5: Verified Dependency Packs
 
