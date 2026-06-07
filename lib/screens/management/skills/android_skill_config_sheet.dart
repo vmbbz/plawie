@@ -7,12 +7,20 @@ import '../../../providers/gateway_provider.dart';
 import '../../../services/android_skill_config_form_model.dart';
 import '../../../services/skill_provisioning_service.dart';
 
+typedef AndroidSkillConfigApply = Future<SkillProvisioningReport> Function({
+  required String skillId,
+  required Map<String, String> envValues,
+  required Map<String, dynamic> configValues,
+});
+
 class AndroidSkillConfigSheet extends StatefulWidget {
   final AndroidSkillConfigFormModel model;
+  final AndroidSkillConfigApply? applyConfig;
 
   const AndroidSkillConfigSheet({
     super.key,
     required this.model,
+    this.applyConfig,
   });
 
   @override
@@ -29,9 +37,14 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
   @override
   void initState() {
     super.initState();
-    for (final key in widget.model.allKeys) {
-      _controllers[key] = TextEditingController();
-      _obscure[key] = widget.model.envKeys.contains(key);
+    for (final field in widget.model.fields) {
+      _controllers[field.key] = TextEditingController(
+        text: field.inputKind == AndroidSkillConfigInputKind.provider &&
+                field.enumOptions.isNotEmpty
+            ? field.enumOptions.first
+            : '',
+      );
+      _obscure[field.key] = field.secret;
     }
   }
 
@@ -44,11 +57,31 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
   }
 
   Future<void> _apply() async {
-    final missing = widget.model.allKeys
-        .where((key) => _controllers[key]!.text.trim().isEmpty)
+    final missing = widget.model.fields
+        .where((field) => field.required)
+        .where((field) => _controllers[field.key]!.text.trim().isEmpty)
         .toList(growable: false);
     if (missing.isNotEmpty) {
-      setState(() => _error = 'Missing values: ${missing.join(', ')}');
+      setState(
+        () => _error =
+            'Missing values: ${missing.map((field) => field.label).join(', ')}',
+      );
+      return;
+    }
+
+    final invalidUrls = widget.model.fields
+        .where((field) => field.inputKind == AndroidSkillConfigInputKind.url)
+        .where((field) {
+      final value = _controllers[field.key]!.text.trim();
+      return value.isNotEmpty &&
+          !value.startsWith('http://') &&
+          !value.startsWith('https://');
+    }).toList(growable: false);
+    if (invalidUrls.isNotEmpty) {
+      setState(
+        () => _error =
+            'Invalid URL: ${invalidUrls.map((field) => field.label).join(', ')}',
+      );
       return;
     }
 
@@ -58,16 +91,17 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
     });
 
     try {
-      final gateway = Provider.of<GatewayProvider>(context, listen: false);
       final envValues = <String, String>{
-        for (final key in widget.model.envKeys)
-          key: _controllers[key]!.text.trim(),
+        for (final field in widget.model.fields)
+          if (field.target == AndroidSkillConfigFieldTarget.env)
+            field.key: _controllers[field.key]!.text.trim(),
       };
       final configValues = <String, dynamic>{
-        for (final key in widget.model.configKeys)
-          key: _controllers[key]!.text.trim(),
+        for (final field in widget.model.fields)
+          if (field.target == AndroidSkillConfigFieldTarget.config)
+            field.key: _controllers[field.key]!.text.trim(),
       };
-      final report = await gateway.configureAndroidDefaultSkill(
+      final report = await _applyConfig(
         skillId: widget.model.skillId,
         envValues: envValues,
         configValues: configValues,
@@ -90,13 +124,36 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
               ready ? AppColors.statusGreen : AppColors.statusAmber,
         ),
       );
-      Navigator.of(context).pop(report);
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop(report);
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = 'Save failed: $error');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  Future<SkillProvisioningReport> _applyConfig({
+    required String skillId,
+    required Map<String, String> envValues,
+    required Map<String, dynamic> configValues,
+  }) {
+    final applyConfig = widget.applyConfig;
+    if (applyConfig != null) {
+      return applyConfig(
+        skillId: skillId,
+        envValues: envValues,
+        configValues: configValues,
+      );
+    }
+    final gateway = Provider.of<GatewayProvider>(context, listen: false);
+    return gateway.configureAndroidDefaultSkill(
+      skillId: skillId,
+      envValues: envValues,
+      configValues: configValues,
+    );
   }
 
   @override
@@ -152,7 +209,7 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          model.skillId,
+                          model.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.outfit(
@@ -194,17 +251,11 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
                   text: _error!,
                 ),
               ],
-              if (model.envKeys.isNotEmpty) ...[
+              for (final entry in model.groupedFields.entries) ...[
                 const SizedBox(height: 18),
-                _SectionLabel('ENV CREDENTIALS'),
+                _SectionLabel(entry.key.toUpperCase()),
                 const SizedBox(height: 8),
-                for (final key in model.envKeys) _field(key, secret: true),
-              ],
-              if (model.configKeys.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                _SectionLabel('CONFIG VALUES'),
-                const SizedBox(height: 8),
-                for (final key in model.configKeys) _field(key),
+                for (final field in entry.value) _field(field),
               ],
               const SizedBox(height: 18),
               SizedBox(
@@ -218,7 +269,7 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.save_rounded, size: 18),
-                  label: Text(_isSaving ? 'Applying' : 'Apply Config'),
+                  label: Text(_isSaving ? 'Checking' : 'Save & Check'),
                 ),
               ),
             ],
@@ -228,29 +279,26 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
     );
   }
 
-  Widget _field(String key, {bool secret = false}) {
-    final isObscured = _obscure[key] ?? false;
+  Widget _field(AndroidSkillConfigFieldModel field) {
+    if (field.inputKind == AndroidSkillConfigInputKind.provider &&
+        field.enumOptions.isNotEmpty) {
+      return _providerField(field);
+    }
+
+    final isObscured = _obscure[field.key] ?? false;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextField(
-        controller: _controllers[key],
-        obscureText: secret && isObscured,
-        enableSuggestions: !secret,
+        key: ValueKey('android-skill-config-field-${field.key}'),
+        controller: _controllers[field.key],
+        obscureText: field.secret && isObscured,
+        enableSuggestions: !field.secret,
         autocorrect: false,
+        keyboardType: _keyboardTypeFor(field),
         style: const TextStyle(color: Colors.white, fontSize: 13),
-        decoration: InputDecoration(
-          labelText: key,
-          labelStyle: TextStyle(
-            color: Colors.white.withValues(alpha: 0.62),
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
-          prefixIcon: Icon(
-            secret ? Icons.key_rounded : Icons.tune_rounded,
-            color: secret ? AppColors.statusAmber : Colors.cyanAccent,
-            size: 18,
-          ),
-          suffixIcon: secret
+        decoration: _inputDecoration(
+          field,
+          suffixIcon: field.secret
               ? IconButton(
                   tooltip: isObscured ? 'Show value' : 'Hide value',
                   icon: Icon(
@@ -260,25 +308,114 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
                     size: 18,
                   ),
                   onPressed: () {
-                    setState(() => _obscure[key] = !isObscured);
+                    setState(() => _obscure[field.key] = !isObscured);
                   },
                 )
               : null,
-          filled: true,
-          fillColor: Colors.white.withValues(alpha: 0.055),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(
-              color: Colors.white.withValues(alpha: 0.13),
-            ),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: AppColors.statusAmber),
-          ),
         ),
       ),
     );
+  }
+
+  Widget _providerField(AndroidSkillConfigFieldModel field) {
+    final current = _controllers[field.key]!.text.trim();
+    final value =
+        field.enumOptions.contains(current) ? current : field.enumOptions.first;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: DropdownButtonFormField<String>(
+        key: ValueKey('android-skill-config-field-${field.key}'),
+        value: value,
+        dropdownColor: const Color(0xFF181B23),
+        style: const TextStyle(color: Colors.white, fontSize: 13),
+        decoration: _inputDecoration(field),
+        items: [
+          for (final option in field.enumOptions)
+            DropdownMenuItem<String>(
+              value: option,
+              child: Text(option),
+            ),
+        ],
+        onChanged: (value) {
+          if (value == null) return;
+          setState(() => _controllers[field.key]!.text = value);
+        },
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(
+    AndroidSkillConfigFieldModel field, {
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      labelText: field.label,
+      hintText: field.inputHint.isEmpty ? null : field.inputHint,
+      helperText: field.helper.isEmpty ? null : field.helper,
+      labelStyle: TextStyle(
+        color: Colors.white.withValues(alpha: 0.62),
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+      ),
+      hintStyle: TextStyle(
+        color: Colors.white.withValues(alpha: 0.28),
+        fontSize: 12,
+      ),
+      helperStyle: TextStyle(
+        color: Colors.white.withValues(alpha: 0.42),
+        fontSize: 10,
+      ),
+      prefixIcon: Icon(
+        _iconForField(field),
+        color: _colorForField(field),
+        size: 18,
+      ),
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: Colors.white.withValues(alpha: 0.055),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(
+          color: Colors.white.withValues(alpha: 0.13),
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: _colorForField(field)),
+      ),
+    );
+  }
+
+  TextInputType _keyboardTypeFor(AndroidSkillConfigFieldModel field) {
+    if (field.inputKind == AndroidSkillConfigInputKind.url) {
+      return TextInputType.url;
+    }
+    return TextInputType.text;
+  }
+
+  IconData _iconForField(AndroidSkillConfigFieldModel field) {
+    if (field.secret) return Icons.key_rounded;
+    switch (field.inputKind) {
+      case AndroidSkillConfigInputKind.url:
+        return Icons.link_rounded;
+      case AndroidSkillConfigInputKind.channelId:
+        return Icons.tag_rounded;
+      case AndroidSkillConfigInputKind.accountId:
+        return Icons.badge_rounded;
+      case AndroidSkillConfigInputKind.provider:
+        return Icons.account_tree_rounded;
+      case AndroidSkillConfigInputKind.secret:
+      case AndroidSkillConfigInputKind.text:
+        return Icons.tune_rounded;
+    }
+  }
+
+  Color _colorForField(AndroidSkillConfigFieldModel field) {
+    if (field.secret) return AppColors.statusAmber;
+    if (field.inputKind == AndroidSkillConfigInputKind.url) {
+      return Colors.lightBlueAccent;
+    }
+    return Colors.cyanAccent;
   }
 }
 
