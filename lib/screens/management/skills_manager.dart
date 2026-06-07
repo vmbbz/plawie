@@ -12,6 +12,7 @@ import '../../models/clawhub_skill.dart';
 import '../../app.dart';
 import '../../widgets/glass_card.dart';
 import '../../services/clawhub_service.dart';
+import '../../services/android_skill_readiness_view_model.dart';
 import '../../services/gateway_service.dart';
 import '../../services/gateway_tool_catalog.dart';
 import '../../services/local_llm_service.dart';
@@ -2380,15 +2381,15 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final readyRequired = _mapValue(readiness['readyRequired']);
-    final ready = _intValue(readyRequired['ready']);
-    final total = _intValue(readyRequired['total']);
-    final unexpected = _intValue(readiness['unexpectedMissingDependency']);
-    final releasePass = readiness['releaseGatePass'] == true;
-    final counts = _mapValue(readiness['countsByClass']);
+    final model = AndroidSkillReadinessViewModel.fromReadiness(readiness);
+    final counts = model.countsByClass;
     final blockers =
         _stringList(readiness['unexpectedMissingDependencySkillIds']);
-    final accent = releasePass ? AppColors.statusGreen : AppColors.statusAmber;
+    final accent =
+        model.releaseGatePass ? AppColors.statusGreen : AppColors.statusAmber;
+    final excludedCount = _intValue(counts['unsupported_on_android']) +
+        _intValue(counts['manual_proot_compat']) +
+        _intValue(counts['hidden_desktop_only']);
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -2403,7 +2404,7 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
           Row(
             children: [
               Icon(
-                releasePass
+                model.releaseGatePass
                     ? Icons.verified_rounded
                     : Icons.report_problem_rounded,
                 size: 16,
@@ -2422,10 +2423,19 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
                 ),
               ),
               _ReadinessPill(
-                label: releasePass ? 'PASS' : 'BLOCKED',
+                label: model.releaseGatePass ? 'PASS' : 'BLOCKED',
                 color: accent,
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Native Android ceiling: ${model.androidRelevantLabel} ready now from ${model.androidRelevantTotal} Android-relevant defaults. $excludedCount desktop, PRoot, or unsupported skills stay outside the release promise.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.58),
+              fontSize: 10.5,
+              height: 1.35,
+            ),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -2433,37 +2443,56 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
             runSpacing: 8,
             children: [
               _ReadinessMetric(
-                label: 'READY REQUIRED',
-                value: '$ready/$total',
-                color: ready == total ? AppColors.statusGreen : accent,
+                label: 'LAUNCH GATE',
+                value: model.readyRequiredLabel,
+                color: model.readyRequiredReady == model.readyRequiredTotal
+                    ? AppColors.statusGreen
+                    : accent,
+              ),
+              _ReadinessMetric(
+                label: 'ANDROID NOW',
+                value: model.androidRelevantLabel,
+                color: AppColors.statusGreen,
               ),
               _ReadinessMetric(
                 label: 'UNEXPECTED',
-                value: '$unexpected',
-                color: unexpected == 0 ? AppColors.statusGreen : accent,
+                value: '${model.unexpectedMissingDependency}',
+                color: model.unexpectedMissingDependency == 0
+                    ? AppColors.statusGreen
+                    : accent,
               ),
               _ReadinessMetric(
                 label: 'NEEDS CONFIG',
-                value: '${_intValue(counts['needs_config'])}',
+                value: '${counts['needs_config'] ?? 0}',
                 color: AppColors.statusAmber,
               ),
               _ReadinessMetric(
                 label: 'NEEDS PACK',
-                value: '${_intValue(counts['needs_pack'])}',
+                value: '${counts['needs_pack'] ?? 0}',
                 color: Colors.cyanAccent,
               ),
               _ReadinessMetric(
-                label: 'UNSUPPORTED',
-                value: '${_intValue(counts['unsupported_on_android'])}',
-                color: Colors.white54,
-              ),
-              _ReadinessMetric(
-                label: 'PROOT COMPAT',
-                value: '${_intValue(counts['manual_proot_compat'])}',
+                label: 'OUTSIDE GTM',
+                value: '$excludedCount',
                 color: Colors.white54,
               ),
             ],
           ),
+          if (model.topNeedsConfig.isNotEmpty ||
+              model.topNeedsPack.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _ReadinessGatePreview(
+              title: 'CONFIG GATES',
+              color: AppColors.statusAmber,
+              items: model.topNeedsConfig,
+            ),
+            if (model.topNeedsPack.isNotEmpty) const SizedBox(height: 8),
+            _ReadinessGatePreview(
+              title: 'PACK GATES',
+              color: Colors.cyanAccent,
+              items: model.topNeedsPack,
+            ),
+          ],
           if (blockers.isNotEmpty) ...[
             const SizedBox(height: 10),
             Row(
@@ -2571,10 +2600,71 @@ class _ReadinessPill extends StatelessWidget {
   }
 }
 
-Map<String, dynamic> _mapValue(dynamic value) {
-  if (value is Map<String, dynamic>) return value;
-  if (value is Map) return Map<String, dynamic>.from(value);
-  return const <String, dynamic>{};
+class _ReadinessGatePreview extends StatelessWidget {
+  final String title;
+  final Color color;
+  final List<AndroidSkillGateSummary> items;
+
+  const _ReadinessGatePreview({
+    required this.title,
+    required this.color,
+    required this.items,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: color.withValues(alpha: 0.84),
+            fontSize: 8.5,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.7,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Wrap(
+          spacing: 6,
+          runSpacing: 5,
+          children: [
+            for (final item in items)
+              Tooltip(
+                message: item.detail,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: color.withValues(alpha: 0.18)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        item.skillId,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.78),
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Icon(Icons.info_outline_rounded,
+                          size: 11, color: color.withValues(alpha: 0.75)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 int _intValue(dynamic value) {

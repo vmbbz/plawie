@@ -2,673 +2,517 @@
 
 Date: 2026-06-07
 
-Purpose: correct the Native Skill Execution war path into a launch-focused plan.
+This is the operating plan for taking OpenClaw Android from "the launch gate
+passes" to "fresh users can understand and use the maximum honest skill set."
+
 The target is not a tiny 1-3 skill pilot. The target is every default OpenClaw
-skill that can honestly run on Android, with unsupported skills filtered out by
-clear policy instead of left as noisy `missing_dependency` failures.
+skill that can honestly run on Android, with unsupported desktop/macOS and
+manual-compatibility skills removed from the release promise.
 
-Scope note: `readyRequired 13/13` is the Android launch-required default-skill
-gate. It is not the full count of skills the app can run or install. The broader
-system also has the classified default-skill manifest and the Native workspace
-skill/parity layer for ClawHub-installed skills such as `stocks`.
+## Executive Decision
 
-## Decision
+Native Android remains the default GTM runtime.
 
-The earlier "1-3 ClawHub proof skills" framing is too narrow for GTM. It is
-useful only as an engineering smoke-test slice, not as the product readiness
-bar.
+PRoot remains explicit compatibility mode only. It is useful for advanced Linux
+shell workflows, diagnostics, and rollback, but it must not silently rescue a
+Native failure or inflate Android readiness counts.
 
-The better GTM rule is:
+The release promise is:
 
 ```text
-Keep every default skill that can run on Android through Native Gateway,
-Android bridge adapters, app-owned HTTP adapters, verified runtime packs, or
-user config.
-
-Filter out only skills that are not Android-supported by design, unsafe for
-public mobile release, or impossible without a future signed dependency pack.
+Classify every default skill.
+Run every Android-viable skill through the Gateway/agent tool loop.
+Show exact user gates for config and packs.
+Hide or demote skills that are not Android-release safe.
 ```
 
-Healthcheck must therefore stop reporting the full desktop/server skill universe
-as if every default skill is supposed to be immediately executable on Android.
-It should report Android launch readiness by class:
+## Current Device Truth
 
-- `ready`
-- `needs_config`
-- `needs_pack`
-- `unsupported_on_android`
-- `manual_proot_compat`
-- `hidden_desktop_only`
-
-`missing_dependency` should remain a diagnostic state, but it should not be the
-user-facing GTM summary for skills that are deliberately desktop-only,
-credential-gated, or waiting for a known Android pack.
-
-## Chat Routing Correction: Stocks
-
-The failed chat probe showed the right architectural lesson: prompt guidance is
-not a tool contract. A private instruction that says "use stocks for finance"
-can still end with timeout, stale gate narration, or no visible tool event.
-
-For explicit finance/ticker prompts, chat now needs a deterministic required
-Native ClawHub intent before normal Gateway `chat.send`:
+Live device health on 2026-06-07 reported:
 
 ```text
-message -> NativeClawHubSkillExecutionService.tryExecuteRequiredIntent()
-        -> TOOL_USE:stocks
-        -> TOOL_RESULT:stocks
-        -> visible stocks result or exact execution gate
-```
+Classified default manifest: 61
+Installed Native workspace skills: 65
 
-This keeps web/search from silently replacing a requested skill and keeps PRoot
-manual-only. If `stocks` is installed and provisioned, it should run. If it is
-not, the user should see the exact Native execution gate, not a model guess.
+Launch-required ready: 13/13
+Ready within Android default manifest: 16
 
-## Why This Is Smarter Than A Tiny Pilot
-
-A 1-3 skill launch scope is too defensive. It would prove that the runtime can
-work, but it would leave the product looking underpowered even when many bundled
-skills are actually supportable on Android.
-
-The right scope is class-based, not count-based:
-
-- If a skill is mobile-safe and has no unsupported dependency, make it work.
-- If a skill needs an API key or account link, show `needs_config`.
-- If a skill needs a known binary/runtime pack, show `needs_pack` and install it
-  only from a verified pack.
-- If a skill is macOS/desktop-only, hide it from Android readiness or show
-  `unsupported_on_android`.
-- If a skill is Linux-shell compatible only through PRoot, keep it as explicit
-  `manual_proot_compat`, not a Native failure.
-
-This gives a broad GTM surface without promising that Android can execute every
-desktop, macOS, Homebrew, apt, native npm, or arbitrary CLI dependency.
-
-## What Would Happen In PRoot?
-
-PRoot would probably make more Linux-style default skills runnable than Native
-does today, especially skills that expect:
-
-- Linux shell commands.
-- `curl`, `tmux`, `python`, `node`, or common CLI tools.
-- apt-installable packages.
-- traditional filesystem paths under a Linux-like home.
-
-But PRoot would not make all default skills work.
-
-PRoot still would not automatically solve:
-
-- macOS-only skills such as Apple Notes, Apple Reminders, iMessage, Things, Bear
-  Notes, or Peekaboo-style macOS automation.
-- missing API keys, OAuth, account links, or service-specific config.
-- skills whose docs assume Homebrew formulas that are not present or not
-  Android/Ubuntu-compatible.
-- Android hardware control unless the Android node bridge is connected and
-  permissioned.
-- native packages that need incompatible CPU/OS builds.
-- Play Store, startup, memory, and reliability concerns from running a full
-  Linux userland on phones.
-
-So Native is not a mistake. Native is the right default for GTM if the product
-is Android-first:
-
-- faster startup path;
-- less process/runtime indirection;
-- cleaner app-owned state;
-- better mobile bridge integration;
-- less dependence on phone-specific PRoot behavior;
-- easier release story for Play Store and ordinary users.
-
-PRoot remains valuable as explicit compatibility mode for advanced Linux-shell
-skills and emergency rollback. It should not be the default path just because it
-can paper over more CLI assumptions.
-
-## Industry Alignment
-
-The industry pattern is not "prompt the model harder and hope tools run." The
-pattern is explicit tool contracts:
-
-- MCP exposes tools through discovery and calls them by exact name with
-  `inputSchema`; tool invocation should be visible and human-controllable.
-  Source: https://modelcontextprotocol.io/specification/2024-11-05/server/tools
-- OpenAI function calling uses JSON-schema tool definitions; the application
-  executes model-requested tool calls and returns tool outputs. It also advises
-  keeping the up-front tool surface small or deferred for accuracy and cost.
-  Source: https://developers.openai.com/api/docs/guides/function-calling
-- Anthropic tool-use guidance recommends clear tool descriptions, consolidated
-  operations, namespacing, high-signal responses, and forced tool choice when a
-  tool must be used.
-  Source: https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools
-- Android guidance strongly discourages dynamic code loading, especially remote
-  code, and Google Play restricts downloading executable code outside Play.
-  Sources:
-  https://developer.android.com/privacy-and-security/risks/dynamic-code-loading
-  https://support.google.com/googleplay/android-developer/answer/16559646
-
-For OpenClaw Android, that means:
-
-1. classify skills deterministically;
-2. expose only real callable tools;
-3. install only verified packs;
-4. keep user-visible gates honest;
-5. preserve PRoot as explicit compatibility fallback.
-
-## Current Default Skill Inventory
-
-The bundled OpenClaw archive currently contains these default skill docs:
-
-```text
-1password, apple-notes, apple-reminders, bear-notes, blogwatcher, blucli,
-camsnap, canvas, clawhub, coding-agent, diagram-maker, discord, eightctl,
-gemini, gh-issues, gifgrep, github, gog, goplaces, healthcheck, himalaya,
-imsg, mcporter, meme-maker, model-usage, nano-pdf, node-connect,
-node-inspect-debugger, notion, obsidian, openai-whisper, openai-whisper-api,
-openhue, oracle, ordercli, peekaboo, python-debugpy, sag, session-logs,
-sherpa-onnx-tts, skill-creator, slack, songsee, sonoscli, spike,
-spotify-player, summarize, taskflow, taskflow-inbox-triage, things-mac, tmux,
-trello, video-frames, voice-call, wacli, weather, xurl
-```
-
-The Android app also bundles mobile bridge skill docs:
-
-```text
-avatar_forge, battery, sensors, vibrate
-```
-
-The GTM plan should cover this whole inventory by classification, not only a
-small proof subset.
-
-## Android Readiness Classes
-
-### Class A: Android-Ready Required
-
-These must be ready on a fresh GTM install because they are core mobile
-experience or can run through existing app/Gateway infrastructure without a
-desktop dependency.
-
-Examples:
-
-- Android bridge skills: `battery`, `sensors`, `vibrate`, `avatar_forge`.
-- App-native capabilities surfaced as tools: healthcheck, device status,
-  permissions, camera list/snap, location, flashlight, haptics, avatar
-  gestures.
-- Gateway/runtime instruction skills that do not need external binaries:
-  `canvas`, `taskflow`, `taskflow-inbox-triage`, `skill-creator`, `spike`.
-- Mobile-safe local Node/script skills once Node is present and smoke-tested:
-  `meme-maker`, `diagram-maker` if its renderer path is pure JS or bundled.
-- Mobile-safe HTTP/network skills once adapter-backed: `weather`.
-
-Release rule:
-
-```text
-Class A skills must not appear as missing_dependency in GTM healthcheck.
-They must be ready or fail the release gate.
-```
-
-### Class B: Android-Ready After User Config
-
-These are valid Android skills, but they require credentials, account linking,
-channel IDs, or service config. They should stay visible, but their correct
-state is `needs_config`, not `missing_dependency`.
-
-Examples:
-
-- `slack`
-- `discord`
-- `github`
-- `gh-issues`
-- `notion`
-- `trello`
-- `1password`
-- `voice-call`
-- `goplaces`
-- `gog`
-- `ordercli`
-- `sag`
-- `mcporter`
-- `openai-whisper-api`
-- `summarize` when provider/API config is required
-
-Release rule:
-
-```text
-Class B skills pass GTM if they show exact missing config and become ready
-after config is supplied.
-```
-
-### Class C: Android Pack Required
-
-These are not impossible on Android, but they require a verified Android pack,
-not on-device package building. They should not block GTM unless selected as
-launch-critical.
-
-Examples:
-
-- `openai-whisper`
-- `sherpa-onnx-tts`
-- `video-frames`
-- `camsnap`
-- `gifgrep`
-- `himalaya`
-- `spotify-player`
-- `tmux`
-- `wacli`
-- `xurl`
-- `python-debugpy`
-- CLI-heavy helpers such as `blucli`, `eightctl`, `nano-pdf`, `sonoscli`,
-  depending on their actual binary/runtime path
-
-Release rule:
-
-```text
-Class C skills show needs_pack with pack id, ABI, size, and smoke status.
-They must not show vague missing_binary in the user-facing health summary.
-```
-
-### Class D: Unsupported On Android By Design
-
-These should not be treated as failed Native skills. They are desktop/macOS app
-automation skills or otherwise not Android-release targets unless a separate
-remote-host connector is built.
-
-Examples:
-
-- `apple-notes`
-- `apple-reminders`
-- `bear-notes`
-- `imsg`
-- `things-mac`
-- `peekaboo`
-- desktop-only portions of `obsidian`, `oracle`, or `model-usage` if their
-  usage depends on local desktop apps or macOS shell tools
-
-Release rule:
-
-```text
-Class D skills are hidden from Android readiness or shown as
-unsupported_on_android. They do not count against GTM readiness.
-```
-
-### Class E: Manual PRoot Compatibility
-
-These are allowed to run only in explicit compatibility mode when the user or
-operator selects PRoot. They should not be part of normal Native readiness.
-
-Examples:
-
-- Linux shell workflows that need a broader Ubuntu userland.
-- CLI chains that are too expensive or risky to package natively for GTM.
-- debugging/operator tools that assume a shell session.
-
-Release rule:
-
-```text
-Class E skills show manual_proot_compat with a clear "switch to compatibility
-mode" action. They never silently start PRoot.
-```
-
-## Corrected Healthcheck Contract
-
-Healthcheck should separate total installed skill inventory from Android launch
-readiness.
-
-Bad GTM output:
-
-```text
-native skills: 65; skill gates: 91; readiness:
-{"missing_dependency":32,"needs_config":20,"ready":13}
-```
-
-Better GTM output:
-
-```text
-Android default readiness:
-ready_required: 18/18
-needs_config: 14
-needs_pack: 11
-unsupported_on_android: 8
-manual_proot_compat: 6
+ready_required: 13
+needs_config: 16
+needs_pack: 22
+unsupported_on_android: 6
+manual_proot_compat: 2
+hidden_desktop_only: 2
 unexpected_missing_dependency: 0
 
 Release gate: PASS
 ```
 
-The important number is `unexpected_missing_dependency`. It must be zero for
-the Android launch set.
+Read this carefully:
 
-### Implemented Health Payload
-
-Implemented on 2026-06-07 in `device.health` as:
-
-```text
-androidDefaultReadiness.totalManifestSkills
-androidDefaultReadiness.installedNativeSkills
-androidDefaultReadiness.readyRequired.ready
-androidDefaultReadiness.readyRequired.total
-androidDefaultReadiness.countsByClass
-androidDefaultReadiness.unexpectedMissingDependency
-androidDefaultReadiness.unexpectedMissingDependencySkillIds
-androidDefaultReadiness.releaseGatePass
-androidDefaultReadiness.skills
-```
-
-Raw diagnostics remain present as separate fields:
+- `61` is the classified default skill manifest.
+- `13/13` is the current launch-required pass gate.
+- `16 ready` means 13 launch-ready plus `diagram-maker`,
+  `spotify-player`, and `node-connect` on the current device.
+- `node-connect` is manual PRoot compatibility, so it must not count as a
+  Native fresh-user Android promise.
+- The honest Android-release-relevant ceiling today is:
 
 ```text
-skillReadiness
-skillProvisioning
-skillGateCount
-nativeSkillCount
-prootSkillCount
+61 classified
+- 6 unsupported_on_android
+- 2 manual_proot_compat
+- 2 hidden_desktop_only
+= 51 Android-release-relevant skills
 ```
 
-Device smoke on 2026-06-07 installed the freshly built debug APK on
-`RZCX30KA9AW`, launched `com.nxg.openclawproot`, forwarded phone port `8765`,
-and read `http://127.0.0.1:28765/device/health`.
+So the real ceiling push is not 13. It is `51/51`, with the understanding that
+many of those 51 require user credentials or signed dependency packs before
+they can be usable for a fresh user.
 
-Observed Android default readiness:
+## Skill Classes
+
+### Class A: Ready Required
+
+These must work for every fresh Android user without API keys, dependency
+packs, or PRoot:
 
 ```text
-totalManifestSkills: 61
-installedNativeSkills: 65
-readyRequired: 9/13
-countsByClass:
-  ready_required: 13
-  needs_config: 16
-  needs_pack: 22
-  unsupported_on_android: 6
-  manual_proot_compat: 2
-  hidden_desktop_only: 2
-unexpectedMissingDependency: 4
-unexpectedMissingDependencySkillIds:
-  canvas
-  clawhub
-  meme-maker
-  weather
-releaseGatePass: false
+avatar_forge
+battery
+canvas
+clawhub
+healthcheck
+meme-maker
+sensors
+skill-creator
+spike
+taskflow
+taskflow-inbox-triage
+vibrate
+weather
 ```
 
-This is the desired contract shape: app-native Android bridge skills such as
-`avatar_forge`, `battery`, `sensors`, and `vibrate` now report
-`app_native_ready` instead of pretending they are missing OpenClaw skill
-folders, while the remaining launch blockers are named exactly.
+Class A acceptance:
 
-### Progress Check: Skills Manager Surface
+- The user can ask from chat.
+- The Gateway/agent lane is used.
+- Tool-use and tool-result evidence appears in the chat UI for actions.
+- No web fallback replaces an explicitly requested skill.
+- No automatic PRoot fallback is used.
 
-Round 5 on 2026-06-07 exposed the readiness contract into app state and the
-Skills Manager:
+### Class B: Needs Config
 
-- `GatewayState` now carries `skillProvisioning` and
-  `androidDefaultReadiness`.
-- `GatewayService` updates both fields after the finalized parity/provisioning
-  snapshot.
-- `GatewayProvider` exposes both summaries for UI consumers.
-- Skills Manager now shows an Android default readiness panel and dependency
-  status chips for installed skills.
+These are Android-relevant, but require an account, API key, provider, or local
+path before use:
 
-Verification for this round:
-
-- `dart analyze lib/models/gateway_state.dart lib/services/gateway_service.dart
-  lib/screens/management/skills_manager.dart lib/providers/gateway_provider.dart`
-  returned no issues.
-- `flutter build apk --debug` produced
-  `build\app\outputs\flutter-apk\app-debug.apk`.
-- The fresh debug APK was installed on `RZCX30KA9AW`, launched, and
-  `/device/health` still reported the Android readiness payload with
-  `readyRequired: 9/13` and blockers `canvas`, `clawhub`, `meme-maker`, and
-  `weather`.
-
-### Progress Check: Canvas And Weather Promotion
-
-Round 6 on 2026-06-07 reduced the Android launch blockers without adding a
-desktop dependency pack:
-
-- `canvas` is now classified as an app-native Android capability because the
-  app already registers `canvas.navigate`, `canvas.eval`, and
-  `canvas.snapshot` through the node bridge.
-- `weather` now has an app-native HTTPS adapter backed by Open-Meteo, exposed as
-  `weather.current` and `weather.forecast`.
-- Android-owned manifest entries now report `app_native_ready` even when the
-  raw OpenClaw skill matrix still has stale desktop missing-binary diagnostics.
-  Those diagnostics remain visible in raw `skillProvisioning`; they no longer
-  block the Android launch gate for app-owned commands.
-
-Verification for this round:
-
-- Targeted `dart analyze` across the changed services and tests returned no
-  issues.
-- `flutter build apk --debug` produced a fresh debug APK.
-- The fresh debug APK was installed on `RZCX30KA9AW`, launched, and
-  `/device/health` reported `readyRequired: 11/13`,
-  `unexpectedMissingDependency: 2`, blockers `clawhub` and `meme-maker`, and
-  `app_native_ready` for both `canvas` and `weather`.
-- `POST /api/device/control` with
-  `{"action":"weather_current","city":"Johannesburg"}` returned an Open-Meteo
-  weather summary from the device.
-
-### Progress Check: ClawHub Metadata Promotion
-
-Round 7 on 2026-06-07 promoted ClawHub read-side metadata without adding npm,
-`npx`, or PRoot as a launch dependency:
-
-- Added an app-native ClawHub capability with `clawhub.search` and
-  `clawhub.info`.
-- Kept install/update/uninstall mutation owned by the existing Skills Manager
-  and native ClawHub installer.
-- Reclassified the `clawhub` launch entry as a REST-backed Android adapter.
-- Android readiness now treats the `clawhubSkill` owner layer as
-  `app_native_ready`, while raw npm/CLI diagnostics remain visible outside the
-  launch gate.
-
-Verification for this round:
-
-- Targeted `dart analyze` across the changed services and tests returned no
-  issues.
-- `flutter build apk --debug` produced a fresh debug APK.
-- The fresh debug APK was installed on `RZCX30KA9AW`, launched, and
-  `/device/health` reported `readyRequired: 12/13`,
-  `unexpectedMissingDependency: 1`, blocker `meme-maker`, and
-  `app_native_ready` for `clawhub`.
-- `POST /api/device/control` with
-  `{"action":"clawhub_search","query":"weather","limit":3}` returned ClawHub
-  registry metadata from the device.
-
-### Progress Check: Meme-Maker Renderer And Release Gate
-
-Round 8 on 2026-06-07 cleared the final Android launch blocker without adding
-Node canvas, sharp, npm, or PRoot:
-
-- Added `meme-maker.create`, a pure-Dart app-native PNG renderer backed by the
-  `image` package.
-- The renderer creates a bounded captioned PNG from `topText` and/or
-  `bottomText`, returns base64 image data, and publishes a tool media event.
-- Reclassified `meme-maker` as an app-native Android capability.
-- Added `image` as an explicit direct dependency because production code now
-  imports it directly.
-
-Verification for this round:
-
-- Targeted `dart analyze` across the changed services, tests, and `pubspec.yaml`
-  returned no issues.
-- Focused `flutter test test/meme_maker_capability_test.dart --no-pub` was
-  blocked before test execution by the existing `fllama` native-assets host
-  CMake/MSVC issue.
-- `flutter build apk --debug` produced a fresh debug APK.
-- The fresh debug APK was installed on `RZCX30KA9AW`, launched, and
-  `/device/health` reported `readyRequired: 13/13`,
-  `unexpectedMissingDependency: 0`, and `releaseGatePass: true`.
-- `POST /api/device/control` with `meme_maker_create` returned a 640x640 PNG
-  payload from the device.
-
-## Golden Android Runtime And Adapter Pack
-
-The shorter reliable path is not a tiny pilot and not a universal builder. It
-is a curated Android runtime plus adapters:
-
-1. Native Gateway and bundled OpenClaw package.
-2. Android node bridge for phone hardware and avatar actions.
-3. Native Node for pure JS scripts and Gateway runtime.
-4. Native Python for selected Android-compatible Python packages.
-5. HTTP adapter for skills whose docs use `curl` against local or public HTTP.
-6. Verified dependency packs for known heavy skills.
-7. Strict manifest gates for every default skill.
-
-The phone should:
-
-- read manifest;
-- download only trusted packs when needed;
-- verify hash/signature;
-- extract to app-owned storage;
-- smoke test;
-- mark ready or blocked with exact reason.
-
-The phone should not:
-
-- run Homebrew;
-- run apt as a normal GTM install path;
-- run `node-gyp`, `make`, or arbitrary native builds on-device;
-- silently execute downloaded native binaries;
-- silently fall back to web or PRoot.
-
-## PRoot Positioning
-
-PRoot is not wrong. It is just not the right default product story for Android
-GTM.
-
-Use PRoot for:
-
-- explicit compatibility mode;
-- emergency rollback;
-- operator/developer shell workflows;
-- Linux CLI skills that are not launch-critical;
-- cases where the user knowingly trades startup/runtime cost for compatibility.
-
-Do not use PRoot for:
-
-- normal fresh-install startup;
-- hiding Native readiness failures;
-- silently satisfying skill dependencies;
-- claiming Android-native readiness when the skill only works in a Linux
-  compatibility shell.
-
-## Implementation Plan
-
-### Phase 1: Build The Android Skill Support Manifest
-
-Create a product manifest that classifies every default skill:
-
-```json
-{
-  "skillId": "weather",
-  "androidSupport": "ready_required",
-  "ownerLayer": "openclaw_skill",
-  "executionMode": "http_adapter",
-  "requiredPacks": [],
-  "requiredConfig": [],
-  "unsupportedReason": null,
-  "smokePrompt": "Use weather for Johannesburg with no web fallback."
-}
+```text
+1password: OP_SERVICE_ACCOUNT_TOKEN
+discord: DISCORD_BOT_TOKEN
+gh-issues: GITHUB_TOKEN
+github: GITHUB_TOKEN
+gog: GOG_ACCOUNT_TOKEN
+goplaces: GOOGLE_PLACES_API_KEY
+mcporter: MCPORTER_ENDPOINT, MCPORTER_TOKEN
+notion: NOTION_TOKEN
+openai-whisper-api: OPENAI_API_KEY
+ordercli: ORDERCLI_API_KEY
+sag: SAG_API_KEY
+session-logs: SESSION_LOGS_ROOT
+slack: SLACK_BOT_TOKEN, channels.slack
+summarize: SUMMARY_PROVIDER
+trello: TRELLO_API_KEY, TRELLO_TOKEN
+voice-call: VOICE_CALL_PROVIDER, VOICE_CALL_ACCOUNT
 ```
 
-Allowed `androidSupport` values:
+Important correction: `needs_config` is a product class, not always the first
+runtime gate. On the current device, several Class B skills also report
+`missing_native_bin`. For example, a user cannot fix `github` only by entering
+`GITHUB_TOKEN` if the Native binary/adapter path is missing.
 
-- `ready_required`
-- `needs_config`
-- `needs_pack`
-- `unsupported_on_android`
-- `manual_proot_compat`
-- `hidden_desktop_only`
+Therefore the app must show layered gates:
 
-This manifest should be generated from skill metadata when possible, then
-overridden by curated product policy where the metadata is desktop-biased.
+```text
+Skill: github
+Product class: Needs config
+User config: GITHUB_TOKEN
+Runtime gate: missing_native_bin
+Next action: install verified pack or use app-native adapter
+```
 
-### Phase 2: Reclassify Existing Health Gates
+### Class C: Needs Pack
 
-Change healthcheck from raw gate totals to class-aware release status:
+These are Android-relevant, but need verified runtime/binary/media packs:
 
-- total installed skills;
-- Android launch skills;
-- ready required count;
-- needs config count;
-- needs pack count;
-- unsupported count;
-- unexpected missing dependency count;
-- exact failing skills if unexpected count is nonzero.
+```text
+blogwatcher: android-cli-core-pack
+blucli: android-cli-core-pack
+camsnap: android-vision-media-runtime
+coding-agent: android-node-debug-pack
+diagram-maker: android-cli-core-pack
+eightctl: android-cli-core-pack
+gemini: android-node-debug-pack
+gifgrep: android-vision-media-runtime
+himalaya: android-cli-core-pack
+nano-pdf: android-cli-core-pack
+node-inspect-debugger: android-node-debug-pack
+openai-whisper: android-whisper-runtime
+openhue: android-cli-core-pack
+python-debugpy: android-python-debug-runtime
+sherpa-onnx-tts: android-tts-runtime
+songsee: android-audio-runtime
+sonoscli: android-cli-core-pack
+spotify-player: android-audio-runtime
+tmux: android-terminal-pack
+video-frames: android-vision-media-runtime
+wacli: android-cli-core-pack
+xurl: android-cli-core-pack
+```
 
-### Phase 3: Make All Class A Skills Ready
+Class C acceptance:
 
-Device-test every Class A skill through the actual chat/tool path.
+- Pack ID is exact.
+- Pack source is trusted.
+- Pack contents are signed or hash-verified.
+- APK/Play policy is respected.
+- Install outcome re-runs parity/provisioning.
+- Smoke proves the skill through Gateway chat or the registered Gateway tool
+  path.
+
+Some Class C skills can be converted into app-native adapters instead of
+shipping shell-style binaries. That is preferred when the adapter is smaller,
+safer, and easier to test.
+
+### Class D: Unsupported On Android
+
+These should not be counted as Android release failures:
+
+```text
+apple-notes
+apple-reminders
+bear-notes
+imsg
+peekaboo
+things-mac
+```
+
+They rely on macOS apps, iMessage, desktop automation, or platform APIs that do
+not exist in normal Android app permissions.
+
+### Class E: Manual PRoot Compatibility
+
+These belong behind an explicit compatibility-mode label:
+
+```text
+node-connect
+oracle
+```
+
+They can remain visible to advanced users, but they must not be presented as
+Native Android default readiness.
+
+### Class F: Hidden Desktop/Remote
+
+These are not Android GTM gates:
+
+```text
+model-usage
+obsidian
+```
+
+They can return later as remote-host or desktop-connected workflows.
+
+## Gateway-First Execution Contract
+
+This is non-negotiable for GTM:
+
+```text
+User prompt
+  -> Gateway chat.send / Gateway tool registry
+  -> model selects or required router narrows exact tool
+  -> tool_use frame is surfaced
+  -> app/gateway executes tool
+  -> tool_result frame is surfaced
+  -> result returns to the agent/model
+  -> final answer is synthesized from the actual result
+```
+
+The current deterministic stocks route proved execution, but it still returns
+too early. It emits `TOOL_USE:stocks` and `TOOL_RESULT:stocks`, then returns the
+visible result before the agent continuation. That is useful as a rescue path,
+but the production contract should continue the agent loop after tool execution.
+
+Correct stocks target:
+
+```text
+finance prompt
+  -> required tool selection: stocks
+  -> execute stocks
+  -> emit tool evidence
+  -> continue Gateway/model turn with tool result
+  -> final answer summarizes actual prices
+```
+
+Required phone actions should follow the same shape.
+
+## In-App User Experience Contract
+
+The Skills page must tell users the truth without making them read logs.
+
+Minimum GTM surface:
+
+```text
+Android Default Skills
+Ready now: 15/51 Native Android-relevant
+Launch gate: 13/13 pass
+Needs config: 16
+Needs pack: 22
+Unsupported Android: 6
+Manual PRoot: 2
+Desktop/remote: 2
+```
+
+Each skill row/card should show:
+
+- Product class: ready, config, pack, unsupported, PRoot, desktop.
+- Runtime status: ready, missing binary, missing config, disabled, etc.
+- Required keys or packs.
+- One next action.
+
+Examples:
+
+```text
+discord
+Needs config
+Required: DISCORD_BOT_TOKEN
+Runtime: missing Native config
+Action: Configure
+
+xurl
+Needs pack
+Required: android-cli-core-pack
+Runtime: missing Native binary
+Action: Install verified pack
+
+apple-notes
+Unsupported on Android
+Reason: requires macOS Apple Notes automation
+Action: Hidden from Android launch gate
+```
+
+The existing YAML skill editor is not enough. It edits skill prompt/override
+files. The config UX must write credentials and config through the provisioning
+service, then re-audit.
+
+## Industry Standard Alignment
+
+The plan follows normal agent/tool infrastructure practice:
+
+- MCP tools have exact names and input schemas, and clients should show exposed
+  tools plus visible invocation indicators.
+- OpenAI function calling is a loop: provide tools, receive tool call, execute
+  application code, send tool output back, then receive the final model answer.
+- Anthropic tool guidance emphasizes clear descriptions, JSON schemas,
+  namespacing, consolidated operations, and high-signal tool responses.
+- Android and Google Play policy discourage remote executable-code loading.
+  Dependency packs must be packaged, verified, or otherwise policy-safe.
+
+Sources:
+
+- https://modelcontextprotocol.io/specification/2024-11-05/server/tools
+- https://platform.openai.com/docs/guides/function-calling
+- https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools
+- https://developer.android.com/privacy-and-security/risks/dynamic-code-loading
+- https://support.google.com/googleplay/android-developer/answer/16559646
+
+## Phased Execution Plan
+
+### Phase 0: Stop The Test Excuses
+
+Goal: host tests must run for service/UI logic.
+
+Current blocker:
+
+```text
+flutter test ... fails before test discovery because fllama native-assets tries
+to build Windows host assets and this machine lacks VS C++/CMake resolution.
+```
+
+Plan:
+
+- Keep Android fllama native-assets builds intact.
+- Skip the non-linking Windows host asset build used by Flutter tests.
+- Prove `flutter test test/android_skill_support_manifest_test.dart --no-pub`
+  can reach and pass test discovery.
+- Keep `flutter build apk --debug` passing.
+
+### Phase 1: Make The App Explain The Truth
+
+Goal: the Skills page should clearly show launch readiness, Android-relevant
+ceiling, and top gate categories.
+
+Work:
+
+- Upgrade the Android readiness panel.
+- Compute Android-release-relevant total:
+
+```text
+manifest total - unsupported - manual PRoot - hidden desktop
+```
+
+- Show ready-now within that relevant set.
+- Show short lists of blocked `needs_config` and `needs_pack` examples.
+- Explain that config and pack are different gates.
+
+### Phase 2: Config Wizard
+
+Goal: users can satisfy Class B gates from the app.
+
+Work:
+
+- Build a guided credential/config sheet.
+- Pull required keys from `androidDefaultReadiness.skills`.
+- Write values through `SkillProvisioningService.auditAndProvision`.
+- Re-audit and refresh Gateway state.
+- Show "still blocked by pack/binary" when config alone is not enough.
+
+### Phase 3: Gateway-First Tool Continuation
+
+Goal: required tool intents no longer bypass the agent final-answer loop.
+
+Work:
+
+- Change stocks and required mobile actions from early return to
+  tool-result continuation.
+- Keep direct visible fallback only when Gateway/model continuation is
+  unavailable.
+- Add tests for `TOOL_USE`, `TOOL_RESULT`, and continuation prompt/result
+  wiring.
+
+### Phase 4: Fast Adapter Wins
+
+Goal: raise ready count without bloated binary packs.
+
+Preferred adapter candidates:
+
+```text
+xurl
+blogwatcher
+nano-pdf
+session-logs
+summarize
+stocks
+camsnap
+```
 
 Acceptance:
 
-- tool/result chips appear where action is taken;
-- direct Gateway/app adapter evidence exists in logs;
-- no model-only claims;
-- no web fallback for explicit skill requests;
-- no automatic PRoot fallback.
+- App-native or Gateway-registered adapter exists.
+- User can call it through chat.
+- Tool evidence appears.
+- Health/readiness reclassifies it from pack/config blocked to ready or
+  config-only.
 
-### Phase 4: Make Class B Config UX Exact
+### Phase 5: Verified Dependency Packs
 
-For every config-gated skill:
+Goal: solve the remaining binary/runtime skills safely.
 
-- show exact key/account needed;
-- do not call the skill until configured;
-- re-audit after config save;
-- run smoke after config is supplied.
+Pack lanes:
 
-### Phase 5: Create Pack Roadmap For Class C
+```text
+android-cli-core-pack
+android-node-debug-pack
+android-vision-media-runtime
+android-whisper-runtime
+android-python-debug-runtime
+android-tts-runtime
+android-audio-runtime
+android-terminal-pack
+```
 
-For every pack-required skill:
+Each pack needs:
 
-- define pack id;
-- ABI;
-- size;
-- source;
-- hash/signature;
-- smoke command;
-- whether it is launch-critical.
+- ABI.
+- source.
+- exact files.
+- version.
+- hash/signature.
+- expected size.
+- smoke command.
+- rollback behavior.
+- Play policy review.
 
-Only launch-critical Class C packs block GTM.
+### Phase 6: Fresh-User Proof
 
-### Phase 6: Hide Or Demote Class D
+Goal: prove the release promise on clean app data.
 
-Desktop/macOS-only skills should not pollute Android healthcheck. They can stay
-in an "Available on desktop/remote host" section if useful, but not in Android
-readiness.
+Work:
 
-### Phase 7: Keep PRoot As Explicit Compatibility
+- Uninstall or clear data only with explicit approval because this destroys
+  app data.
+- Install APK fresh.
+- Query `/device/health`.
+- Run Class A chat smokes.
+- Run selected Class B/C smokes after config/pack setup.
+- Record final counts in this doc.
 
-Add a compatibility mode narrative:
+## Immediate Working Targets
 
-- "Native Android mode" is default and recommended.
-- "PRoot compatibility mode" is optional for Linux-shell skills.
-- Switching modes is explicit and visible.
-- Healthcheck shows which skills would need PRoot, but does not count them as
-  Native failures.
+Round 1 target:
 
-## Release Gate
+```text
+Host tests unblocked.
+GTM doc rewritten.
+Skills page explains launch gate vs Android ceiling.
+Commit made.
+```
 
-GTM passes when:
+Round 2 target:
 
-1. Native Gateway starts by default.
-2. Android node bridge is linked and declares expected commands.
-3. Every `ready_required` skill is ready and smoke-tested.
-4. Every `needs_config` skill has exact config UI/status.
-5. Every `needs_pack` skill has an exact pack id or is marked non-launch.
-6. Every desktop/macOS-only skill is classified as unsupported, hidden, or
-   remote-host-only.
-7. Healthcheck reports `unexpected_missing_dependency: 0` for the Android launch
-   set.
-8. PRoot is manual compatibility only.
-9. Tool/result UI appears for action-taking skills.
-10. Device smoke proves the release set from chat, not just direct endpoints.
+```text
+Config wizard MVP.
+At least discord/slack/voice-call config gates actionable.
+Commit made.
+```
 
-## Bottom Line
+Round 3 target:
 
-The right plan is broader than 1-3 skills but narrower than "make Android run
-every desktop/server skill."
+```text
+Stocks and required mobile actions continue through the agent loop.
+Commit made.
+```
 
-Launch with every Android-viable default skill classified and either working,
-config-gated, pack-gated, or unsupported-by-design. Keep Native as the default
-mobile runtime. Keep PRoot as explicit compatibility. Make healthcheck report
-Android product truth instead of raw desktop inventory pain.
+Round 4 target:
+
+```text
+First adapter batch raises Android ready count above 20.
+Commit made.
+```
+
+Round 5 target:
+
+```text
+Dependency-pack manifest and first verified pack lane.
+Commit made.
+```
+
+## Success Definition
+
+The release is not "13 skills." The release is a truthful, expanding Android
+skill platform.
+
+GTM is acceptable when:
+
+- Native Gateway starts by default.
+- Class A is 100 percent ready on fresh install.
+- The app shows the full 61-skill classification.
+- Android-relevant progress is visible against the 51-skill ceiling.
+- Config-gated skills have exact setup UI.
+- Pack-gated skills have exact pack IDs and policy-safe install plans.
+- Unsupported/manual/desktop skills are not counted as Android failures.
+- Tool execution is visible and runs through Gateway/agent infrastructure.
+- Tests and device smokes are not optional theater.
+
+The long-term push is `51/51` Android-release-relevant skills either ready,
+user-configurable, or verified-pack-installable. The short-term GTM push is to
+make the product honest, understandable, and measurably improving every round.
