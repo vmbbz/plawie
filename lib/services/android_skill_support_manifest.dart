@@ -183,10 +183,11 @@ final List<AndroidSkillSupportEntry> _entries =
     packs: ['android-cli-core-pack'],
     smoke: 'Run blucli command discovery from a verified Android CLI pack.',
   ),
-  _needsPack(
+  _readyOptional(
     'camsnap',
-    packs: ['android-vision-media-runtime'],
-    smoke: 'Capture a camera still through a verified Android media adapter.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.appNativeTool,
+    smoke: 'Capture a camera still through the app-native camera adapter.',
   ),
   _ready(
     'canvas',

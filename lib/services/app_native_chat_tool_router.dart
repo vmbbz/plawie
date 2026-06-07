@@ -373,12 +373,16 @@ class AppNativeChatToolRouter {
       final facing = _containsAny(lower, const ['selfie', 'front camera'])
           ? 'front'
           : 'back';
+      final explicitCamsnap = RegExp(r'\bcamsnap\b').hasMatch(lower);
       return _AppNativeToolPlan(
-        toolName: 'device-node',
+        toolName: explicitCamsnap ? 'camsnap' : 'device-node',
         command: lower.contains('list') ? 'camera.list' : 'camera.snap',
         input: lower.contains('list')
             ? {'action': 'camera_list'}
-            : {'action': 'take_photo', 'facing': facing},
+            : {
+                'action': explicitCamsnap ? 'camera_snap' : 'take_photo',
+                'facing': facing,
+              },
       );
     }
 
@@ -944,8 +948,14 @@ class AppNativeChatToolRouter {
   }
 
   bool _wantsCamera(String lower) {
-    if (!_containsAny(
-        lower, const ['camera', 'photo', 'picture', 'selfie', 'snapshot'])) {
+    if (!_containsAny(lower, const [
+      'camsnap',
+      'camera',
+      'photo',
+      'picture',
+      'selfie',
+      'snapshot'
+    ])) {
       return false;
     }
     if (_containsAny(

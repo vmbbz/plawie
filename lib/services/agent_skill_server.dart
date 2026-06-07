@@ -1939,6 +1939,7 @@ class AgentSkillServer {
       'gesture.wave': 'avatar.gesture',
       'gestures.wave': 'avatar.gesture',
       'wave': 'avatar.gesture',
+      'camsnap': 'camera.snap',
       'camera_snap': 'camera.snap',
       'camera_clip': 'camera.clip',
       'camera_list': 'camera.list',
@@ -2204,6 +2205,17 @@ class AgentSkillServer {
           await _processTtsControl(input, request);
         case 'device-node':
           await _processDeviceControl(input, request);
+        case 'camsnap':
+        case 'camera_snap':
+        case 'camera.snap':
+          final facing = input['facing']?.toString().toLowerCase() == 'front'
+              ? 'front'
+              : 'back';
+          final frame = await _cameraCapability.handleWithPermission(
+            'camera.snap',
+            {'facing': facing},
+          );
+          _sendNodeFrame(request, frame, fallback: {'facing': facing});
         case 'xurl':
         case 'xurl_request':
         case 'xurl.request':
@@ -2617,6 +2629,7 @@ class AgentSkillServer {
         _sendNodeFrame(request, frame, fallback: {'sensor': sensor});
 
       case 'camera_list':
+      case 'camera_snap':
       case 'take_photo':
         if (action == 'camera_list') {
           final frame = await _cameraCapability.handleWithPermission(
@@ -2795,10 +2808,21 @@ class AgentSkillServer {
     }
     final payload = frame.payload;
     if (payload is Map<String, dynamic>) {
-      _sendJson(request, {'success': true, ...payload});
+      _sendJson(request, {'success': true, ..._sanitizeNodePayload(payload)});
     } else {
       _sendJson(request, {'success': true, ...?fallback});
     }
+  }
+
+  Map<String, dynamic> _sanitizeNodePayload(Map<String, dynamic> payload) {
+    final copy = Map<String, dynamic>.from(payload);
+    final base64 = copy.remove('base64')?.toString();
+    if (base64 != null && base64.isNotEmpty) {
+      copy['base64Omitted'] = true;
+      copy['base64Bytes'] = base64.length;
+      copy['attachedImage'] = true;
+    }
+    return copy;
   }
 
   void _sendJson(

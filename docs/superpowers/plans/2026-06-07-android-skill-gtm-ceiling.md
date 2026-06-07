@@ -220,6 +220,13 @@ manual chat UI final-response polish remains a follow-up.
 
 Each adapter gets a focused test and a device smoke before reclassification.
 
+`camsnap` local adapter is implemented as a ready-optional named tool over
+Android `CameraCapability`. It keeps `TOOL_USE:camsnap` identity for explicit
+prompts, advertises a `/api/tools` schema, routes `/api/tools/execute` through
+`AgentSkillServer`, and omits raw `base64` from HTTP JSON responses. Device
+smoke is deferred to the next batched install to save data, so the step remains
+open for the remaining candidates and final device proof.
+
 ### Task 5: Verified Pack Lane
 
 **Files:**

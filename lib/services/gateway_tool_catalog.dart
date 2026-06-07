@@ -29,6 +29,7 @@ class GatewayToolCatalog {
     'camera.snap',
     'camera.clip',
     'camera.list',
+    'camsnap',
     'camera_snap',
     'camera_clip',
     'camera_list',

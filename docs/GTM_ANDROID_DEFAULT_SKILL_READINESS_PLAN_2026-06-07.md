@@ -49,6 +49,16 @@ unexpected_missing_dependency: 0
 Release gate: PASS
 ```
 
+Source delta pending the next batched APK/device smoke:
+
+```text
+camsnap: needs_pack -> ready_optional
+source product-class counts: ready_optional 2, needs_pack 20
+```
+
+Do not replace the live device-health block above until the app is rebuilt,
+installed, and smoked on device. This keeps data use low without blurring proof.
+
 Read this carefully:
 
 - `61` is the classified default skill manifest.
@@ -110,8 +120,17 @@ These are Android-relevant and usable now, but intentionally not part of the
 fresh-user launch-critical gate:
 
 ```text
+camsnap
 xurl
 ```
+
+`camsnap` now runs as a named app-native camera adapter over the existing
+Android `CameraCapability`. It is exposed as a real `camsnap` tool in the
+native `/api/tools` catalog, routes `/api/tools/execute` through
+`AgentSkillServer`, and keeps explicit chat prompts visible as
+`TOOL_USE:camsnap` / `TOOL_RESULT:camsnap` while delegating the actual phone
+action to `camera.snap`. It is optional, not launch-required, because camera
+permission prompts and user comfort should not block fresh-app launch.
 
 `xurl` now runs as an app-native Dart HTTP adapter. It is exposed through the
 Gateway-visible tool catalog, validates absolute `http`/`https` URLs, supports
@@ -167,7 +186,6 @@ These are Android-relevant, but need verified runtime/binary/media packs:
 ```text
 blogwatcher: android-cli-core-pack
 blucli: android-cli-core-pack
-camsnap: android-vision-media-runtime
 coding-agent: android-node-debug-pack
 diagram-maker: android-cli-core-pack
 eightctl: android-cli-core-pack
@@ -284,15 +302,19 @@ Minimum GTM surface:
 
 ```text
 Android Default Skills
-Ready now: 16/51 Native Android-relevant
+Ready now by product class: 15/51 Native Android-relevant
 Launch gate: 13/13 pass
-Ready optional: 1
+Ready optional: 2
 Needs config: 16
-Needs pack: 21
+Needs pack: 20
 Unsupported Android: 6
 Manual PRoot: 2
 Desktop/remote: 2
 ```
+
+The live device-health "ready within manifest" number can be higher or lower
+because it includes current-device runtime evidence. The product-class count
+above is the source promise after the current adapter batch is installed.
 
 Each skill row/card should show:
 
@@ -314,6 +336,11 @@ xurl
 Ready optional
 Runtime: app-native HTTP adapter
 Action: Use through Gateway-visible xurl.request
+
+camsnap
+Ready optional
+Runtime: app-native camera adapter
+Action: Use through Gateway-visible camsnap
 
 apple-notes
 Unsupported on Android
@@ -532,6 +559,34 @@ device-proven through the registered `/api/tools/execute` path, and the
 chat-router tool-use/tool-result path is covered by focused unit tests. A longer
 manual chat UI smoke remains useful before calling the user-facing chat wording
 fully polished.
+
+Second adapter landed locally, pending batched device smoke:
+
+```text
+camsnap
+status: ready_optional
+runtime: app-native CameraCapability adapter
+Gateway tool: camsnap
+command underneath: camera.snap
+manifest movement: needs_pack -> ready_optional
+HTTP result hardening: raw base64 omitted from AgentSkillServer JSON responses
+```
+
+Local proof:
+
+```text
+flutter test test/android_skill_support_manifest_test.dart \
+  test/android_skill_readiness_service_test.dart \
+  test/gateway_required_mobile_route_test.dart \
+  test/xurl_app_native_adapter_test.dart \
+  test/camsnap_app_native_adapter_test.dart --no-pub
+
+Result: 25/25 passing
+```
+
+Device proof is intentionally deferred to the next batched install to save
+data. The required smoke is `/api/tools`, `/api/tools/execute name=camsnap`, and
+one chat/UI prompt with camera permission behavior observed.
 
 ### Phase 5: Verified Dependency Packs
 

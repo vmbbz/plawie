@@ -59,6 +59,10 @@ class SkillsService {
     'valeo_sentinel': 'valeo-sentinel',
     'valeo sentinel': 'valeo-sentinel',
     'moon pay': 'moonpay',
+    'camera_snap': 'camsnap',
+    'camera snap': 'camsnap',
+    'camera.snapshot': 'camsnap',
+    'camera snap skill': 'camsnap',
     'xurl_request': 'xurl',
     'xurl.request': 'xurl',
   };
@@ -140,6 +144,7 @@ class SkillsService {
       _createAvatarControlSkill(),
       _createTtsVoiceSkill(),
       _createDeviceNodeSkill(),
+      _createCamsnapSkill(),
       _createAvatarOverlaySkill(),
       _createBaseChainSkill(),
       // Partner proxies
@@ -193,6 +198,8 @@ class SkillsService {
         return await _executeTtsVoiceSkill(skill, params, ctx);
       case 'device':
         return await _executeDeviceNodeSkill(skill, params, ctx);
+      case 'camera':
+        return await _executeCamsnapSkill(skill, params, ctx);
       case 'system':
         return await _executeAvatarPipSkill(skill, params, ctx);
       case 'base':
@@ -540,6 +547,23 @@ class SkillsService {
       return SkillResult.error('Device fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Device unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeCamsnapSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('Camsnap fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('Camsnap unreachable: $e');
     }
   }
 
@@ -926,6 +950,17 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createCamsnapSkill() => Skill(
+      id: 'camsnap',
+      name: 'camsnap',
+      description: 'Capture an Android camera still through app-native tools.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'camera',
+      tags: ['camera', 'hardware'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createAvatarOverlaySkill() => Skill(
       id: 'avatar_overlay',
       name: 'Floating Avatar',
@@ -1171,6 +1206,30 @@ class SkillsService {
               },
             },
             'required': ['action'],
+          },
+        };
+      case 'camsnap':
+        return {
+          'name': skill.id,
+          'description':
+              'Capture a still photo through the Android camera capability.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'facing': {
+                'type': 'string',
+                'enum': ['back', 'front'],
+                'description': 'Camera facing direction. Defaults to back.',
+              },
+              'quality': {
+                'type': 'integer',
+                'minimum': 1,
+                'maximum': 100,
+                'description':
+                    'Requested JPEG quality hint. The app may clamp or ignore it.',
+              },
+            },
+            'required': [],
           },
         };
       case 'base-chain':
