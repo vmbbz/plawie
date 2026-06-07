@@ -287,6 +287,22 @@ flutter analyze lib/services/android_skill_readiness_service.dart lib/services/a
 
 Result: 19/19 tests passed; analyzer clean.
 
+`goplaces` is implemented as a config-gated app-native Google Places Text
+Search adapter. It keeps `needs_config` until `GOOGLE_PLACES_API_KEY` is
+present, exposes a `goplaces` schema through `/api/tools`, routes
+`/api/tools/execute` through `AgentSkillServer`, and clears stale CLI/binary
+gates once Native env config is present. It uses the Places Text Search
+endpoint with an explicit `X-Goog-FieldMask`, bounded `pageSize`, and compact
+place previews only.
+
+Focused proof:
+
+```powershell
+flutter test test/goplaces_app_native_adapter_test.dart --no-pub
+```
+
+Result: 6/6 tests passed.
+
 ### Task 5: Verified Pack Lane
 
 **Files:**

@@ -9,6 +9,7 @@ import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/github_capability.dart';
+import 'capabilities/goplaces_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/nano_pdf_capability.dart';
@@ -60,22 +61,26 @@ class AppNativeChatToolRouter {
   AppNativeChatToolRouter._internal({
     BlogWatcherCapability? blogWatcher,
     GitHubCapability? github,
+    GoPlacesCapability? goplaces,
     SessionLogsCapability? sessionLogs,
     XurlCapability? xurl,
   })  : _blogWatcher = blogWatcher ?? BlogWatcherCapability(),
         _github = github ?? GitHubCapability(),
+        _goplaces = goplaces ?? GoPlacesCapability(),
         _sessionLogs = sessionLogs ?? SessionLogsCapability(),
         _xurl = xurl ?? XurlCapability();
 
   factory AppNativeChatToolRouter.forTesting({
     BlogWatcherCapability? blogWatcher,
     GitHubCapability? github,
+    GoPlacesCapability? goplaces,
     SessionLogsCapability? sessionLogs,
     XurlCapability? xurl,
   }) =>
       AppNativeChatToolRouter._internal(
         blogWatcher: blogWatcher,
         github: github,
+        goplaces: goplaces,
         sessionLogs: sessionLogs,
         xurl: xurl,
       );
@@ -87,6 +92,7 @@ class AppNativeChatToolRouter {
   final DeviceCapability _device = DeviceCapability();
   final FlashCapability _flash = FlashCapability();
   final GitHubCapability _github;
+  final GoPlacesCapability _goplaces;
   final LocationCapability _location = LocationCapability();
   final MemeMakerCapability _memeMaker = MemeMakerCapability();
   final NanoPdfCapability _nanoPdf = NanoPdfCapability();
@@ -200,6 +206,7 @@ class AppNativeChatToolRouter {
       'clawhub.info' ||
       'github.user' ||
       'gh-issues.list' ||
+      'goplaces.search' ||
       'meme-maker.create' ||
       'nano-pdf.extract' ||
       'session-logs.query' ||
@@ -252,6 +259,7 @@ class AppNativeChatToolRouter {
       case 'blogwatcher.check':
       case 'github.user':
       case 'gh-issues.list':
+      case 'goplaces.search':
       case 'nano-pdf.extract':
       case 'session-logs.query':
       case 'summarize.text':
@@ -463,6 +471,9 @@ class AppNativeChatToolRouter {
     final githubPlan = _githubPlan(trimmed);
     if (githubPlan != null) return githubPlan;
 
+    final goplacesPlan = _goplacesPlan(trimmed);
+    if (goplacesPlan != null) return goplacesPlan;
+
     final sessionLogsPlan = _sessionLogsPlan(trimmed);
     if (sessionLogsPlan != null) return sessionLogsPlan;
 
@@ -561,6 +572,11 @@ class AppNativeChatToolRouter {
         case 'github.user':
         case 'gh-issues.list':
           return _frameToMap(await _github.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'goplaces.search':
+          return _frameToMap(await _goplaces.handle(
             plan.command,
             plan.input,
           ));
@@ -746,6 +762,10 @@ class AppNativeChatToolRouter {
         final repository = result['repository']?.toString().trim();
         final count = result['count'] ?? 0;
         return 'GitHub issues retrieved${repository?.isNotEmpty == true ? ' for $repository' : ''}: $count item(s).';
+      case 'goplaces.search':
+        final query = result['query']?.toString().trim();
+        final count = result['count'] ?? 0;
+        return 'Google Places search${query?.isNotEmpty == true ? ' for $query' : ''}: $count place(s).';
       case 'session-logs.query':
         final action = result['action']?.toString();
         return switch (action) {
@@ -1221,6 +1241,36 @@ class AppNativeChatToolRouter {
         if (issuesMatch.group(3) != null) 'state': issuesMatch.group(3),
         if (issuesMatch.group(4) != null)
           'limit': int.tryParse(issuesMatch.group(4)!),
+        'source': 'app-native-chat-router',
+      },
+    );
+  }
+
+  _AppNativeToolPlan? _goplacesPlan(String message) {
+    final match = RegExp(
+      r'^\s*(?:goplaces|google\s+places|places)\s*:?\s+(.+?)\s*$',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (match == null) return null;
+    var query = (match.group(1) ?? '').trim();
+    final limitMatch = RegExp(
+      r'\blimit\s+(\d{1,2})\b',
+      caseSensitive: false,
+    ).firstMatch(query);
+    final limit = int.tryParse(limitMatch?.group(1) ?? '');
+    query = query
+        .replaceFirst(
+          RegExp(r'\blimit\s+\d{1,2}\b', caseSensitive: false),
+          '',
+        )
+        .trim();
+    if (query.isEmpty) return null;
+    return _AppNativeToolPlan(
+      toolName: 'goplaces',
+      command: 'goplaces.search',
+      input: {
+        'query': query,
+        if (limit != null) 'limit': limit,
         'source': 'app-native-chat-router',
       },
     );

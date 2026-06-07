@@ -17,6 +17,7 @@ import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/github_capability.dart';
+import 'capabilities/goplaces_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/nano_pdf_capability.dart';
@@ -78,6 +79,7 @@ class AgentSkillServer {
   final DeviceCapability _deviceCapability = DeviceCapability();
   final FlashCapability _flashCapability = FlashCapability();
   final GitHubCapability _githubCapability = GitHubCapability();
+  final GoPlacesCapability _goPlacesCapability = GoPlacesCapability();
   final LocationCapability _locationCapability = LocationCapability();
   final MemeMakerCapability _memeMakerCapability = MemeMakerCapability();
   final NanoPdfCapability _nanoPdfCapability = NanoPdfCapability();
@@ -1971,6 +1973,11 @@ class AgentSkillServer {
       'gh-issues.list': 'gh-issues.list',
       'github_issues': 'gh-issues.list',
       'github.issues': 'gh-issues.list',
+      'goplaces': 'goplaces.search',
+      'goplaces_search': 'goplaces.search',
+      'goplaces.search': 'goplaces.search',
+      'google_places': 'goplaces.search',
+      'places_search': 'goplaces.search',
       'meme_maker_create': 'meme-maker.create',
       'meme-maker_create': 'meme-maker.create',
       'nano-pdf': 'nano-pdf.extract',
@@ -2159,6 +2166,16 @@ class AgentSkillServer {
           message: ok
               ? 'gh-issues.list arguments are dispatchable'
               : 'gh-issues.list requires owner and repo',
+        );
+      case 'goplaces.search':
+        final query = (input['query'] ?? input['textQuery'])?.toString().trim();
+        final ok = query != null && query.isNotEmpty;
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: ok,
+          code: ok ? 'ok' : 'missing_query',
+          message: ok
+              ? 'goplaces.search arguments are dispatchable'
+              : 'goplaces.search requires a query',
         );
       case 'nano-pdf.extract':
         final pdfBase64 =
@@ -2360,6 +2377,16 @@ class AgentSkillServer {
         case 'github.issues':
           final frame = await _githubCapability.handle(
             'gh-issues.list',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'goplaces':
+        case 'goplaces_search':
+        case 'goplaces.search':
+        case 'google_places':
+        case 'places_search':
+          final frame = await _goPlacesCapability.handle(
+            'goplaces.search',
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);

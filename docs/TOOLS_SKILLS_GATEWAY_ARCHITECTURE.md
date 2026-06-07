@@ -12,7 +12,7 @@ screen should read this before changing tool behavior.
 | --- | --- | --- | --- |
 | Gateway primitives | OpenClaw Gateway | Built-in tool groups such as web/files/runtime/nodes | `tools.profile`, `tools.allow`, `tools.deny` |
 | OpenClaw/npm skills | OpenClaw skills runtime | Installed skills and Gateway-managed capabilities | Gateway skill loading |
-| Android node capabilities | Plawie node / capability bridge | Camera, canvas, xurl HTTP requests, GitHub REST adapters, weather, ClawHub metadata, meme image creation, haptics, sensors, flashlight, screen, avatar/TTS actions | `gateway.nodes.allowCommands`, port `8765` |
+| Android node capabilities | Plawie node / capability bridge | Camera, canvas, xurl HTTP requests, GitHub and Google Places REST adapters, weather, ClawHub metadata, meme image creation, haptics, sensors, flashlight, screen, avatar/TTS actions | `gateway.nodes.allowCommands`, port `8765` |
 | Direct local tools | Dart local NDK loop | Lightweight local actions when using `local-llm/...` | `LocalLlmService` native fllama tools |
 
 Do not mix these layers. A string that is valid as an Android node command is
@@ -71,6 +71,7 @@ nano-pdf
 camsnap
 github
 gh-issues
+goplaces
 summarize
 xurl
 ```
@@ -79,8 +80,8 @@ The current Android node command allowlist contains avatar, camera, canvas,
 weather, ClawHub metadata, flashlight/torch, location, screen recording, sensor,
 simple meme image creation, blogwatcher RSS/Atom feed checks, camsnap camera
 capture, app-owned session log queries, small text-PDF byte extraction,
-provided-text summarization, GitHub profile/issue REST adapters, xurl HTTP
-requests, and haptic commands.
+provided-text summarization, GitHub profile/issue REST adapters, Google Places
+Text Search, xurl HTTP requests, and haptic commands.
 It does not currently prove a generic third-party app launcher or a safe
 WhatsApp message-sending command.
 
@@ -119,6 +120,12 @@ attach the captured image through the existing media event bus.
 run through `github.user` and `gh-issues.list` without a GitHub CLI binary. The
 token is read from Native `.env`, never accepted as tool input, and never
 returned in tool results or visible chat chunks.
+
+`goplaces` is a config-gated app-native Google Places Text Search adapter. It
+remains `needs_config` until `GOOGLE_PLACES_API_KEY` is present in the Native
+environment, then runs through `goplaces.search` without a CLI binary. It uses
+an explicit response field mask, bounded result count, and returns only compact
+place metadata.
 
 `summarize` is a named app-native extractive adapter for text supplied directly
 in the tool input. It is intentionally bounded and deterministic. It does not
@@ -200,7 +207,7 @@ Why this shape:
 | ID family | Correct home |
 | --- | --- |
 | `twilio`, `crypto`, `base`, `calculator`, `calendar` | OpenClaw skill install/load path |
-| `blogwatcher.check`, `session-logs.query`, `nano-pdf.extract`, `github.user`, `gh-issues.list`, `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `summarize.text`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
+| `blogwatcher.check`, `session-logs.query`, `nano-pdf.extract`, `github.user`, `gh-issues.list`, `goplaces.search`, `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `summarize.text`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
 | local NDK helper names | `LocalLlmService` direct local tool schemas |
 
 If Gateway logs `tools.allow allowlist contains unknown entries`, treat the
@@ -224,6 +231,7 @@ Device capabilities belong in node command policy, for example:
         "nano-pdf.extract",
         "github.user",
         "gh-issues.list",
+        "goplaces.search",
         "clawhub.search",
         "clawhub.info",
         "meme-maker.create",

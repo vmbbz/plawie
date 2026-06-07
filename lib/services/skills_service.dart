@@ -84,6 +84,11 @@ class SkillsService {
     'gh-issues.list': 'gh-issues',
     'github_issues': 'gh-issues',
     'github issues': 'gh-issues',
+    'goplaces_search': 'goplaces',
+    'goplaces.search': 'goplaces',
+    'google_places': 'goplaces',
+    'google places': 'goplaces',
+    'places_search': 'goplaces',
   };
 
   Stream<SkillsEvent> get events => _eventController.stream;
@@ -169,6 +174,7 @@ class SkillsService {
       _createCamsnapSkill(),
       _createGithubSkill(),
       _createGhIssuesSkill(),
+      _createGoPlacesSkill(),
       _createAvatarOverlaySkill(),
       _createBaseChainSkill(),
       // Partner proxies
@@ -233,6 +239,8 @@ class SkillsService {
         return await _executeCamsnapSkill(skill, params, ctx);
       case 'github':
         return await _executeGithubSkill(skill, params, ctx);
+      case 'places':
+        return await _executeGoPlacesSkill(skill, params, ctx);
       case 'system':
         return await _executeAvatarPipSkill(skill, params, ctx);
       case 'base':
@@ -667,6 +675,23 @@ class SkillsService {
       return SkillResult.error('GitHub skill fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('GitHub skill unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeGoPlacesSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('Google Places skill fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('Google Places skill unreachable: $e');
     }
   }
 
@@ -1141,6 +1166,18 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createGoPlacesSkill() => Skill(
+      id: 'goplaces',
+      name: 'goplaces',
+      description:
+          'Search Google Places with a bounded app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'places',
+      tags: ['google', 'places', 'maps'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createAvatarOverlaySkill() => Skill(
       id: 'avatar_overlay',
       name: 'Floating Avatar',
@@ -1561,6 +1598,40 @@ class SkillsService {
               },
             },
             'required': ['owner', 'repo'],
+          },
+        };
+      case 'goplaces':
+        return {
+          'name': skill.id,
+          'description':
+              'Search Google Places through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'query': {
+                'type': 'string',
+                'description': 'Place search text, for example coffee nearby.',
+              },
+              'limit': {
+                'type': 'integer',
+                'minimum': 1,
+                'maximum': 10,
+                'description': 'Maximum places to return.',
+              },
+              'languageCode': {
+                'type': 'string',
+                'description': 'Optional BCP-47 language code.',
+              },
+              'regionCode': {
+                'type': 'string',
+                'description': 'Optional CLDR region code.',
+              },
+              'includedType': {
+                'type': 'string',
+                'description': 'Optional Places type filter.',
+              },
+            },
+            'required': ['query'],
           },
         };
       case 'base-chain':

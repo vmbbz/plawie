@@ -257,7 +257,10 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsConfig(
     'goplaces',
     config: ['GOOGLE_PLACES_API_KEY'],
-    smoke: 'Resolve a configured places query with the Android network path.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke:
+        'Resolve a configured Places text search query through the app-native REST adapter.',
   ),
   _ready(
     'healthcheck',

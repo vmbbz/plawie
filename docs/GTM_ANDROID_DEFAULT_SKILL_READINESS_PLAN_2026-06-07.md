@@ -70,7 +70,8 @@ connected Android device during this round:
 ```text
 github: needs_config + stale missing_native_bin -> needs_config app-native config-only
 gh-issues: needs_config + stale missing_native_bin -> needs_config app-native config-only
-local proof: 19/19 focused tests, analyzer clean, debug APK built
+goplaces: needs_config + stale missing_native_bin -> needs_config app-native config-only
+local proof: focused tests, analyzer clean, debug APK built
 device install/smoke: pending ADB device visibility
 ```
 
@@ -236,9 +237,9 @@ runtime gate. On the current device, several Class B skills also report
 `missing_native_bin`.
 
 Important second correction: app-native config-gated adapters must not keep
-stale OpenClaw binary gates. `github` and `gh-issues` are the first proven case:
-until `GITHUB_TOKEN` exists they show `needs_config`; after the token exists
-they become app-native ready without requiring a GitHub CLI binary.
+stale OpenClaw binary gates. `github`, `gh-issues`, and `goplaces` are the
+first proven cases: until their env keys exist they show `needs_config`; after
+the keys exist they become app-native ready without requiring CLI binaries.
 
 Therefore the app must show layered gates:
 
@@ -250,7 +251,7 @@ Runtime gate: missing_native_bin
 Next action: install verified pack or use app-native adapter
 ```
 
-For GitHub specifically the app-facing gate is:
+For GitHub and Google Places specifically the app-facing gates are:
 
 ```text
 Skill: github / gh-issues
@@ -259,11 +260,20 @@ User config: GITHUB_TOKEN
 Runtime gate before token: needs_config
 Runtime gate after token: app_native_ready
 Next action: configure GITHUB_TOKEN in the Skills page
+
+Skill: goplaces
+Product class: Needs config
+User config: GOOGLE_PLACES_API_KEY
+Runtime gate before key: needs_config
+Runtime gate after key: app_native_ready
+Next action: configure GOOGLE_PLACES_API_KEY in the Skills page
 ```
 
 `github` reads bounded authenticated profile metadata through `github.user`.
 `gh-issues` lists bounded repository issue metadata through `gh-issues.list`.
-Both are exposed in `/api/tools`, route `/api/tools/execute` through
+`goplaces` performs bounded Google Places Text Search through `goplaces.search`
+using an explicit response field mask.
+All three are exposed in `/api/tools`, route `/api/tools/execute` through
 `AgentSkillServer`, and keep tokens out of tool input, result payloads, and
 visible chat chunks.
 
@@ -601,6 +611,7 @@ Preferred adapter candidates:
 blogwatcher
 github
 gh-issues
+goplaces
 nano-pdf
 session-logs
 summarize
@@ -871,6 +882,45 @@ dependency pack.
 Device install/smoke is pending. `adb devices -l` and `flutter devices` did not
 detect the connected Android phone after an ADB server restart, so this round
 cannot honestly claim `/api/tools` device proof yet.
+
+Eighth adapter landed:
+
+```text
+goplaces
+status: needs_config
+runtime after config: app-native Google Places REST adapter
+Gateway tool: goplaces
+command underneath: goplaces.search
+manifest movement: stale missing_native_bin -> app-native config-only
+scope: Places Text Search only, bounded result previews
+safety: GOOGLE_PLACES_API_KEY is read from Native .env, never accepted in tool
+input, and never returned in payloads or chat chunks
+```
+
+Local proof:
+
+```text
+flutter test test/goplaces_app_native_adapter_test.dart --no-pub
+
+Result: 6/6 passing
+```
+
+Combined build proof:
+
+```text
+flutter build apk --debug
+
+Result: built build/app/outputs/flutter-apk/app-debug.apk
+```
+
+This also does not change the fresh-user ready count because
+`GOOGLE_PLACES_API_KEY` is still required. It clears the binary/pack ceiling for
+configured users and follows the current Google Places Text Search pattern:
+POST `/v1/places:searchText` with explicit `X-Goog-FieldMask`, no wildcard
+field mask, and a bounded `pageSize`.
+
+Device install/smoke is also pending for `goplaces` because `adb devices -l`
+still returned no Android device after the build.
 
 ### Phase 5: Verified Dependency Packs
 
