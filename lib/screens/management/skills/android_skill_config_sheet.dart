@@ -325,7 +325,7 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
       padding: const EdgeInsets.only(bottom: 10),
       child: DropdownButtonFormField<String>(
         key: ValueKey('android-skill-config-field-${field.key}'),
-        value: value,
+        initialValue: value,
         dropdownColor: const Color(0xFF181B23),
         style: const TextStyle(color: Colors.white, fontSize: 13),
         decoration: _inputDecoration(field),
