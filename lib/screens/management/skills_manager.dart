@@ -704,9 +704,11 @@ class _MySkillsTabState extends State<_MySkillsTab> {
     final gatewayState = context.watch<GatewayProvider>().state;
     final rawSkills = gatewayState.activeSkills ?? [];
     final isLoading = gatewayState.status == GatewayStatus.starting;
-    final provisioningById =
-        _provisioningBadgesBySkillId(gatewayState.skillProvisioning);
     final androidReadiness = gatewayState.androidDefaultReadiness;
+    final provisioningById = _provisioningBadgesBySkillId(
+      gatewayState.skillProvisioning,
+      androidReadiness: androidReadiness,
+    );
 
     // Build installed ID set from gateway live data; fall back to CLI result
     final installedIds = rawSkills.isNotEmpty
@@ -2600,21 +2602,45 @@ String _normalizeProvisioningSkillId(String value) => value
     .replaceAll(RegExp(r'^@openclaw/'), '');
 
 Map<String, _SkillProvisioningBadgeData> _provisioningBadgesBySkillId(
-  Map<String, dynamic>? report,
-) {
+  Map<String, dynamic>? report, {
+  Map<String, dynamic>? androidReadiness,
+}) {
   final results = report?['results'];
-  if (results is! List) return const {};
   final badges = <String, _SkillProvisioningBadgeData>{};
-  for (final raw in results) {
+  if (results is List) {
+    for (final raw in results) {
+      if (raw is! Map) continue;
+      final json = Map<String, dynamic>.from(raw);
+      final skillId = _normalizeProvisioningSkillId(
+        json['skillId']?.toString() ?? '',
+      );
+      if (skillId.isEmpty) continue;
+      badges[skillId] = _SkillProvisioningBadgeData.fromJson(json);
+    }
+  }
+  _applyAndroidReadinessBadgeOverrides(badges, androidReadiness);
+  return badges;
+}
+
+void _applyAndroidReadinessBadgeOverrides(
+  Map<String, _SkillProvisioningBadgeData> badges,
+  Map<String, dynamic>? androidReadiness,
+) {
+  final skills = androidReadiness?['skills'];
+  if (skills is! List) return;
+  for (final raw in skills) {
     if (raw is! Map) continue;
-    final json = Map<String, dynamic>.from(raw);
+    final skill = Map<String, dynamic>.from(raw);
+    if (skill['ready'] != true ||
+        skill['runtimeStatus']?.toString() != 'app_native_ready') {
+      continue;
+    }
     final skillId = _normalizeProvisioningSkillId(
-      json['skillId']?.toString() ?? '',
+      skill['skillId']?.toString() ?? '',
     );
     if (skillId.isEmpty) continue;
-    badges[skillId] = _SkillProvisioningBadgeData.fromJson(json);
+    badges[skillId] = _SkillProvisioningBadgeData.appNativeReady();
   }
-  return badges;
 }
 
 _SkillProvisioningBadgeData? _provisioningFor(
@@ -2734,6 +2760,16 @@ class _SkillProvisioningBadgeData {
           icon: Icons.info_outline_rounded,
         ),
     };
+  }
+
+  factory _SkillProvisioningBadgeData.appNativeReady() {
+    return _SkillProvisioningBadgeData(
+      status: 'app_native_ready',
+      label: 'READY',
+      detail: 'Android app-native path ready',
+      color: AppColors.statusGreen,
+      icon: Icons.check_circle_rounded,
+    );
   }
 
   static Map<String, dynamic>? _mostRelevantProvisioningAction(dynamic raw) {

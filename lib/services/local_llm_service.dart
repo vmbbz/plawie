@@ -15,6 +15,7 @@ import 'capabilities/location_capability.dart';
 import 'capabilities/screen_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
+import 'capabilities/weather_capability.dart';
 import 'avatar_gesture_catalog.dart';
 
 // ---------------------------------------------------------------------------
@@ -272,6 +273,7 @@ class LocalLlmService {
   final ScreenCapability _screenCapability = ScreenCapability();
   final SensorCapability _sensorCapability = SensorCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
+  final WeatherCapability _weatherCapability = WeatherCapability();
 
   Stream<LocalLlmState> get stateStream => _stateController.stream;
   LocalLlmState get state => _state;
@@ -719,6 +721,20 @@ class LocalLlmService {
       description: 'Reads a phone sensor.',
     ),
     Tool(
+      name: 'weather_current',
+      jsonSchema:
+          '{"type":"object","properties":{"city":{"type":"string"},"latitude":{"type":"number"},"longitude":{"type":"number"},"units":{"type":"string","enum":["metric","imperial"]}},"required":[]}',
+      description:
+          'Gets current weather for a city or coordinates using the Android weather adapter.',
+    ),
+    Tool(
+      name: 'weather_forecast',
+      jsonSchema:
+          '{"type":"object","properties":{"city":{"type":"string"},"latitude":{"type":"number"},"longitude":{"type":"number"},"units":{"type":"string","enum":["metric","imperial"]},"days":{"type":"integer","minimum":1,"maximum":7}},"required":[]}',
+      description:
+          'Gets a short weather forecast for a city or coordinates using the Android weather adapter.',
+    ),
+    Tool(
       name: 'screen_record',
       jsonSchema:
           '{"type":"object","properties":{"durationMs":{"type":"integer","minimum":1000,"maximum":10000}},"required":[]}',
@@ -787,6 +803,9 @@ class LocalLlmService {
       'barometer'
     ])) {
       selected.addAll(['sensor_list', 'sensor_read']);
+    }
+    if (hasAny(['weather', 'forecast'])) {
+      selected.addAll(['weather_current', 'weather_forecast']);
     }
     if (hasAny(['screen record', 'record screen', 'screen recording'])) {
       selected.add('screen_record');
@@ -904,6 +923,18 @@ class LocalLlmService {
           'sensor.read',
           args,
           withPermission: true,
+        );
+      case 'weather_current':
+        return _dispatchCapability(
+          _weatherCapability,
+          'weather.current',
+          args,
+        );
+      case 'weather_forecast':
+        return _dispatchCapability(
+          _weatherCapability,
+          'weather.forecast',
+          args,
         );
       case 'screen_record':
         return _dispatchCapability(_screenCapability, 'screen.record', args);

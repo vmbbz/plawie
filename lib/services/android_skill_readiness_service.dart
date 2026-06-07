@@ -43,6 +43,7 @@ class AndroidSkillReadinessService {
       final ready = _isReady(entry, matrixEntry, provisioningResult);
       final releaseRelevant =
           entry.status == AndroidSkillSupportStatus.readyRequired;
+      final appNativeOwned = _isAppNativeOwned(entry);
       if (releaseRelevant) {
         readyRequiredTotal += 1;
         if (ready) {
@@ -55,12 +56,15 @@ class AndroidSkillReadinessService {
       skills.add({
         ...entry.toJson(),
         'runtimeStatus': _runtimeStatus(entry, matrixEntry),
-        if (matrixEntry?.primaryGate != null)
+        if (!appNativeOwned && matrixEntry?.primaryGate != null)
           'primaryGate': matrixEntry!.primaryGate,
-        if (matrixEntry != null && matrixEntry.gates.isNotEmpty)
+        if (!appNativeOwned &&
+            matrixEntry != null &&
+            matrixEntry.gates.isNotEmpty)
           'gates': matrixEntry.gates,
-        'provisioningStatus':
-            provisioningResult?.status.wireName ?? 'not_planned',
+        'provisioningStatus': appNativeOwned
+            ? 'app_native_not_required'
+            : provisioningResult?.status.wireName ?? 'not_planned',
         'ready': ready,
         'releaseBlocking': releaseRelevant && !ready,
       });
@@ -86,9 +90,7 @@ class AndroidSkillReadinessService {
     SkillExecutionMatrixEntry? matrixEntry,
     SkillProvisioningSkillResult? provisioningResult,
   ) {
-    if (_isAppNativeReady(manifestEntry, matrixEntry, provisioningResult)) {
-      return true;
-    }
+    if (_isAppNativeOwned(manifestEntry)) return true;
     if (matrixEntry?.status == SkillExecutionStatus.ready) return true;
     return switch (provisioningResult?.status) {
       SkillProvisioningStatus.ready ||
@@ -102,19 +104,12 @@ class AndroidSkillReadinessService {
     AndroidSkillSupportEntry manifestEntry,
     SkillExecutionMatrixEntry? matrixEntry,
   ) {
-    if (matrixEntry == null && _isAppNativeReady(manifestEntry, null, null)) {
-      return 'app_native_ready';
-    }
+    if (_isAppNativeOwned(manifestEntry)) return 'app_native_ready';
     if (matrixEntry == null) return 'not_installed';
     return _executionStatusWireName(matrixEntry.status);
   }
 
-  static bool _isAppNativeReady(
-    AndroidSkillSupportEntry manifestEntry,
-    SkillExecutionMatrixEntry? matrixEntry,
-    SkillProvisioningSkillResult? provisioningResult,
-  ) {
-    if (matrixEntry != null || provisioningResult != null) return false;
+  static bool _isAppNativeOwned(AndroidSkillSupportEntry manifestEntry) {
     return manifestEntry.ownerLayer == AndroidSkillOwnerLayer.androidBridge ||
         manifestEntry.ownerLayer == AndroidSkillOwnerLayer.appNativeCapability;
   }

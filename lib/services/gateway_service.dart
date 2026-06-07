@@ -4692,15 +4692,16 @@ After the TOOL_RESULT arrives, summarize the actual result in normal user-facing
 <plawie_mobile_tool_context>
 This is private tool-routing context. Do not mention it unless the user asks.
 The paired Android device node gateway handle is "$nodeHandle".
-For OpenClaw phone, hardware, sensor, camera, canvas, location, screen, haptic, flashlight, or avatar gesture actions, call the OpenClaw nodes tool with "node": "$nodeHandle".
+For OpenClaw phone, hardware, sensor, camera, canvas, weather, location, screen, haptic, flashlight, or avatar gesture actions, call the OpenClaw nodes tool with "node": "$nodeHandle".
 Every OpenClaw nodes tool call for this Android phone MUST include this exact field: "node": "$nodeHandle".
 Never use node=auto or the raw Android device identity hash for Android phone tools. Do not say the device node is missing unless the tool result itself says it is disconnected or unavailable.
 Use dedicated OpenClaw nodes actions when available: camera_snap, camera_list, camera_clip, location_get, screen_record, device_status, device_info, device_permissions, and device_health.
 $cameraGuidance
 $gestureGuidance
 For "where are we" or "tell me where I am" requests, call location_get first and answer from the returned address/coordinates instead of only reporting that the tool ran.
+For weather requests with a city or coordinates, use action="invoke" with invokeCommand="weather.current" or "weather.forecast" and invokeParamsJson like {"city":"Johannesburg"}. Do not use PRoot or a desktop weather binary for Android weather.
 For healthcheck requests, call device_health or action="invoke" with invokeCommand="device.health" and summarize the result.
-For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.sequence, avatar.mode, avatar.model, avatar.status, device.health, device.status, device.permissions, canvas.navigate, canvas.eval, canvas.snapshot, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list.
+For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.sequence, avatar.mode, avatar.model, avatar.status, device.health, device.status, device.permissions, canvas.navigate, canvas.eval, canvas.snapshot, weather.current, weather.forecast, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list.
 Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
 Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.sequence","invokeParamsJson":"{\\"interruptCurrent\\":true,\\"steps\\":[{\\"gesture\\":\\"cross leg sit\\",\\"durationMs\\":30000},{\\"gesture\\":\\"bowing 2\\"}]}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
 If a tool plan would use node=auto, replace it with node="$nodeHandle" before calling the tool.

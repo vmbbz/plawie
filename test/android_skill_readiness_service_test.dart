@@ -104,6 +104,40 @@ void main() {
       {'app_native_ready'},
     );
   });
+
+  test('app-native launch skills ignore stale OpenClaw dependency gates', () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([
+        missingEntry('canvas', 'missing_native_bin'),
+        missingEntry('weather', 'missing_native_bin'),
+      ]),
+      provisioning: provisioningWith([
+        missingBinaryResult('canvas'),
+        missingBinaryResult('weather'),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        appNativeManifestEntry('canvas'),
+        appNativeManifestEntry('weather'),
+      ]),
+    );
+
+    expect(summary.readyRequiredTotal, 2);
+    expect(summary.readyRequiredReady, 2);
+    expect(summary.unexpectedMissingDependency, 0);
+    expect(summary.releaseGatePass, isTrue);
+    expect(
+      summary.skills.map((skill) => skill['runtimeStatus']).toSet(),
+      {'app_native_ready'},
+    );
+    expect(
+      summary.skills.map((skill) => skill['provisioningStatus']).toSet(),
+      {'app_native_not_required'},
+    );
+    expect(
+      summary.skills.any((skill) => skill.containsKey('primaryGate')),
+      isFalse,
+    );
+  });
 }
 
 SkillParitySnapshot snapshotWith(List<SkillExecutionMatrixEntry> entries) {

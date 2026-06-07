@@ -17,6 +17,7 @@ import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
+import 'capabilities/weather_capability.dart';
 
 class _NativeGatewayDryRunArgumentValidation {
   final bool ok;
@@ -69,6 +70,7 @@ class AgentSkillServer {
   final LocationCapability _locationCapability = LocationCapability();
   final SensorCapability _sensorCapability = SensorCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
+  final WeatherCapability _weatherCapability = WeatherCapability();
 
   // Callbacks — set by ChatScreen so avatar changes are reflected in live UI
   void Function(String avatarFile)? onAvatarChanged;
@@ -120,6 +122,8 @@ class AgentSkillServer {
       await _handleLegacySensorList(request);
     } else if (request.method == 'GET' && path == '/location') {
       await _handleLegacyLocation(request);
+    } else if (request.method == 'GET' && path == '/weather') {
+      await _handleLegacyWeather(request);
     } else if ((request.method == 'GET' || request.method == 'POST') &&
         (path == '/flashlight' ||
             path.startsWith('/flashlight/') ||
@@ -1405,9 +1409,9 @@ class AgentSkillServer {
 
   Future<void> _handleLegacyVibrate(HttpRequest request) async {
     final body = await _readJsonBody(request);
-    final durationMs =
-        _intValue(body['durationMs'] ?? request.uri.queryParameters['durationMs']) ??
-            220;
+    final durationMs = _intValue(
+            body['durationMs'] ?? request.uri.queryParameters['durationMs']) ??
+        220;
     final pattern = _intList(body['pattern']);
     await _processDeviceControl({
       'action': 'vibrate',
@@ -1417,8 +1421,8 @@ class AgentSkillServer {
   }
 
   Future<void> _handleLegacySensor(HttpRequest request) async {
-    final type =
-        request.uri.queryParameters['type'] ?? request.uri.queryParameters['sensor'];
+    final type = request.uri.queryParameters['type'] ??
+        request.uri.queryParameters['sensor'];
     await _processDeviceControl({
       'action': 'read_sensor',
       if (type != null) 'sensor_type': type,
@@ -1460,6 +1464,13 @@ class AgentSkillServer {
     String action,
   ) async {
     await _processDeviceControl({'action': action}, request);
+  }
+
+  Future<void> _handleLegacyWeather(HttpRequest request) async {
+    await _processDeviceControl({
+      'action': 'weather_current',
+      ...request.uri.queryParameters,
+    }, request);
   }
 
   void _handleToolsCatalog(HttpRequest request) {
@@ -1922,6 +1933,9 @@ class AgentSkillServer {
       'sensor_list': 'sensor.list',
       'haptic_vibrate': 'haptic.vibrate',
       'vibrate': 'haptic.vibrate',
+      'weather_current': 'weather.current',
+      'weather_forecast': 'weather.forecast',
+      'get_weather': 'weather.current',
       'device_health': 'device.health',
       'device_status': 'device.status',
       'device_info': 'device.info',
@@ -1989,6 +2003,8 @@ class AgentSkillServer {
       case 'screen.record':
       case 'sensor.read':
       case 'sensor.list':
+      case 'weather.current':
+      case 'weather.forecast':
       case 'avatar.mode':
       case 'avatar.model':
       case 'avatar.status':
@@ -2035,6 +2051,8 @@ class AgentSkillServer {
         return 'ScreenCapability';
       case 'sensor':
         return 'SensorCapability';
+      case 'weather':
+        return 'WeatherCapability';
       default:
         return 'UnknownCapability';
     }
@@ -2453,6 +2471,15 @@ class AgentSkillServer {
         final frame = await _locationCapability.handleWithPermission(
           'location.get',
           const {},
+        );
+        _sendNodeFrame(request, frame);
+
+      case 'weather_current':
+      case 'get_weather':
+      case 'weather_forecast':
+        final frame = await _weatherCapability.handle(
+          action == 'weather_forecast' ? 'weather.forecast' : 'weather.current',
+          data,
         );
         _sendNodeFrame(request, frame);
 

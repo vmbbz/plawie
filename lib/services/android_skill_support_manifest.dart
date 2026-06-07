@@ -188,9 +188,9 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _ready(
     'canvas',
-    owner: AndroidSkillOwnerLayer.openclawSkill,
-    mode: AndroidSkillExecutionMode.gatewayTool,
-    smoke: 'Create a small canvas artifact without desktop dependencies.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.appNativeTool,
+    smoke: 'Open the in-app canvas and evaluate a small page action.',
   ),
   _ready(
     'clawhub',
@@ -441,9 +441,9 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _ready(
     'weather',
-    owner: AndroidSkillOwnerLayer.openclawSkill,
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
     mode: AndroidSkillExecutionMode.httpAdapter,
-    smoke: 'Use weather for Johannesburg with no web fallback.',
+    smoke: 'Use weather.current for Johannesburg with no web fallback.',
   ),
   _needsPack(
     'xurl',

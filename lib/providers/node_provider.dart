@@ -19,6 +19,7 @@ import '../services/capabilities/flash_capability.dart';
 import '../services/capabilities/vibration_capability.dart';
 import '../services/capabilities/sensor_capability.dart';
 import '../services/capabilities/device_capability.dart';
+import '../services/capabilities/weather_capability.dart';
 
 class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final NodeService _nodeService = NodeService();
@@ -40,6 +41,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final _sensorCapability = SensorCapability();
   final _vibrationCapability = VibrationCapability();
   final _deviceCapability = DeviceCapability();
+  final _weatherCapability = WeatherCapability();
 
   NodeState get state => _state;
 
@@ -250,6 +252,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       _deviceCapability,
       (cmd, params) => _deviceCapability.handle(cmd, params),
     );
+    _registerCapabilityAliases(
+      _weatherCapability,
+      (cmd, params) => _weatherCapability.handle(cmd, params),
+    );
   }
 
   Future<void> _init() async {
@@ -308,6 +314,8 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
           'device.info',
           'device.permissions',
           'device.health',
+          'weather.current',
+          'weather.forecast',
           'haptic.vibrate',
         ],
       };

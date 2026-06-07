@@ -393,6 +393,34 @@ Verification for this round:
   `readyRequired: 9/13` and blockers `canvas`, `clawhub`, `meme-maker`, and
   `weather`.
 
+### Progress Check: Canvas And Weather Promotion
+
+Round 6 on 2026-06-07 reduced the Android launch blockers without adding a
+desktop dependency pack:
+
+- `canvas` is now classified as an app-native Android capability because the
+  app already registers `canvas.navigate`, `canvas.eval`, and
+  `canvas.snapshot` through the node bridge.
+- `weather` now has an app-native HTTPS adapter backed by Open-Meteo, exposed as
+  `weather.current` and `weather.forecast`.
+- Android-owned manifest entries now report `app_native_ready` even when the
+  raw OpenClaw skill matrix still has stale desktop missing-binary diagnostics.
+  Those diagnostics remain visible in raw `skillProvisioning`; they no longer
+  block the Android launch gate for app-owned commands.
+
+Verification for this round:
+
+- Targeted `dart analyze` across the changed services and tests returned no
+  issues.
+- `flutter build apk --debug` produced a fresh debug APK.
+- The fresh debug APK was installed on `RZCX30KA9AW`, launched, and
+  `/device/health` reported `readyRequired: 11/13`,
+  `unexpectedMissingDependency: 2`, blockers `clawhub` and `meme-maker`, and
+  `app_native_ready` for both `canvas` and `weather`.
+- `POST /api/device/control` with
+  `{"action":"weather_current","city":"Johannesburg"}` returned an Open-Meteo
+  weather summary from the device.
+
 ## Golden Android Runtime And Adapter Pack
 
 The shorter reliable path is not a tiny pilot and not a universal builder. It

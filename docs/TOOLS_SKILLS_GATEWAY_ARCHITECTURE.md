@@ -1,6 +1,6 @@
 # Tools, Skills, And Gateway Intelligence Architecture
 
-Last updated: 2026-06-02
+Last updated: 2026-06-07
 
 Engineers touching `gateway_service.dart`, `openclaw_service.dart`,
 `model_provider_catalog.dart`, `local_llm_service.dart`, or the Skills Manager
@@ -12,7 +12,7 @@ screen should read this before changing tool behavior.
 | --- | --- | --- | --- |
 | Gateway primitives | OpenClaw Gateway | Built-in tool groups such as web/files/runtime/nodes | `tools.profile`, `tools.allow`, `tools.deny` |
 | OpenClaw/npm skills | OpenClaw skills runtime | Installed skills and Gateway-managed capabilities | Gateway skill loading |
-| Android node capabilities | Plawie node / capability bridge | Camera, canvas, haptics, sensors, flashlight, screen, avatar/TTS actions | `gateway.nodes.allowCommands`, port `8765` |
+| Android node capabilities | Plawie node / capability bridge | Camera, canvas, weather, haptics, sensors, flashlight, screen, avatar/TTS actions | `gateway.nodes.allowCommands`, port `8765` |
 | Direct local tools | Dart local NDK loop | Lightweight local actions when using `local-llm/...` | `LocalLlmService` native fllama tools |
 
 Do not mix these layers. A string that is valid as an Android node command is
@@ -68,7 +68,7 @@ moonpay
 ```
 
 The current Android node command allowlist contains avatar, camera, canvas,
-flashlight/torch, location, screen recording, sensor, and haptic commands. It
+weather, flashlight/torch, location, screen recording, sensor, and haptic commands. It
 does not currently prove a generic third-party app launcher or a safe WhatsApp
 message-sending command.
 
@@ -102,8 +102,8 @@ Why this shape:
 
 | ID family | Correct home |
 | --- | --- |
-| `weather`, `twilio`, `crypto`, `base`, `calculator`, `calendar` | OpenClaw skill install/load path |
-| `camera`, `canvas`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
+| `twilio`, `crypto`, `base`, `calculator`, `calendar` | OpenClaw skill install/load path |
+| `camera`, `canvas`, `weather.current`, `weather.forecast`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
 | local NDK helper names | `LocalLlmService` direct local tool schemas |
 
 If Gateway logs `tools.allow allowlist contains unknown entries`, treat the
@@ -136,6 +136,8 @@ Device capabilities belong in node command policy, for example:
         "screen.record",
         "sensor.read",
         "sensor.list",
+        "weather.current",
+        "weather.forecast",
         "haptic.vibrate",
         "vibrate"
       ]
@@ -224,8 +226,9 @@ with a real tool-call prompt after every tool-policy change.
 1. Cloud model: "List the phone tools you can use right now. Do not invent tools."
 2. Cloud model: "Vibrate the phone once briefly."
 3. Cloud model: "Open https://example.com in canvas and report the title."
-4. Direct local NDK: "Explain what you can and cannot do in offline mode."
-5. NDK bridge: "Try to vibrate the phone once, then answer from the tool result."
+4. Cloud model or direct node smoke: "What is the weather in Johannesburg?"
+5. Direct local NDK: "Explain what you can and cannot do in offline mode."
+6. NDK bridge: "Try to vibrate the phone once, then answer from the tool result."
 
 For bridge failures, record whether the local model produced valid `tool_calls`
 before blaming Gateway.

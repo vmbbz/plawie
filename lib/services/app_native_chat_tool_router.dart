@@ -9,6 +9,7 @@ import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
+import 'capabilities/weather_capability.dart';
 import 'skills_service.dart';
 
 class AppNativeChatToolExecution {
@@ -57,6 +58,7 @@ class AppNativeChatToolRouter {
   final LocationCapability _location = LocationCapability();
   final SensorCapability _sensor = SensorCapability();
   final VibrationCapability _vibration = VibrationCapability();
+  final WeatherCapability _weather = WeatherCapability();
 
   int? parseDurationMsForTesting(
     String text, {
@@ -153,7 +155,9 @@ class AppNativeChatToolRouter {
       'device.info' ||
       'device.permissions' ||
       'sensor.list' ||
-      'sensor.read' =>
+      'sensor.read' ||
+      'weather.current' ||
+      'weather.forecast' =>
         true,
       _ => false,
     };
@@ -195,6 +199,13 @@ class AppNativeChatToolRouter {
           'invokeParamsJson': jsonEncode({
             'durationMs': plan.input['durationMs'] ?? 220,
           }),
+        };
+      case 'weather.current':
+      case 'weather.forecast':
+        return {
+          'action': 'invoke',
+          'invokeCommand': plan.command,
+          'invokeParamsJson': jsonEncode(plan.input),
         };
       case 'flash.on':
       case 'flash.off':
@@ -372,6 +383,22 @@ class AppNativeChatToolRouter {
       );
     }
 
+    final weatherLocation = _weatherLocation(trimmed);
+    if (weatherLocation != null) {
+      final forecast = lower.contains('forecast') ||
+          lower.contains('tomorrow') ||
+          lower.contains('next few days');
+      return _AppNativeToolPlan(
+        toolName: 'weather',
+        command: forecast ? 'weather.forecast' : 'weather.current',
+        input: {
+          'city': weatherLocation,
+          'source': 'app-native-chat-router',
+          if (forecast) 'days': 3,
+        },
+      );
+    }
+
     if (lower.contains('device') && lower.contains('permission')) {
       return const _AppNativeToolPlan(
         toolName: 'device-node',
@@ -437,6 +464,12 @@ class AppNativeChatToolRouter {
           return _frameToMap(await _sensor.handleWithPermission(
             'sensor.read',
             {'sensor': plan.input['sensor_type'] ?? 'accelerometer'},
+          ));
+        case 'weather.current':
+        case 'weather.forecast':
+          return _frameToMap(await _weather.handle(
+            plan.command,
+            plan.input,
           ));
         case 'camera.list':
           return _frameToMap(await _camera.handleWithPermission(
@@ -571,6 +604,11 @@ class AppNativeChatToolRouter {
         return 'Sensor list retrieved.';
       case 'sensor.read':
         return 'Sensor reading retrieved: ${_compactJson(result)}';
+      case 'weather.current':
+      case 'weather.forecast':
+        return result['summary']?.toString().trim().isNotEmpty == true
+            ? 'Weather: ${result['summary']}.'
+            : 'Weather retrieved.';
       case 'camera.list':
         return 'Camera list retrieved.';
       case 'camera.snap':
@@ -877,6 +915,46 @@ class AppNativeChatToolRouter {
         lower.contains('device health') ||
         lower.contains('diagnostic') ||
         lower.contains('diagnostics');
+  }
+
+  String? _weatherLocation(String message) {
+    final lower = message.toLowerCase();
+    if (!_containsAny(lower, const ['weather', 'forecast'])) return null;
+
+    final patterns = [
+      RegExp(
+        r'\b(?:weather|forecast)\s+(?:in|for|at|near)\s+([a-z0-9 .,\-]{2,70})',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'\b(?:in|for|at|near)\s+([a-z0-9 .,\-]{2,70})\s+(?:weather|forecast)\b',
+        caseSensitive: false,
+      ),
+    ];
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(message);
+      final cleaned = _cleanWeatherLocation(match?.group(1));
+      if (cleaned != null) return cleaned;
+    }
+    return null;
+  }
+
+  String? _cleanWeatherLocation(String? value) {
+    if (value == null) return null;
+    var cleaned = value
+        .replaceAll(RegExp(r'[?.!]+$'), '')
+        .replaceAll(
+          RegExp(
+            r'\b(today|now|currently|please|thanks|thank you|tomorrow|this week|next few days)\b',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+    cleaned = cleaned.replaceAll(RegExp(r'[,.\-\s]+$'), '').trim();
+    if (cleaned.length < 2) return null;
+    return cleaned;
   }
 
   _AppNativeToolPlan? _bundledSkillPlan(String lower) {
