@@ -122,6 +122,97 @@ returned a stale visible response on the next prompt. Do not count that endpoint
 as chat proof. The direct registered tool execution path is device-proven, and
 the explicit chat tool-use/tool-result chunk route is covered by focused tests.
 
+## Config Wizard Milestone
+
+Phase 2 config UX is now implemented and locally verified.
+
+What changed:
+
+```text
+All 14 current Class B needs_config skills get actionable in-app fields.
+Known services get service-aware labels, groups, input kinds, and helpers.
+Unknown required config keys still render through safe fallback metadata.
+Slack now has in-app fields for SLACK_BOT_TOKEN and channels.slack.
+Voice-call provider renders as a provider choice field.
+MCPORTER_ENDPOINT validates as a URL field.
+Secret-like env keys and secret-like dotted config keys are masked.
+Save remains GatewayProvider -> SkillProvisioningService.
+Tool execution remains through the gateway/agent tool loop.
+```
+
+Hardening added after review:
+
+```text
+Config-only/app-native saves no longer silently no-op when a skill has no
+native execution-matrix entry. Supplied safe env/config values are written to
+Native .env / openclaw.json and return a non-empty satisfied provisioning
+result.
+
+The sheet fails closed on an empty provisioning report instead of saying saved.
+Provider/provisioning exceptions show a generic error and do not echo raw
+exception text while secrets are being handled.
+```
+
+Local proof:
+
+```text
+flutter test \
+  test/android_skill_config_form_model_test.dart \
+  test/android_skill_config_sheet_test.dart \
+  test/android_skill_readiness_view_model_test.dart \
+  test/skill_provisioning_service_test.dart \
+  --no-pub
+
+Result: 27/27 passing
+
+flutter analyze \
+  lib/services/android_skill_config_form_model.dart \
+  lib/screens/management/skills/android_skill_config_sheet.dart \
+  lib/services/skill_provisioning_service.dart \
+  test/android_skill_config_form_model_test.dart \
+  test/android_skill_config_sheet_test.dart \
+  test/skill_provisioning_service_test.dart \
+  test/android_skill_readiness_view_model_test.dart
+
+Result: No issues found
+
+flutter build apk --debug
+
+Result: built build/app/outputs/flutter-apk/app-debug.apk
+```
+
+Device proof status:
+
+```text
+Target device: RZCX30KA9AW
+ADB state during install attempt: unstable/offline
+Install command attempted after build: adb install -r build/app/outputs/flutter-apk/app-debug.apk
+Result: blocked by ADB device offline / no devices during streamed install
+```
+
+Do not mark this milestone as device-installed until `RZCX30KA9AW` is stable
+again and the hardened APK is installed. The next retry should only do:
+
+```text
+adb devices
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
+adb forward tcp:8765 tcp:8765
+```
+
+Then open Skills and smoke Slack config UI:
+
+```text
+Slack config chip opens service-aware fields.
+Bot token is masked.
+Default Slack channel appears under Workspace.
+Save & Check routes through provisioning.
+```
+
+After this wizard milestone, the next highest-value adapter target remains
+Slack because it needs both `SLACK_BOT_TOKEN` and `channels.slack`. After Slack:
+`mcporter`, `openai-whisper-api`, then `ordercli` / `sag` if their APIs are
+sane enough for app-native Android support.
+
 Read this carefully:
 
 - `61` is the classified default skill manifest.
