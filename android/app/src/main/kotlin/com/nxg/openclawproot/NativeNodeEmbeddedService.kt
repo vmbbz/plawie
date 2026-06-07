@@ -44,6 +44,7 @@ class NativeNodeEmbeddedService : Service() {
         val extractedNow: Boolean,
         val entryCount: Int,
         val fileCount: Int,
+        val cliCoreBinCount: Int,
         val androidTmpPatchCount: Int
     )
 
@@ -52,6 +53,7 @@ class NativeNodeEmbeddedService : Service() {
         private const val FULL_GATEWAY_BOOTSTRAP_MODE = "full-gateway-bootstrap"
         private const val OPENCLAW_TARBALL_ASSET =
             "flutter_assets/assets/openclaw-node-modules.tar.gz"
+        private const val CLI_CORE_BIN_ASSET_DIR = "flutter_assets/assets/openclaw/cli-core/bin"
         private const val ACTION_START = "com.nxg.openclawproot.native_node.START"
         private const val ACTION_STOP = "com.nxg.openclawproot.native_node.STOP"
         private const val EXTRA_PORT = "port"
@@ -370,6 +372,7 @@ class NativeNodeEmbeddedService : Service() {
             packageDir,
             File(workDir(applicationContext), "tmp/openclaw")
         )
+        val cliCoreBinCount = copyCliCoreBinAssets(File(workDir(applicationContext), "provisioning/bin"))
 
         if (!launcher.exists()) {
             throw IllegalStateException("OpenClaw launcher missing after extraction: ${launcher.absolutePath}")
@@ -398,6 +401,8 @@ class NativeNodeEmbeddedService : Service() {
                 .put("extractedNow", extractedNow)
                 .put("entryCount", entryCount)
                 .put("fileCount", fileCount)
+                .put("cliCoreBinAssetDir", CLI_CORE_BIN_ASSET_DIR)
+                .put("cliCoreBinCount", cliCoreBinCount)
                 .put("androidTmpPatchCount", androidTmpPatchCount)
                 .put("bindHost", HOST)
                 .put("bindPort", port)
@@ -415,6 +420,7 @@ class NativeNodeEmbeddedService : Service() {
             extractedNow = extractedNow,
             entryCount = entryCount,
             fileCount = fileCount,
+            cliCoreBinCount = cliCoreBinCount,
             androidTmpPatchCount = androidTmpPatchCount
         )
     }
@@ -505,6 +511,44 @@ class NativeNodeEmbeddedService : Service() {
             throw IllegalStateException("OpenClaw tarball extraction produced no files")
         }
         return Pair(entryCount, fileCount)
+    }
+
+    private fun copyCliCoreBinAssets(targetDir: File): Int {
+        targetDir.mkdirs()
+        val names = try {
+            assets.list(CLI_CORE_BIN_ASSET_DIR) ?: emptyArray()
+        } catch (e: Exception) {
+            appendLog("CLI-core asset directory unavailable: ${e.message}")
+            emptyArray()
+        }
+        var copied = 0
+        names.sorted().forEach { name ->
+            if (!isSafeCliCoreAssetName(name)) {
+                appendLog("skipped unsafe CLI-core asset name=$name")
+                return@forEach
+            }
+            val target = File(targetDir, name)
+            try {
+                assets.open("$CLI_CORE_BIN_ASSET_DIR/$name").use { input ->
+                    FileOutputStream(target).use { output -> input.copyTo(output) }
+                }
+                target.setReadable(true, false)
+                target.setExecutable(true, false)
+                copied++
+            } catch (e: Exception) {
+                appendLog("failed copying CLI-core asset name=$name: ${e.message}")
+            }
+        }
+        appendLog("CLI-core asset copy completed count=$copied target=${targetDir.absolutePath}")
+        return copied
+    }
+
+    private fun isSafeCliCoreAssetName(name: String): Boolean {
+        return name.isNotBlank() &&
+            !name.startsWith(".") &&
+            !name.contains("/") &&
+            !name.contains("\\") &&
+            !name.contains(":")
     }
 
     private fun normalizeTarEntryName(rawName: String): String? {

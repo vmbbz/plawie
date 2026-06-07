@@ -313,6 +313,26 @@ flutter build apk --debug
 
 Result: analyzer clean; 14/14 tests passed; debug APK built.
 
+- [x] **Step 5: Add APK CLI-core payload lane**
+
+Declared `assets/openclaw/cli-core/bin/` in `pubspec.yaml` and taught
+`NativeNodeEmbeddedService` to copy any non-dot files from that asset directory
+into `filesDir/native-node-embedded/provisioning/bin` with executable
+permissions. The committed lane intentionally includes no fake CLI executable
+payload; the debug APK currently contains only `.gitkeep` under the CLI-core
+bin asset directory.
+
+Focused proof:
+
+```powershell
+flutter analyze lib/services/skill_provisioning_service.dart test/android_cli_core_payload_packaging_test.dart test/skill_provisioning_service_test.dart
+flutter test test/android_cli_core_payload_packaging_test.dart test/skill_provisioning_service_test.dart --no-pub
+flutter build apk --debug
+```
+
+Result: analyzer clean; 11/11 tests passed; debug APK built; APK payload audit
+shows no real CLI-core binary names yet.
+
 ### Task 6: Fresh-User Proof
 
 **Files:**

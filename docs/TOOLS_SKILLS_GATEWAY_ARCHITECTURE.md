@@ -150,6 +150,13 @@ and treats a stale receipt as invalid if any advertised managed binary is
 missing. Remote executable pack distribution remains blocked behind hash,
 signature, smoke, rollback, and policy review.
 
+APK-provided CLI-core payloads are loaded from
+`assets/openclaw/cli-core/bin/`. During full Native Gateway bootstrap,
+`NativeNodeEmbeddedService` copies non-dot asset files from that directory into
+`filesDir/native-node-embedded/provisioning/bin` and marks them executable. The
+directory can exist without real payload; in that case no binary pack is
+advertised because the Dart resolver only sees actual copied CLI files.
+
 ## Gateway `tools.allow`
 
 `tools.allow` is a strict Gateway allowlist. OpenClaw applies `tools.profile`

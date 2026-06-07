@@ -843,6 +843,21 @@ receipt, and refuse stale receipts when a managed binary is missing. This makes
 the binary pack lane real without enabling unsigned or unhosted remote
 executable downloads.
 
+APK payload lane follow-up:
+
+```text
+assets/openclaw/cli-core/bin/
+NativeNodeEmbeddedService.copyCliCoreBinAssets(...)
+target: filesDir/native-node-embedded/provisioning/bin
+```
+
+The debug APK now carries the CLI-core asset directory and the native bootstrap
+copies any non-dot files from that directory into the provisioning bin with
+executable permissions. Current APK payload audit still shows no real CLI-core
+binary names (`blucli`, `diagram-maker`, `eightctl`, `himalaya`, `openhue`,
+`sonoscli`, `wacli`). That means this round prepares the install lane but does
+not yet move live device skill counts.
+
 Local proof:
 
 ```text
@@ -854,9 +869,14 @@ flutter analyze lib/services/dependency_pack_manifest.dart \
 flutter test test/dependency_pack_manifest_test.dart \
   test/skill_provisioning_service_test.dart --no-pub
 
+flutter test test/android_cli_core_payload_packaging_test.dart \
+  test/skill_provisioning_service_test.dart --no-pub
+
 flutter build apk --debug
 
-Result: analyzer clean; 14/14 passing; debug APK built
+Result: analyzer clean; dependency-manifest/provisioning suite 14/14 passing;
+payload/provisioning suite 11/11 passing; debug APK built; APK contains
+`assets/openclaw/cli-core/bin/.gitkeep` only.
 ```
 
 This does not yet mean a remote `android-cli-core-pack` is built, hosted,
