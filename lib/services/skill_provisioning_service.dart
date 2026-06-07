@@ -19,6 +19,17 @@ class SkillProvisioningService {
   static const _pythonTag = 'cp313';
   static const _pythonAbiTag = 'cp313';
   static const _androidWheelAbi = 'arm64_v8a';
+  static const _androidCliCorePackId = 'android-cli-core-pack';
+  static const _androidCliCorePackVersion = 'apk-bundled-v1';
+  static const _androidCliCorePackBins = <String>{
+    'blucli',
+    'diagram-maker',
+    'eightctl',
+    'himalaya',
+    'openhue',
+    'sonoscli',
+    'wacli',
+  };
   static const _defaultPythonWheelIndexes = <String>[
     'https://chaquo.com/pypi-13.1/',
     'https://pypi.org/simple/',
@@ -207,6 +218,10 @@ class SkillProvisioningService {
     final nonRuntimeMissingBins = missingBins
         .where((bin) => !_isPythonCommandBin(bin))
         .toList(growable: false);
+    final apkProvidedCliCorePack =
+        installDependencyPacks ? await _apkProvidedCliCorePack(layout) : null;
+    final apkProvidedCliCoreBins =
+        apkProvidedCliCorePack?.providesBins ?? const <String>{};
     if (pythonCommandBins.isNotEmpty &&
         !missingRuntimes.map(_normalizeDependencyName).contains('python')) {
       missingRuntimes = [...missingRuntimes, 'python'];
@@ -260,8 +275,15 @@ class SkillProvisioningService {
       }
     }
 
+    var unresolvedNonRuntimeMissingBins = <String>[];
     for (final bin in nonRuntimeMissingBins) {
-      final target = File(path.join(layout.nativeManagedBinDir.path, bin));
+      final normalizedBin = _normalizeBinRequirement(bin);
+      if (apkProvidedCliCoreBins.contains(normalizedBin)) {
+        unresolvedNonRuntimeMissingBins.add(bin);
+        continue;
+      }
+      final target =
+          File(path.join(layout.nativeManagedBinDir.path, normalizedBin));
       final source = await _findBundledNativeBinary(layout, bin);
       if (installBundledBinaries && source != null) {
         await layout.nativeManagedBinDir.create(recursive: true);
@@ -281,16 +303,7 @@ class SkillProvisioningService {
         changed = true;
         reloadRecommended = true;
       } else {
-        binaryFullySatisfied = false;
-        final prootHas = snapshot.prootBins.contains(bin);
-        actions.add(SkillProvisioningAction(
-          type: SkillProvisioningActionType.binary,
-          key: bin,
-          status: SkillProvisioningActionStatus.missingBinary,
-          message: prootHas
-              ? '$bin exists in PRoot, but Native has no bundled/mobile-safe binary to install. PRoot will not be used automatically.'
-              : '$bin is not available in Native and no bundled/mobile-safe binary was found.',
-        ));
+        unresolvedNonRuntimeMissingBins.add(bin);
       }
     }
 
@@ -313,10 +326,12 @@ class SkillProvisioningService {
 
     if (missingRuntimes.isNotEmpty ||
         missingPythonPackages.isNotEmpty ||
-        shouldAuditPythonClosure) {
+        shouldAuditPythonClosure ||
+        unresolvedNonRuntimeMissingBins.isNotEmpty) {
       final dependencyResult = await _provisionDependencyPacks(
         entry,
         layout,
+        missingBins: unresolvedNonRuntimeMissingBins,
         missingRuntimes: missingRuntimes,
         missingPythonPackages: dependencyAuditPackages,
         requiredPythonRequirements: entry.requiredPythonRequirements,
@@ -341,6 +356,26 @@ class SkillProvisioningService {
                   .contains(_normalizeDependencyName(package)))
               .toList()
           : remainingAuditedPythonPackages;
+      unresolvedNonRuntimeMissingBins = unresolvedNonRuntimeMissingBins
+          .where((bin) => !dependencyResult.satisfiedBins
+              .contains(_normalizeBinRequirement(bin)))
+          .toList();
+    }
+
+    for (final bin in unresolvedNonRuntimeMissingBins) {
+      binaryFullySatisfied = false;
+      final normalizedBin = _normalizeBinRequirement(bin);
+      final prootHas = snapshot.prootBins
+          .map(_normalizeBinRequirement)
+          .contains(normalizedBin);
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.binary,
+        key: normalizedBin,
+        status: SkillProvisioningActionStatus.missingBinary,
+        message: prootHas
+            ? '$normalizedBin exists in PRoot, but Native has no bundled/mobile-safe binary to install. PRoot will not be used automatically.'
+            : '$normalizedBin is not available in Native and no bundled/mobile-safe binary was found.',
+      ));
     }
 
     for (final runtime in missingRuntimes) {
@@ -563,6 +598,7 @@ class SkillProvisioningService {
   static Future<_DependencyProvisioningResult> _provisionDependencyPacks(
     SkillExecutionMatrixEntry entry,
     _SkillProvisioningLayout layout, {
+    required List<String> missingBins,
     required List<String> missingRuntimes,
     required List<String> missingPythonPackages,
     required Map<String, String> requiredPythonRequirements,
@@ -571,11 +607,13 @@ class SkillProvisioningService {
     required bool apply,
   }) async {
     final actions = <SkillProvisioningAction>[];
+    final satisfiedBins = <String>{};
     final satisfiedRuntimes = <String>{};
     final satisfiedPythonPackages = <String>{};
     var changed = false;
     var reloadRecommended = false;
 
+    final requiredBins = missingBins.map(_normalizeBinRequirement).toSet();
     final requiredRuntimes =
         missingRuntimes.map(_normalizeDependencyName).toSet();
     final requiredPackages =
@@ -583,6 +621,7 @@ class SkillProvisioningService {
     final packs = await dependencyPackCatalogLoader();
     final selected = _selectDependencyPacks(
       packs,
+      requiredBins: requiredBins,
       requiredRuntimes: requiredRuntimes,
       requiredPythonPackages: requiredPackages,
     );
@@ -605,9 +644,11 @@ class SkillProvisioningService {
       }
     }
 
+    final coveredBins = <String>{};
     final coveredRuntimes = <String>{};
     final coveredPackages = <String>{};
     for (final pack in selected) {
+      coveredBins.addAll(pack.providesBins);
       coveredRuntimes.addAll(pack.providesRuntimes);
       coveredPackages.addAll(pack.providesPythonPackages);
     }
@@ -638,6 +679,7 @@ class SkillProvisioningService {
           status: SkillProvisioningActionStatus.ready,
           message: 'Dependency pack ${pack.id} already installed.',
         ));
+        satisfiedBins.addAll(pack.providesBins);
         satisfiedRuntimes.addAll(pack.providesRuntimes);
         satisfiedPythonPackages.addAll(packSatisfiedPackages);
         continue;
@@ -668,6 +710,7 @@ class SkillProvisioningService {
       if (install.ok) {
         changed = true;
         reloadRecommended = true;
+        satisfiedBins.addAll(pack.providesBins);
         satisfiedRuntimes.addAll(pack.providesRuntimes);
         satisfiedPythonPackages.addAll(
           await _satisfiedPythonPackagesForPack(
@@ -747,6 +790,7 @@ class SkillProvisioningService {
 
     return _DependencyProvisioningResult(
       actions: actions,
+      satisfiedBins: satisfiedBins.intersection(requiredBins),
       satisfiedRuntimes: satisfiedRuntimes,
       satisfiedPythonPackages: satisfiedPythonPackages,
       changed: changed,
@@ -1455,14 +1499,18 @@ class SkillProvisioningService {
 
   static List<_DependencyPack> _selectDependencyPacks(
     List<_DependencyPack> packs, {
+    required Set<String> requiredBins,
     required Set<String> requiredRuntimes,
     required Set<String> requiredPythonPackages,
   }) {
     final selected = <_DependencyPack>[];
+    final remainingBins = {...requiredBins};
     final remainingRuntimes = {...requiredRuntimes};
     final remainingPackages = {...requiredPythonPackages};
 
-    while (remainingRuntimes.isNotEmpty || remainingPackages.isNotEmpty) {
+    while (remainingBins.isNotEmpty ||
+        remainingRuntimes.isNotEmpty ||
+        remainingPackages.isNotEmpty) {
       _DependencyPack? best;
       var bestScore = 0;
       for (final pack in packs) {
@@ -1470,6 +1518,7 @@ class SkillProvisioningService {
         final score =
             pack.providesRuntimes.where(remainingRuntimes.contains).length *
                     10 +
+                pack.providesBins.where(remainingBins.contains).length * 5 +
                 pack.providesPythonPackages
                     .where(remainingPackages.contains)
                     .length;
@@ -1480,6 +1529,7 @@ class SkillProvisioningService {
       }
       if (best == null) break;
       selected.add(best);
+      remainingBins.removeAll(best.providesBins);
       remainingRuntimes.removeAll(best.providesRuntimes);
       remainingPackages.removeAll(best.providesPythonPackages);
     }
@@ -1507,6 +1557,10 @@ class SkillProvisioningService {
         providesBins: const {'python', 'python3', 'pip'},
       ),
     ];
+    final cliCorePack = await _apkProvidedCliCorePack(layout);
+    if (cliCorePack != null) {
+      packs.add(cliCorePack);
+    }
 
     Future<void> mergeManifest(Map<String, dynamic>? manifest) async {
       if (manifest == null) return;
@@ -1834,6 +1888,7 @@ class SkillProvisioningService {
 
     return _DependencyProvisioningResult(
       actions: actions,
+      satisfiedBins: const <String>{},
       satisfiedRuntimes: const <String>{},
       satisfiedPythonPackages: satisfiedPackages,
       changed: changed,
@@ -2678,6 +2733,15 @@ class SkillProvisioningService {
         }
       }
     }
+    for (final bin
+        in pack.providesBins.where((bin) => !_isPythonCommandBin(bin))) {
+      final copied = await _copyBundledNativeBinary(layout, bin);
+      if (!copied) {
+        throw StateError(
+          'APK-provided dependency pack ${pack.id} is missing bundled binary $bin.',
+        );
+      }
+    }
     for (final package in pack.providesPythonPackages) {
       await _writePythonPackageMarker(
         layout.nativePythonSitePackagesDir,
@@ -2901,6 +2965,9 @@ class SkillProvisioningService {
         return false;
       }
     }
+    for (final bin in pack.providesBins) {
+      if (!await _managedNativeBinaryPresent(layout, bin)) return false;
+    }
     for (final package in pack.providesPythonPackages) {
       if (!await _pythonPackageMarkerPresent(layout, package)) return false;
     }
@@ -2986,6 +3053,9 @@ class SkillProvisioningService {
   static String _normalizeDependencyName(String value) =>
       value.trim().toLowerCase().replaceAll('_', '-');
 
+  static String _normalizeBinRequirement(String value) =>
+      _normalizeDependencyName(path.basename(value));
+
   static String _normalizeRuntimeRequirement(String value) {
     final normalized = _normalizeDependencyName(path.basename(value));
     if (_isPythonCommandBin(normalized)) return 'python';
@@ -3022,6 +3092,23 @@ class SkillProvisioningService {
     ).hasMatch(version);
   }
 
+  static Future<_DependencyPack?> _apkProvidedCliCorePack(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final providedBins = <String>{};
+    for (final bin in _androidCliCorePackBins) {
+      if (await _findBundledNativeBinary(layout, bin) != null) {
+        providedBins.add(bin);
+      }
+    }
+    if (providedBins.isEmpty) return null;
+    return _DependencyPack.apk(
+      id: _androidCliCorePackId,
+      version: _androidCliCorePackVersion,
+      providesBins: providedBins,
+    );
+  }
+
   static Future<File?> _findBundledNativeBinary(
     _SkillProvisioningLayout layout,
     String bin,
@@ -3029,13 +3116,42 @@ class SkillProvisioningService {
     if (bin.trim().isEmpty || bin.contains('/') || bin.contains(r'\')) {
       return null;
     }
+    final normalizedBin = _normalizeBinRequirement(bin);
     for (final root in layout.bundledBinaryRoots) {
-      final candidate = File(path.join(root.path, bin));
+      final candidate = File(path.join(root.path, normalizedBin));
       try {
         if (await candidate.exists()) return candidate;
       } catch (_) {}
     }
     return null;
+  }
+
+  static Future<bool> _copyBundledNativeBinary(
+    _SkillProvisioningLayout layout,
+    String bin,
+  ) async {
+    final normalizedBin = _normalizeBinRequirement(bin);
+    final source = await _findBundledNativeBinary(layout, normalizedBin);
+    if (source == null) return false;
+    await layout.nativeManagedBinDir.create(recursive: true);
+    final target =
+        File(path.join(layout.nativeManagedBinDir.path, normalizedBin));
+    await source.copy(target.path);
+    if (!Platform.isWindows) {
+      try {
+        await Process.run('chmod', ['755', target.path]);
+      } catch (_) {}
+    }
+    return true;
+  }
+
+  static Future<bool> _managedNativeBinaryPresent(
+    _SkillProvisioningLayout layout,
+    String bin,
+  ) async {
+    final target = File(path.join(
+        layout.nativeManagedBinDir.path, _normalizeBinRequirement(bin)));
+    return target.exists();
   }
 
   static bool _envKeyLooksSafe(String key) {
@@ -3485,6 +3601,7 @@ enum _DependencyPackSource { apk, remote }
 
 class _DependencyProvisioningResult {
   final List<SkillProvisioningAction> actions;
+  final Set<String> satisfiedBins;
   final Set<String> satisfiedRuntimes;
   final Set<String> satisfiedPythonPackages;
   final bool changed;
@@ -3492,6 +3609,7 @@ class _DependencyProvisioningResult {
 
   const _DependencyProvisioningResult({
     required this.actions,
+    required this.satisfiedBins,
     required this.satisfiedRuntimes,
     required this.satisfiedPythonPackages,
     required this.changed,

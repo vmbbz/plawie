@@ -811,12 +811,13 @@ Each pack needs:
 - rollback behavior.
 - Play policy review.
 
-First Phase 5 safety slice landed locally:
+Phase 5 safety/resolver slice landed locally:
 
 ```text
 DependencyPackManifestEntry
 DependencyPackManifestPolicy
 DependencyPackManifestValidation
+APK-provided android-cli-core-pack resolver
 ```
 
 The provisioning loader now validates dependency-pack manifests before pack
@@ -834,18 +835,35 @@ missing smoke command
 missing rollback plan
 ```
 
+The first resolver is deliberately APK-local only. `android-cli-core-pack` is
+advertised only when the installed APK already has matching bundled binaries in
+the Native provisioning roots. Provisioning can now select dependency packs by
+`provides.bins`, install those binaries into `.openclaw/bin`, write a pack
+receipt, and refuse stale receipts when a managed binary is missing. This makes
+the binary pack lane real without enabling unsigned or unhosted remote
+executable downloads.
+
 Local proof:
 
 ```text
+flutter analyze lib/services/dependency_pack_manifest.dart \
+  lib/services/skill_provisioning_service.dart \
+  test/dependency_pack_manifest_test.dart \
+  test/skill_provisioning_service_test.dart
+
 flutter test test/dependency_pack_manifest_test.dart \
   test/skill_provisioning_service_test.dart --no-pub
 
-Result: 13/13 passing
+flutter build apk --debug
+
+Result: analyzer clean; 14/14 passing; debug APK built
 ```
 
-This is only the manifest safety gate. It does not yet mean
-`android-cli-core-pack` is built, hosted, signed by a production key, or safe to
-install for users.
+This does not yet mean a remote `android-cli-core-pack` is built, hosted,
+signed by a production key, or safe to install for users. It means APK-provided
+CLI-core binaries can now be discovered, selected as a dependency pack, copied
+into managed Native state, receipted, and reinstalled if the managed file
+disappears.
 
 ### Phase 6: Fresh-User Proof
 

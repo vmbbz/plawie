@@ -289,13 +289,29 @@ Focused tests cover missing remote SHA-256, unsupported ABI, unsigned remote
 executable packs, unsafe paths, and a provisioning integration where an unsafe
 pack is rejected before install.
 
-- [ ] **Step 3: Implement first pack resolver**
+- [x] **Step 3: Implement first pack resolver**
 
 Start with `android-cli-core-pack` only after policy review.
 
-- [ ] **Step 4: Verify and commit**
+Implemented the first resolver as APK-provided only. `android-cli-core-pack`
+is advertised when bundled CLI-core binaries are actually present in APK
+provisioning roots. Pack selection now scores `provides.bins`; install copies
+pack-provided binaries into `.openclaw/bin`; receipts are ignored if a managed
+binary is missing.
+
+- [x] **Step 4: Verify and commit**
 
 Run provisioning tests, analyzer, APK build, then commit.
+
+Focused proof:
+
+```powershell
+flutter analyze lib/services/dependency_pack_manifest.dart lib/services/skill_provisioning_service.dart test/dependency_pack_manifest_test.dart test/skill_provisioning_service_test.dart
+flutter test test/dependency_pack_manifest_test.dart test/skill_provisioning_service_test.dart --no-pub
+flutter build apk --debug
+```
+
+Result: analyzer clean; 14/14 tests passed; debug APK built.
 
 ### Task 6: Fresh-User Proof
 

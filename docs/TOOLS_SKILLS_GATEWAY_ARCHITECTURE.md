@@ -142,6 +142,14 @@ complete signature block. Unsupported ABIs, unsafe install paths, unsafe file
 paths, missing file hashes/sizes, missing smoke commands, and missing rollback
 plans are rejected before install.
 
+Pack selection covers runtimes, Python packages, and managed binaries. The
+first binary resolver is intentionally APK-provided only: `android-cli-core-pack`
+is advertised only when the installed APK already has matching bundled CLI-core
+files. Provisioning copies those files into `.openclaw/bin`, writes a receipt,
+and treats a stale receipt as invalid if any advertised managed binary is
+missing. Remote executable pack distribution remains blocked behind hash,
+signature, smoke, rollback, and policy review.
+
 ## Gateway `tools.allow`
 
 `tools.allow` is a strict Gateway allowlist. OpenClaw applies `tools.profile`
