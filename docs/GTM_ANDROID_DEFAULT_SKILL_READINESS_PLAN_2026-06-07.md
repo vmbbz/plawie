@@ -260,6 +260,8 @@ wacli: android-cli-core-pack
 Class C acceptance:
 
 - Pack ID is exact.
+- Pack-provided binary names match `SKILL.md` requirements, not guessed skill
+  slugs.
 - Pack source is trusted.
 - Pack contents are signed or hash-verified.
 - APK/Play policy is respected.
@@ -854,6 +856,21 @@ receipt, and refuse stale receipts when a managed binary is missing. This makes
 the binary pack lane real without enabling unsigned or unhosted remote
 executable downloads.
 
+Important executable-name correction:
+
+```text
+skill id: blucli     required binary: blu
+skill id: sonoscli   required binary: sonos
+skill id: eightctl   required binary: eightctl
+skill id: himalaya   required binary: himalaya
+skill id: openhue    required binary: openhue
+skill id: wacli      required binary: wacli
+```
+
+The resolver must advertise and copy `blu` and `sonos`, not `blucli` and
+`sonoscli`. Otherwise the APK pack can contain valid binaries yet still fail to
+satisfy the audited skill requirements.
+
 APK payload lane follow-up:
 
 ```text
@@ -865,8 +882,8 @@ target: filesDir/native-node-embedded/provisioning/bin
 The debug APK now carries the CLI-core asset directory and the native bootstrap
 copies any non-dot files from that directory into the provisioning bin with
 executable permissions. Current APK payload audit still shows no real CLI-core
-binary names (`blucli`, `eightctl`, `himalaya`, `openhue`, `sonoscli`,
-`wacli`). `diagram-maker` was removed from this pack lane after its `SKILL.md`
+binary names (`blu`, `eightctl`, `himalaya`, `openhue`, `sonos`, `wacli`).
+`diagram-maker` was removed from this pack lane after its `SKILL.md`
 audit proved it is instruction-only. That means the payload lane prepares
 installation for true CLI binaries but does not invent a renderer binary.
 
@@ -911,6 +928,20 @@ This did not raise the raw "ready within manifest" count because
 `diagram-maker` was already runtime-ready on the current device. It did improve
 the product truth: fresh users should no longer see it as blocked by a pack it
 does not need.
+
+CLI-core build priority from source audit:
+
+```text
+1. openhue: exact binary name, Go build, best first candidate.
+2. eightctl: exact binary name, Go build, auth needed only for functional smoke.
+3. sonoscli/sonos: strong Go candidate after the bin-name correction, but
+   local-network discovery needs Android multicast/network review.
+4. blucli/blu: same bin-name correction done; device discovery and target config
+   are the main smoke blockers.
+```
+
+This machine currently has no `go` on PATH, so producing real APK payloads
+requires a builder/toolchain setup before the next binary-pack milestone.
 
 ### Phase 6: Fresh-User Proof
 

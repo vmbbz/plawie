@@ -360,6 +360,29 @@ installed over existing app data; device health reported releaseGatePass true,
 ready_required 13, ready_optional 7, needs_config 14, needs_pack 17, and
 `diagram-maker` ready with `runtimeStatus: ready`.
 
+- [x] **Step 7: Correct CLI-core executable names**
+
+Audited bundled `blucli/SKILL.md` and `sonoscli/SKILL.md`. Their skill IDs do
+not match their required executable names:
+
+```text
+blucli -> blu
+sonoscli -> sonos
+```
+
+Updated the APK-provided CLI-core resolver to advertise `blu` and `sonos`, and
+updated smoke wording so the manifest names the executable users/devices will
+actually run.
+
+Focused proof:
+
+```powershell
+flutter test test/skill_provisioning_service_test.dart --no-pub
+```
+
+Result: 11/11 provisioning tests passed, including APK pack satisfaction for
+`blucli` through `blu` and `sonoscli` through `sonos`.
+
 ### Task 6: Fresh-User Proof
 
 **Files:**

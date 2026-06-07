@@ -22,11 +22,11 @@ class SkillProvisioningService {
   static const _androidCliCorePackId = 'android-cli-core-pack';
   static const _androidCliCorePackVersion = 'apk-bundled-v1';
   static const _androidCliCorePackBins = <String>{
-    'blucli',
+    'blu',
     'eightctl',
     'himalaya',
     'openhue',
-    'sonoscli',
+    'sonos',
     'wacli',
   };
   static const _defaultPythonWheelIndexes = <String>[

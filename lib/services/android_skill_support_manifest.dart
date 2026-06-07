@@ -182,7 +182,7 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsPack(
     'blucli',
     packs: ['android-cli-core-pack'],
-    smoke: 'Run blucli command discovery from a verified Android CLI pack.',
+    smoke: 'Run blu command discovery from a verified Android CLI pack.',
   ),
   _readyOptional(
     'camsnap',
@@ -381,7 +381,7 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsPack(
     'sonoscli',
     packs: ['android-cli-core-pack'],
-    smoke: 'Run Sonos discovery from the verified Android CLI pack.',
+    smoke: 'Run sonos discovery from the verified Android CLI pack.',
   ),
   _ready(
     'spike',

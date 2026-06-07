@@ -110,12 +110,12 @@ requirements:
 ---
 requirements:
   bins:
-    - blucli
+    - blu
 ---
 # Blue CLI
 ''');
-    await File(path.join(bundledBinDir.path, 'blucli')).writeAsString(
-      '#!/system/bin/sh\nprintf "blucli test\\n"\n',
+    await File(path.join(bundledBinDir.path, 'blu')).writeAsString(
+      '#!/system/bin/sh\nprintf "blu test\\n"\n',
       flush: true,
     );
 
@@ -147,7 +147,7 @@ requirements:
       contains('android-cli-core-pack'),
     );
     expect(
-      await File(path.join(nativeRoot, 'bin', 'blucli')).exists(),
+      await File(path.join(nativeRoot, 'bin', 'blu')).exists(),
       isTrue,
     );
     expect(
@@ -160,7 +160,7 @@ requirements:
       isTrue,
     );
 
-    await File(path.join(nativeRoot, 'bin', 'blucli')).delete();
+    await File(path.join(nativeRoot, 'bin', 'blu')).delete();
     final stale = await SkillParityAuditService.instance.audit(
       filesDir: temp.path,
       repairNativeFromProot: false,
@@ -195,6 +195,87 @@ requirements:
     expect(
       after.executionMatrix
           .singleWhere((entry) => entry.skillId == 'blucli')
+          .status,
+      SkillExecutionStatus.ready,
+    );
+  });
+
+  test('APK CLI-core pack satisfies sonoscli through sonos binary name',
+      () async {
+    final temp = await Directory.systemTemp.createTemp('skill_provision_sonos_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills =
+        Directory(path.join(nativeRoot, 'workspace', 'skills'));
+    final bundledBinDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'bin',
+    ));
+    await nativeSkills.create(recursive: true);
+    await bundledBinDir.create(recursive: true);
+
+    final sonoscli = Directory(path.join(nativeSkills.path, 'sonoscli'));
+    await sonoscli.create(recursive: true);
+    await File(path.join(sonoscli.path, 'SKILL.md')).writeAsString('''
+---
+requirements:
+  bins:
+    - sonos
+---
+# Sonos CLI
+''');
+    await File(path.join(bundledBinDir.path, 'sonos')).writeAsString(
+      '#!/system/bin/sh\nprintf "sonos test\\n"\n',
+      flush: true,
+    );
+
+    final before = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    expect(
+      before.executionMatrix
+          .singleWhere((entry) => entry.skillId == 'sonoscli')
+          .gates,
+      contains('missing_native_bin'),
+    );
+
+    final first = await SkillProvisioningService.instance.provisionSnapshot(
+      before,
+      skillId: 'sonoscli',
+    );
+
+    expect(first.changed, isTrue);
+    expect(first.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(
+      first.results.single.actions
+          .where((action) =>
+              action.type == SkillProvisioningActionType.dependencyPack)
+          .map((action) => action.key),
+      contains('android-cli-core-pack'),
+    );
+    expect(
+      await File(path.join(nativeRoot, 'bin', 'sonos')).exists(),
+      isTrue,
+    );
+
+    final after = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    expect(
+      after.executionMatrix
+          .singleWhere((entry) => entry.skillId == 'sonoscli')
           .status,
       SkillExecutionStatus.ready,
     );

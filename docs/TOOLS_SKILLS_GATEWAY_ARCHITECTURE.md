@@ -156,6 +156,9 @@ APK-provided CLI-core payloads are loaded from
 `filesDir/native-node-embedded/provisioning/bin` and marks them executable. The
 directory can exist without real payload; in that case no binary pack is
 advertised because the Dart resolver only sees actual copied CLI files.
+For CLI-core, payload file names must be executable names from each bundled
+`SKILL.md`, not necessarily skill IDs: for example `blucli` requires `blu`,
+and `sonoscli` requires `sonos`.
 
 ## Gateway `tools.allow`
 
