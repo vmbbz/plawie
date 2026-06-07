@@ -8,6 +8,7 @@ import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
+import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
@@ -58,6 +59,7 @@ class AppNativeChatToolRouter {
   final DeviceCapability _device = DeviceCapability();
   final FlashCapability _flash = FlashCapability();
   final LocationCapability _location = LocationCapability();
+  final MemeMakerCapability _memeMaker = MemeMakerCapability();
   final SensorCapability _sensor = SensorCapability();
   final VibrationCapability _vibration = VibrationCapability();
   final WeatherCapability _weather = WeatherCapability();
@@ -161,7 +163,8 @@ class AppNativeChatToolRouter {
       'weather.current' ||
       'weather.forecast' ||
       'clawhub.search' ||
-      'clawhub.info' =>
+      'clawhub.info' ||
+      'meme-maker.create' =>
         true,
       _ => false,
     };
@@ -406,6 +409,9 @@ class AppNativeChatToolRouter {
     final clawHubPlan = _clawHubPlan(trimmed);
     if (clawHubPlan != null) return clawHubPlan;
 
+    final memePlan = _memePlan(trimmed);
+    if (memePlan != null) return memePlan;
+
     if (lower.contains('device') && lower.contains('permission')) {
       return const _AppNativeToolPlan(
         toolName: 'device-node',
@@ -481,6 +487,11 @@ class AppNativeChatToolRouter {
         case 'clawhub.search':
         case 'clawhub.info':
           return _frameToMap(await _clawHub.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'meme-maker.create':
+          return _frameToMap(await _memeMaker.handle(
             plan.command,
             plan.input,
           ));
@@ -632,6 +643,9 @@ class AppNativeChatToolRouter {
           return 'ClawHub metadata retrieved for $name.';
         }
         return 'ClawHub metadata retrieved.';
+      case 'meme-maker.create':
+        final bytes = result['pngBytes'];
+        return 'Meme image generated${bytes == null ? '' : ' ($bytes bytes)'}.';
       case 'camera.list':
         return 'Camera list retrieved.';
       case 'camera.snap':
@@ -1016,6 +1030,49 @@ class AppNativeChatToolRouter {
       );
     }
     return null;
+  }
+
+  _AppNativeToolPlan? _memePlan(String message) {
+    final lower = message.toLowerCase();
+    if (!lower.contains('meme')) return null;
+    final top = _quotedOrTrailing(
+      message,
+      RegExp(r'\btop(?:\s+text)?\s*[:=]\s*"?([^"\n]+)"?', caseSensitive: false),
+    );
+    final bottom = _quotedOrTrailing(
+      message,
+      RegExp(r'\bbottom(?:\s+text)?\s*[:=]\s*"?([^"\n]+)"?',
+          caseSensitive: false),
+    );
+    final fallback = message
+        .replaceAll(
+            RegExp(r'\b(make|create|generate|a|an|the)\b',
+                caseSensitive: false),
+            ' ')
+        .replaceAll(RegExp(r'\bmeme\b', caseSensitive: false), ' ')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+    if ((top == null || top.isEmpty) &&
+        (bottom == null || bottom.isEmpty) &&
+        fallback.length < 2) {
+      return null;
+    }
+    return _AppNativeToolPlan(
+      toolName: 'meme-maker',
+      command: 'meme-maker.create',
+      input: {
+        'source': 'app-native-chat-router',
+        if (top != null && top.isNotEmpty) 'topText': top,
+        'bottomText': bottom?.isNotEmpty == true ? bottom : fallback,
+      },
+    );
+  }
+
+  String? _quotedOrTrailing(String message, RegExp pattern) {
+    final match = pattern.firstMatch(message);
+    final value = match?.group(1)?.trim();
+    if (value == null || value.isEmpty) return null;
+    return value.replaceAll(RegExp(r'[?.!]+$'), '').trim();
   }
 
   _AppNativeToolPlan? _bundledSkillPlan(String lower) {

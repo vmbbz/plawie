@@ -229,9 +229,9 @@ moonpay
 ```
 
 Current node command policy includes avatar, camera, canvas, weather, ClawHub
-metadata, flashlight/torch, location, screen recording, sensor, and haptic
-commands. It does not currently prove a generic Android app launcher or a safe
-WhatsApp message-sending command.
+metadata, meme image creation, flashlight/torch, location, screen recording,
+sensor, and haptic commands. It does not currently prove a generic Android app
+launcher or a safe WhatsApp message-sending command.
 
 ## Phone-Control And Messaging Edge
 

@@ -270,9 +270,9 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _ready(
     'meme-maker',
-    owner: AndroidSkillOwnerLayer.openclawSkill,
-    mode: AndroidSkillExecutionMode.nodeScript,
-    smoke: 'Generate a small meme image from bundled Android-safe assets.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.appNativeTool,
+    smoke: 'Generate a small meme PNG through the Android app-native renderer.',
   ),
   _hiddenDesktop(
     'model-usage',

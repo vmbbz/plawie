@@ -448,6 +448,33 @@ Verification for this round:
   `{"action":"clawhub_search","query":"weather","limit":3}` returned ClawHub
   registry metadata from the device.
 
+### Progress Check: Meme-Maker Renderer And Release Gate
+
+Round 8 on 2026-06-07 cleared the final Android launch blocker without adding
+Node canvas, sharp, npm, or PRoot:
+
+- Added `meme-maker.create`, a pure-Dart app-native PNG renderer backed by the
+  `image` package.
+- The renderer creates a bounded captioned PNG from `topText` and/or
+  `bottomText`, returns base64 image data, and publishes a tool media event.
+- Reclassified `meme-maker` as an app-native Android capability.
+- Added `image` as an explicit direct dependency because production code now
+  imports it directly.
+
+Verification for this round:
+
+- Targeted `dart analyze` across the changed services, tests, and `pubspec.yaml`
+  returned no issues.
+- Focused `flutter test test/meme_maker_capability_test.dart --no-pub` was
+  blocked before test execution by the existing `fllama` native-assets host
+  CMake/MSVC issue.
+- `flutter build apk --debug` produced a fresh debug APK.
+- The fresh debug APK was installed on `RZCX30KA9AW`, launched, and
+  `/device/health` reported `readyRequired: 13/13`,
+  `unexpectedMissingDependency: 0`, and `releaseGatePass: true`.
+- `POST /api/device/control` with `meme_maker_create` returned a 640x640 PNG
+  payload from the device.
+
 ## Golden Android Runtime And Adapter Pack
 
 The shorter reliable path is not a tiny pilot and not a universal builder. It

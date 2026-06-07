@@ -15,6 +15,7 @@ import '../services/capabilities/camera_capability.dart';
 import '../services/capabilities/canvas_capability.dart';
 import '../services/capabilities/clawhub_capability.dart';
 import '../services/capabilities/location_capability.dart';
+import '../services/capabilities/meme_maker_capability.dart';
 import '../services/capabilities/screen_capability.dart';
 import '../services/capabilities/flash_capability.dart';
 import '../services/capabilities/vibration_capability.dart';
@@ -39,6 +40,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final _clawHubCapability = ClawHubCapability();
   final _flashCapability = FlashCapability();
   final _locationCapability = LocationCapability();
+  final _memeMakerCapability = MemeMakerCapability();
   final _screenCapability = ScreenCapability();
   final _sensorCapability = SensorCapability();
   final _vibrationCapability = VibrationCapability();
@@ -239,6 +241,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       (cmd, params) => _locationCapability.handleWithPermission(cmd, params),
     );
     _registerCapabilityAliases(
+      _memeMakerCapability,
+      (cmd, params) => _memeMakerCapability.handle(cmd, params),
+    );
+    _registerCapabilityAliases(
       _screenCapability,
       (cmd, params) => _screenCapability.handle(cmd, params),
     );
@@ -314,6 +320,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
           'camera.list',
           'clawhub.search',
           'clawhub.info',
+          'meme-maker.create',
           'location.get',
           'sensor.read',
           'sensor.list',

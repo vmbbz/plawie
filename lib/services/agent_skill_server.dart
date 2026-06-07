@@ -16,6 +16,7 @@ import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
+import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
@@ -70,6 +71,7 @@ class AgentSkillServer {
   final DeviceCapability _deviceCapability = DeviceCapability();
   final FlashCapability _flashCapability = FlashCapability();
   final LocationCapability _locationCapability = LocationCapability();
+  final MemeMakerCapability _memeMakerCapability = MemeMakerCapability();
   final SensorCapability _sensorCapability = SensorCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
   final WeatherCapability _weatherCapability = WeatherCapability();
@@ -128,6 +130,9 @@ class AgentSkillServer {
       await _handleLegacyWeather(request);
     } else if (request.method == 'GET' && path == '/clawhub') {
       await _handleLegacyClawHub(request);
+    } else if ((request.method == 'GET' || request.method == 'POST') &&
+        path == '/meme') {
+      await _handleLegacyMeme(request);
     } else if ((request.method == 'GET' || request.method == 'POST') &&
         (path == '/flashlight' ||
             path.startsWith('/flashlight/') ||
@@ -1487,6 +1492,15 @@ class AgentSkillServer {
     }, request);
   }
 
+  Future<void> _handleLegacyMeme(HttpRequest request) async {
+    final body = await _readJsonBody(request);
+    await _processDeviceControl({
+      'action': 'meme_maker_create',
+      ...request.uri.queryParameters,
+      ...body,
+    }, request);
+  }
+
   void _handleToolsCatalog(HttpRequest request) {
     final catalog = SkillsService().getToolsCatalog();
     _sendJson(request, {
@@ -1928,6 +1942,8 @@ class AgentSkillServer {
       'camera_list': 'camera.list',
       'clawhub_search': 'clawhub.search',
       'clawhub_info': 'clawhub.info',
+      'meme_maker_create': 'meme-maker.create',
+      'meme-maker_create': 'meme-maker.create',
       'canvas_navigate': 'canvas.navigate',
       'canvas_eval': 'canvas.eval',
       'canvas_snapshot': 'canvas.snapshot',
@@ -2010,6 +2026,7 @@ class AgentSkillServer {
       case 'camera.list':
       case 'clawhub.search':
       case 'clawhub.info':
+      case 'meme-maker.create':
       case 'canvas.navigate':
       case 'canvas.eval':
       case 'canvas.snapshot':
@@ -2065,6 +2082,8 @@ class AgentSkillServer {
         return 'VibrationCapability';
       case 'location':
         return 'LocationCapability';
+      case 'meme-maker':
+        return 'MemeMakerCapability';
       case 'device':
         return 'DeviceCapability';
       case 'screen':
@@ -2507,6 +2526,13 @@ class AgentSkillServer {
       case 'clawhub_info':
         final frame = await _clawHubCapability.handle(
           action == 'clawhub_info' ? 'clawhub.info' : 'clawhub.search',
+          data,
+        );
+        _sendNodeFrame(request, frame);
+
+      case 'meme_maker_create':
+        final frame = await _memeMakerCapability.handle(
+          'meme-maker.create',
           data,
         );
         _sendNodeFrame(request, frame);

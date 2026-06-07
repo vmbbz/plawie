@@ -13,6 +13,7 @@ import 'capabilities/capability_handler.dart';
 import 'capabilities/clawhub_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
+import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/screen_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
@@ -272,6 +273,7 @@ class LocalLlmService {
   final ClawHubCapability _clawHubCapability = ClawHubCapability();
   final FlashCapability _flashCapability = FlashCapability();
   final LocationCapability _locationCapability = LocationCapability();
+  final MemeMakerCapability _memeMakerCapability = MemeMakerCapability();
   final ScreenCapability _screenCapability = ScreenCapability();
   final SensorCapability _sensorCapability = SensorCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
@@ -751,6 +753,13 @@ class LocalLlmService {
           'Gets metadata for one ClawHub skill through the Android REST adapter.',
     ),
     Tool(
+      name: 'meme_maker_create',
+      jsonSchema:
+          '{"type":"object","properties":{"topText":{"type":"string"},"bottomText":{"type":"string"},"width":{"type":"integer","minimum":512,"maximum":1600},"height":{"type":"integer","minimum":512,"maximum":1600}},"required":[]}',
+      description:
+          'Generates a simple captioned PNG meme through the Android app-native renderer.',
+    ),
+    Tool(
       name: 'screen_record',
       jsonSchema:
           '{"type":"object","properties":{"durationMs":{"type":"integer","minimum":1000,"maximum":10000}},"required":[]}',
@@ -825,6 +834,9 @@ class LocalLlmService {
     }
     if (hasAny(['clawhub', 'skill registry'])) {
       selected.addAll(['clawhub_search', 'clawhub_info']);
+    }
+    if (hasAny(['meme'])) {
+      selected.add('meme_maker_create');
     }
     if (hasAny(['screen record', 'record screen', 'screen recording'])) {
       selected.add('screen_record');
@@ -965,6 +977,12 @@ class LocalLlmService {
         return _dispatchCapability(
           _clawHubCapability,
           'clawhub.info',
+          args,
+        );
+      case 'meme_maker_create':
+        return _dispatchCapability(
+          _memeMakerCapability,
+          'meme-maker.create',
           args,
         );
       case 'screen_record':

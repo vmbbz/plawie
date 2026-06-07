@@ -113,16 +113,18 @@ void main() {
       ]),
       provisioning: provisioningWith([
         missingBinaryResult('canvas'),
+        missingBinaryResult('meme-maker'),
         missingBinaryResult('weather'),
       ]),
       manifest: AndroidSkillSupportManifest.forTesting([
         appNativeManifestEntry('canvas'),
+        appNativeManifestEntry('meme-maker'),
         appNativeManifestEntry('weather'),
       ]),
     );
 
-    expect(summary.readyRequiredTotal, 2);
-    expect(summary.readyRequiredReady, 2);
+    expect(summary.readyRequiredTotal, 3);
+    expect(summary.readyRequiredReady, 3);
     expect(summary.unexpectedMissingDependency, 0);
     expect(summary.releaseGatePass, isTrue);
     expect(
