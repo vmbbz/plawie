@@ -141,6 +141,69 @@ void main() {
     );
   });
 
+  test('app-native config-gated skills stay blocked until config is satisfied',
+      () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([
+        missingEntry('github', 'missing_native_config'),
+      ]),
+      provisioning: provisioningWith([
+        needsConfigResult('github'),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        appNativeConfigManifestEntry('github', ['GITHUB_TOKEN']),
+      ]),
+    );
+
+    final github = summary.skills.single;
+    expect(github['runtimeStatus'], 'needs_config');
+    expect(github['provisioningStatus'], 'needs_user_config');
+    expect(github['ready'], isFalse);
+    expect(github['requiredConfig'], ['GITHUB_TOKEN']);
+  });
+
+  test('app-native config gate beats stale missing binary audit', () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([
+        missingEntry('github', 'missing_native_bin'),
+      ]),
+      provisioning: provisioningWith([
+        missingBinaryResult('github'),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        appNativeConfigManifestEntry('github', ['GITHUB_TOKEN']),
+      ]),
+    );
+
+    final github = summary.skills.single;
+    expect(github['runtimeStatus'], 'needs_config');
+    expect(github['provisioningStatus'], 'needs_user_config');
+    expect(github['ready'], isFalse);
+  });
+
+  test('app-native env-configured skills ignore stale OpenClaw binary gates',
+      () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith(
+        [
+          missingEntry('github', 'missing_native_bin'),
+        ],
+        nativeEnvKeys: ['GITHUB_TOKEN'],
+      ),
+      provisioning: provisioningWith([
+        missingBinaryResult('github'),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        appNativeConfigManifestEntry('github', ['GITHUB_TOKEN']),
+      ]),
+    );
+
+    final github = summary.skills.single;
+    expect(github['runtimeStatus'], 'app_native_ready');
+    expect(github['provisioningStatus'], 'app_native_config_ready');
+    expect(github['ready'], isTrue);
+  });
+
   test('clawhub owner layer is app-native ready despite npm gates', () {
     final summary = AndroidSkillReadinessService.instance.summarize(
       snapshot: snapshotWith([
@@ -197,7 +260,10 @@ void main() {
   });
 }
 
-SkillParitySnapshot snapshotWith(List<SkillExecutionMatrixEntry> entries) {
+SkillParitySnapshot snapshotWith(
+  List<SkillExecutionMatrixEntry> entries, {
+  List<String> nativeEnvKeys = const <String>[],
+}) {
   return SkillParitySnapshot(
     filesDir: 'test-files',
     nativeSkillCount: entries.length,
@@ -212,7 +278,7 @@ SkillParitySnapshot snapshotWith(List<SkillExecutionMatrixEntry> entries) {
     prootPluginNames: const <String>[],
     nativeToolsAllow: const <String>[],
     prootToolsAllow: const <String>[],
-    nativeEnvKeys: const <String>[],
+    nativeEnvKeys: nativeEnvKeys,
     prootEnvKeys: const <String>[],
     nativeBins: const <String>[],
     prootBins: const <String>[],
@@ -343,6 +409,20 @@ AndroidSkillSupportEntry appNativeManifestEntry(String skillId) {
     executionMode: AndroidSkillExecutionMode.appNativeTool,
     smokePrompt: 'smoke $skillId',
     launchCritical: true,
+  );
+}
+
+AndroidSkillSupportEntry appNativeConfigManifestEntry(
+  String skillId,
+  List<String> config,
+) {
+  return AndroidSkillSupportEntry(
+    skillId: skillId,
+    status: AndroidSkillSupportStatus.needsConfig,
+    ownerLayer: AndroidSkillOwnerLayer.appNativeCapability,
+    executionMode: AndroidSkillExecutionMode.httpAdapter,
+    requiredConfig: config,
+    smokePrompt: 'smoke $skillId',
   );
 }
 

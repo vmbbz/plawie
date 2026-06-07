@@ -231,7 +231,10 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsConfig(
     'gh-issues',
     config: ['GITHUB_TOKEN'],
-    smoke: 'List GitHub issues for a configured repository.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke:
+        'List GitHub issues for a configured repository through the app-native REST adapter.',
   ),
   _needsPack(
     'gifgrep',
@@ -241,7 +244,10 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsConfig(
     'github',
     config: ['GITHUB_TOKEN'],
-    smoke: 'Read authenticated GitHub user metadata.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke:
+        'Read authenticated GitHub user metadata through the app-native REST adapter.',
   ),
   _needsConfig(
     'gog',
@@ -482,12 +488,14 @@ AndroidSkillSupportEntry _needsConfig(
   String id, {
   required List<String> config,
   required String smoke,
+  AndroidSkillOwnerLayer owner = AndroidSkillOwnerLayer.openclawSkill,
+  AndroidSkillExecutionMode mode = AndroidSkillExecutionMode.gatewayTool,
 }) {
   return AndroidSkillSupportEntry(
     skillId: id,
     status: AndroidSkillSupportStatus.needsConfig,
-    ownerLayer: AndroidSkillOwnerLayer.openclawSkill,
-    executionMode: AndroidSkillExecutionMode.gatewayTool,
+    ownerLayer: owner,
+    executionMode: mode,
     requiredConfig: List.unmodifiable(config),
     smokePrompt: smoke,
   );

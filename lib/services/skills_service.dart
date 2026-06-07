@@ -75,6 +75,15 @@ class SkillsService {
     'xurl.request': 'xurl',
     'summarize_text': 'summarize',
     'summarize.text': 'summarize',
+    'github_user': 'github',
+    'github user': 'github',
+    'github.user': 'github',
+    'gh_issues': 'gh-issues',
+    'gh issues': 'gh-issues',
+    'gh_issues_list': 'gh-issues',
+    'gh-issues.list': 'gh-issues',
+    'github_issues': 'gh-issues',
+    'github issues': 'gh-issues',
   };
 
   Stream<SkillsEvent> get events => _eventController.stream;
@@ -158,6 +167,8 @@ class SkillsService {
       _createSessionLogsSkill(),
       _createNanoPdfSkill(),
       _createCamsnapSkill(),
+      _createGithubSkill(),
+      _createGhIssuesSkill(),
       _createAvatarOverlaySkill(),
       _createBaseChainSkill(),
       // Partner proxies
@@ -220,6 +231,8 @@ class SkillsService {
         return await _executeDeviceNodeSkill(skill, params, ctx);
       case 'camera':
         return await _executeCamsnapSkill(skill, params, ctx);
+      case 'github':
+        return await _executeGithubSkill(skill, params, ctx);
       case 'system':
         return await _executeAvatarPipSkill(skill, params, ctx);
       case 'base':
@@ -637,6 +650,23 @@ class SkillsService {
       return SkillResult.error('Camsnap fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Camsnap unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeGithubSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('GitHub skill fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('GitHub skill unreachable: $e');
     }
   }
 
@@ -1087,6 +1117,30 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createGithubSkill() => Skill(
+      id: 'github',
+      name: 'github',
+      description:
+          'Read authenticated GitHub profile metadata with an app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'github',
+      tags: ['github', 'rest'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
+  Skill _createGhIssuesSkill() => Skill(
+      id: 'gh-issues',
+      name: 'gh-issues',
+      description:
+          'List bounded GitHub repository issues with an app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'github',
+      tags: ['github', 'issues'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createAvatarOverlaySkill() => Skill(
       id: 'avatar_overlay',
       name: 'Floating Avatar',
@@ -1459,6 +1513,54 @@ class SkillsService {
               },
             },
             'required': [],
+          },
+        };
+      case 'github':
+        return {
+          'name': skill.id,
+          'description':
+              'Read authenticated GitHub user profile metadata through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['user'],
+                'description': 'Use user to read the authenticated profile.',
+              },
+            },
+            'required': ['action'],
+          },
+        };
+      case 'gh-issues':
+        return {
+          'name': skill.id,
+          'description':
+              'List bounded GitHub repository issues through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'owner': {
+                'type': 'string',
+                'description': 'GitHub repository owner or organization.',
+              },
+              'repo': {
+                'type': 'string',
+                'description': 'GitHub repository name.',
+              },
+              'state': {
+                'type': 'string',
+                'enum': ['open', 'closed', 'all'],
+                'description': 'Issue state. Defaults to open.',
+              },
+              'limit': {
+                'type': 'integer',
+                'minimum': 1,
+                'maximum': 20,
+                'description': 'Maximum issues to return.',
+              },
+            },
+            'required': ['owner', 'repo'],
           },
         };
       case 'base-chain':

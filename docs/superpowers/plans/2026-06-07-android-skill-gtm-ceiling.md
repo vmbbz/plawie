@@ -270,6 +270,23 @@ extraction, or full parser parity. Device smoke after the Phase 4 milestone
 install returned `success: true`, `runtime: app-native-pdf-text`, and
 `chars: 35`.
 
+`github` and `gh-issues` are implemented as config-gated app-native REST
+adapters, not ready-optional fresh-user tools. They keep `needs_config` until
+`GITHUB_TOKEN` is present, expose `github` and `gh-issues` schemas through
+`/api/tools`, route `/api/tools/execute` through `AgentSkillServer`, and clear
+the stale `missing_native_bin` gate once Native env config is present. The token
+is read from Native `.env`; it is not accepted in tool input and is not returned
+in payloads or visible chat chunks.
+
+Focused proof:
+
+```powershell
+flutter test test/android_skill_readiness_service_test.dart test/github_app_native_adapter_test.dart test/android_skill_support_manifest_test.dart --no-pub
+flutter analyze lib/services/android_skill_readiness_service.dart lib/services/android_skill_support_manifest.dart lib/services/capabilities/github_capability.dart lib/services/app_native_chat_tool_router.dart lib/services/agent_skill_server.dart lib/services/gateway_tool_catalog.dart lib/services/skills_service.dart test/android_skill_readiness_service_test.dart test/github_app_native_adapter_test.dart
+```
+
+Result: 19/19 tests passed; analyzer clean.
+
 ### Task 5: Verified Pack Lane
 
 **Files:**

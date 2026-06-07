@@ -8,6 +8,7 @@ import 'capabilities/camera_capability.dart';
 import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
+import 'capabilities/github_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/nano_pdf_capability.dart';
@@ -58,19 +59,23 @@ class AppNativeChatToolRouter {
 
   AppNativeChatToolRouter._internal({
     BlogWatcherCapability? blogWatcher,
+    GitHubCapability? github,
     SessionLogsCapability? sessionLogs,
     XurlCapability? xurl,
   })  : _blogWatcher = blogWatcher ?? BlogWatcherCapability(),
+        _github = github ?? GitHubCapability(),
         _sessionLogs = sessionLogs ?? SessionLogsCapability(),
         _xurl = xurl ?? XurlCapability();
 
   factory AppNativeChatToolRouter.forTesting({
     BlogWatcherCapability? blogWatcher,
+    GitHubCapability? github,
     SessionLogsCapability? sessionLogs,
     XurlCapability? xurl,
   }) =>
       AppNativeChatToolRouter._internal(
         blogWatcher: blogWatcher,
+        github: github,
         sessionLogs: sessionLogs,
         xurl: xurl,
       );
@@ -81,6 +86,7 @@ class AppNativeChatToolRouter {
   final ClawHubCapability _clawHub = ClawHubCapability();
   final DeviceCapability _device = DeviceCapability();
   final FlashCapability _flash = FlashCapability();
+  final GitHubCapability _github;
   final LocationCapability _location = LocationCapability();
   final MemeMakerCapability _memeMaker = MemeMakerCapability();
   final NanoPdfCapability _nanoPdf = NanoPdfCapability();
@@ -192,6 +198,8 @@ class AppNativeChatToolRouter {
       'weather.forecast' ||
       'clawhub.search' ||
       'clawhub.info' ||
+      'github.user' ||
+      'gh-issues.list' ||
       'meme-maker.create' ||
       'nano-pdf.extract' ||
       'session-logs.query' ||
@@ -242,6 +250,8 @@ class AppNativeChatToolRouter {
       case 'weather.current':
       case 'weather.forecast':
       case 'blogwatcher.check':
+      case 'github.user':
+      case 'gh-issues.list':
       case 'nano-pdf.extract':
       case 'session-logs.query':
       case 'summarize.text':
@@ -450,6 +460,9 @@ class AppNativeChatToolRouter {
     final blogWatcherPlan = _blogWatcherPlan(trimmed);
     if (blogWatcherPlan != null) return blogWatcherPlan;
 
+    final githubPlan = _githubPlan(trimmed);
+    if (githubPlan != null) return githubPlan;
+
     final sessionLogsPlan = _sessionLogsPlan(trimmed);
     if (sessionLogsPlan != null) return sessionLogsPlan;
 
@@ -542,6 +555,12 @@ class AppNativeChatToolRouter {
           ));
         case 'blogwatcher.check':
           return _frameToMap(await _blogWatcher.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'github.user':
+        case 'gh-issues.list':
+          return _frameToMap(await _github.handle(
             plan.command,
             plan.input,
           ));
@@ -718,6 +737,15 @@ class AppNativeChatToolRouter {
         final count = result['itemCount'] ?? 0;
         final title = result['feedTitle']?.toString().trim();
         return 'Blogwatcher checked${title?.isNotEmpty == true ? ' $title' : ''}: $count item(s).';
+      case 'github.user':
+        final login = result['login']?.toString().trim();
+        return login?.isNotEmpty == true
+            ? 'GitHub profile retrieved for $login.'
+            : 'GitHub profile retrieved.';
+      case 'gh-issues.list':
+        final repository = result['repository']?.toString().trim();
+        final count = result['count'] ?? 0;
+        return 'GitHub issues retrieved${repository?.isNotEmpty == true ? ' for $repository' : ''}: $count item(s).';
       case 'session-logs.query':
         final action = result['action']?.toString();
         return switch (action) {
@@ -1156,6 +1184,44 @@ class AppNativeChatToolRouter {
         'url': url,
         'source': 'app-native-chat-router',
         if (limit != null) 'limit': limit,
+      },
+    );
+  }
+
+  _AppNativeToolPlan? _githubPlan(String message) {
+    final userMatch = RegExp(
+      r'^\s*github\s+(?:user|me|profile|whoami)\s*$',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (userMatch != null) {
+      return const _AppNativeToolPlan(
+        toolName: 'github',
+        command: 'github.user',
+        input: {
+          'action': 'user',
+          'source': 'app-native-chat-router',
+        },
+      );
+    }
+
+    final issuesMatch = RegExp(
+      r'^\s*(?:gh[-\s]?issues|github\s+issues)\s+([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)(?:\s+(open|closed|all))?(?:\s+limit\s+(\d{1,2}))?\s*$',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (issuesMatch == null) return null;
+    final owner = issuesMatch.group(1);
+    final repo = issuesMatch.group(2);
+    if (owner == null || repo == null) return null;
+    return _AppNativeToolPlan(
+      toolName: 'gh-issues',
+      command: 'gh-issues.list',
+      input: {
+        'owner': owner,
+        'repo': repo,
+        if (issuesMatch.group(3) != null) 'state': issuesMatch.group(3),
+        if (issuesMatch.group(4) != null)
+          'limit': int.tryParse(issuesMatch.group(4)!),
+        'source': 'app-native-chat-router',
       },
     );
   }

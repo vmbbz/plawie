@@ -40,10 +40,11 @@ class AndroidSkillReadinessService {
       final normalizedSkillId = _normalizeSkillId(entry.skillId);
       final matrixEntry = matrixBySkillId[normalizedSkillId];
       final provisioningResult = provisioningBySkillId[normalizedSkillId];
-      final ready = _isReady(entry, matrixEntry, provisioningResult);
+      final ready = _isReady(entry, snapshot, matrixEntry, provisioningResult);
       final releaseRelevant =
           entry.status == AndroidSkillSupportStatus.readyRequired;
       final appNativeOwned = _isAppNativeOwned(entry);
+      final appNativeConfigGated = _isAppNativeConfigGated(entry);
       if (releaseRelevant) {
         readyRequiredTotal += 1;
         if (ready) {
@@ -55,16 +56,20 @@ class AndroidSkillReadinessService {
 
       skills.add({
         ...entry.toJson(),
-        'runtimeStatus': _runtimeStatus(entry, matrixEntry),
-        if (!appNativeOwned && matrixEntry?.primaryGate != null)
+        'runtimeStatus':
+            _runtimeStatus(entry, snapshot, matrixEntry, provisioningResult),
+        if ((!appNativeOwned || appNativeConfigGated) &&
+            matrixEntry?.primaryGate != null)
           'primaryGate': matrixEntry!.primaryGate,
-        if (!appNativeOwned &&
+        if ((!appNativeOwned || appNativeConfigGated) &&
             matrixEntry != null &&
             matrixEntry.gates.isNotEmpty)
           'gates': matrixEntry.gates,
-        'provisioningStatus': appNativeOwned
-            ? 'app_native_not_required'
-            : provisioningResult?.status.wireName ?? 'not_planned',
+        'provisioningStatus': _provisioningStatus(
+          entry,
+          snapshot,
+          provisioningResult,
+        ),
         'ready': ready,
         'releaseBlocking': releaseRelevant && !ready,
       });
@@ -87,9 +92,20 @@ class AndroidSkillReadinessService {
 
   static bool _isReady(
     AndroidSkillSupportEntry manifestEntry,
+    SkillParitySnapshot snapshot,
     SkillExecutionMatrixEntry? matrixEntry,
     SkillProvisioningSkillResult? provisioningResult,
   ) {
+    if (_isAppNativeConfigGated(manifestEntry)) {
+      if (_appNativeConfigSatisfied(manifestEntry, snapshot)) return true;
+      if (matrixEntry?.status == SkillExecutionStatus.ready) return true;
+      return switch (provisioningResult?.status) {
+        SkillProvisioningStatus.ready ||
+        SkillProvisioningStatus.satisfied =>
+          true,
+        _ => false,
+      };
+    }
     if (_isAppNativeOwned(manifestEntry)) return true;
     if (matrixEntry?.status == SkillExecutionStatus.ready) return true;
     return switch (provisioningResult?.status) {
@@ -102,11 +118,37 @@ class AndroidSkillReadinessService {
 
   static String _runtimeStatus(
     AndroidSkillSupportEntry manifestEntry,
+    SkillParitySnapshot snapshot,
     SkillExecutionMatrixEntry? matrixEntry,
+    SkillProvisioningSkillResult? provisioningResult,
   ) {
+    if (_isAppNativeConfigGated(manifestEntry)) {
+      if (_appNativeConfigSatisfied(manifestEntry, snapshot)) {
+        return 'app_native_ready';
+      }
+      return 'needs_config';
+    }
     if (_isAppNativeOwned(manifestEntry)) return 'app_native_ready';
     if (matrixEntry == null) return 'not_installed';
     return _executionStatusWireName(matrixEntry.status);
+  }
+
+  static String _provisioningStatus(
+    AndroidSkillSupportEntry manifestEntry,
+    SkillParitySnapshot snapshot,
+    SkillProvisioningSkillResult? provisioningResult,
+  ) {
+    final appNativeOwned = _isAppNativeOwned(manifestEntry);
+    final appNativeConfigGated = _isAppNativeConfigGated(manifestEntry);
+    if (appNativeOwned && !appNativeConfigGated) {
+      return 'app_native_not_required';
+    }
+    if (appNativeConfigGated &&
+        _appNativeConfigSatisfied(manifestEntry, snapshot)) {
+      return 'app_native_config_ready';
+    }
+    if (appNativeConfigGated) return 'needs_user_config';
+    return provisioningResult?.status.wireName ?? 'not_planned';
   }
 
   static bool _isAppNativeOwned(AndroidSkillSupportEntry manifestEntry) {
@@ -114,6 +156,39 @@ class AndroidSkillReadinessService {
         manifestEntry.ownerLayer ==
             AndroidSkillOwnerLayer.appNativeCapability ||
         manifestEntry.ownerLayer == AndroidSkillOwnerLayer.clawhubSkill;
+  }
+
+  static bool _isAppNativeConfigGated(
+    AndroidSkillSupportEntry manifestEntry,
+  ) {
+    return _isAppNativeOwned(manifestEntry) &&
+        manifestEntry.requiredConfig.isNotEmpty;
+  }
+
+  static bool _appNativeConfigSatisfied(
+    AndroidSkillSupportEntry manifestEntry,
+    SkillParitySnapshot snapshot,
+  ) {
+    if (!_isAppNativeConfigGated(manifestEntry)) return true;
+    final nativeEnvKeys = snapshot.nativeEnvKeys
+        .map((key) => key.trim().toUpperCase())
+        .where((key) => key.isNotEmpty)
+        .toSet();
+    for (final key in manifestEntry.requiredConfig) {
+      final trimmed = key.trim();
+      if (trimmed.isEmpty) return false;
+      if (_looksLikeEnvKey(trimmed)) {
+        if (!nativeEnvKeys.contains(trimmed.toUpperCase())) return false;
+        continue;
+      }
+      return false;
+    }
+    return true;
+  }
+
+  static bool _looksLikeEnvKey(String key) {
+    if (key.contains('.')) return false;
+    return RegExp(r'^[A-Z][A-Z0-9_]*$').hasMatch(key);
   }
 
   static String _executionStatusWireName(SkillExecutionStatus status) {

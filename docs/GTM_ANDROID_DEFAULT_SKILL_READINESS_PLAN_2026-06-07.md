@@ -64,6 +64,16 @@ direct execute: summarize, session-logs, nano-pdf, xurl, camsnap, blogwatcher
 product-class counts: ready_optional 7, needs_config 14, needs_pack 17
 ```
 
+Current branch local proof, pending phone install because ADB did not detect the
+connected Android device during this round:
+
+```text
+github: needs_config + stale missing_native_bin -> needs_config app-native config-only
+gh-issues: needs_config + stale missing_native_bin -> needs_config app-native config-only
+local proof: 19/19 focused tests, analyzer clean, debug APK built
+device install/smoke: pending ADB device visibility
+```
+
 The `/api/debug/app-native-chat-tool-smoke` endpoint remains unreliable for
 final-response proof. During the milestone smoke it timed out once and then
 returned a stale visible response on the next prompt. Do not count that endpoint
@@ -80,6 +90,9 @@ Read this carefully:
 - `xurl`, `camsnap`, `summarize`, `blogwatcher`, `session-logs`, and
   `nano-pdf` are now app-native ready optional: usable through
   Gateway-visible tool execution, but not part of the launch-critical gate.
+- `github` and `gh-issues` are still needs-config skills, but no longer depend
+  on a Native CLI binary once `GITHUB_TOKEN` is present. They use bounded
+  app-native REST adapters through the same Gateway-visible tool path.
 - `node-connect` is manual PRoot compatibility, so it must not count as a
   Native fresh-user Android promise.
 - The honest Android-release-relevant ceiling today is:
@@ -220,18 +233,39 @@ voice-call: VOICE_CALL_PROVIDER, VOICE_CALL_ACCOUNT
 
 Important correction: `needs_config` is a product class, not always the first
 runtime gate. On the current device, several Class B skills also report
-`missing_native_bin`. For example, a user cannot fix `github` only by entering
-`GITHUB_TOKEN` if the Native binary/adapter path is missing.
+`missing_native_bin`.
+
+Important second correction: app-native config-gated adapters must not keep
+stale OpenClaw binary gates. `github` and `gh-issues` are the first proven case:
+until `GITHUB_TOKEN` exists they show `needs_config`; after the token exists
+they become app-native ready without requiring a GitHub CLI binary.
 
 Therefore the app must show layered gates:
 
 ```text
-Skill: github
+Skill: slack
 Product class: Needs config
-User config: GITHUB_TOKEN
+User config: SLACK_BOT_TOKEN, channels.slack
 Runtime gate: missing_native_bin
 Next action: install verified pack or use app-native adapter
 ```
+
+For GitHub specifically the app-facing gate is:
+
+```text
+Skill: github / gh-issues
+Product class: Needs config
+User config: GITHUB_TOKEN
+Runtime gate before token: needs_config
+Runtime gate after token: app_native_ready
+Next action: configure GITHUB_TOKEN in the Skills page
+```
+
+`github` reads bounded authenticated profile metadata through `github.user`.
+`gh-issues` lists bounded repository issue metadata through `gh-issues.list`.
+Both are exposed in `/api/tools`, route `/api/tools/execute` through
+`AgentSkillServer`, and keep tokens out of tool input, result payloads, and
+visible chat chunks.
 
 ### Class C: Needs Pack
 
@@ -565,6 +599,8 @@ Preferred adapter candidates:
 
 ```text
 blogwatcher
+github
+gh-issues
 nano-pdf
 session-logs
 summarize
@@ -794,6 +830,47 @@ success: true
 runtime: app-native-pdf-text
 chars: 35
 ```
+
+Seventh adapter landed:
+
+```text
+github / gh-issues
+status: needs_config
+runtime after config: app-native GitHub REST adapter
+Gateway tools: github, gh-issues
+commands underneath: github.user, gh-issues.list
+manifest movement: stale missing_native_bin -> app-native config-only
+scope: authenticated profile metadata and bounded issue lists only
+safety: token is read from Native .env, never accepted in tool input, and never
+returned in payloads or chat chunks
+```
+
+Local proof:
+
+```text
+flutter test test/android_skill_readiness_service_test.dart \
+  test/github_app_native_adapter_test.dart \
+  test/android_skill_support_manifest_test.dart --no-pub
+
+Result: 19/19 passing
+```
+
+Build proof:
+
+```text
+flutter build apk --debug
+
+Result: built build/app/outputs/flutter-apk/app-debug.apk
+```
+
+This does not change the fresh-user ready count because `GITHUB_TOKEN` is still
+required. It does raise the honest ceiling: once the user configures that token
+from the Skills page, both skills can run without a GitHub CLI binary or
+dependency pack.
+
+Device install/smoke is pending. `adb devices -l` and `flutter devices` did not
+detect the connected Android phone after an ADB server restart, so this round
+cannot honestly claim `/api/tools` device proof yet.
 
 ### Phase 5: Verified Dependency Packs
 

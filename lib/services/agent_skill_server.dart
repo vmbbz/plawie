@@ -16,6 +16,7 @@ import 'capabilities/camera_capability.dart';
 import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
+import 'capabilities/github_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/nano_pdf_capability.dart';
@@ -76,6 +77,7 @@ class AgentSkillServer {
   final ClawHubCapability _clawHubCapability = ClawHubCapability();
   final DeviceCapability _deviceCapability = DeviceCapability();
   final FlashCapability _flashCapability = FlashCapability();
+  final GitHubCapability _githubCapability = GitHubCapability();
   final LocationCapability _locationCapability = LocationCapability();
   final MemeMakerCapability _memeMakerCapability = MemeMakerCapability();
   final NanoPdfCapability _nanoPdfCapability = NanoPdfCapability();
@@ -1960,6 +1962,15 @@ class AgentSkillServer {
       'camera_list': 'camera.list',
       'clawhub_search': 'clawhub.search',
       'clawhub_info': 'clawhub.info',
+      'github': 'github.user',
+      'github_user': 'github.user',
+      'github.user': 'github.user',
+      'gh-issues': 'gh-issues.list',
+      'gh_issues': 'gh-issues.list',
+      'gh_issues_list': 'gh-issues.list',
+      'gh-issues.list': 'gh-issues.list',
+      'github_issues': 'gh-issues.list',
+      'github.issues': 'gh-issues.list',
       'meme_maker_create': 'meme-maker.create',
       'meme-maker_create': 'meme-maker.create',
       'nano-pdf': 'nano-pdf.extract',
@@ -2128,6 +2139,26 @@ class AgentSkillServer {
           message: actionOk && queryOk
               ? 'session-logs.query arguments are dispatchable'
               : 'session-logs.query requires action list/read/search and a query for search',
+        );
+      case 'github.user':
+        return const _NativeGatewayDryRunArgumentValidation(
+          ok: true,
+          code: 'ok',
+          message: 'github.user arguments are dispatchable',
+        );
+      case 'gh-issues.list':
+        final owner = input['owner']?.toString().trim();
+        final repo = input['repo']?.toString().trim();
+        final ok = owner != null &&
+            owner.isNotEmpty &&
+            repo != null &&
+            repo.isNotEmpty;
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: ok,
+          code: ok ? 'ok' : 'missing_repository',
+          message: ok
+              ? 'gh-issues.list arguments are dispatchable'
+              : 'gh-issues.list requires owner and repo',
         );
       case 'nano-pdf.extract':
         final pdfBase64 =
@@ -2310,6 +2341,25 @@ class AgentSkillServer {
         case 'session-logs.query':
           final frame = await _sessionLogsCapability.handle(
             'session-logs.query',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'github':
+        case 'github_user':
+        case 'github.user':
+          final frame = await _githubCapability.handle(
+            'github.user',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'gh-issues':
+        case 'gh_issues':
+        case 'gh_issues_list':
+        case 'gh-issues.list':
+        case 'github_issues':
+        case 'github.issues':
+          final frame = await _githubCapability.handle(
+            'gh-issues.list',
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);
