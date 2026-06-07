@@ -79,7 +79,7 @@ void main() {
       }) async {
         capturedEnv = Map<String, String>.from(envValues);
         capturedConfig = Map<String, dynamic>.from(configValues);
-        return _emptyReport(skillId);
+        return _satisfiedReport(skillId);
       },
     );
 
@@ -90,6 +90,55 @@ void main() {
 
     expect(capturedEnv, {'SLACK_BOT_TOKEN': 'xoxb-test-secret'});
     expect(capturedConfig, {'channels.slack': 'C123'});
+  });
+
+  testWidgets('empty provisioning result is shown as an explicit failure',
+      (tester) async {
+    await _pumpSheet(
+      tester,
+      _slackModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async {
+        return _emptyReport(skillId);
+      },
+    );
+
+    await tester.enterText(_textFieldByLabel('Bot token'), 'xoxb-test-secret');
+    await tester.enterText(_textFieldByLabel('Default Slack channel'), 'C123');
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+
+    expect(find.textContaining('No provisioning result'), findsOneWidget);
+    expect(find.textContaining('config saved'), findsNothing);
+  });
+
+  testWidgets('provider save failures do not leak typed secret values',
+      (tester) async {
+    await _pumpSheet(
+      tester,
+      _slackModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async {
+        throw Exception('xoxb-test-secret should not surface');
+      },
+    );
+
+    await tester.enterText(_textFieldByLabel('Bot token'), 'xoxb-test-secret');
+    await tester.enterText(_textFieldByLabel('Default Slack channel'), 'C123');
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+
+    expect(
+      find.text('Save failed. Check skill configuration and try again.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('should not surface'), findsNothing);
   });
 }
 
@@ -144,6 +193,28 @@ SkillProvisioningReport _emptyReport(String skillId) {
     auditedAt: DateTime(2026, 6, 7),
     generatedAt: DateTime(2026, 6, 7),
     results: const <SkillProvisioningSkillResult>[],
+    changed: true,
+    reloadRecommended: false,
+  );
+}
+
+SkillProvisioningReport _satisfiedReport(String skillId) {
+  return SkillProvisioningReport(
+    filesDir: '',
+    skillId: skillId,
+    auditedAt: DateTime(2026, 6, 7),
+    generatedAt: DateTime(2026, 6, 7),
+    results: [
+      SkillProvisioningSkillResult(
+        skillId: skillId,
+        readiness: 'needs_config',
+        status: SkillProvisioningStatus.satisfied,
+        primaryGate: null,
+        actions: const <SkillProvisioningAction>[],
+        changed: true,
+        reloadRecommended: false,
+      ),
+    ],
     changed: true,
     reloadRecommended: false,
   );

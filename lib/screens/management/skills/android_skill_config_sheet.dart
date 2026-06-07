@@ -107,6 +107,13 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
         configValues: configValues,
       );
       if (!mounted) return;
+      if (report.results.isEmpty) {
+        setState(
+          () => _error =
+              'No provisioning result returned for ${widget.model.title}.',
+        );
+        return;
+      }
       final result = report.results.isEmpty ? null : report.results.first;
       final ready = result?.status == SkillProvisioningStatus.ready ||
           result?.status == SkillProvisioningStatus.satisfied;
@@ -129,7 +136,9 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
       }
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = 'Save failed: $error');
+      setState(
+        () => _error = 'Save failed. Check skill configuration and try again.',
+      );
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }

@@ -183,4 +183,28 @@ void main() {
     expect(channel.inputKind, AndroidSkillConfigInputKind.text);
     expect(channel.secret, isFalse);
   });
+
+  test('unknown dotted secret-like config keys are masked safely', () {
+    final readiness = {
+      'skills': [
+        {
+          'skillId': 'custom-service',
+          'androidSupport': 'needs_config',
+          'requiredConfig': ['providers.custom.apiKey', 'auth.token'],
+          'primaryGate': 'missing_native_config',
+        },
+      ],
+    };
+
+    final form = AndroidSkillConfigFormModel.fromReadiness(
+      readiness,
+      'custom-service',
+    )!;
+
+    for (final field in form.fields) {
+      expect(field.target, AndroidSkillConfigFieldTarget.config);
+      expect(field.inputKind, AndroidSkillConfigInputKind.secret);
+      expect(field.secret, isTrue);
+    }
+  });
 }

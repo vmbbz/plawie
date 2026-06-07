@@ -282,11 +282,15 @@ AndroidSkillConfigFieldModel _fieldFor(String skillId, String key) {
     );
   }
 
+  final secret = _looksSecretLike(key);
   return _configField(
     key,
     label: _labelFromKey(key),
-    group: 'Config',
-    inputKind: AndroidSkillConfigInputKind.text,
+    group: secret ? 'Credentials' : 'Config',
+    inputKind: secret
+        ? AndroidSkillConfigInputKind.secret
+        : AndroidSkillConfigInputKind.text,
+    secret: secret,
   );
 }
 
@@ -340,6 +344,7 @@ AndroidSkillConfigFieldModel _configField(
   required AndroidSkillConfigInputKind inputKind,
   String helper = '',
   String inputHint = '',
+  bool secret = false,
   List<String> enumOptions = const <String>[],
 }) {
   return AndroidSkillConfigFieldModel(
@@ -350,7 +355,7 @@ AndroidSkillConfigFieldModel _configField(
     inputHint: inputHint,
     group: group,
     inputKind: inputKind,
-    secret: false,
+    secret: secret,
     required: true,
     enumOptions: enumOptions,
   );

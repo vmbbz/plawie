@@ -119,6 +119,21 @@ class SkillProvisioningService {
       return dependencyPackCatalogFuture!;
     }
 
+    if (entries.isEmpty &&
+        targetSkill != null &&
+        (envValues.isNotEmpty || configValues.isNotEmpty)) {
+      final result = await _applyConfigOnlyValues(
+        targetSkill,
+        layout,
+        envValues: envValues,
+        configValues: configValues,
+        applyValues: applyValues,
+      );
+      results.add(result);
+      changed = result.changed;
+      reloadRecommended = result.reloadRecommended;
+    }
+
     for (final entry in entries) {
       final result = await _evaluateEntry(
         snapshot,
@@ -142,6 +157,96 @@ class SkillProvisioningService {
       auditedAt: snapshot.auditedAt,
       generatedAt: DateTime.now(),
       results: results,
+      changed: changed,
+      reloadRecommended: reloadRecommended,
+    );
+  }
+
+  Future<SkillProvisioningSkillResult> _applyConfigOnlyValues(
+    String skillId,
+    _SkillProvisioningLayout layout, {
+    required Map<String, String> envValues,
+    required Map<String, dynamic> configValues,
+    required bool applyValues,
+  }) async {
+    final actions = <SkillProvisioningAction>[];
+    var changed = false;
+    var reloadRecommended = false;
+
+    for (final entry in envValues.entries) {
+      if (!_envKeyLooksSafe(entry.key)) {
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.env,
+          key: entry.key,
+          status: SkillProvisioningActionStatus.unsupportedNative,
+          message: 'Native .env key rejected as unsafe.',
+        ));
+        continue;
+      }
+
+      if (applyValues) {
+        await _writeDotEnvValues(
+            layout.nativeEnvFile, {entry.key: entry.value});
+        changed = true;
+        reloadRecommended = true;
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.env,
+          key: entry.key,
+          status: SkillProvisioningActionStatus.satisfied,
+          message: 'Native .env value applied.',
+          changed: true,
+        ));
+      } else {
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.env,
+          key: entry.key,
+          status: SkillProvisioningActionStatus.needsUserConfig,
+          message: 'Native .env value can be applied.',
+        ));
+      }
+    }
+
+    for (final entry in configValues.entries) {
+      if (applyValues) {
+        await _writeConfigValue(
+          layout.nativeConfigFile,
+          entry.key,
+          entry.value,
+        );
+        changed = true;
+        reloadRecommended = true;
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.config,
+          key: entry.key,
+          status: SkillProvisioningActionStatus.satisfied,
+          message: 'Native openclaw.json value applied.',
+          changed: true,
+        ));
+      } else {
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.config,
+          key: entry.key,
+          status: SkillProvisioningActionStatus.needsUserConfig,
+          message: 'Native openclaw.json value can be applied.',
+        ));
+      }
+    }
+
+    final status = actions.any(
+      (action) =>
+          action.status == SkillProvisioningActionStatus.unsupportedNative,
+    )
+        ? SkillProvisioningStatus.unsupportedNative
+        : applyValues
+            ? SkillProvisioningStatus.satisfied
+            : SkillProvisioningStatus.needsUserConfig;
+
+    return SkillProvisioningSkillResult(
+      skillId: skillId,
+      readiness: 'config_only',
+      status: status,
+      primaryGate: null,
+      actions: actions,
       changed: changed,
       reloadRecommended: reloadRecommended,
     );

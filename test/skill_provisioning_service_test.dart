@@ -202,7 +202,8 @@ requirements:
 
   test('APK CLI-core pack satisfies sonoscli through sonos binary name',
       () async {
-    final temp = await Directory.systemTemp.createTemp('skill_provision_sonos_');
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_sonos_');
     addTearDown(() => temp.delete(recursive: true));
 
     final nativeRoot = path.join(
@@ -407,6 +408,57 @@ requirements:
     ));
     final config = jsonDecode(await configFile.readAsString()) as Map;
     expect(config['skills']['finance']['region'], 'us');
+  });
+
+  test('provisioning applies supplied config when skill has no matrix entry',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_config_only_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    expect(snapshot.executionMatrix, isEmpty);
+
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      snapshot,
+      skillId: 'slack',
+      envValues: const {'SLACK_BOT_TOKEN': 'xoxb-dummy'},
+      configValues: const {'channels.slack': 'C123'},
+    );
+
+    expect(report.changed, isTrue);
+    expect(report.reloadRecommended, isTrue);
+    expect(report.results, hasLength(1));
+    expect(report.results.single.skillId, 'slack');
+    expect(report.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(
+      report.results.single.actions.map((action) => action.key),
+      containsAll(['SLACK_BOT_TOKEN', 'channels.slack']),
+    );
+
+    final envFile = File(path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+      '.env',
+    ));
+    expect(
+        await envFile.readAsString(), contains('SLACK_BOT_TOKEN=xoxb-dummy'));
+
+    final configFile = File(path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+      'openclaw.json',
+    ));
+    final config = jsonDecode(await configFile.readAsString()) as Map;
+    expect(config['channels']['slack'], 'C123');
   });
 
   test('provisioning reports Python runtime and package gates precisely',
