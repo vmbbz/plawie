@@ -1,14 +1,57 @@
+enum AndroidSkillConfigFieldTarget { env, config }
+
+enum AndroidSkillConfigInputKind {
+  secret,
+  text,
+  url,
+  channelId,
+  accountId,
+  provider,
+}
+
+class AndroidSkillConfigFieldModel {
+  final String key;
+  final AndroidSkillConfigFieldTarget target;
+  final String label;
+  final String helper;
+  final String inputHint;
+  final String group;
+  final AndroidSkillConfigInputKind inputKind;
+  final bool secret;
+  final bool required;
+  final List<String> enumOptions;
+  final String? validationPattern;
+
+  const AndroidSkillConfigFieldModel({
+    required this.key,
+    required this.target,
+    required this.label,
+    required this.helper,
+    required this.inputHint,
+    required this.group,
+    required this.inputKind,
+    required this.secret,
+    required this.required,
+    this.enumOptions = const <String>[],
+    this.validationPattern,
+  });
+}
+
 class AndroidSkillConfigFormModel {
   final String skillId;
+  final String title;
   final List<String> envKeys;
   final List<String> configKeys;
+  final List<AndroidSkillConfigFieldModel> fields;
   final String? runtimeGate;
   final bool configOnlyCanSatisfy;
 
   const AndroidSkillConfigFormModel({
     required this.skillId,
+    required this.title,
     required this.envKeys,
     required this.configKeys,
+    required this.fields,
     required this.runtimeGate,
     required this.configOnlyCanSatisfy,
   });
@@ -19,6 +62,15 @@ class AndroidSkillConfigFormModel {
       ];
 
   bool get hasFields => envKeys.isNotEmpty || configKeys.isNotEmpty;
+
+  Map<String, List<AndroidSkillConfigFieldModel>> get groupedFields {
+    final grouped = <String, List<AndroidSkillConfigFieldModel>>{};
+    for (final field in fields) {
+      grouped.putIfAbsent(field.group, () => <AndroidSkillConfigFieldModel>[]);
+      grouped[field.group]!.add(field);
+    }
+    return grouped;
+  }
 
   String get runtimeGateLabel {
     if (runtimeGate == null || runtimeGate!.isEmpty) return 'config';
@@ -38,6 +90,10 @@ class AndroidSkillConfigFormModel {
         configKeys.add(key);
       }
     }
+    final skillId = skill['skillId']?.toString().trim() ?? 'unknown';
+    final fields = requiredConfig
+        .map((key) => _fieldFor(skillId, key))
+        .toList(growable: false);
 
     final gate = _firstNonEmpty([
       skill['primaryGate'],
@@ -45,9 +101,11 @@ class AndroidSkillConfigFormModel {
     ]);
 
     return AndroidSkillConfigFormModel(
-      skillId: skill['skillId']?.toString().trim() ?? 'unknown',
+      skillId: skillId,
+      title: _titleForSkill(skillId),
       envKeys: envKeys,
       configKeys: configKeys,
+      fields: fields,
       runtimeGate: gate,
       configOnlyCanSatisfy: requiredConfig.isNotEmpty &&
           !_gateNeedsMoreThanConfig(gate) &&
@@ -95,6 +153,263 @@ class AndroidSkillConfigFormModel {
 
 String _normalizeSkillId(String value) =>
     value.trim().toLowerCase().replaceAll('_', '-');
+
+AndroidSkillConfigFieldModel _fieldFor(String skillId, String key) {
+  switch (key) {
+    case 'OP_SERVICE_ACCOUNT_TOKEN':
+      return _envSecret(
+        key,
+        label: 'Service account token',
+        inputHint: 'Paste the 1Password service account token',
+      );
+    case 'DISCORD_BOT_TOKEN':
+      return _envSecret(
+        key,
+        label: 'Bot token',
+        inputHint: 'Paste the Discord bot token',
+      );
+    case 'GITHUB_TOKEN':
+      return _envSecret(
+        key,
+        label: 'GitHub token',
+        inputHint: 'Paste a GitHub token',
+      );
+    case 'GOG_ACCOUNT_TOKEN':
+      return _envSecret(
+        key,
+        label: 'Account token',
+        inputHint: 'Paste the GOG account token',
+      );
+    case 'GOOGLE_PLACES_API_KEY':
+      return _envSecret(
+        key,
+        label: 'Google Places API key',
+        inputHint: 'Paste the Google Places API key',
+      );
+    case 'MCPORTER_ENDPOINT':
+      return _envField(
+        key,
+        label: 'MCPorter endpoint',
+        group: 'Connection',
+        inputKind: AndroidSkillConfigInputKind.url,
+        inputHint: 'https://example.com',
+      );
+    case 'MCPORTER_TOKEN':
+      return _envSecret(
+        key,
+        label: 'MCPorter token',
+        inputHint: 'Paste the MCPorter token',
+      );
+    case 'NOTION_TOKEN':
+      return _envSecret(
+        key,
+        label: 'Integration token',
+        inputHint: 'Paste the Notion integration token',
+      );
+    case 'OPENAI_API_KEY':
+      return _envSecret(
+        key,
+        label: 'OpenAI API key',
+        inputHint: 'Paste the OpenAI API key',
+      );
+    case 'ORDERCLI_API_KEY':
+      return _envSecret(
+        key,
+        label: 'Order API key',
+        inputHint: 'Paste the Order API key',
+      );
+    case 'SAG_API_KEY':
+      return _envSecret(
+        key,
+        label: 'SAG API key',
+        inputHint: 'Paste the SAG API key',
+      );
+    case 'SLACK_BOT_TOKEN':
+      return _envSecret(
+        key,
+        label: 'Bot token',
+        inputHint: 'Paste the Slack bot token',
+      );
+    case 'channels.slack':
+      return _configField(
+        key,
+        label: 'Default Slack channel',
+        group: 'Workspace',
+        inputKind: AndroidSkillConfigInputKind.channelId,
+        inputHint: 'Channel name or ID',
+      );
+    case 'TRELLO_API_KEY':
+      return _envSecret(
+        key,
+        label: 'API key',
+        inputHint: 'Paste the Trello API key',
+      );
+    case 'TRELLO_TOKEN':
+      return _envSecret(
+        key,
+        label: 'Token',
+        inputHint: 'Paste the Trello token',
+      );
+    case 'VOICE_CALL_PROVIDER':
+      return _envField(
+        key,
+        label: 'Provider',
+        group: 'Provider',
+        inputKind: AndroidSkillConfigInputKind.provider,
+        inputHint: 'Select provider',
+        enumOptions: const ['twilio', 'telnyx', 'custom'],
+      );
+    case 'VOICE_CALL_ACCOUNT':
+      return _envField(
+        key,
+        label: 'Account identifier',
+        group: 'Provider',
+        inputKind: AndroidSkillConfigInputKind.accountId,
+        inputHint: 'Provider account ID',
+      );
+  }
+
+  if (_looksLikeEnvKey(key)) {
+    final secret = _looksSecretLike(key);
+    return _envField(
+      key,
+      label: _labelFromKey(key),
+      group: secret ? 'Credentials' : 'Config',
+      inputKind: secret
+          ? AndroidSkillConfigInputKind.secret
+          : AndroidSkillConfigInputKind.text,
+      secret: secret,
+    );
+  }
+
+  return _configField(
+    key,
+    label: _labelFromKey(key),
+    group: 'Config',
+    inputKind: AndroidSkillConfigInputKind.text,
+  );
+}
+
+AndroidSkillConfigFieldModel _envSecret(
+  String key, {
+  required String label,
+  String group = 'Credentials',
+  String helper = '',
+  String inputHint = '',
+}) {
+  return _envField(
+    key,
+    label: label,
+    group: group,
+    helper: helper,
+    inputHint: inputHint,
+    inputKind: AndroidSkillConfigInputKind.secret,
+    secret: true,
+  );
+}
+
+AndroidSkillConfigFieldModel _envField(
+  String key, {
+  required String label,
+  required String group,
+  required AndroidSkillConfigInputKind inputKind,
+  String helper = '',
+  String inputHint = '',
+  bool? secret,
+  List<String> enumOptions = const <String>[],
+}) {
+  final isSecret = secret ?? inputKind == AndroidSkillConfigInputKind.secret;
+  return AndroidSkillConfigFieldModel(
+    key: key,
+    target: AndroidSkillConfigFieldTarget.env,
+    label: label,
+    helper: helper,
+    inputHint: inputHint,
+    group: group,
+    inputKind: inputKind,
+    secret: isSecret,
+    required: true,
+    enumOptions: enumOptions,
+  );
+}
+
+AndroidSkillConfigFieldModel _configField(
+  String key, {
+  required String label,
+  required String group,
+  required AndroidSkillConfigInputKind inputKind,
+  String helper = '',
+  String inputHint = '',
+  List<String> enumOptions = const <String>[],
+}) {
+  return AndroidSkillConfigFieldModel(
+    key: key,
+    target: AndroidSkillConfigFieldTarget.config,
+    label: label,
+    helper: helper,
+    inputHint: inputHint,
+    group: group,
+    inputKind: inputKind,
+    secret: false,
+    required: true,
+    enumOptions: enumOptions,
+  );
+}
+
+String _titleForSkill(String skillId) {
+  final normalized = _normalizeSkillId(skillId);
+  const titles = {
+    '1password': '1Password',
+    'discord': 'Discord',
+    'github': 'GitHub',
+    'gh-issues': 'GitHub Issues',
+    'gog': 'GOG',
+    'goplaces': 'Google Places',
+    'mcporter': 'MCPorter',
+    'notion': 'Notion',
+    'openai-whisper-api': 'OpenAI Whisper API',
+    'ordercli': 'Order CLI',
+    'sag': 'SAG',
+    'slack': 'Slack',
+    'trello': 'Trello',
+    'voice-call': 'Voice Call',
+  };
+  return titles[normalized] ?? _labelFromKey(normalized.replaceAll('-', ' '));
+}
+
+bool _looksSecretLike(String key) {
+  final normalized = key.toUpperCase();
+  return normalized.contains('KEY') ||
+      normalized.contains('TOKEN') ||
+      normalized.contains('SECRET') ||
+      normalized.contains('PASSWORD');
+}
+
+String _labelFromKey(String key) {
+  final words = key
+      .replaceAll('.', ' ')
+      .replaceAll('_', ' ')
+      .replaceAll('-', ' ')
+      .split(RegExp(r'\s+'))
+      .where((word) => word.trim().isNotEmpty)
+      .toList(growable: false);
+  return words.map(_titleCaseWord).join(' ');
+}
+
+String _titleCaseWord(String word) {
+  final lower = word.toLowerCase();
+  if (lower.isEmpty) return lower;
+  const acronyms = {
+    'api': 'API',
+    'id': 'ID',
+    'url': 'URL',
+    'gog': 'GOG',
+    'sag': 'SAG',
+  };
+  final acronym = acronyms[lower];
+  if (acronym != null) return acronym;
+  return '${lower[0].toUpperCase()}${lower.substring(1)}';
+}
 
 bool _looksLikeEnvKey(String key) {
   final trimmed = key.trim();
