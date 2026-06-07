@@ -195,8 +195,8 @@ final List<AndroidSkillSupportEntry> _entries =
   _ready(
     'clawhub',
     owner: AndroidSkillOwnerLayer.clawhubSkill,
-    mode: AndroidSkillExecutionMode.gatewayTool,
-    smoke: 'List ClawHub skill metadata from the Native Gateway.',
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke: 'List ClawHub skill metadata through the Android REST adapter.',
   ),
   _needsPack(
     'coding-agent',

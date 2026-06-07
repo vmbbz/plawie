@@ -4,6 +4,7 @@ import '../models/node_frame.dart';
 import 'avatar_gesture_catalog.dart';
 import 'capabilities/avatar_capability.dart';
 import 'capabilities/camera_capability.dart';
+import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
@@ -53,6 +54,7 @@ class AppNativeChatToolRouter {
 
   final AvatarCapability _avatar = AvatarCapability();
   final CameraCapability _camera = CameraCapability();
+  final ClawHubCapability _clawHub = ClawHubCapability();
   final DeviceCapability _device = DeviceCapability();
   final FlashCapability _flash = FlashCapability();
   final LocationCapability _location = LocationCapability();
@@ -157,7 +159,9 @@ class AppNativeChatToolRouter {
       'sensor.list' ||
       'sensor.read' ||
       'weather.current' ||
-      'weather.forecast' =>
+      'weather.forecast' ||
+      'clawhub.search' ||
+      'clawhub.info' =>
         true,
       _ => false,
     };
@@ -399,6 +403,9 @@ class AppNativeChatToolRouter {
       );
     }
 
+    final clawHubPlan = _clawHubPlan(trimmed);
+    if (clawHubPlan != null) return clawHubPlan;
+
     if (lower.contains('device') && lower.contains('permission')) {
       return const _AppNativeToolPlan(
         toolName: 'device-node',
@@ -468,6 +475,12 @@ class AppNativeChatToolRouter {
         case 'weather.current':
         case 'weather.forecast':
           return _frameToMap(await _weather.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'clawhub.search':
+        case 'clawhub.info':
+          return _frameToMap(await _clawHub.handle(
             plan.command,
             plan.input,
           ));
@@ -609,6 +622,16 @@ class AppNativeChatToolRouter {
         return result['summary']?.toString().trim().isNotEmpty == true
             ? 'Weather: ${result['summary']}.'
             : 'Weather retrieved.';
+      case 'clawhub.search':
+        final count = result['count'];
+        return 'ClawHub search retrieved${count == null ? '' : ' $count result(s)'}.';
+      case 'clawhub.info':
+        final skill = result['skill'];
+        if (skill is Map) {
+          final name = skill['name'] ?? skill['slug'] ?? 'skill';
+          return 'ClawHub metadata retrieved for $name.';
+        }
+        return 'ClawHub metadata retrieved.';
       case 'camera.list':
         return 'Camera list retrieved.';
       case 'camera.snap':
@@ -955,6 +978,44 @@ class AppNativeChatToolRouter {
     cleaned = cleaned.replaceAll(RegExp(r'[,.\-\s]+$'), '').trim();
     if (cleaned.length < 2) return null;
     return cleaned;
+  }
+
+  _AppNativeToolPlan? _clawHubPlan(String message) {
+    final lower = message.toLowerCase();
+    if (!_containsAny(lower, const ['clawhub', 'skill registry'])) {
+      return null;
+    }
+    final infoMatch = RegExp(
+      r'\b(?:info|details|metadata)\s+(?:for|about)?\s*([a-z0-9._-]{2,80})',
+      caseSensitive: false,
+    ).firstMatch(message);
+    final searchMatch = RegExp(
+      r'\b(?:search|find)\s+(?:clawhub\s+)?(?:for\s+)?([a-z0-9 ._-]{2,80})',
+      caseSensitive: false,
+    ).firstMatch(message);
+    final explicitSlug = infoMatch?.group(1)?.trim();
+    if (explicitSlug != null && explicitSlug.isNotEmpty) {
+      return _AppNativeToolPlan(
+        toolName: 'clawhub',
+        command: 'clawhub.info',
+        input: {
+          'slug': explicitSlug,
+          'source': 'app-native-chat-router',
+        },
+      );
+    }
+    final query = _cleanWeatherLocation(searchMatch?.group(1));
+    if (query != null) {
+      return _AppNativeToolPlan(
+        toolName: 'clawhub',
+        command: 'clawhub.search',
+        input: {
+          'query': query,
+          'source': 'app-native-chat-router',
+        },
+      );
+    }
+    return null;
   }
 
   _AppNativeToolPlan? _bundledSkillPlan(String lower) {

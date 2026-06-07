@@ -138,6 +138,30 @@ void main() {
       isFalse,
     );
   });
+
+  test('clawhub owner layer is app-native ready despite npm gates', () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([
+        missingEntry('clawhub', 'missing_native_bin'),
+      ]),
+      provisioning: provisioningWith([
+        missingBinaryResult('clawhub'),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        clawHubManifestEntry(),
+      ]),
+    );
+
+    expect(summary.readyRequiredTotal, 1);
+    expect(summary.readyRequiredReady, 1);
+    expect(summary.unexpectedMissingDependency, 0);
+    expect(summary.releaseGatePass, isTrue);
+    expect(summary.skills.single['runtimeStatus'], 'app_native_ready');
+    expect(
+      summary.skills.single['provisioningStatus'],
+      'app_native_not_required',
+    );
+  });
 }
 
 SkillParitySnapshot snapshotWith(List<SkillExecutionMatrixEntry> entries) {
@@ -285,6 +309,17 @@ AndroidSkillSupportEntry appNativeManifestEntry(String skillId) {
     ownerLayer: AndroidSkillOwnerLayer.appNativeCapability,
     executionMode: AndroidSkillExecutionMode.appNativeTool,
     smokePrompt: 'smoke $skillId',
+    launchCritical: true,
+  );
+}
+
+AndroidSkillSupportEntry clawHubManifestEntry() {
+  return AndroidSkillSupportEntry(
+    skillId: 'clawhub',
+    status: AndroidSkillSupportStatus.readyRequired,
+    ownerLayer: AndroidSkillOwnerLayer.clawhubSkill,
+    executionMode: AndroidSkillExecutionMode.httpAdapter,
+    smokePrompt: 'smoke clawhub',
     launchCritical: true,
   );
 }

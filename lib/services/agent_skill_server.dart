@@ -12,6 +12,7 @@ import 'native_bridge.dart';
 import 'native_gateway_smoke_service.dart';
 import 'capabilities/avatar_capability.dart';
 import 'capabilities/camera_capability.dart';
+import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
@@ -65,6 +66,7 @@ class AgentSkillServer {
   Future<void>? _startFuture;
   final AvatarCapability _avatarCapability = AvatarCapability();
   final CameraCapability _cameraCapability = CameraCapability();
+  final ClawHubCapability _clawHubCapability = ClawHubCapability();
   final DeviceCapability _deviceCapability = DeviceCapability();
   final FlashCapability _flashCapability = FlashCapability();
   final LocationCapability _locationCapability = LocationCapability();
@@ -124,6 +126,8 @@ class AgentSkillServer {
       await _handleLegacyLocation(request);
     } else if (request.method == 'GET' && path == '/weather') {
       await _handleLegacyWeather(request);
+    } else if (request.method == 'GET' && path == '/clawhub') {
+      await _handleLegacyClawHub(request);
     } else if ((request.method == 'GET' || request.method == 'POST') &&
         (path == '/flashlight' ||
             path.startsWith('/flashlight/') ||
@@ -1473,6 +1477,16 @@ class AgentSkillServer {
     }, request);
   }
 
+  Future<void> _handleLegacyClawHub(HttpRequest request) async {
+    final query = request.uri.queryParameters;
+    await _processDeviceControl({
+      'action': query.containsKey('slug') || query.containsKey('id')
+          ? 'clawhub_info'
+          : 'clawhub_search',
+      ...query,
+    }, request);
+  }
+
   void _handleToolsCatalog(HttpRequest request) {
     final catalog = SkillsService().getToolsCatalog();
     _sendJson(request, {
@@ -1912,6 +1926,8 @@ class AgentSkillServer {
       'camera_snap': 'camera.snap',
       'camera_clip': 'camera.clip',
       'camera_list': 'camera.list',
+      'clawhub_search': 'clawhub.search',
+      'clawhub_info': 'clawhub.info',
       'canvas_navigate': 'canvas.navigate',
       'canvas_eval': 'canvas.eval',
       'canvas_snapshot': 'canvas.snapshot',
@@ -1992,6 +2008,8 @@ class AgentSkillServer {
       case 'camera.snap':
       case 'camera.clip':
       case 'camera.list':
+      case 'clawhub.search':
+      case 'clawhub.info':
       case 'canvas.navigate':
       case 'canvas.eval':
       case 'canvas.snapshot':
@@ -2039,6 +2057,8 @@ class AgentSkillServer {
         return 'CameraCapability';
       case 'canvas':
         return 'CanvasCapability';
+      case 'clawhub':
+        return 'ClawHubCapability';
       case 'flash':
         return 'FlashCapability';
       case 'haptic':
@@ -2479,6 +2499,14 @@ class AgentSkillServer {
       case 'weather_forecast':
         final frame = await _weatherCapability.handle(
           action == 'weather_forecast' ? 'weather.forecast' : 'weather.current',
+          data,
+        );
+        _sendNodeFrame(request, frame);
+
+      case 'clawhub_search':
+      case 'clawhub_info':
+        final frame = await _clawHubCapability.handle(
+          action == 'clawhub_info' ? 'clawhub.info' : 'clawhub.search',
           data,
         );
         _sendNodeFrame(request, frame);

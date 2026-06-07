@@ -13,6 +13,7 @@ import 'gateway_provider.dart' as svc_gateway;
 import '../services/capabilities/avatar_capability.dart';
 import '../services/capabilities/camera_capability.dart';
 import '../services/capabilities/canvas_capability.dart';
+import '../services/capabilities/clawhub_capability.dart';
 import '../services/capabilities/location_capability.dart';
 import '../services/capabilities/screen_capability.dart';
 import '../services/capabilities/flash_capability.dart';
@@ -35,6 +36,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final _avatarCapability = AvatarCapability();
   final _cameraCapability = CameraCapability();
   final _canvasCapability = CanvasCapability();
+  final _clawHubCapability = ClawHubCapability();
   final _flashCapability = FlashCapability();
   final _locationCapability = LocationCapability();
   final _screenCapability = ScreenCapability();
@@ -229,6 +231,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       (cmd, params) => _canvasCapability.handle(cmd, params),
     );
     _registerCapabilityAliases(
+      _clawHubCapability,
+      (cmd, params) => _clawHubCapability.handle(cmd, params),
+    );
+    _registerCapabilityAliases(
       _locationCapability,
       (cmd, params) => _locationCapability.handleWithPermission(cmd, params),
     );
@@ -306,6 +312,8 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
           'camera.snap',
           'camera.clip',
           'camera.list',
+          'clawhub.search',
+          'clawhub.info',
           'location.get',
           'sensor.read',
           'sensor.list',

@@ -10,6 +10,7 @@ import 'preferences_service.dart';
 import 'capabilities/camera_capability.dart';
 import 'capabilities/canvas_capability.dart';
 import 'capabilities/capability_handler.dart';
+import 'capabilities/clawhub_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/screen_capability.dart';
@@ -268,6 +269,7 @@ class LocalLlmService {
   StreamController<String>? _activeChatController;
   final CameraCapability _cameraCapability = CameraCapability();
   final CanvasCapability _canvasCapability = CanvasCapability();
+  final ClawHubCapability _clawHubCapability = ClawHubCapability();
   final FlashCapability _flashCapability = FlashCapability();
   final LocationCapability _locationCapability = LocationCapability();
   final ScreenCapability _screenCapability = ScreenCapability();
@@ -735,6 +737,20 @@ class LocalLlmService {
           'Gets a short weather forecast for a city or coordinates using the Android weather adapter.',
     ),
     Tool(
+      name: 'clawhub_search',
+      jsonSchema:
+          '{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":20}},"required":["query"]}',
+      description:
+          'Searches ClawHub registry metadata through the Android REST adapter.',
+    ),
+    Tool(
+      name: 'clawhub_info',
+      jsonSchema:
+          '{"type":"object","properties":{"slug":{"type":"string"}},"required":["slug"]}',
+      description:
+          'Gets metadata for one ClawHub skill through the Android REST adapter.',
+    ),
+    Tool(
       name: 'screen_record',
       jsonSchema:
           '{"type":"object","properties":{"durationMs":{"type":"integer","minimum":1000,"maximum":10000}},"required":[]}',
@@ -806,6 +822,9 @@ class LocalLlmService {
     }
     if (hasAny(['weather', 'forecast'])) {
       selected.addAll(['weather_current', 'weather_forecast']);
+    }
+    if (hasAny(['clawhub', 'skill registry'])) {
+      selected.addAll(['clawhub_search', 'clawhub_info']);
     }
     if (hasAny(['screen record', 'record screen', 'screen recording'])) {
       selected.add('screen_record');
@@ -934,6 +953,18 @@ class LocalLlmService {
         return _dispatchCapability(
           _weatherCapability,
           'weather.forecast',
+          args,
+        );
+      case 'clawhub_search':
+        return _dispatchCapability(
+          _clawHubCapability,
+          'clawhub.search',
+          args,
+        );
+      case 'clawhub_info':
+        return _dispatchCapability(
+          _clawHubCapability,
+          'clawhub.info',
           args,
         );
       case 'screen_record':

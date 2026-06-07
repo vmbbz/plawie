@@ -421,6 +421,33 @@ Verification for this round:
   `{"action":"weather_current","city":"Johannesburg"}` returned an Open-Meteo
   weather summary from the device.
 
+### Progress Check: ClawHub Metadata Promotion
+
+Round 7 on 2026-06-07 promoted ClawHub read-side metadata without adding npm,
+`npx`, or PRoot as a launch dependency:
+
+- Added an app-native ClawHub capability with `clawhub.search` and
+  `clawhub.info`.
+- Kept install/update/uninstall mutation owned by the existing Skills Manager
+  and native ClawHub installer.
+- Reclassified the `clawhub` launch entry as a REST-backed Android adapter.
+- Android readiness now treats the `clawhubSkill` owner layer as
+  `app_native_ready`, while raw npm/CLI diagnostics remain visible outside the
+  launch gate.
+
+Verification for this round:
+
+- Targeted `dart analyze` across the changed services and tests returned no
+  issues.
+- `flutter build apk --debug` produced a fresh debug APK.
+- The fresh debug APK was installed on `RZCX30KA9AW`, launched, and
+  `/device/health` reported `readyRequired: 12/13`,
+  `unexpectedMissingDependency: 1`, blocker `meme-maker`, and
+  `app_native_ready` for `clawhub`.
+- `POST /api/device/control` with
+  `{"action":"clawhub_search","query":"weather","limit":3}` returned ClawHub
+  registry metadata from the device.
+
 ## Golden Android Runtime And Adapter Pack
 
 The shorter reliable path is not a tiny pilot and not a universal builder. It

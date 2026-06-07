@@ -111,7 +111,9 @@ class AndroidSkillReadinessService {
 
   static bool _isAppNativeOwned(AndroidSkillSupportEntry manifestEntry) {
     return manifestEntry.ownerLayer == AndroidSkillOwnerLayer.androidBridge ||
-        manifestEntry.ownerLayer == AndroidSkillOwnerLayer.appNativeCapability;
+        manifestEntry.ownerLayer ==
+            AndroidSkillOwnerLayer.appNativeCapability ||
+        manifestEntry.ownerLayer == AndroidSkillOwnerLayer.clawhubSkill;
   }
 
   static String _executionStatusWireName(SkillExecutionStatus status) {
