@@ -12,7 +12,7 @@ screen should read this before changing tool behavior.
 | --- | --- | --- | --- |
 | Gateway primitives | OpenClaw Gateway | Built-in tool groups such as web/files/runtime/nodes | `tools.profile`, `tools.allow`, `tools.deny` |
 | OpenClaw/npm skills | OpenClaw skills runtime | Installed skills and Gateway-managed capabilities | Gateway skill loading |
-| Android node capabilities | Plawie node / capability bridge | Camera, canvas, weather, ClawHub metadata, meme image creation, haptics, sensors, flashlight, screen, avatar/TTS actions | `gateway.nodes.allowCommands`, port `8765` |
+| Android node capabilities | Plawie node / capability bridge | Camera, canvas, xurl HTTP requests, weather, ClawHub metadata, meme image creation, haptics, sensors, flashlight, screen, avatar/TTS actions | `gateway.nodes.allowCommands`, port `8765` |
 | Direct local tools | Dart local NDK loop | Lightweight local actions when using `local-llm/...` | `LocalLlmService` native fllama tools |
 
 Do not mix these layers. A string that is valid as an Android node command is
@@ -65,12 +65,21 @@ agent-card
 molt-launch
 valeo-sentinel
 moonpay
+xurl
 ```
 
 The current Android node command allowlist contains avatar, camera, canvas,
 weather, ClawHub metadata, flashlight/torch, location, screen recording, sensor,
-simple meme image creation, and haptic commands. It does not currently prove a
-generic third-party app launcher or a safe WhatsApp message-sending command.
+simple meme image creation, xurl HTTP requests, and haptic commands. It does
+not currently prove a generic third-party app launcher or a safe WhatsApp
+message-sending command.
+
+`xurl.request` is a generic HTTP adapter with a release safety boundary:
+absolute `http`/`https` URLs only, bounded response previews, and no loopback
+POSTs. GET/HEAD can still read local diagnostics for smoke tests, but POSTs to
+local app control endpoints are blocked across `127.*`, `localhost`, `::1`, and
+IPv4-mapped loopback aliases, including legacy decimal/octal/hex IPv4 numeric
+forms.
 
 ## Gateway `tools.allow`
 
@@ -103,7 +112,7 @@ Why this shape:
 | ID family | Correct home |
 | --- | --- |
 | `twilio`, `crypto`, `base`, `calculator`, `calendar` | OpenClaw skill install/load path |
-| `camera`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
+| `camera`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
 | local NDK helper names | `LocalLlmService` direct local tool schemas |
 
 If Gateway logs `tools.allow allowlist contains unknown entries`, treat the
@@ -141,6 +150,7 @@ Device capabilities belong in node command policy, for example:
         "sensor.list",
         "weather.current",
         "weather.forecast",
+        "xurl.request",
         "haptic.vibrate",
         "vibrate"
       ]

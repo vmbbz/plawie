@@ -2460,7 +2460,7 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Native Android ceiling: ${model.androidRelevantLabel} ready now from ${model.androidRelevantTotal} Android-relevant defaults. $excludedCount desktop, PRoot, or unsupported skills stay outside the release promise.',
+            'Native Android ceiling: ${model.androidRelevantLabel} ready now from ${model.androidRelevantTotal} Android-relevant defaults. Optional-ready skills are usable now but not launch-critical. $excludedCount desktop, PRoot, or unsupported skills stay outside the release promise.',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.58),
               fontSize: 10.5,
@@ -2483,6 +2483,11 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
                 label: 'ANDROID NOW',
                 value: model.androidRelevantLabel,
                 color: AppColors.statusGreen,
+              ),
+              _ReadinessMetric(
+                label: 'READY OPTIONAL',
+                value: model.readyOptionalLabel,
+                color: AppColors.statusGreen.withValues(alpha: 0.86),
               ),
               _ReadinessMetric(
                 label: 'UNEXPECTED',

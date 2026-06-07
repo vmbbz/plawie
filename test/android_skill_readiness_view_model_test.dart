@@ -11,8 +11,9 @@ void main() {
       'unexpectedMissingDependency': 0,
       'countsByClass': {
         'ready_required': 13,
+        'ready_optional': 1,
         'needs_config': 16,
-        'needs_pack': 22,
+        'needs_pack': 21,
         'unsupported_on_android': 6,
         'manual_proot_compat': 2,
         'hidden_desktop_only': 2,
@@ -39,11 +40,9 @@ void main() {
         },
         {
           'skillId': 'xurl',
-          'androidSupport': 'needs_pack',
-          'requiredPacks': ['android-cli-core-pack'],
-          'runtimeStatus': 'missing_dependency',
-          'primaryGate': 'missing_native_bin',
-          'ready': false,
+          'androidSupport': 'ready_optional',
+          'runtimeStatus': 'app_native_ready',
+          'ready': true,
         },
         {
           'skillId': 'apple-notes',
@@ -66,13 +65,13 @@ void main() {
     expect(model.manifestTotal, 61);
     expect(model.androidRelevantTotal, 51);
     expect(model.readyRequiredLabel, '13/13');
-    expect(model.androidRelevantReady, 2);
+    expect(model.readyOptionalCount, 1);
+    expect(model.readyOptionalLabel, '1');
+    expect(model.androidRelevantReady, 3);
     expect(model.releaseGatePass, isTrue);
     expect(model.topNeedsConfig.single.skillId, 'github');
     expect(model.topNeedsConfig.single.detail, contains('GITHUB_TOKEN'));
     expect(model.topNeedsConfig.single.detail, contains('missing_native_bin'));
-    expect(model.topNeedsPack.single.skillId, 'xurl');
-    expect(model.topNeedsPack.single.detail, contains('android-cli-core-pack'));
-    expect(model.topNeedsPack.single.detail, contains('missing_native_bin'));
+    expect(model.topNeedsPack, isEmpty);
   });
 }

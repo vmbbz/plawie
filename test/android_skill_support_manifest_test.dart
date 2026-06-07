@@ -94,6 +94,14 @@ void main() {
       manifest.entryFor('openai-whisper')!.status,
       AndroidSkillSupportStatus.needsPack,
     );
+    expect(manifest.entryFor('xurl')!.toJson(), {
+      'skillId': 'xurl',
+      'androidSupport': 'ready_optional',
+      'ownerLayer': 'appNativeCapability',
+      'executionMode': 'httpAdapter',
+      'launchCritical': false,
+      'smokePrompt': 'Run xurl GET against a local HTTP fixture.',
+    });
     expect(
       manifest.entryFor('apple-notes')!.status,
       AndroidSkillSupportStatus.unsupportedOnAndroid,

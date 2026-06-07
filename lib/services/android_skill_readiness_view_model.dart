@@ -23,11 +23,14 @@ class AndroidSkillReadinessViewModel {
     required this.topNeedsPack,
   });
 
-  String get readyRequiredLabel =>
-      '$readyRequiredReady/$readyRequiredTotal';
+  String get readyRequiredLabel => '$readyRequiredReady/$readyRequiredTotal';
 
   String get androidRelevantLabel =>
       '$androidRelevantReady/$androidRelevantTotal';
+
+  int get readyOptionalCount => _count(countsByClass, 'ready_optional');
+
+  String get readyOptionalLabel => '$readyOptionalCount';
 
   factory AndroidSkillReadinessViewModel.fromReadiness(
     Map<String, dynamic> readiness,
@@ -35,8 +38,7 @@ class AndroidSkillReadinessViewModel {
     final counts = _intMap(readiness['countsByClass']);
     final readyRequired = _mapValue(readiness['readyRequired']);
     final skills = _mapList(readiness['skills']);
-    final excluded =
-        _count(counts, 'unsupported_on_android') +
+    final excluded = _count(counts, 'unsupported_on_android') +
         _count(counts, 'manual_proot_compat') +
         _count(counts, 'hidden_desktop_only');
     final manifestTotal = _intValue(readiness['totalManifestSkills']);

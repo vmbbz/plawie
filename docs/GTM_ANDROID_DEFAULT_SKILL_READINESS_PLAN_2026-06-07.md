@@ -35,11 +35,12 @@ Classified default manifest: 61
 Installed Native workspace skills: 65
 
 Launch-required ready: 13/13
-Ready within Android default manifest: 16
+Ready within Android default manifest: 17
 
 ready_required: 13
+ready_optional: 1
 needs_config: 16
-needs_pack: 22
+needs_pack: 21
 unsupported_on_android: 6
 manual_proot_compat: 2
 hidden_desktop_only: 2
@@ -52,8 +53,10 @@ Read this carefully:
 
 - `61` is the classified default skill manifest.
 - `13/13` is the current launch-required pass gate.
-- `16 ready` means 13 launch-ready plus `diagram-maker`,
-  `spotify-player`, and `node-connect` on the current device.
+- `17 ready` means 13 launch-ready plus `diagram-maker`,
+  `spotify-player`, `xurl`, and `node-connect` on the current device.
+- `xurl` is now app-native ready optional: usable through Gateway-visible tool
+  execution, but not part of the launch-critical gate.
 - `node-connect` is manual PRoot compatibility, so it must not count as a
   Native fresh-user Android promise.
 - The honest Android-release-relevant ceiling today is:
@@ -100,6 +103,23 @@ Class A acceptance:
 - Tool-use and tool-result evidence appears in the chat UI for actions.
 - No web fallback replaces an explicitly requested skill.
 - No automatic PRoot fallback is used.
+
+### Class A2: Ready Optional
+
+These are Android-relevant and usable now, but intentionally not part of the
+fresh-user launch-critical gate:
+
+```text
+xurl
+```
+
+`xurl` now runs as an app-native Dart HTTP adapter. It is exposed through the
+Gateway-visible tool catalog, validates absolute `http`/`https` URLs, supports
+`GET`, `HEAD`, and `POST`, emits tool evidence for explicit chat requests, and
+returns bounded response metadata instead of requiring `android-cli-core-pack`.
+Local loopback POSTs are blocked, including shorthand, IPv4-mapped, and legacy
+decimal/octal/hex numeric loopback aliases, so the generic HTTP adapter cannot
+POST back into app control endpoints such as `/api/tools/execute`.
 
 ### Class B: Needs Config
 
@@ -166,7 +186,6 @@ spotify-player: android-audio-runtime
 tmux: android-terminal-pack
 video-frames: android-vision-media-runtime
 wacli: android-cli-core-pack
-xurl: android-cli-core-pack
 ```
 
 Class C acceptance:
@@ -265,10 +284,11 @@ Minimum GTM surface:
 
 ```text
 Android Default Skills
-Ready now: 15/51 Native Android-relevant
+Ready now: 16/51 Native Android-relevant
 Launch gate: 13/13 pass
+Ready optional: 1
 Needs config: 16
-Needs pack: 22
+Needs pack: 21
 Unsupported Android: 6
 Manual PRoot: 2
 Desktop/remote: 2
@@ -291,10 +311,9 @@ Runtime: missing Native config
 Action: Configure
 
 xurl
-Needs pack
-Required: android-cli-core-pack
-Runtime: missing Native binary
-Action: Install verified pack
+Ready optional
+Runtime: app-native HTTP adapter
+Action: Use through Gateway-visible xurl.request
 
 apple-notes
 Unsupported on Android
@@ -442,7 +461,6 @@ Goal: raise ready count without bloated binary packs.
 Preferred adapter candidates:
 
 ```text
-xurl
 blogwatcher
 nano-pdf
 session-logs
@@ -458,6 +476,62 @@ Acceptance:
 - Tool evidence appears.
 - Health/readiness reclassifies it from pack/config blocked to ready or
   config-only.
+
+First adapter landed:
+
+```text
+xurl
+status: ready_optional
+runtime: app-native Dart HTTP adapter
+Gateway tool: xurl
+command: xurl.request
+methods: GET, HEAD, POST
+POST guard: local loopback POST blocked
+manifest movement: needs_pack -> ready_optional
+```
+
+This is the template for the remaining fast adapter wins: keep the agent/tool
+loop visible, expose a schema in `/api/tools`, execute through
+`AgentSkillServer`, then reclassify readiness only after tests and device smoke.
+
+Device proof from `RZCX30KA9AW` after reinstall:
+
+```text
+/device/health:
+releaseGatePass: true
+ready_required: 13
+ready_optional: 1
+needs_pack: 21
+xurl runtimeStatus: app_native_ready
+
+/api/tools:
+toolCount: 11
+xurl schema: url required, method GET/HEAD/POST
+
+/api/tools/execute:
+name: xurl
+url: http://127.0.0.1:8765/device/status
+success: true
+runtime: app-native-http
+statusCode: 200
+bytes: 319
+elapsedMs: 15
+
+/api/tools/execute guard:
+name: xurl
+method: POST
+url: http://2130706433:8765/api/tools/execute
+statusCode: 400
+error: LOCAL_POST_BLOCKED
+```
+
+Debug note: `/api/debug/app-native-chat-tool-smoke` with an explicit `xurl GET`
+prompt did not return within a 90-second host timeout during this round. Do not
+use that endpoint result as chat-final-response proof. The adapter itself is
+device-proven through the registered `/api/tools/execute` path, and the
+chat-router tool-use/tool-result path is covered by focused unit tests. A longer
+manual chat UI smoke remains useful before calling the user-facing chat wording
+fully polished.
 
 ### Phase 5: Verified Dependency Packs
 

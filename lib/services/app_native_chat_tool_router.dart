@@ -12,6 +12,7 @@ import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
+import 'capabilities/xurl_capability.dart';
 import 'skills_service.dart';
 
 class AppNativeChatToolExecution {
@@ -51,7 +52,11 @@ class AppNativeChatToolRouter {
   static final AppNativeChatToolRouter instance =
       AppNativeChatToolRouter._internal();
 
-  AppNativeChatToolRouter._internal();
+  AppNativeChatToolRouter._internal({XurlCapability? xurl})
+      : _xurl = xurl ?? XurlCapability();
+
+  factory AppNativeChatToolRouter.forTesting({XurlCapability? xurl}) =>
+      AppNativeChatToolRouter._internal(xurl: xurl);
 
   final AvatarCapability _avatar = AvatarCapability();
   final CameraCapability _camera = CameraCapability();
@@ -63,6 +68,7 @@ class AppNativeChatToolRouter {
   final SensorCapability _sensor = SensorCapability();
   final VibrationCapability _vibration = VibrationCapability();
   final WeatherCapability _weather = WeatherCapability();
+  final XurlCapability _xurl;
 
   int? parseDurationMsForTesting(
     String text, {
@@ -164,7 +170,8 @@ class AppNativeChatToolRouter {
       'weather.forecast' ||
       'clawhub.search' ||
       'clawhub.info' ||
-      'meme-maker.create' =>
+      'meme-maker.create' ||
+      'xurl.request' =>
         true,
       _ => false,
     };
@@ -209,6 +216,7 @@ class AppNativeChatToolRouter {
         };
       case 'weather.current':
       case 'weather.forecast':
+      case 'xurl.request':
         return {
           'action': 'invoke',
           'invokeCommand': plan.command,
@@ -406,6 +414,9 @@ class AppNativeChatToolRouter {
       );
     }
 
+    final xurlPlan = _xurlPlan(trimmed);
+    if (xurlPlan != null) return xurlPlan;
+
     final clawHubPlan = _clawHubPlan(trimmed);
     if (clawHubPlan != null) return clawHubPlan;
 
@@ -492,6 +503,11 @@ class AppNativeChatToolRouter {
           ));
         case 'meme-maker.create':
           return _frameToMap(await _memeMaker.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'xurl.request':
+          return _frameToMap(await _xurl.handle(
             plan.command,
             plan.input,
           ));
@@ -646,6 +662,11 @@ class AppNativeChatToolRouter {
       case 'meme-maker.create':
         final bytes = result['pngBytes'];
         return 'Meme image generated${bytes == null ? '' : ' ($bytes bytes)'}.';
+      case 'xurl.request':
+        final statusCode = result['statusCode'] ?? 'unknown';
+        final method = result['method'] ?? plan.input['method'] ?? 'GET';
+        final bytes = result['bytes'];
+        return 'xurl $method ${plan.input['url']} -> HTTP $statusCode${bytes == null ? '' : ' ($bytes bytes)'}.';
       case 'camera.list':
         return 'Camera list retrieved.';
       case 'camera.snap':
@@ -995,6 +1016,73 @@ class AppNativeChatToolRouter {
     cleaned = cleaned.replaceAll(RegExp(r'[,.\-\s]+$'), '').trim();
     if (cleaned.length < 2) return null;
     return cleaned;
+  }
+
+  _AppNativeToolPlan? _xurlPlan(String message) {
+    final lower = message.toLowerCase();
+    if (!RegExp(r'\bxurl\b').hasMatch(lower)) return null;
+    final match = RegExp(
+      r'\bxurl\b\s+(?:(GET|HEAD|POST)\s+)?(\S+)',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (match == null) return null;
+
+    final method = (match.group(1) ?? 'GET').toUpperCase();
+    final rawUrl = match.group(2);
+    final url = _cleanXurlUrl(rawUrl);
+    if (url == null) return null;
+    final body = _xurlBody(message.substring(match.end));
+
+    return _AppNativeToolPlan(
+      toolName: 'xurl',
+      command: 'xurl.request',
+      input: {
+        'url': url,
+        'method': method,
+        'source': 'app-native-chat-router',
+        if (body != null) 'body': body,
+      },
+    );
+  }
+
+  String? _cleanXurlUrl(String? value) {
+    if (value == null) return null;
+    var cleaned = value.trim();
+    while (cleaned.isNotEmpty && _isLeadingXurlTrimChar(cleaned[0])) {
+      cleaned = cleaned.substring(1);
+    }
+    while (cleaned.isNotEmpty &&
+        _isTrailingXurlTrimChar(cleaned[cleaned.length - 1])) {
+      cleaned = cleaned.substring(0, cleaned.length - 1);
+    }
+    if (cleaned.isEmpty) return null;
+    return cleaned;
+  }
+
+  bool _isLeadingXurlTrimChar(String char) =>
+      char == '<' || char == '(' || char == '"' || char == "'";
+
+  bool _isTrailingXurlTrimChar(String char) =>
+      char == '>' ||
+      char == ')' ||
+      char == '"' ||
+      char == "'" ||
+      char == ',' ||
+      char == '.';
+
+  String? _xurlBody(String trailing) {
+    final match = RegExp(
+      r'\bbody\s*=\s*(.+)$',
+      caseSensitive: false,
+      dotAll: true,
+    ).firstMatch(trailing);
+    final raw = match?.group(1)?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    if ((raw.startsWith('"') && raw.endsWith('"')) ||
+        (raw.startsWith("'") && raw.endsWith("'"))) {
+      return raw.substring(1, raw.length - 1);
+    }
+    return raw;
   }
 
   _AppNativeToolPlan? _clawHubPlan(String message) {

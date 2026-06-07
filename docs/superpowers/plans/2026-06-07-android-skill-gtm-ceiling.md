@@ -193,21 +193,28 @@ git commit -m "Continue required skill results through agent loop"
 - Create focused capability tests under `test/`
 - Modify GTM docs
 
-- [ ] **Step 1: Pick first adapter**
+- [x] **Step 1: Pick first adapter**
 
 Start with `xurl` because it maps cleanly to Dart HTTP and can avoid a CLI pack.
 
-- [ ] **Step 2: Test app-native adapter routing**
+- [x] **Step 2: Test app-native adapter routing**
 
 Add tests that explicit `xurl` prompts route to a Gateway-visible tool, validate URL input, and return status/body metadata.
 
-- [ ] **Step 3: Implement adapter**
+- [x] **Step 3: Implement adapter**
 
 Expose the tool through the Gateway/AgentSkillServer path, not a hidden local return.
 
-- [ ] **Step 4: Reclassify manifest**
+- [x] **Step 4: Reclassify manifest**
 
 Move `xurl` from `needs_pack` to `ready_required` or a new ready non-launch class only after device smoke passes.
+
+Implemented as `ready_optional`, not `ready_required`, so the 13/13 launch gate
+stays focused on fresh-user boot-critical skills. Device proof used
+`/api/tools/execute` against `http://127.0.0.1:8765/device/status`; direct
+execution returned `success: true`, `runtime: app-native-http`, and
+`statusCode: 200`. The chat-smoke debug endpoint timed out during this round, so
+manual chat UI final-response polish remains a follow-up.
 
 - [ ] **Step 5: Repeat for `blogwatcher`, `nano-pdf`, `session-logs`, `summarize`, `stocks`, `camsnap`**
 

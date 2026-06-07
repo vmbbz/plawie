@@ -1,5 +1,6 @@
 enum AndroidSkillSupportStatus {
   readyRequired,
+  readyOptional,
   needsConfig,
   needsPack,
   unsupportedOnAndroid,
@@ -11,6 +12,7 @@ extension AndroidSkillSupportStatusWireName on AndroidSkillSupportStatus {
   String get wireName {
     return switch (this) {
       AndroidSkillSupportStatus.readyRequired => 'ready_required',
+      AndroidSkillSupportStatus.readyOptional => 'ready_optional',
       AndroidSkillSupportStatus.needsConfig => 'needs_config',
       AndroidSkillSupportStatus.needsPack => 'needs_pack',
       AndroidSkillSupportStatus.unsupportedOnAndroid =>
@@ -445,10 +447,11 @@ final List<AndroidSkillSupportEntry> _entries =
     mode: AndroidSkillExecutionMode.httpAdapter,
     smoke: 'Use weather.current for Johannesburg with no web fallback.',
   ),
-  _needsPack(
+  _readyOptional(
     'xurl',
-    packs: ['android-cli-core-pack'],
-    smoke: 'Run an xurl request against a local HTTP fixture.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke: 'Run xurl GET against a local HTTP fixture.',
   ),
 ]);
 
@@ -479,6 +482,21 @@ AndroidSkillSupportEntry _needsConfig(
     ownerLayer: AndroidSkillOwnerLayer.openclawSkill,
     executionMode: AndroidSkillExecutionMode.gatewayTool,
     requiredConfig: List.unmodifiable(config),
+    smokePrompt: smoke,
+  );
+}
+
+AndroidSkillSupportEntry _readyOptional(
+  String id, {
+  required AndroidSkillOwnerLayer owner,
+  required AndroidSkillExecutionMode mode,
+  required String smoke,
+}) {
+  return AndroidSkillSupportEntry(
+    skillId: id,
+    status: AndroidSkillSupportStatus.readyOptional,
+    ownerLayer: owner,
+    executionMode: mode,
     smokePrompt: smoke,
   );
 }

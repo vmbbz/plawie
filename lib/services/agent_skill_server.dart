@@ -20,6 +20,7 @@ import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
+import 'capabilities/xurl_capability.dart';
 
 class _NativeGatewayDryRunArgumentValidation {
   final bool ok;
@@ -75,6 +76,7 @@ class AgentSkillServer {
   final SensorCapability _sensorCapability = SensorCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
   final WeatherCapability _weatherCapability = WeatherCapability();
+  final XurlCapability _xurlCapability = XurlCapability();
 
   // Callbacks — set by ChatScreen so avatar changes are reflected in live UI
   void Function(String avatarFile)? onAvatarChanged;
@@ -1968,6 +1970,9 @@ class AgentSkillServer {
       'weather_current': 'weather.current',
       'weather_forecast': 'weather.forecast',
       'get_weather': 'weather.current',
+      'xurl': 'xurl.request',
+      'xurl_request': 'xurl.request',
+      'xurl.request': 'xurl.request',
       'device_health': 'device.health',
       'device_status': 'device.status',
       'device_info': 'device.info',
@@ -2020,6 +2025,38 @@ class AgentSkillServer {
           message: ok
               ? 'haptic.vibrate arguments are dispatchable'
               : 'haptic.vibrate duration must be numeric',
+        );
+      case 'xurl.request':
+        final rawUrl = input['url']?.toString().trim();
+        final uri =
+            rawUrl == null || rawUrl.isEmpty ? null : Uri.tryParse(rawUrl);
+        final method =
+            input['method']?.toString().trim().toUpperCase() ?? 'GET';
+        final methodOk =
+            method == 'GET' || method == 'HEAD' || method == 'POST';
+        final urlOk = uri != null &&
+            uri.hasScheme &&
+            uri.host.isNotEmpty &&
+            (uri.scheme == 'http' || uri.scheme == 'https');
+        final localPost = method == 'POST' &&
+            uri != null &&
+            XurlCapability.isLoopbackHostForPolicy(uri.host);
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: urlOk && methodOk && !localPost,
+          code: !urlOk
+              ? 'invalid_url'
+              : localPost
+                  ? 'local_post_blocked'
+                  : methodOk
+                      ? 'ok'
+                      : 'invalid_method',
+          message: !urlOk
+              ? 'xurl.request requires an absolute http or https URL'
+              : localPost
+                  ? 'xurl.request does not allow local control endpoint POSTs'
+                  : methodOk
+                      ? 'xurl.request arguments are dispatchable'
+                      : 'xurl.request supports GET, HEAD, and POST',
         );
       case 'camera.snap':
       case 'camera.clip':
@@ -2092,6 +2129,8 @@ class AgentSkillServer {
         return 'SensorCapability';
       case 'weather':
         return 'WeatherCapability';
+      case 'xurl':
+        return 'XurlCapability';
       default:
         return 'UnknownCapability';
     }
@@ -2165,6 +2204,11 @@ class AgentSkillServer {
           await _processTtsControl(input, request);
         case 'device-node':
           await _processDeviceControl(input, request);
+        case 'xurl':
+        case 'xurl_request':
+        case 'xurl.request':
+          final frame = await _xurlCapability.handle('xurl.request', input);
+          _sendNodeFrame(request, frame, fallback: input);
         default:
           final result =
               await SkillsService().executeSkill(name, parameters: input);
@@ -2517,6 +2561,15 @@ class AgentSkillServer {
           const {},
         );
         _sendNodeFrame(request, frame);
+
+      case 'xurl_request':
+      case 'xurl':
+      case 'xurl.request':
+        final frame = await _xurlCapability.handle(
+          'xurl.request',
+          data,
+        );
+        _sendNodeFrame(request, frame, fallback: data);
 
       case 'weather_current':
       case 'get_weather':

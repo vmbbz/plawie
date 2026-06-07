@@ -59,6 +59,8 @@ class SkillsService {
     'valeo_sentinel': 'valeo-sentinel',
     'valeo sentinel': 'valeo-sentinel',
     'moon pay': 'moonpay',
+    'xurl_request': 'xurl',
+    'xurl.request': 'xurl',
   };
 
   Stream<SkillsEvent> get events => _eventController.stream;
@@ -146,6 +148,7 @@ class SkillsService {
       _createMoltLaunchSkill(),
       _createValeoSkill(),
       _createMoonPaySkill(),
+      _createXurlSkill(),
     ];
     for (final s in bundled) {
       _skills[s.id] = s;
@@ -204,6 +207,8 @@ class SkillsService {
         return await _executeValeoSkill(skill, params, ctx);
       case 'moonpay':
         return await _executeMoonPaySkill(skill, params, ctx);
+      case 'http':
+        return await _executeHttpSkill(skill, params, ctx);
       default:
         return SkillResult.error('No executor for category: ${skill.category}');
     }
@@ -535,6 +540,23 @@ class SkillsService {
       return SkillResult.error('Device fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Device unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeHttpSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('HTTP skill fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('HTTP skill unreachable: $e');
     }
   }
 
@@ -981,6 +1003,17 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createXurlSkill() => Skill(
+      id: 'xurl',
+      name: 'xurl',
+      description: 'Make app-native HTTP requests for GET, HEAD, or POST.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'http',
+      tags: ['http', 'network'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
 
   Future<void> _registerNativeSkills() async {
     try {
@@ -1254,6 +1287,37 @@ class SkillsService {
             'frequency': {'type': 'string'},
           },
         );
+      case 'xurl':
+        return {
+          'name': skill.id,
+          'description':
+              'Make an app-native HTTP request to an absolute http or https URL.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'url': {
+                'type': 'string',
+                'format': 'uri',
+                'description': 'Absolute http or https URL to request.',
+              },
+              'method': {
+                'type': 'string',
+                'enum': ['GET', 'HEAD', 'POST'],
+                'description': 'HTTP method. Defaults to GET.',
+              },
+              'headers': {
+                'type': 'object',
+                'additionalProperties': {'type': 'string'},
+                'description': 'Optional request headers.',
+              },
+              'body': {
+                'type': 'string',
+                'description': 'Optional request body for POST.',
+              },
+            },
+            'required': ['url'],
+          },
+        };
       default:
         return skill.toToolDefinition();
     }

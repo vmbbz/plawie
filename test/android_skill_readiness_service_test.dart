@@ -164,6 +164,37 @@ void main() {
       'app_native_not_required',
     );
   });
+
+  test('ready-optional skills count as Android-ready without release blocking',
+      () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([
+        readyEntry('weather'),
+        missingEntry('xurl', 'missing_native_bin'),
+      ]),
+      provisioning: provisioningWith([
+        readyResult('weather'),
+        missingBinaryResult('xurl'),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        readyOptionalManifestEntry('xurl'),
+        readyManifestEntry('weather'),
+      ]),
+    );
+
+    expect(summary.readyRequiredTotal, 1);
+    expect(summary.readyRequiredReady, 1);
+    expect(summary.releaseGatePass, isTrue);
+    expect(summary.countsByClass['ready_optional'], 1);
+    expect(summary.unexpectedMissingDependency, 0);
+
+    final optional = summary.skills.firstWhere(
+      (skill) => skill['skillId'] == 'xurl',
+    );
+    expect(optional['ready'], isTrue);
+    expect(optional['releaseBlocking'], isFalse);
+    expect(optional['runtimeStatus'], 'app_native_ready');
+  });
 }
 
 SkillParitySnapshot snapshotWith(List<SkillExecutionMatrixEntry> entries) {
@@ -323,6 +354,16 @@ AndroidSkillSupportEntry clawHubManifestEntry() {
     executionMode: AndroidSkillExecutionMode.httpAdapter,
     smokePrompt: 'smoke clawhub',
     launchCritical: true,
+  );
+}
+
+AndroidSkillSupportEntry readyOptionalManifestEntry(String skillId) {
+  return AndroidSkillSupportEntry(
+    skillId: skillId,
+    status: AndroidSkillSupportStatus.readyOptional,
+    ownerLayer: AndroidSkillOwnerLayer.appNativeCapability,
+    executionMode: AndroidSkillExecutionMode.httpAdapter,
+    smokePrompt: 'smoke $skillId',
   );
 }
 
