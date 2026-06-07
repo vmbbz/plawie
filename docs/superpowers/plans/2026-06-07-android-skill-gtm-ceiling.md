@@ -287,6 +287,22 @@ flutter analyze lib/services/android_skill_readiness_service.dart lib/services/a
 
 Result: 19/19 tests passed; analyzer clean.
 
+Device proof after corrected install:
+
+```powershell
+adb -s RZCX30KA9AW install -r build\app\outputs\flutter-apk\app-debug.apk
+adb -s RZCX30KA9AW reverse --remove-all
+adb -s RZCX30KA9AW forward tcp:8765 tcp:8765
+curl.exe -s -i http://127.0.0.1:8765/api/tools
+curl.exe -s -i -X POST -H "Content-Type: application/json" --data '{"name":"github","input":{"action":"user"}}' http://127.0.0.1:8765/api/tools/execute
+curl.exe -s -i -X POST -H "Content-Type: application/json" --data '{"name":"gh-issues","input":{"owner":"openai","repo":"codex","state":"open","limit":1}}' http://127.0.0.1:8765/api/tools/execute
+```
+
+Result: `/api/tools` exposed `github` and `gh-issues`; `/device/health`
+reported both as `needs_config` / `needs_user_config` with no `primaryGate` or
+`gates`; direct execution returned HTTP 400 `MISSING_GITHUB_TOKEN` with no
+secret leak.
+
 `goplaces` is implemented as a config-gated app-native Google Places Text
 Search adapter. It keeps `needs_config` until `GOOGLE_PLACES_API_KEY` is
 present, exposes a `goplaces` schema through `/api/tools`, routes
@@ -302,6 +318,22 @@ flutter test test/goplaces_app_native_adapter_test.dart --no-pub
 ```
 
 Result: 6/6 tests passed.
+
+Device proof after corrected install:
+
+```powershell
+curl.exe -s -i -X POST -H "Content-Type: application/json" --data '{"name":"goplaces","input":{"query":"coffee in Cape Town","limit":1}}' http://127.0.0.1:8765/api/tools/execute
+```
+
+Result: `/api/tools` exposed `goplaces`; `/device/health` reported
+`goplaces` as `needs_config` / `needs_user_config` with no `primaryGate` or
+`gates`; direct execution returned HTTP 400
+`MISSING_GOOGLE_PLACES_API_KEY` with no secret leak.
+
+Host inspection note: `8765` is owned by phone-side `AgentSkillServer`, so use
+`adb forward tcp:8765 tcp:8765`. Do not use `adb reverse` for this port;
+reverse can create a device-side shell listener and block `AgentSkillServer`
+from binding.
 
 ### Task 5: Verified Pack Lane
 

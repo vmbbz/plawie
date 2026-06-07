@@ -160,6 +160,8 @@ void main() {
     expect(github['provisioningStatus'], 'needs_user_config');
     expect(github['ready'], isFalse);
     expect(github['requiredConfig'], ['GITHUB_TOKEN']);
+    expect(github.containsKey('primaryGate'), isFalse);
+    expect(github.containsKey('gates'), isFalse);
   });
 
   test('app-native config gate beats stale missing binary audit', () {
@@ -179,6 +181,8 @@ void main() {
     expect(github['runtimeStatus'], 'needs_config');
     expect(github['provisioningStatus'], 'needs_user_config');
     expect(github['ready'], isFalse);
+    expect(github.containsKey('primaryGate'), isFalse);
+    expect(github.containsKey('gates'), isFalse);
   });
 
   test('app-native env-configured skills ignore stale OpenClaw binary gates',

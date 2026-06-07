@@ -44,7 +44,6 @@ class AndroidSkillReadinessService {
       final releaseRelevant =
           entry.status == AndroidSkillSupportStatus.readyRequired;
       final appNativeOwned = _isAppNativeOwned(entry);
-      final appNativeConfigGated = _isAppNativeConfigGated(entry);
       if (releaseRelevant) {
         readyRequiredTotal += 1;
         if (ready) {
@@ -58,10 +57,9 @@ class AndroidSkillReadinessService {
         ...entry.toJson(),
         'runtimeStatus':
             _runtimeStatus(entry, snapshot, matrixEntry, provisioningResult),
-        if ((!appNativeOwned || appNativeConfigGated) &&
-            matrixEntry?.primaryGate != null)
+        if (!appNativeOwned && matrixEntry?.primaryGate != null)
           'primaryGate': matrixEntry!.primaryGate,
-        if ((!appNativeOwned || appNativeConfigGated) &&
+        if (!appNativeOwned &&
             matrixEntry != null &&
             matrixEntry.gates.isNotEmpty)
           'gates': matrixEntry.gates,

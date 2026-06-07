@@ -64,15 +64,36 @@ direct execute: summarize, session-logs, nano-pdf, xurl, camsnap, blogwatcher
 product-class counts: ready_optional 7, needs_config 14, needs_pack 17
 ```
 
-Current branch local proof, pending phone install because ADB did not detect the
-connected Android device during this round:
+Additional Phase 4 config-gated adapter movement now proven on device:
 
 ```text
 github: needs_config + stale missing_native_bin -> needs_config app-native config-only
 gh-issues: needs_config + stale missing_native_bin -> needs_config app-native config-only
 goplaces: needs_config + stale missing_native_bin -> needs_config app-native config-only
-local proof: focused tests, analyzer clean, debug APK built
-device install/smoke: pending ADB device visibility
+
+/api/tools after install:
+toolCount: 19
+github present: true
+gh-issues present: true
+goplaces present: true
+
+/device/health after install:
+releaseGatePass: true
+ready_required: 13/13
+classified default manifest: 61
+installed Native workspace skills: 65
+
+github: runtimeStatus needs_config, provisioningStatus needs_user_config,
+primaryGate absent, gates absent
+gh-issues: runtimeStatus needs_config, provisioningStatus needs_user_config,
+primaryGate absent, gates absent
+goplaces: runtimeStatus needs_config, provisioningStatus needs_user_config,
+primaryGate absent, gates absent
+
+/api/tools/execute missing-config proof:
+github: HTTP 400 MISSING_GITHUB_TOKEN, no secret leak
+gh-issues: HTTP 400 MISSING_GITHUB_TOKEN, no secret leak
+goplaces: HTTP 400 MISSING_GOOGLE_PLACES_API_KEY, no secret leak
 ```
 
 The `/api/debug/app-native-chat-tool-smoke` endpoint remains unreliable for
@@ -879,9 +900,22 @@ required. It does raise the honest ceiling: once the user configures that token
 from the Skills page, both skills can run without a GitHub CLI binary or
 dependency pack.
 
-Device install/smoke is pending. `adb devices -l` and `flutter devices` did not
-detect the connected Android phone after an ADB server restart, so this round
-cannot honestly claim `/api/tools` device proof yet.
+Device proof after corrected install:
+
+```text
+/api/tools: github and gh-issues schemas present
+/device/health:
+  github runtimeStatus: needs_config
+  github provisioningStatus: needs_user_config
+  github primaryGate/gates: absent
+  gh-issues runtimeStatus: needs_config
+  gh-issues provisioningStatus: needs_user_config
+  gh-issues primaryGate/gates: absent
+/api/tools/execute name=github:
+  HTTP 400 MISSING_GITHUB_TOKEN, no secret leak
+/api/tools/execute name=gh-issues:
+  HTTP 400 MISSING_GITHUB_TOKEN, no secret leak
+```
 
 Eighth adapter landed:
 
@@ -919,8 +953,22 @@ configured users and follows the current Google Places Text Search pattern:
 POST `/v1/places:searchText` with explicit `X-Goog-FieldMask`, no wildcard
 field mask, and a bounded `pageSize`.
 
-Device install/smoke is also pending for `goplaces` because `adb devices -l`
-still returned no Android device after the build.
+Device proof after corrected install:
+
+```text
+/api/tools: goplaces schema present
+/device/health:
+  goplaces runtimeStatus: needs_config
+  goplaces provisioningStatus: needs_user_config
+  goplaces primaryGate/gates: absent
+/api/tools/execute name=goplaces:
+  HTTP 400 MISSING_GOOGLE_PLACES_API_KEY, no secret leak
+```
+
+Host inspection note: for the phone-owned `AgentSkillServer` bridge on port
+`8765`, use `adb forward tcp:8765 tcp:8765`. Do not use `adb reverse`; reverse
+creates a shell-owned listener on the device side and can block
+`AgentSkillServer` from binding.
 
 ### Phase 5: Verified Dependency Packs
 

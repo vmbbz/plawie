@@ -264,6 +264,17 @@ Device capabilities belong in node command policy, for example:
 
 Node command declarations and Gateway tool allowlists are separate contracts.
 
+For host inspection of the phone-owned `AgentSkillServer` bridge on port
+`8765`, use:
+
+```powershell
+adb -s <device-id> forward tcp:8765 tcp:8765
+```
+
+Do not use `adb reverse` for this bridge. Reverse creates a shell-owned listener
+on the device side and can prevent `AgentSkillServer` from binding to
+`127.0.0.1:8765`.
+
 ## Phone-Control Release Boundary
 
 `phone-control` being loaded means the Gateway extension is present. It does
