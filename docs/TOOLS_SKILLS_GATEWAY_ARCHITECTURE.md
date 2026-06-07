@@ -66,14 +66,15 @@ molt-launch
 valeo-sentinel
 moonpay
 camsnap
+summarize
 xurl
 ```
 
 The current Android node command allowlist contains avatar, camera, canvas,
 weather, ClawHub metadata, flashlight/torch, location, screen recording, sensor,
-simple meme image creation, camsnap camera capture, xurl HTTP requests, and
-haptic commands. It does not currently prove a generic third-party app launcher
-or a safe WhatsApp message-sending command.
+simple meme image creation, camsnap camera capture, provided-text summarization,
+xurl HTTP requests, and haptic commands. It does not currently prove a generic
+third-party app launcher or a safe WhatsApp message-sending command.
 
 `xurl.request` is a generic HTTP adapter with a release safety boundary:
 absolute `http`/`https` URLs only, bounded response previews, and no loopback
@@ -87,6 +88,11 @@ forms.
 delegating capture to `camera.snap`. AgentSkillServer omits raw `base64` from
 HTTP JSON responses and returns bounded media metadata instead; the chat UI can
 attach the captured image through the existing media event bus.
+
+`summarize` is a named app-native extractive adapter for text supplied directly
+in the tool input. It is intentionally bounded and deterministic. It does not
+replace provider-backed URL, file, or long-document summarization; those should
+remain separate provider/config or pack lanes.
 
 ## Gateway `tools.allow`
 
@@ -119,7 +125,7 @@ Why this shape:
 | ID family | Correct home |
 | --- | --- |
 | `twilio`, `crypto`, `base`, `calculator`, `calendar` | OpenClaw skill install/load path |
-| `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
+| `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `summarize.text`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
 | local NDK helper names | `LocalLlmService` direct local tool schemas |
 
 If Gateway logs `tools.allow allowlist contains unknown entries`, treat the
@@ -156,6 +162,7 @@ Device capabilities belong in node command policy, for example:
         "screen.record",
         "sensor.read",
         "sensor.list",
+        "summarize.text",
         "weather.current",
         "weather.forecast",
         "xurl.request",

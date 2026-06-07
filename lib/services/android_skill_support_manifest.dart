@@ -390,10 +390,12 @@ final List<AndroidSkillSupportEntry> _entries =
     packs: ['android-audio-runtime'],
     smoke: 'Run Spotify player status through the verified audio pack.',
   ),
-  _needsConfig(
+  _readyOptional(
     'summarize',
-    config: ['SUMMARY_PROVIDER'],
-    smoke: 'Summarize a local text fixture using the configured provider.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.appNativeTool,
+    smoke:
+        'Summarize a provided local text fixture with the app-native adapter.',
   ),
   _ready(
     'taskflow',

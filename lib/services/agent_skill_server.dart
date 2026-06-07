@@ -18,6 +18,7 @@ import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/sensor_capability.dart';
+import 'capabilities/summarize_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
 import 'capabilities/xurl_capability.dart';
@@ -74,6 +75,7 @@ class AgentSkillServer {
   final LocationCapability _locationCapability = LocationCapability();
   final MemeMakerCapability _memeMakerCapability = MemeMakerCapability();
   final SensorCapability _sensorCapability = SensorCapability();
+  final SummarizeCapability _summarizeCapability = SummarizeCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
   final WeatherCapability _weatherCapability = WeatherCapability();
   final XurlCapability _xurlCapability = XurlCapability();
@@ -1971,6 +1973,9 @@ class AgentSkillServer {
       'weather_current': 'weather.current',
       'weather_forecast': 'weather.forecast',
       'get_weather': 'weather.current',
+      'summarize': 'summarize.text',
+      'summarize_text': 'summarize.text',
+      'summarize.text': 'summarize.text',
       'xurl': 'xurl.request',
       'xurl_request': 'xurl.request',
       'xurl.request': 'xurl.request',
@@ -2059,6 +2064,18 @@ class AgentSkillServer {
                       ? 'xurl.request arguments are dispatchable'
                       : 'xurl.request supports GET, HEAD, and POST',
         );
+      case 'summarize.text':
+        final text = (input['text'] ?? input['content'] ?? input['input'])
+            ?.toString()
+            .trim();
+        final ok = text != null && text.isNotEmpty;
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: ok,
+          code: ok ? 'ok' : 'missing_text',
+          message: ok
+              ? 'summarize.text arguments are dispatchable'
+              : 'summarize.text requires provided text',
+        );
       case 'camera.snap':
       case 'camera.clip':
       case 'camera.list':
@@ -2128,6 +2145,8 @@ class AgentSkillServer {
         return 'ScreenCapability';
       case 'sensor':
         return 'SensorCapability';
+      case 'summarize':
+        return 'SummarizeCapability';
       case 'weather':
         return 'WeatherCapability';
       case 'xurl':
@@ -2205,6 +2224,14 @@ class AgentSkillServer {
           await _processTtsControl(input, request);
         case 'device-node':
           await _processDeviceControl(input, request);
+        case 'summarize':
+        case 'summarize_text':
+        case 'summarize.text':
+          final frame = await _summarizeCapability.handle(
+            'summarize.text',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
         case 'camsnap':
         case 'camera_snap':
         case 'camera.snap':

@@ -227,6 +227,13 @@ prompts, advertises a `/api/tools` schema, routes `/api/tools/execute` through
 smoke is deferred to the next batched install to save data, so the step remains
 open for the remaining candidates and final device proof.
 
+`summarize` local adapter is implemented as a ready-optional named tool for
+provided text. It uses a bounded deterministic extractive adapter, keeps
+`TOOL_USE:summarize` identity for explicit `summarize: <text>` prompts,
+advertises a `/api/tools` schema, and routes `/api/tools/execute` through
+`AgentSkillServer`. It does not claim provider-backed URL/file/long-document
+summarization. Device smoke is deferred to the next batched install.
+
 ### Task 5: Verified Pack Lane
 
 **Files:**

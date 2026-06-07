@@ -10,6 +10,7 @@ import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/sensor_capability.dart';
+import 'capabilities/summarize_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
 import 'capabilities/xurl_capability.dart';
@@ -66,6 +67,7 @@ class AppNativeChatToolRouter {
   final LocationCapability _location = LocationCapability();
   final MemeMakerCapability _memeMaker = MemeMakerCapability();
   final SensorCapability _sensor = SensorCapability();
+  final SummarizeCapability _summarize = SummarizeCapability();
   final VibrationCapability _vibration = VibrationCapability();
   final WeatherCapability _weather = WeatherCapability();
   final XurlCapability _xurl;
@@ -171,6 +173,7 @@ class AppNativeChatToolRouter {
       'clawhub.search' ||
       'clawhub.info' ||
       'meme-maker.create' ||
+      'summarize.text' ||
       'xurl.request' =>
         true,
       _ => false,
@@ -216,6 +219,7 @@ class AppNativeChatToolRouter {
         };
       case 'weather.current':
       case 'weather.forecast':
+      case 'summarize.text':
       case 'xurl.request':
         return {
           'action': 'invoke',
@@ -421,6 +425,9 @@ class AppNativeChatToolRouter {
     final xurlPlan = _xurlPlan(trimmed);
     if (xurlPlan != null) return xurlPlan;
 
+    final summarizePlan = _summarizePlan(trimmed);
+    if (summarizePlan != null) return summarizePlan;
+
     final clawHubPlan = _clawHubPlan(trimmed);
     if (clawHubPlan != null) return clawHubPlan;
 
@@ -507,6 +514,11 @@ class AppNativeChatToolRouter {
           ));
         case 'meme-maker.create':
           return _frameToMap(await _memeMaker.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'summarize.text':
+          return _frameToMap(await _summarize.handle(
             plan.command,
             plan.input,
           ));
@@ -666,6 +678,11 @@ class AppNativeChatToolRouter {
       case 'meme-maker.create':
         final bytes = result['pngBytes'];
         return 'Meme image generated${bytes == null ? '' : ' ($bytes bytes)'}.';
+      case 'summarize.text':
+        final summary = result['summary']?.toString().trim();
+        return summary?.isNotEmpty == true
+            ? 'Summary: $summary'
+            : 'Summary generated.';
       case 'xurl.request':
         final statusCode = result['statusCode'] ?? 'unknown';
         final method = result['method'] ?? plan.input['method'] ?? 'GET';
@@ -1051,6 +1068,24 @@ class AppNativeChatToolRouter {
         'method': method,
         'source': 'app-native-chat-router',
         if (body != null) 'body': body,
+      },
+    );
+  }
+
+  _AppNativeToolPlan? _summarizePlan(String message) {
+    final match = RegExp(
+      r'^\s*summarize(?:\s+(?:this|text))?\s*[:\-]\s*(.+)$',
+      caseSensitive: false,
+      dotAll: true,
+    ).firstMatch(message);
+    final text = match?.group(1)?.trim();
+    if (text == null || text.isEmpty) return null;
+    return _AppNativeToolPlan(
+      toolName: 'summarize',
+      command: 'summarize.text',
+      input: {
+        'text': text,
+        'source': 'app-native-chat-router',
       },
     );
   }

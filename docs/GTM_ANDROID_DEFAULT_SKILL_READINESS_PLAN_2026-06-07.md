@@ -53,7 +53,8 @@ Source delta pending the next batched APK/device smoke:
 
 ```text
 camsnap: needs_pack -> ready_optional
-source product-class counts: ready_optional 2, needs_pack 20
+summarize: needs_config -> ready_optional
+source product-class counts: ready_optional 3, needs_config 15, needs_pack 20
 ```
 
 Do not replace the live device-health block above until the app is rebuilt,
@@ -121,6 +122,7 @@ fresh-user launch-critical gate:
 
 ```text
 camsnap
+summarize
 xurl
 ```
 
@@ -131,6 +133,13 @@ native `/api/tools` catalog, routes `/api/tools/execute` through
 `TOOL_USE:camsnap` / `TOOL_RESULT:camsnap` while delegating the actual phone
 action to `camera.snap`. It is optional, not launch-required, because camera
 permission prompts and user comfort should not block fresh-app launch.
+
+`summarize` now runs as a bounded app-native extractive text summarizer for
+provided text. It is exposed as a real `summarize` tool in the native
+`/api/tools` catalog, routes `/api/tools/execute` through `AgentSkillServer`,
+and keeps explicit chat prompts visible as `TOOL_USE:summarize` /
+`TOOL_RESULT:summarize`. This does not claim provider-backed URL, file, or
+long-document summarization; those can remain future provider/pack lanes.
 
 `xurl` now runs as an app-native Dart HTTP adapter. It is exposed through the
 Gateway-visible tool catalog, validates absolute `http`/`https` URLs, supports
@@ -159,7 +168,6 @@ ordercli: ORDERCLI_API_KEY
 sag: SAG_API_KEY
 session-logs: SESSION_LOGS_ROOT
 slack: SLACK_BOT_TOKEN, channels.slack
-summarize: SUMMARY_PROVIDER
 trello: TRELLO_API_KEY, TRELLO_TOKEN
 voice-call: VOICE_CALL_PROVIDER, VOICE_CALL_ACCOUNT
 ```
@@ -302,10 +310,10 @@ Minimum GTM surface:
 
 ```text
 Android Default Skills
-Ready now by product class: 15/51 Native Android-relevant
+Ready now by product class: 16/51 Native Android-relevant
 Launch gate: 13/13 pass
-Ready optional: 2
-Needs config: 16
+Ready optional: 3
+Needs config: 15
 Needs pack: 20
 Unsupported Android: 6
 Manual PRoot: 2
@@ -341,6 +349,11 @@ camsnap
 Ready optional
 Runtime: app-native camera adapter
 Action: Use through Gateway-visible camsnap
+
+summarize
+Ready optional
+Runtime: app-native extractive text adapter
+Action: Use through Gateway-visible summarize
 
 apple-notes
 Unsupported on Android
@@ -587,6 +600,30 @@ Result: 25/25 passing
 Device proof is intentionally deferred to the next batched install to save
 data. The required smoke is `/api/tools`, `/api/tools/execute name=camsnap`, and
 one chat/UI prompt with camera permission behavior observed.
+
+Third adapter landed locally, pending batched device smoke:
+
+```text
+summarize
+status: ready_optional
+runtime: app-native extractive text adapter
+Gateway tool: summarize
+command underneath: summarize.text
+manifest movement: needs_config -> ready_optional
+scope: provided text only, no provider-backed URL/file summarization claim
+```
+
+Local proof:
+
+```text
+flutter test test/summarize_app_native_adapter_test.dart --no-pub
+
+Result: 6/6 passing
+```
+
+Device proof is intentionally deferred to the next batched install to save
+data. The required smoke is `/api/tools`, `/api/tools/execute name=summarize`,
+and one explicit chat/UI prompt such as `summarize: <text>`.
 
 ### Phase 5: Verified Dependency Packs
 
