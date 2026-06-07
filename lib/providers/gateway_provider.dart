@@ -7,6 +7,7 @@ import '../services/gateway_service.dart' as svc;
 import '../services/gateway_skill_proxy.dart';
 import '../services/bootstrap_service.dart';
 import '../services/model_provider_catalog.dart';
+import '../services/skill_provisioning_service.dart';
 
 class GatewayProvider extends ChangeNotifier {
   final svc.GatewayService _gatewayService = svc.GatewayService();
@@ -133,6 +134,26 @@ class GatewayProvider extends ChangeNotifier {
       key,
       runBackgroundOnboard: runBackgroundOnboard,
     );
+  }
+
+  Future<SkillProvisioningReport> configureAndroidDefaultSkill({
+    required String skillId,
+    Map<String, String> envValues = const <String, String>{},
+    Map<String, dynamic> configValues = const <String, dynamic>{},
+  }) async {
+    final report = await SkillProvisioningService.instance.auditAndProvision(
+      skillId: skillId,
+      envValues: envValues,
+      configValues: configValues,
+    );
+    if (report.reloadRecommended) {
+      await _gatewayService.applyActiveOwnerConfigChange(
+        'Android skill config: $skillId',
+      );
+    }
+    _gatewayService.refreshRpcDiscovery();
+    unawaited(_gatewayService.checkHealth());
+    return report;
   }
 
   /// Retrieve the authenticated Dashboard URL containing the ?token= query parameter.

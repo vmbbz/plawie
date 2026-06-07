@@ -106,7 +106,7 @@ Expected: tests pass, analyze passes, APK builds, whitespace check passes, commi
 - Modify: `lib/providers/gateway_provider.dart`
 - Modify: `docs/GTM_ANDROID_DEFAULT_SKILL_READINESS_PLAN_2026-06-07.md`
 
-- [ ] **Step 1: Add form model test**
+- [x] **Step 1: Add form model test**
 
 The test must prove `discord` exposes `DISCORD_BOT_TOKEN`, `slack` exposes both `SLACK_BOT_TOKEN` and `channels.slack`, and a skill with `primaryGate=missing_native_bin` reports that config alone is insufficient.
 
@@ -118,7 +118,7 @@ flutter test test/android_skill_config_form_model_test.dart --no-pub
 
 Expected before implementation: FAIL because the form model does not exist.
 
-- [ ] **Step 2: Implement config form model**
+- [x] **Step 2: Implement config form model**
 
 Create a pure Dart parser from `androidDefaultReadiness.skills` that returns:
 
@@ -134,11 +134,11 @@ class AndroidSkillConfigFormModel {
 
 Keys with uppercase env style go to `envKeys`; dotted keys such as `channels.slack` go to `configKeys`.
 
-- [ ] **Step 3: Add guided config sheet**
+- [x] **Step 3: Add guided config sheet**
 
 The sheet must collect values, call a provider method that delegates to `SkillProvisioningService.auditAndProvision(skillId: ..., envValues: ..., configValues: ...)`, then refresh Gateway health.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run focused tests, analyzer, and `flutter build apk --debug`, then commit:
 

@@ -376,6 +376,23 @@ Work:
 - Re-audit and refresh Gateway state.
 - Show "still blocked by pack/binary" when config alone is not enough.
 
+Implemented in-app path:
+
+- `AndroidSkillConfigFormModel` parses readiness JSON into env credentials and
+  dotted OpenClaw config keys.
+- Skills page config-gate chips open `AndroidSkillConfigSheet`.
+- The sheet writes values through
+  `GatewayProvider.configureAndroidDefaultSkill`, which delegates to
+  `SkillProvisioningService.auditAndProvision`.
+- If provisioning recommends reload, the active Gateway owner applies the config
+  change; RPC discovery is refreshed after the write.
+
+Remaining proof:
+
+- Device smoke with real or dummy-safe values for representative config gates.
+- Verify that skills with a binary/pack gate still display the remaining gate
+  after config is saved.
+
 ### Phase 3: Gateway-First Tool Continuation
 
 Goal: required tool intents no longer bypass the agent final-answer loop.
@@ -472,6 +489,7 @@ Round 2 target:
 ```text
 Config wizard MVP.
 At least discord/slack/voice-call config gates actionable.
+Values flow through SkillProvisioningService, not ad hoc file writes.
 Commit made.
 ```
 

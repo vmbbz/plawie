@@ -12,6 +12,7 @@ import '../../models/clawhub_skill.dart';
 import '../../app.dart';
 import '../../widgets/glass_card.dart';
 import '../../services/clawhub_service.dart';
+import '../../services/android_skill_config_form_model.dart';
 import '../../services/android_skill_readiness_view_model.dart';
 import '../../services/gateway_service.dart';
 import '../../services/gateway_tool_catalog.dart';
@@ -28,6 +29,7 @@ import 'skills/agent_moonpay_page.dart';
 import 'local_llm_screen.dart';
 import 'skills/agent_base_page.dart';
 import 'bot_method_explorer.dart';
+import 'skills/android_skill_config_sheet.dart';
 import 'skills/skill_config_editor.dart';
 import 'skills/skill_detail_sheet.dart';
 
@@ -2374,6 +2376,34 @@ class _RateLimitBanner extends StatelessWidget {
 
 // ── Android default readiness helpers ───────────────────────────────────────
 
+void _showAndroidSkillConfigSheet(
+  BuildContext context,
+  Map<String, dynamic> readiness,
+  String skillId,
+) {
+  final model = AndroidSkillConfigFormModel.fromReadiness(readiness, skillId);
+  if (model == null || !model.hasFields) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$skillId has no configurable Android gates.'),
+        backgroundColor: AppColors.statusAmber,
+      ),
+    );
+    return;
+  }
+
+  final gateway = Provider.of<GatewayProvider>(context, listen: false);
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => ChangeNotifierProvider.value(
+      value: gateway,
+      child: AndroidSkillConfigSheet(model: model),
+    ),
+  );
+}
+
 class _AndroidDefaultReadinessPanel extends StatelessWidget {
   final Map<String, dynamic> readiness;
 
@@ -2485,6 +2515,11 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
               title: 'CONFIG GATES',
               color: AppColors.statusAmber,
               items: model.topNeedsConfig,
+              onTap: (item) => _showAndroidSkillConfigSheet(
+                context,
+                readiness,
+                item.skillId,
+              ),
             ),
             if (model.topNeedsPack.isNotEmpty) const SizedBox(height: 8),
             _ReadinessGatePreview(
@@ -2604,11 +2639,13 @@ class _ReadinessGatePreview extends StatelessWidget {
   final String title;
   final Color color;
   final List<AndroidSkillGateSummary> items;
+  final ValueChanged<AndroidSkillGateSummary>? onTap;
 
   const _ReadinessGatePreview({
     required this.title,
     required this.color,
     required this.items,
+    this.onTap,
   });
 
   @override
@@ -2633,30 +2670,41 @@ class _ReadinessGatePreview extends StatelessWidget {
           children: [
             for (final item in items)
               Tooltip(
-                message: item.detail,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: color.withValues(alpha: 0.18)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        item.skillId,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.78),
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w800,
+                message: onTap == null
+                    ? item.detail
+                    : '${item.detail}\nTap to configure',
+                child: InkWell(
+                  onTap: onTap == null ? null : () => onTap!(item),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: color.withValues(alpha: 0.18)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          item.skillId,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.78),
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 5),
-                      Icon(Icons.info_outline_rounded,
-                          size: 11, color: color.withValues(alpha: 0.75)),
-                    ],
+                        const SizedBox(width: 5),
+                        Icon(
+                          onTap == null
+                              ? Icons.info_outline_rounded
+                              : Icons.tune_rounded,
+                          size: 11,
+                          color: color.withValues(alpha: 0.75),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
