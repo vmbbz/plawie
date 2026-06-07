@@ -150,27 +150,34 @@ git commit -m "Add Android skill config wizard"
 
 **Files:**
 - Modify: `lib/services/gateway_service.dart`
-- Modify: `lib/services/native_clawhub_skill_execution_service.dart`
+- Modify: `lib/services/app_native_chat_tool_router.dart`
+- Modify: `lib/services/agent_skill_server.dart`
 - Modify: `test/gateway_service_required_skill_intent_test.dart`
+- Modify: `test/gateway_required_mobile_route_test.dart`
 - Create: `test/gateway_service_tool_continuation_test.dart`
 - Modify: `docs/TOOLS_SKILLS_GATEWAY_ARCHITECTURE.md`
 - Modify: `docs/GTM_ANDROID_DEFAULT_SKILL_READINESS_PLAN_2026-06-07.md`
 
-- [ ] **Step 1: Add continuation test**
+- [x] **Step 1: Add continuation test**
 
 The test must prove a required stocks intent emits `TOOL_USE` and `TOOL_RESULT`, then continues into the Gateway/model answer path instead of returning immediately.
 
-- [ ] **Step 2: Implement continuation hook**
+- [x] **Step 2: Implement continuation hook**
 
 Replace early return with a bounded continuation payload that includes the tool result as private context for the model turn.
 
-- [ ] **Step 3: Keep emergency fallback**
+- [x] **Step 3: Keep emergency fallback**
 
 If Gateway continuation is unavailable, return the direct visible result with a diagnostic activity line.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run focused tests, analyzer, APK build, device chat smoke, then commit:
+
+Device smoke note: `/api/debug/app-native-chat-tool-smoke` proved stocks
+`TOOL_USE` and `TOOL_RESULT` plus Gateway continuation handoff on device. The
+debug stream timed out before final assistant text, so final UI wording remains
+a manual smoke item.
 
 ```powershell
 git commit -m "Continue required skill results through agent loop"

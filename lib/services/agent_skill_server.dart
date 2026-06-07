@@ -2108,10 +2108,14 @@ class AgentSkillServer {
           : 'vibrate once';
       final model = body['model']?.toString();
       final chunks = <String>[];
+      var timedOut = false;
 
       await for (final chunk in GatewayService()
           .sendMessage(prompt, model: model)
-          .timeout(const Duration(seconds: 20))) {
+          .timeout(const Duration(seconds: 20), onTimeout: (sink) {
+        timedOut = true;
+        sink.close();
+      })) {
         chunks.add(chunk);
         if (chunks.length >= 32) break;
       }
@@ -2131,6 +2135,7 @@ class AgentSkillServer {
         'prompt': prompt,
         'toolUseSeen': toolUseSeen,
         'toolResultSeen': toolResultSeen,
+        'timedOut': timedOut,
         'visibleText': visibleText,
         'chunks': chunks.map(_jsonSafeChunk).toList(growable: false),
       });

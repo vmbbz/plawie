@@ -2,9 +2,12 @@ import 'dart:io';
 
 import 'package:clawa/services/app_native_chat_tool_router.dart';
 import 'package:clawa/services/gateway_service.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('healthcheck is a required mobile tool intent', () {
     final gateway = GatewayService();
 
@@ -22,6 +25,29 @@ void main() {
   });
 
   test('required healthcheck intent produces device-node tool chips', () async {
+    final temp = await Directory.systemTemp.createTemp('device_health_route_');
+    addTearDown(() => temp.delete(recursive: true));
+    const nativeChannel = MethodChannel('com.nxg.openclawproot/native');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(nativeChannel, (call) async {
+      return switch (call.method) {
+        'getFilesDir' => temp.path,
+        'getDeviceId' => 'test-device',
+        'getDeviceBrand' => 'OpenClaw',
+        'getDeviceModel' => 'Unit',
+        'getAppVersion' => 'test',
+        'getArch' => 'arm64-v8a',
+        'getTotalMemoryMb' => 4096,
+        'getBatteryLevel' => 88,
+        'isCharging' => true,
+        _ => null,
+      };
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativeChannel, null);
+    });
+
     final execution =
         await AppNativeChatToolRouter.instance.tryExecuteRequiredToolIntent(
       'device healthcheck now',
@@ -29,7 +55,7 @@ void main() {
 
     expect(execution, isNotNull);
     expect(execution!.toolName, 'device-node');
-    expect(execution.input['command'], 'device.health');
+    expect(execution.input['action'], 'device_health');
     expect(execution.input['source'], 'gateway-required-tool-intent');
     expect(execution.toolUseChunk, startsWith('\x00TOOL_USE:device-node:'));
     expect(
@@ -52,7 +78,7 @@ void main() {
 
     final sendMessageSource = source.substring(methodStart, methodEnd);
     final requiredIntentCalls =
-        RegExp(r'_executeRequiredMobileToolIntent\(message\)')
+        RegExp(r'_executeRequiredToolContinuation\(message\)')
             .allMatches(sendMessageSource)
             .length;
 
@@ -64,9 +90,8 @@ void main() {
     );
 
     final firstRequiredIntent =
-        sendMessageSource.indexOf('_executeRequiredMobileToolIntent(message)');
-    final firstProviderSend =
-        sendMessageSource.indexOf("NodeFrame.request('chat.send'");
+        sendMessageSource.indexOf('_executeRequiredToolContinuation(message)');
+    final firstProviderSend = sendMessageSource.indexOf('final chatSendFrame');
     expect(firstRequiredIntent, isNonNegative);
     expect(firstProviderSend, isNonNegative);
     expect(

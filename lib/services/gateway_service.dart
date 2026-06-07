@@ -66,6 +66,90 @@ class TalkSpeakPlayback {
   String? get displayMessage => message ?? errorMessage;
 }
 
+class _RequiredToolContinuation {
+  static const int _maxJsonChars = 6000;
+  static const int _maxVisibleFallbackChars = 2400;
+
+  final String toolName;
+  final Map<String, dynamic> input;
+  final Map<String, dynamic> result;
+  final bool ok;
+  final String visibleText;
+  final String source;
+
+  const _RequiredToolContinuation({
+    required this.toolName,
+    required this.input,
+    required this.result,
+    required this.ok,
+    required this.visibleText,
+    required this.source,
+  });
+
+  factory _RequiredToolContinuation.fromNativeClawHub(
+    NativeClawHubSkillExecution execution,
+  ) {
+    return _RequiredToolContinuation(
+      toolName: execution.toolName,
+      input: execution.input,
+      result: execution.result,
+      ok: execution.ok,
+      visibleText: execution.visibleText,
+      source: 'native-clawhub',
+    );
+  }
+
+  factory _RequiredToolContinuation.fromAppNative(
+    AppNativeChatToolExecution execution,
+  ) {
+    return _RequiredToolContinuation(
+      toolName: execution.toolName,
+      input: execution.input,
+      result: execution.result,
+      ok: execution.ok,
+      visibleText: execution.visibleText,
+      source: 'app-native',
+    );
+  }
+
+  String get toolUseChunk => '\x00TOOL_USE:$toolName:${jsonEncode(input)}\x00';
+
+  String get toolResultChunk =>
+      '\x00TOOL_RESULT:$toolName:${jsonEncode(result)}\x00';
+
+  String continuationMessage(String originalMessage) {
+    return '''
+$originalMessage
+
+[OpenClaw required tool continuation]
+A required OpenClaw tool has already run for this turn. The tool frames below are authoritative. Do not answer from memory, do not claim the tool is unavailable, and do not rerun the same tool unless the result explicitly failed. answer from the tool result in normal user-facing language.
+
+source: $source
+tool: $toolName
+ok: $ok
+
+TOOL_USE:$toolName:${_boundedJson(input)}
+TOOL_RESULT:$toolName:${_boundedJson(result)}
+
+Fallback visible tool text if Gateway/model continuation is unavailable:
+${_boundedText(visibleText)}
+'''
+        .trim();
+  }
+
+  static String _boundedJson(Map<String, dynamic> value) {
+    final encoded = jsonEncode(value);
+    if (encoded.length <= _maxJsonChars) return encoded;
+    return '${encoded.substring(0, _maxJsonChars)}...[truncated]';
+  }
+
+  static String _boundedText(String value) {
+    final trimmed = value.trim();
+    if (trimmed.length <= _maxVisibleFallbackChars) return trimmed;
+    return '${trimmed.substring(0, _maxVisibleFallbackChars)}...[truncated]';
+  }
+}
+
 class GatewayService {
   static const List<String> localControlUiAllowedOrigins = <String>[
     'http://127.0.0.1:18789',
@@ -5115,6 +5199,24 @@ ${lines.join('\n')}
     return execution;
   }
 
+  Future<_RequiredToolContinuation?> _executeRequiredToolContinuation(
+    String message,
+  ) async {
+    final nativeSkillExecution =
+        await _executeRequiredNativeClawHubSkillIntent(message);
+    if (nativeSkillExecution != null) {
+      return _RequiredToolContinuation.fromNativeClawHub(
+        nativeSkillExecution,
+      );
+    }
+
+    final mobileToolExecution = await _executeRequiredMobileToolIntent(message);
+    if (mobileToolExecution != null) {
+      return _RequiredToolContinuation.fromAppNative(mobileToolExecution);
+    }
+    return null;
+  }
+
   @visibleForTesting
   Future<NativeClawHubSkillExecution?>
       debugExecuteRequiredNativeClawHubSkillIntentForTesting(
@@ -5125,6 +5227,15 @@ ${lines.join('\n')}
       message,
       service: service,
     );
+  }
+
+  @visibleForTesting
+  String debugBuildRequiredNativeSkillContinuationMessageForTesting(
+    String message,
+    NativeClawHubSkillExecution execution,
+  ) {
+    return _RequiredToolContinuation.fromNativeClawHub(execution)
+        .continuationMessage(message);
   }
 
   @visibleForTesting
@@ -14683,23 +14794,17 @@ ${lines.join('\n')}
     // only lane that carries OpenClaw session/tool/node context correctly.
     var wsOk = await _ensureWebSocket(token);
     Map<String, dynamic> modelSyncChanges = <String, dynamic>{};
+    _RequiredToolContinuation? requiredToolContinuation;
     if (wsOk) {
-      final requiredNativeSkillExecution =
-          await _executeRequiredNativeClawHubSkillIntent(message);
-      if (requiredNativeSkillExecution != null) {
-        yield requiredNativeSkillExecution.toolUseChunk;
-        yield requiredNativeSkillExecution.toolResultChunk;
-        yield requiredNativeSkillExecution.visibleText;
-        return;
-      }
-
-      final requiredMobileToolExecution =
-          await _executeRequiredMobileToolIntent(message);
-      if (requiredMobileToolExecution != null) {
-        yield requiredMobileToolExecution.toolUseChunk;
-        yield requiredMobileToolExecution.toolResultChunk;
-        yield requiredMobileToolExecution.visibleText;
-        return;
+      requiredToolContinuation =
+          await _executeRequiredToolContinuation(message);
+      if (requiredToolContinuation != null) {
+        _addActivity(
+          '[TOOLS] Required ${requiredToolContinuation.toolName} result '
+          'will continue through Gateway chat.send.',
+        );
+        yield requiredToolContinuation.toolUseChunk;
+        yield requiredToolContinuation.toolResultChunk;
       }
 
       // HOT-SWITCHING: If user changed model, update gateway config
@@ -14725,22 +14830,15 @@ ${lines.join('\n')}
         return;
       }
 
-      final requiredNativeSkillExecution =
-          await _executeRequiredNativeClawHubSkillIntent(message);
-      if (requiredNativeSkillExecution != null) {
-        yield requiredNativeSkillExecution.toolUseChunk;
-        yield requiredNativeSkillExecution.toolResultChunk;
-        yield requiredNativeSkillExecution.visibleText;
-        return;
-      }
-
-      final requiredMobileToolExecution =
-          await _executeRequiredMobileToolIntent(message);
-      if (requiredMobileToolExecution != null) {
-        yield requiredMobileToolExecution.toolUseChunk;
-        yield requiredMobileToolExecution.toolResultChunk;
-        yield requiredMobileToolExecution.visibleText;
-        return;
+      requiredToolContinuation =
+          await _executeRequiredToolContinuation(message);
+      if (requiredToolContinuation != null) {
+        _addActivity(
+          '[TOOLS] Required ${requiredToolContinuation.toolName} result '
+          'will continue through repaired Gateway chat.send.',
+        );
+        yield requiredToolContinuation.toolUseChunk;
+        yield requiredToolContinuation.toolResultChunk;
       }
 
       final changes = await _syncModelToConfig(model);
@@ -14814,6 +14912,7 @@ ${lines.join('\n')}
     var inactivityWarningLogged = false;
     DateTime? gatewayAcceptedAt;
     DateTime? firstVisibleOutputAt;
+    var assistantTextOutputSeen = false;
 
     void markRelevantGatewayActivity() {
       lastRelevantGatewayActivityAt = DateTime.now();
@@ -14836,7 +14935,10 @@ ${lines.join('\n')}
       chunkController.add('\x00CHAT_STATUS:${jsonEncode(message)}\x00');
     }
 
-    final outboundMessage = await _decorateMessageWithRuntimeContext(message);
+    final outboundUserMessage =
+        requiredToolContinuation?.continuationMessage(message) ?? message;
+    final outboundMessage =
+        await _decorateMessageWithRuntimeContext(outboundUserMessage);
 
     final chatSendFrame = <String, dynamic>{
       'type': 'req',
@@ -15076,6 +15178,7 @@ ${lines.join('\n')}
                 markVisibleChatOutput();
                 final delta = assistantDelta(text);
                 if (delta.isEmpty) return;
+                assistantTextOutputSeen = true;
                 if (firstToken) {
                   firstToken = false;
                   final assistantFirstTokenAt = DateTime.now();
@@ -15277,6 +15380,14 @@ ${lines.join('\n')}
     try {
       await for (final chunk in chunkController.stream) {
         yield chunk;
+      }
+      if (requiredToolContinuation != null && !assistantTextOutputSeen) {
+        _addActivity(
+          '[TOOLS] Gateway continuation for '
+          '${requiredToolContinuation.toolName} produced no assistant text; '
+          'returning direct required tool fallback.',
+        );
+        yield requiredToolContinuation.visibleText;
       }
       final completedAt = DateTime.now();
       final timing = <String>[

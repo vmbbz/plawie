@@ -237,10 +237,12 @@ User prompt
   -> final answer is synthesized from the actual result
 ```
 
-The current deterministic stocks route proved execution, but it still returns
-too early. It emits `TOOL_USE:stocks` and `TOOL_RESULT:stocks`, then returns the
-visible result before the agent continuation. That is useful as a rescue path,
-but the production contract should continue the agent loop after tool execution.
+The deterministic stocks route proves execution and now continues through the
+agent loop. It emits `TOOL_USE:stocks` and `TOOL_RESULT:stocks`, converts the
+pre-executed tool result into bounded continuation context, then sends the
+normal `chat.send` turn so the model synthesizes the final answer. The direct
+visible result remains a rescue path only when Gateway/model continuation
+produces no assistant text.
 
 Correct stocks target:
 
@@ -405,6 +407,33 @@ Work:
   unavailable.
 - Add tests for `TOOL_USE`, `TOOL_RESULT`, and continuation prompt/result
   wiring.
+
+Implemented path:
+
+- `sendMessage` pre-executes required native/mobile tools only after the
+  Gateway WebSocket lane is available.
+- It yields `TOOL_USE` and `TOOL_RESULT` chunks for the UI, then sends a
+  bounded required-tool continuation prompt through `chat.send`.
+- If the continuation closes or errors without assistant text, the direct
+  visible tool result is returned with a diagnostic activity line.
+
+Device proof from `RZCX30KA9AW` after reinstall:
+
+```text
+Prompt: Use the stocks skill to get current NVDA price. No web fallback.
+Endpoint: /api/debug/app-native-chat-tool-smoke
+success: true
+toolUseSeen: true
+toolResultSeen: true
+timedOut: true
+Native result: NVDA current price $205.10
+Log: [TOOLS] Required stocks result will continue through Gateway chat.send.
+```
+
+Interpretation: Native stocks execution and Gateway continuation handoff were
+proven on device. The debug endpoint did not observe final assistant text inside
+its 20-second stream window, so longer/manual chat UI smoke remains useful for
+final-response polish.
 
 ### Phase 4: Fast Adapter Wins
 

@@ -167,6 +167,29 @@ Until such a command exists in `gateway.nodes.allowCommands` and is backed by
 `AgentSkillServer`, the correct behavior is to report the action as unsupported
 or to open a user-confirmed compose flow if one is implemented.
 
+## Required Tool Continuation
+
+Some user requests are explicit enough that the app must not wait for a model to
+guess the tool. Examples include stocks/ticker prompts and obvious Android phone
+commands. These required intents may pre-execute after the Gateway WebSocket
+lane is available, but they must still continue through `chat.send`.
+
+Flow:
+
+```text
+User prompt
+  -> required intent parser selects exact tool
+  -> app executes the tool
+  -> UI receives TOOL_USE and TOOL_RESULT chunks
+  -> app builds bounded continuation context from the tool result
+  -> Gateway chat.send receives that context
+  -> model returns the final user-facing answer
+```
+
+The direct visible tool result is an emergency fallback only. It is returned
+when Gateway/model continuation produces no assistant text, not as the normal
+success path.
+
 ## Direct Local NDK Tools
 
 For `local-llm/...`, Gateway is bypassed. `LocalLlmService` attaches native

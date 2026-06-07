@@ -950,6 +950,9 @@ class AppNativeChatToolRouter {
     return lower.contains('healthcheck') ||
         lower.contains('health check') ||
         lower.contains('device health') ||
+        lower.contains('phone health') ||
+        lower.contains('health status') ||
+        lower.contains('system health') ||
         lower.contains('diagnostic') ||
         lower.contains('diagnostics');
   }
