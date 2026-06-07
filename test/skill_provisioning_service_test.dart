@@ -192,14 +192,14 @@ requests>=2.28.0
     expect(
       result.actions.map((action) => action.status),
       containsAll([
-        SkillProvisioningActionStatus.missingBinary,
         SkillProvisioningActionStatus.missingDependency,
+        SkillProvisioningActionStatus.missingPack,
       ]),
     );
     expect(
       result.actions.map((action) => action.key),
       containsAll(
-        ['pip', 'python3', 'pandas', 'pydantic', 'requests', 'yfinance'],
+        ['python-core', 'pandas', 'pydantic', 'requests', 'yfinance'],
       ),
     );
     expect(
@@ -273,9 +273,30 @@ requests>=2.28.0
           'version': '1.0.0',
           'source': 'remote',
           'url': Uri.file(packFile.path).toString(),
+          'abi': ['arm64-v8a'],
+          'sizeBytes': packBytes.length,
           'sha256': crypto.sha256.convert(packBytes).toString(),
           'archiveType': 'zip',
           'installPath': 'runtimes/python/site-packages',
+          'files': [
+            {
+              'path': 'yfinance-0.2.66.dist-info/METADATA',
+              'sha256': crypto.sha256
+                  .convert(utf8.encode(
+                    'Name: yfinance\nVersion: 0.2.66\n',
+                  ))
+                  .toString(),
+              'sizeBytes':
+                  utf8.encode('Name: yfinance\nVersion: 0.2.66\n').length,
+            }
+          ],
+          'smokeCommand': {
+            'command': 'python3',
+            'args': ['-c', 'import yfinance'],
+          },
+          'rollback': {
+            'strategy': 'remove_install_path',
+          },
           'provides': {
             'pythonPackages': packageVersions.keys.toList(),
           },
@@ -314,7 +335,7 @@ requests>=2.28.0
         'runtimes',
         'python',
         'site-packages',
-        'yfinance.dist-info',
+        'yfinance-0.2.66.dist-info',
       )).exists(),
       isTrue,
     );
@@ -339,6 +360,105 @@ requests>=2.28.0
     );
     expect(second.changed, isFalse);
     expect(second.results.single.status, SkillProvisioningStatus.ready);
+  });
+
+  test('provisioning rejects invalid dependency pack manifests before install',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_bad_pack_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final stocks = Directory(path.join(
+      nativeRoot,
+      'workspace',
+      'skills',
+      'stocks',
+    ));
+    await stocks.create(recursive: true);
+    await File(path.join(stocks.path, 'SKILL.md')).writeAsString('''
+# Stocks
+
+Setup:
+python3 -m pip install -r requirements.txt
+''');
+    await File(path.join(stocks.path, 'requirements.txt')).writeAsString('''
+yfinance>=0.2.66
+''');
+
+    final archive = Archive();
+    final metadata = utf8.encode('Name: yfinance\nVersion: 0.2.66\n');
+    archive.addFile(ArchiveFile(
+      'yfinance-0.2.66.dist-info/METADATA',
+      metadata.length,
+      metadata,
+    ));
+    final packBytes = ZipEncoder().encode(archive);
+    final packFile = File(path.join(temp.path, 'unsafe-yfinance.zip'));
+    await packFile.writeAsBytes(packBytes, flush: true);
+
+    final manifestFile = File(path.join(
+      nativeRoot,
+      'dependencies',
+      'dependency_packs.json',
+    ));
+    await manifestFile.create(recursive: true);
+    await manifestFile.writeAsString(jsonEncode({
+      'packs': [
+        {
+          'id': 'unsafe-yfinance-pack',
+          'version': '1.0.0',
+          'source': 'remote',
+          'url': Uri.file(packFile.path).toString(),
+          'abi': ['arm64-v8a'],
+          'sizeBytes': packBytes.length,
+          // Intentionally missing top-level sha256: this must be rejected.
+          'archiveType': 'zip',
+          'installPath': 'runtimes/python/site-packages',
+          'files': [
+            {
+              'path': 'yfinance-0.2.66.dist-info/METADATA',
+              'sha256': crypto.sha256.convert(metadata).toString(),
+              'sizeBytes': metadata.length,
+            }
+          ],
+          'smokeCommand': {
+            'command': 'python3',
+            'args': ['-c', 'import yfinance'],
+          },
+          'rollback': {
+            'strategy': 'remove_install_path',
+          },
+          'provides': {
+            'pythonPackages': ['yfinance'],
+          },
+        },
+      ],
+    }));
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final report = await SkillProvisioningService.instance.planSnapshot(
+      snapshot,
+      skillId: 'stocks',
+    );
+
+    expect(report.results.single.status, isNot(SkillProvisioningStatus.ready));
+    expect(
+      report.results.single.actions
+          .where((action) =>
+              action.type == SkillProvisioningActionType.dependencyPack)
+          .map((action) => action.key),
+      isNot(contains('unsafe-yfinance-pack')),
+    );
   });
 
   test('provisioning does not hide missing transitive Python dependencies',
@@ -413,7 +533,7 @@ Body text that must not be parsed as headers.
       snapshot.executionMatrix
           .singleWhere((entry) => entry.skillId == 'stocks')
           .status,
-      SkillExecutionStatus.ready,
+      SkillExecutionStatus.missingDependency,
     );
 
     final report = await SkillProvisioningService.instance.planSnapshot(

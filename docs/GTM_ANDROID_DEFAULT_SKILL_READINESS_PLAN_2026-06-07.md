@@ -811,6 +811,42 @@ Each pack needs:
 - rollback behavior.
 - Play policy review.
 
+First Phase 5 safety slice landed locally:
+
+```text
+DependencyPackManifestEntry
+DependencyPackManifestPolicy
+DependencyPackManifestValidation
+```
+
+The provisioning loader now validates dependency-pack manifests before pack
+selection or install. Invalid records are rejected and never become install
+candidates. Current gates reject:
+
+```text
+missing top-level SHA-256 for remote packs
+unsupported Android ABI
+unsigned remote executable packs
+unsafe install paths
+unsafe file paths
+missing file hashes/sizes
+missing smoke command
+missing rollback plan
+```
+
+Local proof:
+
+```text
+flutter test test/dependency_pack_manifest_test.dart \
+  test/skill_provisioning_service_test.dart --no-pub
+
+Result: 13/13 passing
+```
+
+This is only the manifest safety gate. It does not yet mean
+`android-cli-core-pack` is built, hosted, signed by a production key, or safe to
+install for users.
+
 ### Phase 6: Fresh-User Proof
 
 Goal: prove the release promise on clean app data.

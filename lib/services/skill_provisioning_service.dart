@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
 import 'native_bridge.dart';
+import 'dependency_pack_manifest.dart';
 import 'skill_execution_descriptor.dart';
 import 'skill_parity_audit_service.dart';
 
@@ -1513,7 +1514,17 @@ class SkillProvisioningService {
       if (rawPacks is! List) return;
       for (final item in rawPacks) {
         if (item is! Map) continue;
-        final pack = _DependencyPack.fromJson(Map<String, dynamic>.from(item));
+        final json = Map<String, dynamic>.from(item);
+        final validation = DependencyPackManifestEntry.fromJson(json)
+            .validate(DependencyPackManifestPolicy.androidArm64);
+        if (!validation.ok) {
+          debugPrint(
+            '[DEPS] rejected dependency pack manifest '
+            '${json['id'] ?? 'unknown'}: ${validation.errorCodes.join(', ')}',
+          );
+          continue;
+        }
+        final pack = _DependencyPack.fromJson(json);
         if (pack != null && !packs.any((existing) => existing.id == pack.id)) {
           packs.add(pack);
         }
@@ -2891,11 +2902,7 @@ class SkillProvisioningService {
       }
     }
     for (final package in pack.providesPythonPackages) {
-      final marker = Directory(path.join(
-        layout.nativePythonSitePackagesDir.path,
-        '${_normalizeDependencyName(package)}.dist-info',
-      ));
-      if (!await marker.exists()) return false;
+      if (!await _pythonPackageMarkerPresent(layout, package)) return false;
     }
     return true;
   }

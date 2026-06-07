@@ -116,6 +116,32 @@ in the tool input. It is intentionally bounded and deterministic. It does not
 replace provider-backed URL, file, or long-document summarization; those should
 remain separate provider/config or pack lanes.
 
+## Dependency Pack Safety
+
+Android dependency packs are not trusted just because a manifest lists them.
+`SkillProvisioningService` validates each pack manifest record through
+`DependencyPackManifestEntry` before it can become a selection or install
+candidate.
+
+Required manifest fields include:
+
+```text
+id
+abi / abis
+version
+source
+sizeBytes
+sha256
+files
+smokeCommand
+rollback
+```
+
+Remote packs must be hash-verified. Remote executable packs also need a
+complete signature block. Unsupported ABIs, unsafe install paths, unsafe file
+paths, missing file hashes/sizes, missing smoke commands, and missing rollback
+plans are rejected before install.
+
 ## Gateway `tools.allow`
 
 `tools.allow` is a strict Gateway allowlist. OpenClaw applies `tools.profile`

@@ -274,13 +274,20 @@ install returned `success: true`, `runtime: app-native-pdf-text`, and
 - Add focused provisioning tests under `test/`
 - Modify GTM docs
 
-- [ ] **Step 1: Define pack manifest schema**
+- [x] **Step 1: Define pack manifest schema**
 
 Each pack record must include `id`, `abi`, `version`, `sizeBytes`, `sha256`, `source`, `files`, `smokeCommand`, and `rollback`.
 
-- [ ] **Step 2: Add tests for pack validation**
+- [x] **Step 2: Add tests for pack validation**
 
 Tests must reject missing hashes, wrong ABI, and unsigned remote executable packs.
+
+Implemented `DependencyPackManifestEntry`, `DependencyPackManifestPolicy`, and
+`DependencyPackManifestValidation`. `SkillProvisioningService` now validates
+manifest records before pack selection/install and skips invalid records.
+Focused tests cover missing remote SHA-256, unsupported ABI, unsigned remote
+executable packs, unsafe paths, and a provisioning integration where an unsafe
+pack is rejected before install.
 
 - [ ] **Step 3: Implement first pack resolver**
 
