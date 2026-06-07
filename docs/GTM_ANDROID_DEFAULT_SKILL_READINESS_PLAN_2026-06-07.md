@@ -64,12 +64,14 @@ direct execute: summarize, session-logs, nano-pdf, xurl, camsnap, blogwatcher
 product-class counts: ready_optional 7, needs_config 14, needs_pack 17
 ```
 
-Additional Phase 4 config-gated adapter movement now proven on device:
+Additional Phase 4 config-gated adapter movement:
 
 ```text
 github: needs_config + stale missing_native_bin -> needs_config app-native config-only
 gh-issues: needs_config + stale missing_native_bin -> needs_config app-native config-only
 goplaces: needs_config + stale missing_native_bin -> needs_config app-native config-only
+notion: needs_config + stale missing_native_bin -> needs_config app-native config-only
+  local build/test proof complete; device install proof pending ADB visibility
 
 /api/tools after install:
 toolCount: 19
@@ -96,6 +98,12 @@ gh-issues: HTTP 400 MISSING_GITHUB_TOKEN, no secret leak
 goplaces: HTTP 400 MISSING_GOOGLE_PLACES_API_KEY, no secret leak
 ```
 
+The Notion adapter is locally built and verified but not yet installed on the
+phone in this round because `adb devices` returned no Android devices after
+refreshing the ADB server. Expected post-install `/api/tools` count is `20`,
+with `notion` present and `/api/tools/execute name=notion` returning
+`MISSING_NOTION_TOKEN` until the user configures `NOTION_TOKEN`.
+
 The `/api/debug/app-native-chat-tool-smoke` endpoint remains unreliable for
 final-response proof. During the milestone smoke it timed out once and then
 returned a stale visible response on the next prompt. Do not count that endpoint
@@ -112,9 +120,10 @@ Read this carefully:
 - `xurl`, `camsnap`, `summarize`, `blogwatcher`, `session-logs`, and
   `nano-pdf` are now app-native ready optional: usable through
   Gateway-visible tool execution, but not part of the launch-critical gate.
-- `github` and `gh-issues` are still needs-config skills, but no longer depend
-  on a Native CLI binary once `GITHUB_TOKEN` is present. They use bounded
-  app-native REST adapters through the same Gateway-visible tool path.
+- `github`, `gh-issues`, `goplaces`, and `notion` are still needs-config
+  skills, but no longer depend on Native CLI binaries once their env keys are
+  present. They use bounded app-native REST adapters through the same
+  Gateway-visible tool path.
 - `node-connect` is manual PRoot compatibility, so it must not count as a
   Native fresh-user Android promise.
 - The honest Android-release-relevant ceiling today is:
@@ -258,9 +267,10 @@ runtime gate. On the current device, several Class B skills also report
 `missing_native_bin`.
 
 Important second correction: app-native config-gated adapters must not keep
-stale OpenClaw binary gates. `github`, `gh-issues`, and `goplaces` are the
-first proven cases: until their env keys exist they show `needs_config`; after
-the keys exist they become app-native ready without requiring CLI binaries.
+stale OpenClaw binary gates. `github`, `gh-issues`, `goplaces`, and `notion`
+are the first adapter cases: until their env keys exist they show
+`needs_config`; after the keys exist they become app-native ready without
+requiring CLI binaries.
 
 Therefore the app must show layered gates:
 
@@ -288,15 +298,24 @@ User config: GOOGLE_PLACES_API_KEY
 Runtime gate before key: needs_config
 Runtime gate after key: app_native_ready
 Next action: configure GOOGLE_PLACES_API_KEY in the Skills page
+
+Skill: notion
+Product class: Needs config
+User config: NOTION_TOKEN
+Runtime gate before token: needs_config
+Runtime gate after token: app_native_ready
+Next action: configure NOTION_TOKEN in the Skills page
 ```
 
 `github` reads bounded authenticated profile metadata through `github.user`.
 `gh-issues` lists bounded repository issue metadata through `gh-issues.list`.
 `goplaces` performs bounded Google Places Text Search through `goplaces.search`
 using an explicit response field mask.
-All three are exposed in `/api/tools`, route `/api/tools/execute` through
-`AgentSkillServer`, and keep tokens out of tool input, result payloads, and
-visible chat chunks.
+`notion` performs bounded Notion workspace search metadata through
+`notion.search`.
+All four are exposed in `/api/tools`, route `/api/tools/execute` through
+`AgentSkillServer`, and keep tokens/API keys out of tool input, result
+payloads, and visible chat chunks.
 
 ### Class C: Needs Pack
 
@@ -963,6 +982,86 @@ Device proof after corrected install:
   goplaces primaryGate/gates: absent
 /api/tools/execute name=goplaces:
   HTTP 400 MISSING_GOOGLE_PLACES_API_KEY, no secret leak
+```
+
+Ninth adapter landed:
+
+```text
+notion
+status: needs_config
+runtime after config: app-native Notion REST adapter
+Gateway tool: notion
+command underneath: notion.search
+manifest movement: stale missing_native_bin -> app-native config-only
+scope: Notion workspace search metadata only, bounded result previews
+safety: NOTION_TOKEN is read from Native .env, never accepted in tool input,
+and never returned in payloads or chat chunks
+```
+
+Local proof:
+
+```text
+flutter test test/notion_app_native_adapter_test.dart --no-pub
+
+Result: 6/6 passing
+```
+
+Combined local proof after formatting:
+
+```text
+flutter test test/android_skill_readiness_service_test.dart \
+  test/github_app_native_adapter_test.dart \
+  test/goplaces_app_native_adapter_test.dart \
+  test/notion_app_native_adapter_test.dart \
+  test/android_skill_support_manifest_test.dart --no-pub
+
+Result: 31/31 passing
+```
+
+Analyzer proof:
+
+```text
+flutter analyze lib/services/capabilities/notion_capability.dart \
+  lib/services/app_native_chat_tool_router.dart \
+  lib/services/agent_skill_server.dart \
+  lib/services/gateway_tool_catalog.dart \
+  lib/services/android_skill_support_manifest.dart \
+  lib/services/skills_service.dart \
+  test/notion_app_native_adapter_test.dart
+
+Result: No issues found
+```
+
+Build proof:
+
+```text
+flutter build apk --debug
+
+Result: built build/app/outputs/flutter-apk/app-debug.apk
+```
+
+Device proof status for this Notion round:
+
+```text
+adb start-server; adb devices -l
+Result: no Android devices listed
+
+flutter devices
+Result: Windows, Chrome, and Edge only
+```
+
+Next device proof once the phone is visible:
+
+```text
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
+adb forward tcp:8765 tcp:8765
+/api/tools: notion schema present, expected toolCount 20
+/device/health:
+  notion runtimeStatus: needs_config
+  notion provisioningStatus: needs_user_config
+  notion primaryGate/gates: absent
+/api/tools/execute name=notion:
+  HTTP 400 MISSING_NOTION_TOKEN, no secret leak
 ```
 
 Host inspection note: for the phone-owned `AgentSkillServer` bridge on port

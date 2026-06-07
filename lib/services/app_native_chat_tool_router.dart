@@ -13,6 +13,7 @@ import 'capabilities/goplaces_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/nano_pdf_capability.dart';
+import 'capabilities/notion_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/session_logs_capability.dart';
 import 'capabilities/summarize_capability.dart';
@@ -62,11 +63,13 @@ class AppNativeChatToolRouter {
     BlogWatcherCapability? blogWatcher,
     GitHubCapability? github,
     GoPlacesCapability? goplaces,
+    NotionCapability? notion,
     SessionLogsCapability? sessionLogs,
     XurlCapability? xurl,
   })  : _blogWatcher = blogWatcher ?? BlogWatcherCapability(),
         _github = github ?? GitHubCapability(),
         _goplaces = goplaces ?? GoPlacesCapability(),
+        _notion = notion ?? NotionCapability(),
         _sessionLogs = sessionLogs ?? SessionLogsCapability(),
         _xurl = xurl ?? XurlCapability();
 
@@ -74,6 +77,7 @@ class AppNativeChatToolRouter {
     BlogWatcherCapability? blogWatcher,
     GitHubCapability? github,
     GoPlacesCapability? goplaces,
+    NotionCapability? notion,
     SessionLogsCapability? sessionLogs,
     XurlCapability? xurl,
   }) =>
@@ -81,6 +85,7 @@ class AppNativeChatToolRouter {
         blogWatcher: blogWatcher,
         github: github,
         goplaces: goplaces,
+        notion: notion,
         sessionLogs: sessionLogs,
         xurl: xurl,
       );
@@ -96,6 +101,7 @@ class AppNativeChatToolRouter {
   final LocationCapability _location = LocationCapability();
   final MemeMakerCapability _memeMaker = MemeMakerCapability();
   final NanoPdfCapability _nanoPdf = NanoPdfCapability();
+  final NotionCapability _notion;
   final SensorCapability _sensor = SensorCapability();
   final SessionLogsCapability _sessionLogs;
   final SummarizeCapability _summarize = SummarizeCapability();
@@ -207,6 +213,7 @@ class AppNativeChatToolRouter {
       'github.user' ||
       'gh-issues.list' ||
       'goplaces.search' ||
+      'notion.search' ||
       'meme-maker.create' ||
       'nano-pdf.extract' ||
       'session-logs.query' ||
@@ -260,6 +267,7 @@ class AppNativeChatToolRouter {
       case 'github.user':
       case 'gh-issues.list':
       case 'goplaces.search':
+      case 'notion.search':
       case 'nano-pdf.extract':
       case 'session-logs.query':
       case 'summarize.text':
@@ -474,6 +482,9 @@ class AppNativeChatToolRouter {
     final goplacesPlan = _goplacesPlan(trimmed);
     if (goplacesPlan != null) return goplacesPlan;
 
+    final notionPlan = _notionPlan(trimmed);
+    if (notionPlan != null) return notionPlan;
+
     final sessionLogsPlan = _sessionLogsPlan(trimmed);
     if (sessionLogsPlan != null) return sessionLogsPlan;
 
@@ -577,6 +588,11 @@ class AppNativeChatToolRouter {
           ));
         case 'goplaces.search':
           return _frameToMap(await _goplaces.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'notion.search':
+          return _frameToMap(await _notion.handle(
             plan.command,
             plan.input,
           ));
@@ -766,6 +782,10 @@ class AppNativeChatToolRouter {
         final query = result['query']?.toString().trim();
         final count = result['count'] ?? 0;
         return 'Google Places search${query?.isNotEmpty == true ? ' for $query' : ''}: $count place(s).';
+      case 'notion.search':
+        final query = result['query']?.toString().trim();
+        final count = result['count'] ?? 0;
+        return 'Notion search${query?.isNotEmpty == true ? ' for $query' : ''}: $count result(s).';
       case 'session-logs.query':
         final action = result['action']?.toString();
         return switch (action) {
@@ -1270,6 +1290,49 @@ class AppNativeChatToolRouter {
       command: 'goplaces.search',
       input: {
         'query': query,
+        if (limit != null) 'limit': limit,
+        'source': 'app-native-chat-router',
+      },
+    );
+  }
+
+  _AppNativeToolPlan? _notionPlan(String message) {
+    final match = RegExp(
+      r'^\s*notion(?:\s+search)?\s*:?\s+(.+?)\s*$',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (match == null) return null;
+    var query = (match.group(1) ?? '').trim();
+    final limitMatch = RegExp(
+      r'\blimit\s+(\d{1,2})\b',
+      caseSensitive: false,
+    ).firstMatch(query);
+    final limit = int.tryParse(limitMatch?.group(1) ?? '');
+    final objectMatch = RegExp(
+      r'\b(?:object|type)\s+(page|pages|data[-\s_]?source|database|databases)\b',
+      caseSensitive: false,
+    ).firstMatch(query);
+    final object = objectMatch?.group(1);
+    query = query
+        .replaceFirst(
+          RegExp(r'\blimit\s+\d{1,2}\b', caseSensitive: false),
+          '',
+        )
+        .replaceFirst(
+          RegExp(
+            r'\b(?:object|type)\s+(?:page|pages|data[-\s_]?source|database|databases)\b',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
+    if (query.isEmpty) return null;
+    return _AppNativeToolPlan(
+      toolName: 'notion',
+      command: 'notion.search',
+      input: {
+        'query': query,
+        if (object != null) 'object': object,
         if (limit != null) 'limit': limit,
         'source': 'app-native-chat-router',
       },

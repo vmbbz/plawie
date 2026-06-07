@@ -89,6 +89,9 @@ class SkillsService {
     'google_places': 'goplaces',
     'google places': 'goplaces',
     'places_search': 'goplaces',
+    'notion_search': 'notion',
+    'notion search': 'notion',
+    'notion.search': 'notion',
   };
 
   Stream<SkillsEvent> get events => _eventController.stream;
@@ -175,6 +178,7 @@ class SkillsService {
       _createGithubSkill(),
       _createGhIssuesSkill(),
       _createGoPlacesSkill(),
+      _createNotionSkill(),
       _createAvatarOverlaySkill(),
       _createBaseChainSkill(),
       // Partner proxies
@@ -241,6 +245,8 @@ class SkillsService {
         return await _executeGithubSkill(skill, params, ctx);
       case 'places':
         return await _executeGoPlacesSkill(skill, params, ctx);
+      case 'notion':
+        return await _executeNotionSkill(skill, params, ctx);
       case 'system':
         return await _executeAvatarPipSkill(skill, params, ctx);
       case 'base':
@@ -692,6 +698,23 @@ class SkillsService {
       return SkillResult.error('Google Places skill fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Google Places skill unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeNotionSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('Notion skill fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('Notion skill unreachable: $e');
     }
   }
 
@@ -1178,6 +1201,18 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createNotionSkill() => Skill(
+      id: 'notion',
+      name: 'notion',
+      description:
+          'Search Notion workspace metadata with a bounded app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'notion',
+      tags: ['notion', 'workspace', 'rest'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createAvatarOverlaySkill() => Skill(
       id: 'avatar_overlay',
       name: 'Floating Avatar',
@@ -1629,6 +1664,38 @@ class SkillsService {
               'includedType': {
                 'type': 'string',
                 'description': 'Optional Places type filter.',
+              },
+            },
+            'required': ['query'],
+          },
+        };
+      case 'notion':
+        return {
+          'name': skill.id,
+          'description':
+              'Search Notion workspace pages and data sources through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'query': {
+                'type': 'string',
+                'description': 'Search text for Notion workspace results.',
+              },
+              'object': {
+                'type': 'string',
+                'enum': ['page', 'data_source'],
+                'description':
+                    'Optional Notion object filter. Defaults to all searchable objects.',
+              },
+              'limit': {
+                'type': 'integer',
+                'minimum': 1,
+                'maximum': 10,
+                'description': 'Maximum results to return.',
+              },
+              'startCursor': {
+                'type': 'string',
+                'description': 'Optional Notion pagination cursor.',
               },
             },
             'required': ['query'],

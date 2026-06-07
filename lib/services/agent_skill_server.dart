@@ -21,6 +21,7 @@ import 'capabilities/goplaces_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/nano_pdf_capability.dart';
+import 'capabilities/notion_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/session_logs_capability.dart';
 import 'capabilities/summarize_capability.dart';
@@ -83,6 +84,7 @@ class AgentSkillServer {
   final LocationCapability _locationCapability = LocationCapability();
   final MemeMakerCapability _memeMakerCapability = MemeMakerCapability();
   final NanoPdfCapability _nanoPdfCapability = NanoPdfCapability();
+  final NotionCapability _notionCapability = NotionCapability();
   final SensorCapability _sensorCapability = SensorCapability();
   final SessionLogsCapability _sessionLogsCapability = SessionLogsCapability();
   final SummarizeCapability _summarizeCapability = SummarizeCapability();
@@ -1978,6 +1980,9 @@ class AgentSkillServer {
       'goplaces.search': 'goplaces.search',
       'google_places': 'goplaces.search',
       'places_search': 'goplaces.search',
+      'notion': 'notion.search',
+      'notion_search': 'notion.search',
+      'notion.search': 'notion.search',
       'meme_maker_create': 'meme-maker.create',
       'meme-maker_create': 'meme-maker.create',
       'nano-pdf': 'nano-pdf.extract',
@@ -2176,6 +2181,16 @@ class AgentSkillServer {
           message: ok
               ? 'goplaces.search arguments are dispatchable'
               : 'goplaces.search requires a query',
+        );
+      case 'notion.search':
+        final query = (input['query'] ?? input['text'])?.toString().trim();
+        final ok = query != null && query.isNotEmpty;
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: ok,
+          code: ok ? 'ok' : 'missing_query',
+          message: ok
+              ? 'notion.search arguments are dispatchable'
+              : 'notion.search requires a query',
         );
       case 'nano-pdf.extract':
         final pdfBase64 =
@@ -2387,6 +2402,14 @@ class AgentSkillServer {
         case 'places_search':
           final frame = await _goPlacesCapability.handle(
             'goplaces.search',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'notion':
+        case 'notion_search':
+        case 'notion.search':
+          final frame = await _notionCapability.handle(
+            'notion.search',
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);

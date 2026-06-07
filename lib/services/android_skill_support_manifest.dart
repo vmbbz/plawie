@@ -310,7 +310,10 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsConfig(
     'notion',
     config: ['NOTION_TOKEN'],
-    smoke: 'Read a configured Notion workspace search result.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke:
+        'Read bounded Notion workspace search metadata through the app-native REST adapter.',
   ),
   _hiddenDesktop(
     'obsidian',
