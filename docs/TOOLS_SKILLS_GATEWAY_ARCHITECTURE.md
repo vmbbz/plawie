@@ -67,6 +67,7 @@ valeo-sentinel
 moonpay
 blogwatcher
 session-logs
+nano-pdf
 camsnap
 summarize
 xurl
@@ -75,8 +76,8 @@ xurl
 The current Android node command allowlist contains avatar, camera, canvas,
 weather, ClawHub metadata, flashlight/torch, location, screen recording, sensor,
 simple meme image creation, blogwatcher RSS/Atom feed checks, camsnap camera
-capture, app-owned session log queries, provided-text summarization, xurl HTTP
-requests, and haptic commands.
+capture, app-owned session log queries, small text-PDF byte extraction,
+provided-text summarization, xurl HTTP requests, and haptic commands.
 It does not currently prove a generic third-party app launcher or a safe
 WhatsApp message-sending command.
 
@@ -90,6 +91,12 @@ lists sessions, reads the active or selected session, and searches bounded
 message previews through `session-logs.query`. It does not expose arbitrary log
 directories, raw gateway session keys, raw image payloads, full reasoning
 blocks, or full tool result payloads.
+
+`nano-pdf` is a named app-native adapter for small text-based PDFs supplied as
+base64 bytes. It extracts bounded text-layer strings through
+`nano-pdf.extract`. It does not expose arbitrary file paths and does not claim
+OCR, scanned PDFs, encrypted PDFs, complex font/CMap extraction, or full parser
+parity.
 
 `xurl.request` is a generic HTTP adapter with a release safety boundary:
 absolute `http`/`https` URLs only, bounded response previews, and no loopback
@@ -140,7 +147,7 @@ Why this shape:
 | ID family | Correct home |
 | --- | --- |
 | `twilio`, `crypto`, `base`, `calculator`, `calendar` | OpenClaw skill install/load path |
-| `blogwatcher.check`, `session-logs.query`, `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `summarize.text`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
+| `blogwatcher.check`, `session-logs.query`, `nano-pdf.extract`, `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `summarize.text`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
 | local NDK helper names | `LocalLlmService` direct local tool schemas |
 
 If Gateway logs `tools.allow allowlist contains unknown entries`, treat the
@@ -161,6 +168,7 @@ Device capabilities belong in node command policy, for example:
         "camsnap",
         "blogwatcher.check",
         "session-logs.query",
+        "nano-pdf.extract",
         "clawhub.search",
         "clawhub.info",
         "meme-maker.create",

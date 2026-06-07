@@ -10,6 +10,7 @@ import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
+import 'capabilities/nano_pdf_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/session_logs_capability.dart';
 import 'capabilities/summarize_capability.dart';
@@ -82,6 +83,7 @@ class AppNativeChatToolRouter {
   final FlashCapability _flash = FlashCapability();
   final LocationCapability _location = LocationCapability();
   final MemeMakerCapability _memeMaker = MemeMakerCapability();
+  final NanoPdfCapability _nanoPdf = NanoPdfCapability();
   final SensorCapability _sensor = SensorCapability();
   final SessionLogsCapability _sessionLogs;
   final SummarizeCapability _summarize = SummarizeCapability();
@@ -191,6 +193,7 @@ class AppNativeChatToolRouter {
       'clawhub.search' ||
       'clawhub.info' ||
       'meme-maker.create' ||
+      'nano-pdf.extract' ||
       'session-logs.query' ||
       'summarize.text' ||
       'xurl.request' =>
@@ -239,6 +242,7 @@ class AppNativeChatToolRouter {
       case 'weather.current':
       case 'weather.forecast':
       case 'blogwatcher.check':
+      case 'nano-pdf.extract':
       case 'session-logs.query':
       case 'summarize.text':
       case 'xurl.request':
@@ -449,6 +453,9 @@ class AppNativeChatToolRouter {
     final sessionLogsPlan = _sessionLogsPlan(trimmed);
     if (sessionLogsPlan != null) return sessionLogsPlan;
 
+    final nanoPdfPlan = _nanoPdfPlan(trimmed);
+    if (nanoPdfPlan != null) return nanoPdfPlan;
+
     final xurlPlan = _xurlPlan(trimmed);
     if (xurlPlan != null) return xurlPlan;
 
@@ -551,6 +558,11 @@ class AppNativeChatToolRouter {
           ));
         case 'meme-maker.create':
           return _frameToMap(await _memeMaker.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'nano-pdf.extract':
+          return _frameToMap(await _nanoPdf.handle(
             plan.command,
             plan.input,
           ));
@@ -729,6 +741,8 @@ class AppNativeChatToolRouter {
       case 'meme-maker.create':
         final bytes = result['pngBytes'];
         return 'Meme image generated${bytes == null ? '' : ' ($bytes bytes)'}.';
+      case 'nano-pdf.extract':
+        return 'nano-pdf extracted ${result['chars'] ?? 0} character(s) from the PDF text layer.';
       case 'summarize.text':
         final summary = result['summary']?.toString().trim();
         return summary?.isNotEmpty == true
@@ -1192,6 +1206,25 @@ class AppNativeChatToolRouter {
       toolName: 'session-logs',
       command: 'session-logs.query',
       input: input,
+    );
+  }
+
+  _AppNativeToolPlan? _nanoPdfPlan(String message) {
+    final match = RegExp(
+      r'^\s*nano[-\s]pdf\s+(?:base64\s+)?(.+)$',
+      caseSensitive: false,
+      dotAll: true,
+    ).firstMatch(message);
+    final pdfBase64 = match?.group(1)?.trim();
+    if (pdfBase64 == null || pdfBase64.isEmpty) return null;
+    if (pdfBase64.length > 70000) return null;
+    return _AppNativeToolPlan(
+      toolName: 'nano-pdf',
+      command: 'nano-pdf.extract',
+      input: {
+        'pdfBase64': pdfBase64,
+        'source': 'app-native-chat-router',
+      },
     );
   }
 

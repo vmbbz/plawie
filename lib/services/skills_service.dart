@@ -64,6 +64,9 @@ class SkillsService {
     'session_logs': 'session-logs',
     'session_logs_query': 'session-logs',
     'session-logs.query': 'session-logs',
+    'nano_pdf': 'nano-pdf',
+    'nano_pdf_extract': 'nano-pdf',
+    'nano-pdf.extract': 'nano-pdf',
     'camera_snap': 'camsnap',
     'camera snap': 'camsnap',
     'camera.snapshot': 'camsnap',
@@ -153,6 +156,7 @@ class SkillsService {
       _createDeviceNodeSkill(),
       _createBlogWatcherSkill(),
       _createSessionLogsSkill(),
+      _createNanoPdfSkill(),
       _createCamsnapSkill(),
       _createAvatarOverlaySkill(),
       _createBaseChainSkill(),
@@ -210,6 +214,8 @@ class SkillsService {
         return await _executeBlogWatcherSkill(skill, params, ctx);
       case 'session':
         return await _executeSessionLogsSkill(skill, params, ctx);
+      case 'pdf':
+        return await _executeNanoPdfSkill(skill, params, ctx);
       case 'device':
         return await _executeDeviceNodeSkill(skill, params, ctx);
       case 'camera':
@@ -597,6 +603,23 @@ class SkillsService {
       return SkillResult.error('Session logs fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Session logs unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeNanoPdfSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('nano-pdf fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('nano-pdf unreachable: $e');
     }
   }
 
@@ -1041,6 +1064,18 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createNanoPdfSkill() => Skill(
+      id: 'nano-pdf',
+      name: 'nano-pdf',
+      description:
+          'Extract bounded text from small text-based PDFs supplied as bytes.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'pdf',
+      tags: ['pdf', 'text', 'extract'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createCamsnapSkill() => Skill(
       id: 'camsnap',
       name: 'camsnap',
@@ -1377,6 +1412,29 @@ class SkillsService {
               },
             },
             'required': ['action'],
+          },
+        };
+      case 'nano-pdf':
+        return {
+          'name': skill.id,
+          'description':
+              'Extract bounded text from small text-based PDFs supplied as bytes.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'pdfBase64': {
+                'type': 'string',
+                'description':
+                    'Base64-encoded PDF bytes. Small text-based PDFs only.',
+              },
+              'maxChars': {
+                'type': 'integer',
+                'minimum': 80,
+                'maximum': 20000,
+                'description': 'Maximum extracted text characters to return.',
+              },
+            },
+            'required': ['pdfBase64'],
           },
         };
       case 'camsnap':

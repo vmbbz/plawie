@@ -54,9 +54,10 @@ Source delta pending the next batched APK/device smoke:
 ```text
 blogwatcher: needs_pack -> ready_optional
 camsnap: needs_pack -> ready_optional
+nano-pdf: needs_pack -> ready_optional
 session-logs: needs_config -> ready_optional
 summarize: needs_config -> ready_optional
-source product-class counts: ready_optional 5, needs_config 14, needs_pack 19
+source product-class counts: ready_optional 6, needs_config 14, needs_pack 18
 ```
 
 Do not replace the live device-health block above until the app is rebuilt,
@@ -125,6 +126,7 @@ fresh-user launch-critical gate:
 ```text
 blogwatcher
 camsnap
+nano-pdf
 session-logs
 summarize
 xurl
@@ -145,6 +147,14 @@ native `/api/tools` catalog, routes `/api/tools/execute` through
 `TOOL_USE:camsnap` / `TOOL_RESULT:camsnap` while delegating the actual phone
 action to `camera.snap`. It is optional, not launch-required, because camera
 permission prompts and user comfort should not block fresh-app launch.
+
+`nano-pdf` now runs as a narrow app-native adapter for small text-based PDFs
+supplied as base64 bytes. It is exposed as a real `nano-pdf` tool in the native
+`/api/tools` catalog, routes `/api/tools/execute` through `AgentSkillServer`,
+and supports explicit test prompts like `nano-pdf base64 <PDF_BASE64>`. It
+does not claim OCR, scanned PDFs, encrypted PDFs, arbitrary file paths, complex
+font/CMap extraction, or full CLI/parser parity. Those remain verified
+pack/OCR lanes.
 
 `session-logs` now runs as a named app-native adapter over app-owned chat
 session persistence. It is exposed as a real `session-logs` tool in the native
@@ -219,7 +229,6 @@ eightctl: android-cli-core-pack
 gemini: android-node-debug-pack
 gifgrep: android-vision-media-runtime
 himalaya: android-cli-core-pack
-nano-pdf: android-cli-core-pack
 node-inspect-debugger: android-node-debug-pack
 openai-whisper: android-whisper-runtime
 openhue: android-cli-core-pack
@@ -329,11 +338,11 @@ Minimum GTM surface:
 
 ```text
 Android Default Skills
-Ready now by product class: 18/51 Native Android-relevant
+Ready now by product class: 19/51 Native Android-relevant
 Launch gate: 13/13 pass
-Ready optional: 5
+Ready optional: 6
 Needs config: 14
-Needs pack: 19
+Needs pack: 18
 Unsupported Android: 6
 Manual PRoot: 2
 Desktop/remote: 2
@@ -378,6 +387,11 @@ summarize
 Ready optional
 Runtime: app-native extractive text adapter
 Action: Use through Gateway-visible summarize
+
+nano-pdf
+Ready optional
+Runtime: app-native text-PDF byte adapter
+Action: Use through Gateway-visible nano-pdf
 
 session-logs
 Ready optional
@@ -705,6 +719,32 @@ Device proof is intentionally deferred to the next batched install to save
 data. The required smoke is `/api/tools`,
 `/api/tools/execute name=session-logs`, and one explicit chat/UI prompt such as
 `session-logs search gateway limit 5`.
+
+Sixth adapter landed locally, pending batched device smoke:
+
+```text
+nano-pdf
+status: ready_optional
+runtime: app-native text-PDF byte adapter
+Gateway tool: nano-pdf
+command underneath: nano-pdf.extract
+manifest movement: needs_pack -> ready_optional
+scope: small text-based PDF bytes only
+safety: encrypted PDFs, invalid bytes, arbitrary file paths, OCR/scanned PDFs,
+and full parser parity are not claimed
+```
+
+Local proof:
+
+```text
+flutter test test/nano_pdf_app_native_adapter_test.dart --no-pub
+
+Result: 7/7 passing
+```
+
+Device proof is intentionally deferred to the next batched install to save
+data. The required smoke is `/api/tools`, `/api/tools/execute name=nano-pdf`,
+and one explicit chat/UI prompt with a tiny text-PDF base64 fixture.
 
 ### Phase 5: Verified Dependency Packs
 

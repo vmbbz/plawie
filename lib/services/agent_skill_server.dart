@@ -18,6 +18,7 @@ import 'capabilities/device_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
+import 'capabilities/nano_pdf_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/session_logs_capability.dart';
 import 'capabilities/summarize_capability.dart';
@@ -77,6 +78,7 @@ class AgentSkillServer {
   final FlashCapability _flashCapability = FlashCapability();
   final LocationCapability _locationCapability = LocationCapability();
   final MemeMakerCapability _memeMakerCapability = MemeMakerCapability();
+  final NanoPdfCapability _nanoPdfCapability = NanoPdfCapability();
   final SensorCapability _sensorCapability = SensorCapability();
   final SessionLogsCapability _sessionLogsCapability = SessionLogsCapability();
   final SummarizeCapability _summarizeCapability = SummarizeCapability();
@@ -1960,6 +1962,10 @@ class AgentSkillServer {
       'clawhub_info': 'clawhub.info',
       'meme_maker_create': 'meme-maker.create',
       'meme-maker_create': 'meme-maker.create',
+      'nano-pdf': 'nano-pdf.extract',
+      'nano_pdf': 'nano-pdf.extract',
+      'nano_pdf_extract': 'nano-pdf.extract',
+      'nano-pdf.extract': 'nano-pdf.extract',
       'canvas_navigate': 'canvas.navigate',
       'canvas_eval': 'canvas.eval',
       'canvas_snapshot': 'canvas.snapshot',
@@ -2123,6 +2129,19 @@ class AgentSkillServer {
               ? 'session-logs.query arguments are dispatchable'
               : 'session-logs.query requires action list/read/search and a query for search',
         );
+      case 'nano-pdf.extract':
+        final pdfBase64 =
+            (input['pdfBase64'] ?? input['base64'] ?? input['pdf'])
+                ?.toString()
+                .trim();
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: pdfBase64 != null && pdfBase64.isNotEmpty,
+          code:
+              pdfBase64 != null && pdfBase64.isNotEmpty ? 'ok' : 'missing_pdf',
+          message: pdfBase64 != null && pdfBase64.isNotEmpty
+              ? 'nano-pdf.extract arguments are dispatchable'
+              : 'nano-pdf.extract requires pdfBase64 bytes',
+        );
       case 'camera.snap':
       case 'camera.clip':
       case 'camera.list':
@@ -2190,6 +2209,8 @@ class AgentSkillServer {
         return 'LocationCapability';
       case 'meme-maker':
         return 'MemeMakerCapability';
+      case 'nano-pdf':
+        return 'NanoPdfCapability';
       case 'device':
         return 'DeviceCapability';
       case 'screen':
@@ -2289,6 +2310,15 @@ class AgentSkillServer {
         case 'session-logs.query':
           final frame = await _sessionLogsCapability.handle(
             'session-logs.query',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'nano-pdf':
+        case 'nano_pdf':
+        case 'nano_pdf_extract':
+        case 'nano-pdf.extract':
+          final frame = await _nanoPdfCapability.handle(
+            'nano-pdf.extract',
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);

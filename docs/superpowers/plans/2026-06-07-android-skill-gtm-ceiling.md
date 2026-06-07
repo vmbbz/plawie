@@ -251,6 +251,15 @@ session metadata and message previews only; it does not expose arbitrary
 full reasoning blocks, or full tool result payloads. Device smoke is deferred
 to the next batched install.
 
+`nano-pdf` local adapter is implemented as a ready-optional named tool for
+small text-based PDF bytes. It keeps `TOOL_USE:nano-pdf` identity for explicit
+`nano-pdf base64 <PDF_BASE64>` prompts, advertises a `/api/tools` schema, and
+routes `/api/tools/execute` through `AgentSkillServer`. It rejects missing,
+invalid, and encrypted PDFs, returns bounded text-layer output, and does not
+claim OCR/scanned PDF support, arbitrary file paths, complex font/CMap
+extraction, or full parser parity. Device smoke is deferred to the next batched
+install.
+
 ### Task 5: Verified Pack Lane
 
 **Files:**

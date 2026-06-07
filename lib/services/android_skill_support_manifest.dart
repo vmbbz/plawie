@@ -282,10 +282,11 @@ final List<AndroidSkillSupportEntry> _entries =
     'model-usage',
     reason: 'Local desktop model usage accounting is not an Android GTM gate.',
   ),
-  _needsPack(
+  _readyOptional(
     'nano-pdf',
-    packs: ['android-cli-core-pack'],
-    smoke: 'Extract text from a tiny PDF fixture.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.appNativeTool,
+    smoke: 'Extract bounded text from a tiny text-based PDF byte fixture.',
   ),
   _manualProot(
     'node-connect',
