@@ -18,6 +18,7 @@ import 'local_llm_service.dart';
 import 'model_provider_catalog.dart';
 import 'gateway_tool_catalog.dart';
 import 'app_native_chat_tool_router.dart';
+import 'native_clawhub_skill_execution_service.dart';
 import 'native_gateway_smoke_service.dart';
 import 'native_gateway_shadow_parity_service.dart';
 import 'android_skill_readiness_service.dart';
@@ -5097,6 +5098,33 @@ ${lines.join('\n')}
       'ok=${execution.ok}',
     );
     return execution;
+  }
+
+  Future<NativeClawHubSkillExecution?> _executeRequiredNativeClawHubSkillIntent(
+    String message, {
+    NativeClawHubSkillExecutionService? service,
+  }) async {
+    final execution =
+        await (service ?? NativeClawHubSkillExecutionService.instance)
+            .tryExecuteRequiredIntent(message);
+    if (execution == null) return null;
+    _addActivity(
+      '[SKILLS] Required native ClawHub skill intent: '
+      '${execution.toolName} ok=${execution.ok}',
+    );
+    return execution;
+  }
+
+  @visibleForTesting
+  Future<NativeClawHubSkillExecution?>
+      debugExecuteRequiredNativeClawHubSkillIntentForTesting(
+    String message, {
+    NativeClawHubSkillExecutionService? service,
+  }) {
+    return _executeRequiredNativeClawHubSkillIntent(
+      message,
+      service: service,
+    );
   }
 
   @visibleForTesting
@@ -14656,6 +14684,15 @@ ${lines.join('\n')}
     var wsOk = await _ensureWebSocket(token);
     Map<String, dynamic> modelSyncChanges = <String, dynamic>{};
     if (wsOk) {
+      final requiredNativeSkillExecution =
+          await _executeRequiredNativeClawHubSkillIntent(message);
+      if (requiredNativeSkillExecution != null) {
+        yield requiredNativeSkillExecution.toolUseChunk;
+        yield requiredNativeSkillExecution.toolResultChunk;
+        yield requiredNativeSkillExecution.visibleText;
+        return;
+      }
+
       final requiredMobileToolExecution =
           await _executeRequiredMobileToolIntent(message);
       if (requiredMobileToolExecution != null) {
@@ -14685,6 +14722,15 @@ ${lines.join('\n')}
             'Please wait a moment and try again. Plawie did not use the '
             'fallback HTTP chat route because it bypasses OpenClaw tools and '
             'mobile node context.';
+        return;
+      }
+
+      final requiredNativeSkillExecution =
+          await _executeRequiredNativeClawHubSkillIntent(message);
+      if (requiredNativeSkillExecution != null) {
+        yield requiredNativeSkillExecution.toolUseChunk;
+        yield requiredNativeSkillExecution.toolResultChunk;
+        yield requiredNativeSkillExecution.visibleText;
         return;
       }
 

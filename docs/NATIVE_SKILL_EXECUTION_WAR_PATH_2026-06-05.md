@@ -13,6 +13,14 @@ Android-viable default skill in scope, classify desktop-only/config/pack/PRoot
 cases explicitly, and require `unexpected_missing_dependency: 0` for the Android
 launch set.
 
+2026-06-07 correction: stocks must remain a deterministic required Native
+ClawHub skill intent in chat. It is not enough to add a private prompt note that
+the model should use `stocks`; explicit finance/ticker prompts must emit
+`TOOL_USE:stocks` and `TOOL_RESULT:stocks` through
+`NativeClawHubSkillExecutionService` before normal `chat.send` continuation. A
+chat answer that merely repeats a stale parity gate such as "missing binary" is
+not execution proof.
+
 ## Executive Position
 
 Native is the default owner.
@@ -35,6 +43,17 @@ The stocks test is now a successful on-device proof:
 - No PRoot fallback was used.
 
 That is a critical proof. It is not the end state.
+
+Important count semantics:
+
+- `13/13` is the Android launch-required default-skill release gate.
+- It is not the claim that the app can only run 13 skills.
+- Current health also reports the broader classified/default manifest count and
+  the installed Native workspace count.
+- ClawHub-installed skills like `stocks` live in the Native skill execution and
+  parity/provisioning layer. They need deterministic execution contracts and
+  exact gates, but they are not the same metric as the default Android launch
+  set.
 
 The end state is broader: every default skill and every newly installed ClawHub skill gets a deterministic lifecycle:
 

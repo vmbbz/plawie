@@ -7,6 +7,11 @@ The target is not a tiny 1-3 skill pilot. The target is every default OpenClaw
 skill that can honestly run on Android, with unsupported skills filtered out by
 clear policy instead of left as noisy `missing_dependency` failures.
 
+Scope note: `readyRequired 13/13` is the Android launch-required default-skill
+gate. It is not the full count of skills the app can run or install. The broader
+system also has the classified default-skill manifest and the Native workspace
+skill/parity layer for ClawHub-installed skills such as `stocks`.
+
 ## Decision
 
 The earlier "1-3 ClawHub proof skills" framing is too narrow for GTM. It is
@@ -38,6 +43,26 @@ It should report Android launch readiness by class:
 `missing_dependency` should remain a diagnostic state, but it should not be the
 user-facing GTM summary for skills that are deliberately desktop-only,
 credential-gated, or waiting for a known Android pack.
+
+## Chat Routing Correction: Stocks
+
+The failed chat probe showed the right architectural lesson: prompt guidance is
+not a tool contract. A private instruction that says "use stocks for finance"
+can still end with timeout, stale gate narration, or no visible tool event.
+
+For explicit finance/ticker prompts, chat now needs a deterministic required
+Native ClawHub intent before normal Gateway `chat.send`:
+
+```text
+message -> NativeClawHubSkillExecutionService.tryExecuteRequiredIntent()
+        -> TOOL_USE:stocks
+        -> TOOL_RESULT:stocks
+        -> visible stocks result or exact execution gate
+```
+
+This keeps web/search from silently replacing a requested skill and keeps PRoot
+manual-only. If `stocks` is installed and provisioned, it should run. If it is
+not, the user should see the exact Native execution gate, not a model guess.
 
 ## Why This Is Smarter Than A Tiny Pilot
 
