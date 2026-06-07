@@ -52,9 +52,10 @@ Release gate: PASS
 Source delta pending the next batched APK/device smoke:
 
 ```text
+blogwatcher: needs_pack -> ready_optional
 camsnap: needs_pack -> ready_optional
 summarize: needs_config -> ready_optional
-source product-class counts: ready_optional 3, needs_config 15, needs_pack 20
+source product-class counts: ready_optional 4, needs_config 15, needs_pack 19
 ```
 
 Do not replace the live device-health block above until the app is rebuilt,
@@ -121,10 +122,19 @@ These are Android-relevant and usable now, but intentionally not part of the
 fresh-user launch-critical gate:
 
 ```text
+blogwatcher
 camsnap
 summarize
 xurl
 ```
+
+`blogwatcher` now runs as a bounded app-native RSS/Atom feed checker. It is
+exposed as a real `blogwatcher` tool in the native `/api/tools` catalog, routes
+`/api/tools/execute` through `AgentSkillServer`, supports explicit prompts like
+`blogwatcher https://example.com/feed.xml limit 3`, and blocks non-HTTP,
+loopback, private, and link-local feed URLs. It does not claim persistent
+watching, notifications, multi-feed state, or full parity with any original CLI
+watcher semantics.
 
 `camsnap` now runs as a named app-native camera adapter over the existing
 Android `CameraCapability`. It is exposed as a real `camsnap` tool in the
@@ -192,7 +202,6 @@ Next action: install verified pack or use app-native adapter
 These are Android-relevant, but need verified runtime/binary/media packs:
 
 ```text
-blogwatcher: android-cli-core-pack
 blucli: android-cli-core-pack
 coding-agent: android-node-debug-pack
 diagram-maker: android-cli-core-pack
@@ -310,11 +319,11 @@ Minimum GTM surface:
 
 ```text
 Android Default Skills
-Ready now by product class: 16/51 Native Android-relevant
+Ready now by product class: 17/51 Native Android-relevant
 Launch gate: 13/13 pass
-Ready optional: 3
+Ready optional: 4
 Needs config: 15
-Needs pack: 20
+Needs pack: 19
 Unsupported Android: 6
 Manual PRoot: 2
 Desktop/remote: 2
@@ -339,6 +348,11 @@ Needs config
 Required: DISCORD_BOT_TOKEN
 Runtime: missing Native config
 Action: Configure
+
+blogwatcher
+Ready optional
+Runtime: app-native RSS/Atom feed adapter
+Action: Use through Gateway-visible blogwatcher
 
 xurl
 Ready optional
@@ -624,6 +638,31 @@ Result: 6/6 passing
 Device proof is intentionally deferred to the next batched install to save
 data. The required smoke is `/api/tools`, `/api/tools/execute name=summarize`,
 and one explicit chat/UI prompt such as `summarize: <text>`.
+
+Fourth adapter landed locally, pending batched device smoke:
+
+```text
+blogwatcher
+status: ready_optional
+runtime: app-native RSS/Atom feed adapter
+Gateway tool: blogwatcher
+command underneath: blogwatcher.check
+manifest movement: needs_pack -> ready_optional
+scope: bounded feed check only, no persistent watcher/notification claim
+safety: non-HTTP, loopback, private, and link-local URLs blocked
+```
+
+Local proof:
+
+```text
+flutter test test/blogwatcher_app_native_adapter_test.dart --no-pub
+
+Result: 6/6 passing
+```
+
+Device proof is intentionally deferred to the next batched install to save
+data. The required smoke is `/api/tools`, `/api/tools/execute name=blogwatcher`,
+and one explicit chat/UI prompt against a small public feed.
 
 ### Phase 5: Verified Dependency Packs
 

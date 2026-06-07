@@ -59,6 +59,8 @@ class SkillsService {
     'valeo_sentinel': 'valeo-sentinel',
     'valeo sentinel': 'valeo-sentinel',
     'moon pay': 'moonpay',
+    'blogwatcher_check': 'blogwatcher',
+    'blogwatcher.check': 'blogwatcher',
     'camera_snap': 'camsnap',
     'camera snap': 'camsnap',
     'camera.snapshot': 'camsnap',
@@ -146,6 +148,7 @@ class SkillsService {
       _createAvatarControlSkill(),
       _createTtsVoiceSkill(),
       _createDeviceNodeSkill(),
+      _createBlogWatcherSkill(),
       _createCamsnapSkill(),
       _createAvatarOverlaySkill(),
       _createBaseChainSkill(),
@@ -199,6 +202,8 @@ class SkillsService {
         return await _executeAvatarControlSkill(skill, params, ctx);
       case 'tts':
         return await _executeTtsVoiceSkill(skill, params, ctx);
+      case 'feed':
+        return await _executeBlogWatcherSkill(skill, params, ctx);
       case 'device':
         return await _executeDeviceNodeSkill(skill, params, ctx);
       case 'camera':
@@ -552,6 +557,23 @@ class SkillsService {
       return SkillResult.error('Device fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Device unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeBlogWatcherSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('Blogwatcher fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('Blogwatcher unreachable: $e');
     }
   }
 
@@ -972,6 +994,18 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createBlogWatcherSkill() => Skill(
+      id: 'blogwatcher',
+      name: 'blogwatcher',
+      description:
+          'Check RSS or Atom feeds with a bounded app-native HTTP adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'feed',
+      tags: ['rss', 'atom', 'feed'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createCamsnapSkill() => Skill(
       id: 'camsnap',
       name: 'camsnap',
@@ -1240,6 +1274,34 @@ class SkillsService {
               },
             },
             'required': ['action'],
+          },
+        };
+      case 'blogwatcher':
+        return {
+          'name': skill.id,
+          'description':
+              'Check RSS or Atom feeds with a bounded app-native HTTP adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'url': {
+                'type': 'string',
+                'format': 'uri',
+                'description': 'Absolute public RSS or Atom feed URL.',
+              },
+              'limit': {
+                'type': 'integer',
+                'minimum': 1,
+                'maximum': 20,
+                'description': 'Maximum feed items to return.',
+              },
+              'knownIds': {
+                'type': 'array',
+                'items': {'type': 'string'},
+                'description': 'Optional item ids or links already seen.',
+              },
+            },
+            'required': ['url'],
           },
         };
       case 'camsnap':

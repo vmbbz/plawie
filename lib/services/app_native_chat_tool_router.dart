@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../models/node_frame.dart';
 import 'avatar_gesture_catalog.dart';
 import 'capabilities/avatar_capability.dart';
+import 'capabilities/blog_watcher_capability.dart';
 import 'capabilities/camera_capability.dart';
 import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
@@ -53,13 +54,23 @@ class AppNativeChatToolRouter {
   static final AppNativeChatToolRouter instance =
       AppNativeChatToolRouter._internal();
 
-  AppNativeChatToolRouter._internal({XurlCapability? xurl})
-      : _xurl = xurl ?? XurlCapability();
+  AppNativeChatToolRouter._internal({
+    BlogWatcherCapability? blogWatcher,
+    XurlCapability? xurl,
+  })  : _blogWatcher = blogWatcher ?? BlogWatcherCapability(),
+        _xurl = xurl ?? XurlCapability();
 
-  factory AppNativeChatToolRouter.forTesting({XurlCapability? xurl}) =>
-      AppNativeChatToolRouter._internal(xurl: xurl);
+  factory AppNativeChatToolRouter.forTesting({
+    BlogWatcherCapability? blogWatcher,
+    XurlCapability? xurl,
+  }) =>
+      AppNativeChatToolRouter._internal(
+        blogWatcher: blogWatcher,
+        xurl: xurl,
+      );
 
   final AvatarCapability _avatar = AvatarCapability();
+  final BlogWatcherCapability _blogWatcher;
   final CameraCapability _camera = CameraCapability();
   final ClawHubCapability _clawHub = ClawHubCapability();
   final DeviceCapability _device = DeviceCapability();
@@ -154,6 +165,7 @@ class AppNativeChatToolRouter {
     return switch (plan.command) {
       'avatar.gesture' ||
       'avatar.sequence' ||
+      'blogwatcher.check' ||
       'haptic.vibrate' ||
       'flash.on' ||
       'flash.off' ||
@@ -219,6 +231,7 @@ class AppNativeChatToolRouter {
         };
       case 'weather.current':
       case 'weather.forecast':
+      case 'blogwatcher.check':
       case 'summarize.text':
       case 'xurl.request':
         return {
@@ -422,6 +435,9 @@ class AppNativeChatToolRouter {
       );
     }
 
+    final blogWatcherPlan = _blogWatcherPlan(trimmed);
+    if (blogWatcherPlan != null) return blogWatcherPlan;
+
     final xurlPlan = _xurlPlan(trimmed);
     if (xurlPlan != null) return xurlPlan;
 
@@ -503,6 +519,11 @@ class AppNativeChatToolRouter {
         case 'weather.current':
         case 'weather.forecast':
           return _frameToMap(await _weather.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'blogwatcher.check':
+          return _frameToMap(await _blogWatcher.handle(
             plan.command,
             plan.input,
           ));
@@ -665,6 +686,10 @@ class AppNativeChatToolRouter {
         return result['summary']?.toString().trim().isNotEmpty == true
             ? 'Weather: ${result['summary']}.'
             : 'Weather retrieved.';
+      case 'blogwatcher.check':
+        final count = result['itemCount'] ?? 0;
+        final title = result['feedTitle']?.toString().trim();
+        return 'Blogwatcher checked${title?.isNotEmpty == true ? ' $title' : ''}: $count item(s).';
       case 'clawhub.search':
         final count = result['count'];
         return 'ClawHub search retrieved${count == null ? '' : ' $count result(s)'}.';
@@ -1068,6 +1093,29 @@ class AppNativeChatToolRouter {
         'method': method,
         'source': 'app-native-chat-router',
         if (body != null) 'body': body,
+      },
+    );
+  }
+
+  _AppNativeToolPlan? _blogWatcherPlan(String message) {
+    final match = RegExp(
+      r'^\s*blogwatcher\s*:?\s+(\S+)',
+      caseSensitive: false,
+    ).firstMatch(message);
+    final url = _cleanXurlUrl(match?.group(1));
+    if (url == null) return null;
+    final limitMatch = RegExp(
+      r'\blimit\s+(\d{1,2})\b',
+      caseSensitive: false,
+    ).firstMatch(message);
+    final limit = int.tryParse(limitMatch?.group(1) ?? '');
+    return _AppNativeToolPlan(
+      toolName: 'blogwatcher',
+      command: 'blogwatcher.check',
+      input: {
+        'url': url,
+        'source': 'app-native-chat-router',
+        if (limit != null) 'limit': limit,
       },
     );
   }

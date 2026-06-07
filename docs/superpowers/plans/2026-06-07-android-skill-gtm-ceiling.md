@@ -234,6 +234,14 @@ advertises a `/api/tools` schema, and routes `/api/tools/execute` through
 `AgentSkillServer`. It does not claim provider-backed URL/file/long-document
 summarization. Device smoke is deferred to the next batched install.
 
+`blogwatcher` local adapter is implemented as a ready-optional named tool for
+small public RSS/Atom feeds. It keeps `TOOL_USE:blogwatcher` identity for
+explicit `blogwatcher <url> limit N` prompts, advertises a `/api/tools` schema,
+routes `/api/tools/execute` through `AgentSkillServer`, and blocks non-HTTP,
+loopback, private, and link-local feed targets. It does not claim persistent
+watching, notifications, or full CLI parity. Device smoke is deferred to the
+next batched install.
+
 ### Task 5: Verified Pack Lane
 
 **Files:**

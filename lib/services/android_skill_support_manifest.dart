@@ -173,10 +173,11 @@ final List<AndroidSkillSupportEntry> _entries =
     'bear-notes',
     reason: 'Bear Notes is a macOS/iOS app workflow without Android bridge.',
   ),
-  _needsPack(
+  _readyOptional(
     'blogwatcher',
-    packs: ['android-cli-core-pack'],
-    smoke: 'Run the blog watcher against a small configured feed.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke: 'Check a small RSS or Atom feed through the app-native adapter.',
   ),
   _needsPack(
     'blucli',

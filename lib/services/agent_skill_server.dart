@@ -11,6 +11,7 @@ import 'gateway_tool_catalog.dart';
 import 'native_bridge.dart';
 import 'native_gateway_smoke_service.dart';
 import 'capabilities/avatar_capability.dart';
+import 'capabilities/blog_watcher_capability.dart';
 import 'capabilities/camera_capability.dart';
 import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
@@ -68,6 +69,7 @@ class AgentSkillServer {
   HttpServer? _server;
   Future<void>? _startFuture;
   final AvatarCapability _avatarCapability = AvatarCapability();
+  final BlogWatcherCapability _blogWatcherCapability = BlogWatcherCapability();
   final CameraCapability _cameraCapability = CameraCapability();
   final ClawHubCapability _clawHubCapability = ClawHubCapability();
   final DeviceCapability _deviceCapability = DeviceCapability();
@@ -1941,6 +1943,9 @@ class AgentSkillServer {
       'gesture.wave': 'avatar.gesture',
       'gestures.wave': 'avatar.gesture',
       'wave': 'avatar.gesture',
+      'blogwatcher': 'blogwatcher.check',
+      'blogwatcher_check': 'blogwatcher.check',
+      'blogwatcher.check': 'blogwatcher.check',
       'camsnap': 'camera.snap',
       'camera_snap': 'camera.snap',
       'camera_clip': 'camera.clip',
@@ -2076,6 +2081,21 @@ class AgentSkillServer {
               ? 'summarize.text arguments are dispatchable'
               : 'summarize.text requires provided text',
         );
+      case 'blogwatcher.check':
+        final rawUrl = input['url']?.toString().trim();
+        final uri =
+            rawUrl == null || rawUrl.isEmpty ? null : Uri.tryParse(rawUrl);
+        final ok = uri != null &&
+            uri.hasScheme &&
+            uri.host.isNotEmpty &&
+            (uri.scheme == 'http' || uri.scheme == 'https');
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: ok,
+          code: ok ? 'ok' : 'invalid_url',
+          message: ok
+              ? 'blogwatcher.check arguments are dispatchable'
+              : 'blogwatcher.check requires an absolute http or https URL',
+        );
       case 'camera.snap':
       case 'camera.clip':
       case 'camera.list':
@@ -2125,6 +2145,8 @@ class AgentSkillServer {
     switch (_capabilityForCommand(command)) {
       case 'avatar':
         return 'AvatarCapability';
+      case 'blogwatcher':
+        return 'BlogWatcherCapability';
       case 'camera':
         return 'CameraCapability';
       case 'canvas':
@@ -2224,6 +2246,14 @@ class AgentSkillServer {
           await _processTtsControl(input, request);
         case 'device-node':
           await _processDeviceControl(input, request);
+        case 'blogwatcher':
+        case 'blogwatcher_check':
+        case 'blogwatcher.check':
+          final frame = await _blogWatcherCapability.handle(
+            'blogwatcher.check',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
         case 'summarize':
         case 'summarize_text':
         case 'summarize.text':
