@@ -98,9 +98,19 @@ class SkillsService {
     'google_places': 'goplaces',
     'google places': 'goplaces',
     'places_search': 'goplaces',
+    'mcporter_health': 'mcporter',
+    'mcporter health': 'mcporter',
+    'mcporter.health': 'mcporter',
+    'mcporter_status': 'mcporter',
+    'mcporter status': 'mcporter',
+    'mcporter.status': 'mcporter',
     'notion_search': 'notion',
     'notion search': 'notion',
     'notion.search': 'notion',
+    'openai_whisper_api': 'openai-whisper-api',
+    'openai whisper api': 'openai-whisper-api',
+    'openai-whisper-api.transcribe': 'openai-whisper-api',
+    'openai_whisper_api_transcribe': 'openai-whisper-api',
     'slack_me': 'slack',
     'slack me': 'slack',
     'slack.me': 'slack',
@@ -198,7 +208,9 @@ class SkillsService {
       _createGithubSkill(),
       _createGhIssuesSkill(),
       _createGoPlacesSkill(),
+      _createMcPorterSkill(),
       _createNotionSkill(),
+      _createOpenAiWhisperApiSkill(),
       _createAvatarOverlaySkill(),
       _createBaseChainSkill(),
       // Partner proxies
@@ -270,8 +282,12 @@ class SkillsService {
         return await _executeGithubSkill(skill, params, ctx);
       case 'places':
         return await _executeGoPlacesSkill(skill, params, ctx);
+      case 'mcporter':
+        return await _executeMcPorterSkill(skill, params, ctx);
       case 'notion':
         return await _executeNotionSkill(skill, params, ctx);
+      case 'openai':
+        return await _executeOpenAiWhisperApiSkill(skill, params, ctx);
       case 'system':
         return await _executeAvatarPipSkill(skill, params, ctx);
       case 'base':
@@ -762,6 +778,23 @@ class SkillsService {
     }
   }
 
+  Future<SkillResult> _executeMcPorterSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('MCPorter skill fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('MCPorter skill unreachable: $e');
+    }
+  }
+
   Future<SkillResult> _executeNotionSkill(
       Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
     try {
@@ -776,6 +809,24 @@ class SkillsService {
       return SkillResult.error('Notion skill fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Notion skill unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeOpenAiWhisperApiSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 70));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error(
+          'OpenAI Whisper API skill fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('OpenAI Whisper API skill unreachable: $e');
     }
   }
 
@@ -1232,6 +1283,30 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createMcPorterSkill() => Skill(
+      id: 'mcporter',
+      name: 'mcporter',
+      description:
+          'Read configured MCPorter health metadata with an app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'mcporter',
+      tags: ['mcporter', 'mcp', 'health', 'rest'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
+  Skill _createOpenAiWhisperApiSkill() => Skill(
+      id: 'openai-whisper-api',
+      name: 'openai-whisper-api',
+      description:
+          'Transcribe supplied audio bytes with the OpenAI transcription API.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'openai',
+      tags: ['openai', 'whisper', 'transcription', 'audio'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createSessionLogsSkill() => Skill(
       id: 'session-logs',
       name: 'session-logs',
@@ -1657,6 +1732,65 @@ class SkillsService {
               },
             },
             'required': ['action'],
+          },
+        };
+      case 'mcporter':
+        return {
+          'name': skill.id,
+          'description':
+              'Read MCPorter health metadata through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['health', 'status'],
+                'description':
+                    'Use health or status to check the configured MCPorter endpoint.',
+              },
+            },
+            'required': ['action'],
+          },
+        };
+      case 'openai-whisper-api':
+        return {
+          'name': skill.id,
+          'description':
+              'Transcribe supplied audio bytes through the OpenAI transcription API.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'audioBase64': {
+                'type': 'string',
+                'description':
+                    'Base64-encoded audio bytes. Maximum 25 MB after decoding.',
+              },
+              'filename': {
+                'type': 'string',
+                'description':
+                    'Audio filename with extension, for example clip.wav.',
+              },
+              'model': {
+                'type': 'string',
+                'enum': [
+                  'gpt-4o-mini-transcribe',
+                  'gpt-4o-transcribe',
+                  'whisper-1'
+                ],
+                'description':
+                    'OpenAI transcription model. Defaults to gpt-4o-mini-transcribe.',
+              },
+              'language': {
+                'type': 'string',
+                'description': 'Optional ISO-639-1 language code.',
+              },
+              'prompt': {
+                'type': 'string',
+                'description':
+                    'Optional short prompt to guide transcription style.',
+              },
+            },
+            'required': ['audioBase64'],
           },
         };
       case 'session-logs':

@@ -12,7 +12,7 @@ screen should read this before changing tool behavior.
 | --- | --- | --- | --- |
 | Gateway primitives | OpenClaw Gateway | Built-in tool groups such as web/files/runtime/nodes | `tools.profile`, `tools.allow`, `tools.deny` |
 | OpenClaw/npm skills | OpenClaw skills runtime | Installed skills and Gateway-managed capabilities | Gateway skill loading |
-| Android node capabilities | Plawie node / capability bridge | Camera, canvas, xurl HTTP requests, config-gated REST adapters such as GitHub, Google Places, Notion, Discord, Trello, and Slack, weather, ClawHub metadata, meme image creation, haptics, sensors, flashlight, screen, avatar/TTS actions | `gateway.nodes.allowCommands`, port `8765` |
+| Android node capabilities | Plawie node / capability bridge | Camera, canvas, xurl HTTP requests, config-gated REST adapters such as GitHub, Google Places, MCPorter, Notion, OpenAI transcription, Discord, Trello, and Slack, weather, ClawHub metadata, meme image creation, haptics, sensors, flashlight, screen, avatar/TTS actions | `gateway.nodes.allowCommands`, port `8765` |
 | Direct local tools | Dart local NDK loop | Lightweight local actions when using `local-llm/...` | `LocalLlmService` native fllama tools |
 
 Do not mix these layers. A string that is valid as an Android node command is
@@ -67,7 +67,9 @@ camsnap
 github
 gh-issues
 goplaces
+mcporter
 notion
+openai-whisper-api
 avatar_overlay
 base-chain
 twilio-voice
@@ -85,8 +87,9 @@ weather, ClawHub metadata, flashlight/torch, location, screen recording, sensor,
 simple meme image creation, blogwatcher RSS/Atom feed checks, camsnap camera
 capture, app-owned session log queries, small text-PDF byte extraction,
 provided-text summarization, GitHub profile/issue REST adapters, Google Places
-Text Search, Notion search, Discord bot status, Trello board summaries, Slack
-bot status/message posting, xurl HTTP requests, and haptic commands.
+Text Search, MCPorter health, Notion search, OpenAI transcription, Discord bot
+status, Trello board summaries, Slack bot status/message posting, xurl HTTP
+requests, and haptic commands.
 It does not currently prove a generic third-party app launcher or a safe
 WhatsApp message-sending command.
 
@@ -132,10 +135,23 @@ environment, then runs through `goplaces.search` without a CLI binary. It uses
 an explicit response field mask, bounded result count, and returns only compact
 place metadata.
 
+`mcporter` is a config-gated app-native MCPorter REST adapter. It remains
+`needs_config` until `MCPORTER_ENDPOINT` and `MCPORTER_TOKEN` are present in the
+Native environment, then runs through `mcporter.health` without a CLI binary. It
+only checks the configured health endpoint, requires an absolute `http`/`https`
+endpoint without userinfo, and never accepts or returns the token.
+
 `notion` is a config-gated app-native Notion search adapter. It remains
 `needs_config` until `NOTION_TOKEN` is present in the Native environment, then
 runs through `notion.search` without a CLI binary. It returns bounded workspace
 metadata and never exposes the token in tool input, tool output, or chat chunks.
+
+`openai-whisper-api` is a config-gated app-native OpenAI transcription adapter.
+It remains `needs_config` until `OPENAI_API_KEY` is present in the Native
+environment, then runs through `openai-whisper-api.transcribe` without a local
+Whisper runtime pack. Tool input is base64 audio bytes plus optional filename,
+model, language, and prompt. The adapter caps decoded audio at 25 MB and returns
+bounded transcript metadata only.
 
 `discord` is a config-gated app-native Discord REST adapter. It remains
 `needs_config` until `DISCORD_BOT_TOKEN` is present in the Native environment,
@@ -235,7 +251,7 @@ Why this shape:
 | ID family | Correct home |
 | --- | --- |
 | `twilio`, `crypto`, `base`, `calculator`, `calendar` | OpenClaw skill install/load path |
-| `blogwatcher.check`, `session-logs.query`, `nano-pdf.extract`, `github.user`, `gh-issues.list`, `goplaces.search`, `notion.search`, `discord.me`, `trello.boards`, `slack.me`, `slack.post`, `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `summarize.text`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
+| `blogwatcher.check`, `session-logs.query`, `nano-pdf.extract`, `github.user`, `gh-issues.list`, `goplaces.search`, `mcporter.health`, `notion.search`, `openai-whisper-api.transcribe`, `discord.me`, `trello.boards`, `slack.me`, `slack.post`, `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `summarize.text`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
 | local NDK helper names | `LocalLlmService` direct local tool schemas |
 
 If Gateway logs `tools.allow allowlist contains unknown entries`, treat the

@@ -13,6 +13,7 @@ import 'capabilities/github_capability.dart';
 import 'capabilities/goplaces_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
+import 'capabilities/mcporter_capability.dart';
 import 'capabilities/nano_pdf_capability.dart';
 import 'capabilities/notion_capability.dart';
 import 'capabilities/sensor_capability.dart';
@@ -67,6 +68,7 @@ class AppNativeChatToolRouter {
     DiscordCapability? discord,
     GitHubCapability? github,
     GoPlacesCapability? goplaces,
+    McPorterCapability? mcporter,
     NotionCapability? notion,
     SessionLogsCapability? sessionLogs,
     SlackCapability? slack,
@@ -76,6 +78,7 @@ class AppNativeChatToolRouter {
         _discord = discord ?? DiscordCapability(),
         _github = github ?? GitHubCapability(),
         _goplaces = goplaces ?? GoPlacesCapability(),
+        _mcporter = mcporter ?? McPorterCapability(),
         _notion = notion ?? NotionCapability(),
         _sessionLogs = sessionLogs ?? SessionLogsCapability(),
         _slack = slack ?? SlackCapability(),
@@ -87,6 +90,7 @@ class AppNativeChatToolRouter {
     DiscordCapability? discord,
     GitHubCapability? github,
     GoPlacesCapability? goplaces,
+    McPorterCapability? mcporter,
     NotionCapability? notion,
     SessionLogsCapability? sessionLogs,
     SlackCapability? slack,
@@ -98,6 +102,7 @@ class AppNativeChatToolRouter {
         discord: discord,
         github: github,
         goplaces: goplaces,
+        mcporter: mcporter,
         notion: notion,
         sessionLogs: sessionLogs,
         slack: slack,
@@ -116,6 +121,7 @@ class AppNativeChatToolRouter {
   final GoPlacesCapability _goplaces;
   final LocationCapability _location = LocationCapability();
   final MemeMakerCapability _memeMaker = MemeMakerCapability();
+  final McPorterCapability _mcporter;
   final NanoPdfCapability _nanoPdf = NanoPdfCapability();
   final NotionCapability _notion;
   final SensorCapability _sensor = SensorCapability();
@@ -234,6 +240,7 @@ class AppNativeChatToolRouter {
       'github.user' ||
       'gh-issues.list' ||
       'goplaces.search' ||
+      'mcporter.health' ||
       'notion.search' ||
       'meme-maker.create' ||
       'nano-pdf.extract' ||
@@ -512,6 +519,9 @@ class AppNativeChatToolRouter {
     final goplacesPlan = _goplacesPlan(trimmed);
     if (goplacesPlan != null) return goplacesPlan;
 
+    final mcporterPlan = _mcporterPlan(trimmed);
+    if (mcporterPlan != null) return mcporterPlan;
+
     final notionPlan = _notionPlan(trimmed);
     if (notionPlan != null) return notionPlan;
 
@@ -632,6 +642,11 @@ class AppNativeChatToolRouter {
           ));
         case 'goplaces.search':
           return _frameToMap(await _goplaces.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'mcporter.health':
+          return _frameToMap(await _mcporter.handle(
             plan.command,
             plan.input,
           ));
@@ -848,6 +863,11 @@ class AppNativeChatToolRouter {
         final query = result['query']?.toString().trim();
         final count = result['count'] ?? 0;
         return 'Google Places search${query?.isNotEmpty == true ? ' for $query' : ''}: $count place(s).';
+      case 'mcporter.health':
+        final status = result['status']?.toString().trim();
+        return status?.isNotEmpty == true
+            ? 'MCPorter status: $status.'
+            : 'MCPorter health retrieved.';
       case 'notion.search':
         final query = result['query']?.toString().trim();
         final count = result['count'] ?? 0;
@@ -1412,6 +1432,22 @@ class AppNativeChatToolRouter {
       input: {
         'query': query,
         if (limit != null) 'limit': limit,
+        'source': 'app-native-chat-router',
+      },
+    );
+  }
+
+  _AppNativeToolPlan? _mcporterPlan(String message) {
+    final match = RegExp(
+      r'^\s*mcporter(?:\s+(?:health|status))?\s*$',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (match == null) return null;
+    return const _AppNativeToolPlan(
+      toolName: 'mcporter',
+      command: 'mcporter.health',
+      input: {
+        'action': 'health',
         'source': 'app-native-chat-router',
       },
     );

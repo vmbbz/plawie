@@ -74,9 +74,11 @@ notion: needs_config + stale missing_native_bin -> needs_config app-native confi
 discord: needs_config + stale missing_native_bin -> needs_config app-native config-only
 trello: needs_config + stale missing_native_bin -> needs_config app-native config-only
 slack: needs_config -> needs_config app-native config-only
+mcporter: needs_config -> needs_config app-native config-only
+openai-whisper-api: needs_config -> needs_config app-native config-only
 
 /api/tools after install:
-toolCount: 23
+toolCount: 25
 github present: true
 gh-issues present: true
 goplaces present: true
@@ -85,6 +87,8 @@ discord present: true
 trello present: true
 slack present: true
 slack actions: me,status,post
+mcporter present: true
+openai-whisper-api present: true
 
 /device/health after install:
 releaseGatePass: true
@@ -106,6 +110,10 @@ trello: runtimeStatus needs_config, provisioningStatus needs_user_config,
 primaryGate absent, gates absent
 slack: runtimeStatus needs_config, provisioningStatus needs_user_config,
 primaryGate absent, gates absent
+mcporter: runtimeStatus needs_config, provisioningStatus needs_user_config,
+primaryGate absent, gates absent
+openai-whisper-api: runtimeStatus needs_config,
+provisioningStatus needs_user_config, primaryGate absent, gates absent
 
 /api/tools/execute missing-config proof:
 github: HTTP 400 MISSING_GITHUB_TOKEN, no secret leak
@@ -115,11 +123,14 @@ notion: HTTP 400 MISSING_NOTION_TOKEN, no secret value leak
 discord: HTTP 400 MISSING_DISCORD_BOT_TOKEN, no secret value leak
 trello: HTTP 400 MISSING_TRELLO_CONFIG, no secret value leak
 slack: HTTP 400 MISSING_SLACK_CONFIG, no secret value leak
+mcporter: HTTP 400 MISSING_MCPORTER_CONFIG, no secret value leak
+openai-whisper-api: HTTP 400 MISSING_OPENAI_API_KEY, no secret value leak
 ```
 
-The Notion, Discord, Trello, and Slack adapters are installed on `RZCX30KA9AW`.
-The installed app exposes 23 tools through `/api/tools`; the config adapters
-show `needs_config` with no stale `primaryGate` or `gates`.
+The Notion, Discord, Trello, Slack, MCPorter, and OpenAI Whisper API adapters
+are installed on `RZCX30KA9AW`. The installed app exposes 25 tools through
+`/api/tools`; the config adapters show `needs_config` with no stale
+`primaryGate` or `gates`.
 
 The `/api/debug/app-native-chat-tool-smoke` endpoint remains unreliable for
 final-response proof. During the milestone smoke it timed out once and then
@@ -233,9 +244,10 @@ Default Slack channel appears under Workspace.
 Save & Check routes through provisioning.
 ```
 
-After the Slack adapter milestone, the next highest-value config targets are
-`mcporter`, `openai-whisper-api`, then `ordercli` / `sag` if their APIs are
-sane enough for app-native Android support.
+After the MCPorter/OpenAI Whisper API milestone, `ordercli` and `sag` remain
+blocked for app-native conversion until real local API contracts exist. They
+currently have config keys only, not endpoints, commands, auth shape, response
+shape, safe bounds, or privacy behavior.
 
 Read this carefully:
 
@@ -247,8 +259,8 @@ Read this carefully:
 - `xurl`, `camsnap`, `summarize`, `blogwatcher`, `session-logs`, and
   `nano-pdf` are now app-native ready optional: usable through
   Gateway-visible tool execution, but not part of the launch-critical gate.
-- `github`, `gh-issues`, `goplaces`, `notion`, `discord`, `trello`, and
-  `slack` are
+- `github`, `gh-issues`, `goplaces`, `notion`, `discord`, `trello`, `slack`,
+  `mcporter`, and `openai-whisper-api` are
   still needs-config skills, but no longer depend on Native CLI binaries once
   their env keys are present. They use bounded app-native REST adapters through
   the same Gateway-visible tool path.
@@ -396,9 +408,9 @@ runtime gate. On the current device, several Class B skills also report
 
 Important second correction: app-native config-gated adapters must not keep
 stale OpenClaw binary gates. `github`, `gh-issues`, `goplaces`, `notion`,
-`discord`, `trello`, and `slack` are adapter cases: until their env/config keys
-exist they show `needs_config`; after the keys exist they become app-native
-ready without requiring CLI binaries.
+`discord`, `trello`, `slack`, `mcporter`, and `openai-whisper-api` are adapter
+cases: until their env/config keys exist they show `needs_config`; after the
+keys exist they become app-native ready without requiring CLI binaries.
 
 Therefore the app must show config gates that are actionable without implying a
 missing binary:
@@ -410,6 +422,20 @@ User config: SLACK_BOT_TOKEN, channels.slack
 Runtime gate before config: needs_config
 Runtime gate after config: app_native_ready
 Next action: configure SLACK_BOT_TOKEN and channels.slack in the Skills page
+
+Skill: mcporter
+Product class: Needs config
+User config: MCPORTER_ENDPOINT, MCPORTER_TOKEN
+Runtime gate before config: needs_config
+Runtime gate after config: app_native_ready
+Next action: configure MCPORTER_ENDPOINT and MCPORTER_TOKEN in the Skills page
+
+Skill: openai-whisper-api
+Product class: Needs config
+User config: OPENAI_API_KEY
+Runtime gate before key: needs_config
+Runtime gate after key: app_native_ready
+Next action: configure OPENAI_API_KEY in the Skills page
 ```
 
 For app-native config adapters the app-facing gates are:
@@ -468,9 +494,17 @@ using an explicit response field mask.
 `trello` reads bounded Trello board summaries through `trello.boards`.
 `slack` reads Slack bot identity through `slack.me` and posts bounded channel
 messages through `slack.post`.
-All seven are exposed in `/api/tools`, route `/api/tools/execute` through
+`mcporter` reads bounded configured endpoint health through `mcporter.health`.
+`openai-whisper-api` transcribes supplied base64 audio bytes through
+`openai-whisper-api.transcribe`.
+All nine are exposed in `/api/tools`, route `/api/tools/execute` through
 `AgentSkillServer`, and keep tokens/API keys out of tool input, result
 payloads, and visible chat chunks.
+
+`ordercli` and `sag` are deliberately not app-native adapters yet. Local
+inspection found only API-key config placeholders, with no safe endpoint or
+command contract. Shipping guessed APIs here would make the Skills page look
+more capable than the product actually is.
 
 ### Class C: Needs Pack
 
@@ -1419,6 +1453,104 @@ installed Native workspace skills: 65
 /api/tools: toolCount 23, slack present true, actions me/status/post
 /api/tools/execute name=slack action=me:
   HTTP 400 MISSING_SLACK_CONFIG on an unconfigured device, no secret leak
+```
+
+Thirteenth and fourteenth adapters landed:
+
+```text
+mcporter
+status: needs_config
+runtime after config: app-native MCPorter REST adapter
+Gateway tool: mcporter
+command underneath: mcporter.health
+manifest movement: generic needs_config -> app-native config-only
+scope: configured endpoint health/status only
+safety: MCPORTER_ENDPOINT and MCPORTER_TOKEN are read from Native .env;
+endpoint must be absolute http/https without userinfo; token is never accepted
+in tool input or returned in payloads/chat chunks
+
+openai-whisper-api
+status: needs_config
+runtime after config: app-native OpenAI transcription REST adapter
+Gateway tool: openai-whisper-api
+command underneath: openai-whisper-api.transcribe
+manifest movement: generic needs_config -> app-native config-only
+scope: base64 audio transcription only, 25 MB decoded app limit
+safety: OPENAI_API_KEY is read from Native .env; audio bytes and API key are
+not returned in payloads/chat chunks; response text is bounded
+```
+
+Local proof:
+
+```text
+flutter test test/mcporter_app_native_adapter_test.dart \
+  test/openai_whisper_api_app_native_adapter_test.dart \
+  --no-pub
+
+Result: 12/12 passing
+```
+
+Combined local proof:
+
+```text
+flutter test test/mcporter_app_native_adapter_test.dart \
+  test/openai_whisper_api_app_native_adapter_test.dart \
+  test/slack_app_native_adapter_test.dart \
+  test/android_skill_support_manifest_test.dart \
+  test/android_skill_config_form_model_test.dart \
+  test/android_skill_config_sheet_test.dart \
+  test/skill_provisioning_service_test.dart \
+  --no-pub
+
+Result: 48/48 passing
+```
+
+Analyzer proof:
+
+```text
+flutter analyze lib/services/capabilities/mcporter_capability.dart \
+  lib/services/capabilities/openai_whisper_api_capability.dart \
+  lib/services/app_native_chat_tool_router.dart \
+  lib/services/agent_skill_server.dart \
+  lib/services/skills_service.dart \
+  lib/services/android_skill_support_manifest.dart \
+  lib/services/gateway_tool_catalog.dart \
+  test/mcporter_app_native_adapter_test.dart \
+  test/openai_whisper_api_app_native_adapter_test.dart
+
+Result: No issues found
+```
+
+Device proof after MCPorter/OpenAI Whisper API install:
+
+```text
+Target device: RZCX30KA9AW
+Date: 2026-06-08
+Install result: Success
+releaseGatePass: true
+ready_required: 13/13
+counts: ready_required 13, ready_optional 7, needs_config 14,
+        needs_pack 17, unsupported_on_android 6,
+        manual_proot_compat 2, hidden_desktop_only 2
+classified default manifest: 61
+installed Native workspace skills: 65
+/api/tools: toolCount 25
+mcporter: present true, required action
+openai-whisper-api: present true, required audioBase64
+/api/tools/execute name=mcporter action=health:
+  HTTP 400 MISSING_MCPORTER_CONFIG on an unconfigured device, no secret leak
+/api/tools/execute name=openai-whisper-api:
+  HTTP 400 MISSING_OPENAI_API_KEY on an unconfigured device, no secret leak
+```
+
+Blocked after sanity inspection:
+
+```text
+ordercli: NOT SANE for app-native adapter yet
+sag: NOT SANE for app-native adapter yet
+reason: config keys exist, but local code/docs do not define endpoints,
+commands, auth scheme, request params, response shape, safety bounds, or
+privacy behavior
 ```
 
 Host inspection note: for the phone-owned `AgentSkillServer` bridge on port

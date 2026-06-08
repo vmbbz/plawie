@@ -21,8 +21,10 @@ import 'capabilities/github_capability.dart';
 import 'capabilities/goplaces_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
+import 'capabilities/mcporter_capability.dart';
 import 'capabilities/nano_pdf_capability.dart';
 import 'capabilities/notion_capability.dart';
+import 'capabilities/openai_whisper_api_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/session_logs_capability.dart';
 import 'capabilities/slack_capability.dart';
@@ -86,9 +88,12 @@ class AgentSkillServer {
   final GitHubCapability _githubCapability = GitHubCapability();
   final GoPlacesCapability _goPlacesCapability = GoPlacesCapability();
   final LocationCapability _locationCapability = LocationCapability();
+  final McPorterCapability _mcPorterCapability = McPorterCapability();
   final MemeMakerCapability _memeMakerCapability = MemeMakerCapability();
   final NanoPdfCapability _nanoPdfCapability = NanoPdfCapability();
   final NotionCapability _notionCapability = NotionCapability();
+  final OpenAiWhisperApiCapability _openAiWhisperApiCapability =
+      OpenAiWhisperApiCapability();
   final SensorCapability _sensorCapability = SensorCapability();
   final SessionLogsCapability _sessionLogsCapability = SessionLogsCapability();
   final SlackCapability _slackCapability = SlackCapability();
@@ -1998,9 +2003,19 @@ class AgentSkillServer {
       'goplaces.search': 'goplaces.search',
       'google_places': 'goplaces.search',
       'places_search': 'goplaces.search',
+      'mcporter': 'mcporter.health',
+      'mcporter_health': 'mcporter.health',
+      'mcporter.health': 'mcporter.health',
+      'mcporter_status': 'mcporter.health',
+      'mcporter.status': 'mcporter.health',
       'notion': 'notion.search',
       'notion_search': 'notion.search',
       'notion.search': 'notion.search',
+      'openai-whisper-api': 'openai-whisper-api.transcribe',
+      'openai_whisper_api': 'openai-whisper-api.transcribe',
+      'openai-whisper-api.transcribe': 'openai-whisper-api.transcribe',
+      'openai_whisper_api_transcribe': 'openai-whisper-api.transcribe',
+      'openai-whisper-api_transcribe': 'openai-whisper-api.transcribe',
       'meme_maker_create': 'meme-maker.create',
       'meme-maker_create': 'meme-maker.create',
       'nano-pdf': 'nano-pdf.extract',
@@ -2225,6 +2240,12 @@ class AgentSkillServer {
               ? 'goplaces.search arguments are dispatchable'
               : 'goplaces.search requires a query',
         );
+      case 'mcporter.health':
+        return const _NativeGatewayDryRunArgumentValidation(
+          ok: true,
+          code: 'ok',
+          message: 'mcporter.health arguments are dispatchable',
+        );
       case 'notion.search':
         final query = (input['query'] ?? input['text'])?.toString().trim();
         final ok = query != null && query.isNotEmpty;
@@ -2234,6 +2255,17 @@ class AgentSkillServer {
           message: ok
               ? 'notion.search arguments are dispatchable'
               : 'notion.search requires a query',
+        );
+      case 'openai-whisper-api.transcribe':
+        final audioBase64 =
+            (input['audioBase64'] ?? input['audio_base64'])?.toString().trim();
+        final ok = audioBase64 != null && audioBase64.isNotEmpty;
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: ok,
+          code: ok ? 'ok' : 'missing_audio',
+          message: ok
+              ? 'openai-whisper-api.transcribe arguments are dispatchable'
+              : 'openai-whisper-api.transcribe requires audioBase64',
         );
       case 'trello.boards':
         return const _NativeGatewayDryRunArgumentValidation(
@@ -2321,10 +2353,14 @@ class AgentSkillServer {
         return 'VibrationCapability';
       case 'location':
         return 'LocationCapability';
+      case 'mcporter':
+        return 'McPorterCapability';
       case 'meme-maker':
         return 'MemeMakerCapability';
       case 'nano-pdf':
         return 'NanoPdfCapability';
+      case 'openai-whisper-api':
+        return 'OpenAiWhisperApiCapability';
       case 'device':
         return 'DeviceCapability';
       case 'screen':
@@ -2483,11 +2519,30 @@ class AgentSkillServer {
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);
+        case 'mcporter':
+        case 'mcporter_health':
+        case 'mcporter.health':
+        case 'mcporter_status':
+        case 'mcporter.status':
+          final frame = await _mcPorterCapability.handle(
+            'mcporter.health',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
         case 'notion':
         case 'notion_search':
         case 'notion.search':
           final frame = await _notionCapability.handle(
             'notion.search',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'openai-whisper-api':
+        case 'openai_whisper_api':
+        case 'openai-whisper-api.transcribe':
+        case 'openai_whisper_api_transcribe':
+          final frame = await _openAiWhisperApiCapability.handle(
+            'openai-whisper-api.transcribe',
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);

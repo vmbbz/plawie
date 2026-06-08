@@ -283,7 +283,10 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsConfig(
     'mcporter',
     config: ['MCPORTER_ENDPOINT', 'MCPORTER_TOKEN'],
-    smoke: 'Call the configured mcporter endpoint health route.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke:
+        'Call the configured MCPorter endpoint health route through the app-native REST adapter.',
   ),
   _ready(
     'meme-maker',
@@ -330,7 +333,10 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsConfig(
     'openai-whisper-api',
     config: ['OPENAI_API_KEY'],
-    smoke: 'Transcribe a tiny audio fixture through the configured OpenAI API.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke:
+        'Transcribe a tiny audio fixture through the app-native OpenAI transcription adapter.',
   ),
   _needsPack(
     'openhue',
