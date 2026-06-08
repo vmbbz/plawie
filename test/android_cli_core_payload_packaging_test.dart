@@ -41,6 +41,10 @@ void main() {
     await expectAndroidArm64ElfPayload('eightctl');
   });
 
+  test('Sonos APK payload is a real Android arm64 ELF executable', () async {
+    await expectAndroidArm64ElfPayload('sonos');
+  });
+
   test('OpenHue payload has pinned build provenance', () async {
     const openHueCommit = '08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21';
     const goArchiveSha =
@@ -82,6 +86,27 @@ void main() {
     expect(script, contains(r"$env:GOARCH = 'arm64'"));
     expect(script, contains(r"$env:CGO_ENABLED = '0'"));
     expect(docs, contains(eightctlCommit));
+    expect(docs.toLowerCase(), contains(payloadSha));
+  });
+
+  test('Sonos payload has pinned build provenance', () async {
+    const sonosCommit = '87f409ab218a19a03cad630458258b291c365d8b';
+    const goArchiveSha =
+        '3ca8fb4630b07c419cbdd51f754e31363cfcfb83b3a5354d9e895c90be2cc345';
+    const payloadSha =
+        '411713ad1cd0e6841db7f5a6583d9d2f1767c1ef8c5f1cf143a666d5717ee8b5';
+
+    final script = await File('scripts/cli_core/build_sonos_android_arm64.ps1')
+        .readAsString();
+    final docs =
+        await File('docs/CLI_CORE_SONOS_ANDROID_PAYLOAD.md').readAsString();
+
+    expect(script, contains(sonosCommit));
+    expect(script.toLowerCase(), contains(goArchiveSha));
+    expect(script, contains(r"$env:GOOS = 'android'"));
+    expect(script, contains(r"$env:GOARCH = 'arm64'"));
+    expect(script, contains(r"$env:CGO_ENABLED = '0'"));
+    expect(docs, contains(sonosCommit));
     expect(docs.toLowerCase(), contains(payloadSha));
   });
 }

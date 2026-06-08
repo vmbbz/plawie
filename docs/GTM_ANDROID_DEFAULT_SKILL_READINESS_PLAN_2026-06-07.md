@@ -1673,11 +1673,22 @@ payload bytes: 10158376
 payload sha256: 8242e7624b6c0e3c9bd1fa932b515f8d589c47be09940da9032230f75d88d755
 rebuild script: scripts/cli_core/build_eightctl_android_arm64.ps1 -InstallAsset
 provenance: docs/CLI_CORE_EIGHTCTL_ANDROID_PAYLOAD.md
+
+skill id: sonoscli
+asset: assets/openclaw/cli-core/bin/sonos
+source: https://github.com/steipete/sonoscli
+source commit: 87f409ab218a19a03cad630458258b291c365d8b
+build target: GOOS=android GOARCH=arm64 CGO_ENABLED=0
+verified format: ELF64 little-endian AArch64
+payload bytes: 10813736
+payload sha256: 411713ad1cd0e6841db7f5a6583d9d2f1767c1ef8c5f1cf143a666d5717ee8b5
+rebuild script: scripts/cli_core/build_sonos_android_arm64.ps1 -InstallAsset
+provenance: docs/CLI_CORE_SONOS_ANDROID_PAYLOAD.md
 ```
 
-The remaining CLI-core binaries (`blu`, `himalaya`, `sonos`, `wacli`) are still
-absent from the APK payload and remain pack-gated until real Android arm64
-binaries are built and verified. No placeholder payloads are allowed.
+The remaining CLI-core binaries (`blu`, `himalaya`, `wacli`) are still absent
+from the APK payload and remain pack-gated until real Android arm64 binaries are
+built and verified. No placeholder payloads are allowed.
 
 CLI-core missing-payload diagnostics now landed:
 
@@ -1815,6 +1826,39 @@ a wait/recheck, `adb devices -l` returned no connected devices. Do not treat
 `eightctl` as device-smoked until `/device/health` and `eightctl version` are
 verified on an installed APK.
 
+Latest host/APK proof after the Sonos payload slice:
+
+```text
+.\scripts\cli_core\build_sonos_android_arm64.ps1 -InstallAsset
+Result: deterministic rebuild/install PASS twice; output and asset SHA both
+411713ad1cd0e6841db7f5a6583d9d2f1767c1ef8c5f1cf143a666d5717ee8b5
+
+flutter test test/android_cli_core_payload_packaging_test.dart
+Result: 8/8 passing
+
+flutter test test/skill_provisioning_service_test.dart \
+  test/android_cli_core_payload_packaging_test.dart \
+  test/dependency_pack_manifest_test.dart \
+  test/android_skill_readiness_service_test.dart \
+  test/android_skill_readiness_view_model_test.dart
+Result: 39/39 passing
+
+flutter analyze test/android_cli_core_payload_packaging_test.dart
+Result: no issues
+
+flutter build apk --debug
+Result: PASS, APK includes
+assets/flutter_assets/assets/openclaw/cli-core/bin/sonos
+length 10813736, sha256
+411713ad1cd0e6841db7f5a6583d9d2f1767c1ef8c5f1cf143a666d5717ee8b5
+```
+
+Sonos device proof is still pending for this round because `adb devices -l`
+returned no connected devices after the earlier ADB drop. Do not treat
+`sonoscli` as LAN-smoked until `/device/health`, `sonos --version`, and a
+bounded discovery/control smoke are verified on an installed APK and a real
+network.
+
 Classification correction landed after the CLI SKILL audit:
 
 ```text
@@ -1837,7 +1881,7 @@ CLI-core build priority from source audit:
    pairing/local-network smoke still pending.
 2. eightctl: built and bundled as an APK-local Android arm64 payload; Eight
    Sleep credentials and real account/device smoke still pending.
-3. sonoscli/sonos: strong Go candidate after the bin-name correction, but
+3. sonoscli/sonos: built and bundled as an APK-local Android arm64 payload;
    local-network discovery needs Android multicast/network review.
 4. blucli/blu: same bin-name correction done; device discovery and target config
    are the main smoke blockers.
