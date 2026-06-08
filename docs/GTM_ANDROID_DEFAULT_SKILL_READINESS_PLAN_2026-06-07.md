@@ -1684,11 +1684,22 @@ payload bytes: 10813736
 payload sha256: 411713ad1cd0e6841db7f5a6583d9d2f1767c1ef8c5f1cf143a666d5717ee8b5
 rebuild script: scripts/cli_core/build_sonos_android_arm64.ps1 -InstallAsset
 provenance: docs/CLI_CORE_SONOS_ANDROID_PAYLOAD.md
+
+skill id: blucli
+asset: assets/openclaw/cli-core/bin/blu
+source: https://github.com/steipete/blucli
+source commit: b5ba7d004448f945acff8ea56034cfe4138be5b6
+build target: GOOS=android GOARCH=arm64 CGO_ENABLED=0
+verified format: ELF64 little-endian AArch64
+payload bytes: 8257832
+payload sha256: 9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442
+rebuild script: scripts/cli_core/build_blu_android_arm64.ps1 -InstallAsset
+provenance: docs/CLI_CORE_BLU_ANDROID_PAYLOAD.md
 ```
 
-The remaining CLI-core binaries (`blu`, `himalaya`, `wacli`) are still absent
-from the APK payload and remain pack-gated until real Android arm64 binaries are
-built and verified. No placeholder payloads are allowed.
+The remaining CLI-core binaries (`himalaya`, `wacli`) are still absent from the
+APK payload and remain pack-gated until real Android arm64 binaries are built
+and verified. No placeholder payloads are allowed.
 
 CLI-core missing-payload diagnostics now landed:
 
@@ -1859,6 +1870,38 @@ returned no connected devices after the earlier ADB drop. Do not treat
 bounded discovery/control smoke are verified on an installed APK and a real
 network.
 
+Latest host/APK proof after the Blu payload slice:
+
+```text
+.\scripts\cli_core\build_blu_android_arm64.ps1 -InstallAsset
+Result: deterministic rebuild/install PASS twice; output and asset SHA both
+9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442
+
+flutter test test/android_cli_core_payload_packaging_test.dart
+Result: 10/10 passing
+
+flutter test test/skill_provisioning_service_test.dart \
+  test/android_cli_core_payload_packaging_test.dart \
+  test/dependency_pack_manifest_test.dart \
+  test/android_skill_readiness_service_test.dart \
+  test/android_skill_readiness_view_model_test.dart
+Result: 41/41 passing
+
+flutter analyze test/android_cli_core_payload_packaging_test.dart
+Result: no issues
+
+flutter build apk --debug
+Result: PASS, APK includes
+assets/flutter_assets/assets/openclaw/cli-core/bin/blu
+length 8257832, sha256
+9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442
+```
+
+Blu device proof is still pending for this round because `adb devices -l`
+returned no connected devices after the earlier ADB drop. Do not treat `blucli`
+as BluOS-smoked until `/device/health`, `blu --version`, and a bounded
+discovery/control smoke are verified on an installed APK and a real network.
+
 Classification correction landed after the CLI SKILL audit:
 
 ```text
@@ -1883,8 +1926,9 @@ CLI-core build priority from source audit:
    Sleep credentials and real account/device smoke still pending.
 3. sonoscli/sonos: built and bundled as an APK-local Android arm64 payload;
    local-network discovery needs Android multicast/network review.
-4. blucli/blu: same bin-name correction done; device discovery and target config
-   are the main smoke blockers.
+4. blucli/blu: built and bundled as an APK-local Android arm64 payload; BluOS
+   mDNS/LSDP discovery, player control, and target config are the main smoke
+   blockers.
 ```
 
 ### Phase 6: Fresh-User Proof

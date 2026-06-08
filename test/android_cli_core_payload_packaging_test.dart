@@ -45,6 +45,10 @@ void main() {
     await expectAndroidArm64ElfPayload('sonos');
   });
 
+  test('Blu APK payload is a real Android arm64 ELF executable', () async {
+    await expectAndroidArm64ElfPayload('blu');
+  });
+
   test('OpenHue payload has pinned build provenance', () async {
     const openHueCommit = '08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21';
     const goArchiveSha =
@@ -107,6 +111,27 @@ void main() {
     expect(script, contains(r"$env:GOARCH = 'arm64'"));
     expect(script, contains(r"$env:CGO_ENABLED = '0'"));
     expect(docs, contains(sonosCommit));
+    expect(docs.toLowerCase(), contains(payloadSha));
+  });
+
+  test('Blu payload has pinned build provenance', () async {
+    const bluCommit = 'b5ba7d004448f945acff8ea56034cfe4138be5b6';
+    const goArchiveSha =
+        '3ca8fb4630b07c419cbdd51f754e31363cfcfb83b3a5354d9e895c90be2cc345';
+    const payloadSha =
+        '9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442';
+
+    final script = await File('scripts/cli_core/build_blu_android_arm64.ps1')
+        .readAsString();
+    final docs =
+        await File('docs/CLI_CORE_BLU_ANDROID_PAYLOAD.md').readAsString();
+
+    expect(script, contains(bluCommit));
+    expect(script.toLowerCase(), contains(goArchiveSha));
+    expect(script, contains(r"$env:GOOS = 'android'"));
+    expect(script, contains(r"$env:GOARCH = 'arm64'"));
+    expect(script, contains(r"$env:CGO_ENABLED = '0'"));
+    expect(docs, contains(bluCommit));
     expect(docs.toLowerCase(), contains(payloadSha));
   });
 }

@@ -231,11 +231,14 @@ Current APK-local CLI-core payloads are `openhue`, built from OpenHue CLI commit
 `08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21`; `eightctl`, built from
 `steipete/eightctl` commit `2f2c73f0a529e9138707a237135fcaadfe56617e`; and
 `sonos`, built from `steipete/sonoscli` commit
-`87f409ab218a19a03cad630458258b291c365d8b`. All are built for `GOOS=android
-GOARCH=arm64 CGO_ENABLED=0`. Their provenance and deterministic rebuild
-commands are recorded in `docs/CLI_CORE_OPENHUE_ANDROID_PAYLOAD.md`,
-`docs/CLI_CORE_EIGHTCTL_ANDROID_PAYLOAD.md`, and
-`docs/CLI_CORE_SONOS_ANDROID_PAYLOAD.md`. Other CLI-core tools stay pack-gated
+`87f409ab218a19a03cad630458258b291c365d8b`; and `blu`, built from
+`steipete/blucli` commit `b5ba7d004448f945acff8ea56034cfe4138be5b6`. All are
+built for `GOOS=android GOARCH=arm64 CGO_ENABLED=0`. Their provenance and
+deterministic rebuild commands are recorded in
+`docs/CLI_CORE_OPENHUE_ANDROID_PAYLOAD.md`,
+`docs/CLI_CORE_EIGHTCTL_ANDROID_PAYLOAD.md`,
+`docs/CLI_CORE_SONOS_ANDROID_PAYLOAD.md`, and
+`docs/CLI_CORE_BLU_ANDROID_PAYLOAD.md`. Other CLI-core tools stay pack-gated
 until real Android arm64 binaries are produced and verified.
 
 ## Gateway `tools.allow`
