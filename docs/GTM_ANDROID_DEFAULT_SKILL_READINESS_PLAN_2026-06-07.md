@@ -1649,7 +1649,7 @@ its `SKILL.md` audit proved it is instruction-only. That means the payload lane
 prepares installation for true CLI binaries but does not invent renderer
 binaries.
 
-First real CLI-core APK payload landed:
+Real CLI-core APK payloads landed:
 
 ```text
 skill id: openhue
@@ -1662,12 +1662,22 @@ payload bytes: 11206952
 payload sha256: 281cf0c17f593a32fe83571db7f467c956cd92a1b4bded26f6c8a8408f0ba3f9
 rebuild script: scripts/cli_core/build_openhue_android_arm64.ps1 -InstallAsset
 provenance: docs/CLI_CORE_OPENHUE_ANDROID_PAYLOAD.md
+
+skill id: eightctl
+asset: assets/openclaw/cli-core/bin/eightctl
+source: https://github.com/steipete/eightctl
+source commit: 2f2c73f0a529e9138707a237135fcaadfe56617e
+build target: GOOS=android GOARCH=arm64 CGO_ENABLED=0
+verified format: ELF64 little-endian AArch64
+payload bytes: 10158376
+payload sha256: 8242e7624b6c0e3c9bd1fa932b515f8d589c47be09940da9032230f75d88d755
+rebuild script: scripts/cli_core/build_eightctl_android_arm64.ps1 -InstallAsset
+provenance: docs/CLI_CORE_EIGHTCTL_ANDROID_PAYLOAD.md
 ```
 
-The remaining CLI-core binaries (`blu`, `eightctl`, `himalaya`, `sonos`,
-`wacli`) are still absent from the APK payload and remain pack-gated until real
-Android arm64 binaries are built and verified. No placeholder payloads are
-allowed.
+The remaining CLI-core binaries (`blu`, `himalaya`, `sonos`, `wacli`) are still
+absent from the APK payload and remain pack-gated until real Android arm64
+binaries are built and verified. No placeholder payloads are allowed.
 
 CLI-core missing-payload diagnostics now landed:
 
@@ -1771,6 +1781,40 @@ as a dependency pack, copied into managed Native state, receipted, executed, and
 reinstalled if the managed file disappears; `openhue` is now the first real
 payload in that lane.
 
+Latest host/APK proof after the Eightctl payload slice:
+
+```text
+.\scripts\cli_core\build_eightctl_android_arm64.ps1 -InstallAsset
+Result: deterministic rebuild/install PASS twice; output and asset SHA both
+8242e7624b6c0e3c9bd1fa932b515f8d589c47be09940da9032230f75d88d755
+
+flutter test test/android_cli_core_payload_packaging_test.dart
+Result: 6/6 passing
+
+flutter test test/skill_provisioning_service_test.dart \
+  test/android_cli_core_payload_packaging_test.dart \
+  test/dependency_pack_manifest_test.dart \
+  test/android_skill_readiness_service_test.dart \
+  test/android_skill_readiness_view_model_test.dart
+Result: 37/37 passing
+
+flutter analyze test/android_cli_core_payload_packaging_test.dart
+Result: no issues
+
+flutter build apk --debug
+Result: PASS, APK includes
+assets/flutter_assets/assets/openclaw/cli-core/bin/eightctl
+length 10158376, sha256
+8242e7624b6c0e3c9bd1fa932b515f8d589c47be09940da9032230f75d88d755
+```
+
+Eightctl device proof is still pending for this round. The phone appeared as
+`RZCX30KA9AW`, then ADB dropped during `adb install -r` with
+`no devices/emulators found`; after `adb kill-server`, `adb start-server`, and
+a wait/recheck, `adb devices -l` returned no connected devices. Do not treat
+`eightctl` as device-smoked until `/device/health` and `eightctl version` are
+verified on an installed APK.
+
 Classification correction landed after the CLI SKILL audit:
 
 ```text
@@ -1789,9 +1833,10 @@ does not need.
 CLI-core build priority from source audit:
 
 ```text
-1. openhue: built and bundled as first APK-local Android arm64 payload; device
-   provisioning and bridge/network smoke still pending.
-2. eightctl: exact binary name, Go build, auth needed only for functional smoke.
+1. openhue: built and bundled as an APK-local Android arm64 payload; bridge
+   pairing/local-network smoke still pending.
+2. eightctl: built and bundled as an APK-local Android arm64 payload; Eight
+   Sleep credentials and real account/device smoke still pending.
 3. sonoscli/sonos: strong Go candidate after the bin-name correction, but
    local-network discovery needs Android multicast/network review.
 4. blucli/blu: same bin-name correction done; device discovery and target config

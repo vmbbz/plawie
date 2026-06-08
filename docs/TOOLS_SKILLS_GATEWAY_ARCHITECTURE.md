@@ -227,10 +227,13 @@ missing-pack action. Android readiness copies this into `/device/health` as
 `dependencyGateMessage`, so the Skills page can explain the exact missing
 payload without pretending the skill is runnable.
 
-The first APK-local CLI-core payload is `openhue`, built from OpenHue CLI commit
-`08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21` for `GOOS=android GOARCH=arm64`.
-Its provenance and deterministic rebuild command are recorded in
-`docs/CLI_CORE_OPENHUE_ANDROID_PAYLOAD.md`. The other CLI-core tools stay
+Current APK-local CLI-core payloads are `openhue`, built from OpenHue CLI commit
+`08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21`, and `eightctl`, built from
+`steipete/eightctl` commit `2f2c73f0a529e9138707a237135fcaadfe56617e`. Both
+are built for `GOOS=android GOARCH=arm64 CGO_ENABLED=0`. Their provenance and
+deterministic rebuild commands are recorded in
+`docs/CLI_CORE_OPENHUE_ANDROID_PAYLOAD.md` and
+`docs/CLI_CORE_EIGHTCTL_ANDROID_PAYLOAD.md`. Other CLI-core tools stay
 pack-gated until real Android arm64 binaries are produced and verified.
 
 ## Gateway `tools.allow`
