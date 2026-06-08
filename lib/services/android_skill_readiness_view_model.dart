@@ -32,6 +32,14 @@ class AndroidSkillReadinessViewModel {
 
   String get readyOptionalLabel => '$readyOptionalCount';
 
+  int get needsConfigTaxonomyCount => _count(countsByClass, 'needs_config');
+
+  int get needsPackTaxonomyCount => _count(countsByClass, 'needs_pack');
+
+  int get blockedNeedsConfigCount => topNeedsConfig.length;
+
+  int get blockedNeedsPackCount => topNeedsPack.length;
+
   factory AndroidSkillReadinessViewModel.fromReadiness(
     Map<String, dynamic> readiness,
   ) {

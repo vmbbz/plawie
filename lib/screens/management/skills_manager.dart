@@ -2497,13 +2497,13 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
                     : accent,
               ),
               _ReadinessMetric(
-                label: 'NEEDS CONFIG',
-                value: '${counts['needs_config'] ?? 0}',
+                label: 'CONFIG BLOCKERS',
+                value: '${model.blockedNeedsConfigCount}',
                 color: AppColors.statusAmber,
               ),
               _ReadinessMetric(
-                label: 'NEEDS PACK',
-                value: '${counts['needs_pack'] ?? 0}',
+                label: 'PACK BLOCKERS',
+                value: '${model.blockedNeedsPackCount}',
                 color: Colors.cyanAccent,
               ),
               _ReadinessMetric(

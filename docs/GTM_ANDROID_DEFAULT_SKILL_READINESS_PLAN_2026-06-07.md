@@ -26,7 +26,60 @@ Show exact user gates for config and packs.
 Hide or demote skills that are not Android-release safe.
 ```
 
-## Current Device Truth
+## Current Scorecard
+
+Current host/APK truth on 2026-06-08 after the `blu` payload slice:
+
+```text
+Classified default manifest: 61
+
+Static manifest taxonomy:
+ready_required: 13
+ready_optional: 7
+needs_config: 14
+needs_pack: 17
+unsupported_on_android: 6
+manual_proot_compat: 2
+hidden_desktop_only: 2
+
+Android-relevant denominator:
+61 - unsupported_on_android 6 - manual_proot_compat 2 - hidden_desktop_only 2
+= 51
+
+Release gate:
+ready_required: 13/13
+unexpected_missing_dependency: 0
+releaseGatePass: true
+
+Current APK-local android-cli-core payloads:
+blu, eightctl, openhue, sonos
+
+Remaining android-cli-core payload gaps:
+himalaya, wacli
+
+Host-projected fresh-user floor after APK install/provisioning:
+Android ready now: 24/51
+  = 13 ready_required
+  + 7 ready_optional
+  + 4 bundled CLI-core pack skills
+Unresolved config blockers: 14
+Unresolved pack blockers floor: 13
+  = 17 needs_pack taxonomy entries - 4 bundled CLI-core payloads
+```
+
+The release gate is not supposed to inflate above `13/13`; it stays the
+launch-critical fresh-user boot promise. The ceiling moves through
+`Android ready now` and the unresolved blocker counts. The Skills page now shows
+`CONFIG BLOCKERS` and `PACK BLOCKERS`, not raw static taxonomy counts, so the UI
+reflects bundled payload progress when `/device/health` reports pack-gated
+skills as `ready: true`.
+
+Device proof caveat: the latest installed-device proof is still older than the
+last three CLI payload commits because ADB dropped during install and currently
+returns no connected devices. Treat `24/51` as the host/APK-projected fresh-user
+floor until `/device/health` confirms it on an installed APK.
+
+## Last Installed Device Truth
 
 Live device health on 2026-06-07 after the Phase 5 `diagram-maker`
 classification install reported:
@@ -49,6 +102,9 @@ unexpected_missing_dependency: 0
 
 Release gate: PASS
 ```
+
+That `22` is historical installed-device truth, not the current APK ceiling
+after the later `eightctl`, `sonos`, and `blu` payload commits.
 
 Phase 4 adapter movement now proven on device through `/api/tools` and
 `/api/tools/execute`:
@@ -528,6 +584,20 @@ spotify-player: android-audio-runtime
 tmux: android-terminal-pack
 video-frames: android-vision-media-runtime
 wacli: android-cli-core-pack
+```
+
+Current APK-local pack satisfaction:
+
+```text
+android-cli-core-pack satisfied by bundled APK payload:
+blucli -> blu
+eightctl -> eightctl
+openhue -> openhue
+sonoscli -> sonos
+
+android-cli-core-pack still missing APK payload:
+himalaya
+wacli
 ```
 
 Class C acceptance:

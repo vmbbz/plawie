@@ -227,9 +227,16 @@ missing-pack action. Android readiness copies this into `/device/health` as
 `dependencyGateMessage`, so the Skills page can explain the exact missing
 payload without pretending the skill is runnable.
 
+The readiness scorecard distinguishes static taxonomy from unresolved gates.
+`countsByClass.needs_pack` remains the number of manifest entries whose product
+class depends on a pack, even after an APK-local payload satisfies some of
+those entries. The Skills page therefore displays `PACK BLOCKERS` from
+unready `needs_pack` entries, not the raw taxonomy total. The same rule applies
+to `CONFIG BLOCKERS` for unready `needs_config` entries.
+
 Current APK-local CLI-core payloads are `openhue`, built from OpenHue CLI commit
 `08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21`; `eightctl`, built from
-`steipete/eightctl` commit `2f2c73f0a529e9138707a237135fcaadfe56617e`; and
+`steipete/eightctl` commit `2f2c73f0a529e9138707a237135fcaadfe56617e`;
 `sonos`, built from `steipete/sonoscli` commit
 `87f409ab218a19a03cad630458258b291c365d8b`; and `blu`, built from
 `steipete/blucli` commit `b5ba7d004448f945acff8ea56034cfe4138be5b6`. All are

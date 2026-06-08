@@ -45,6 +45,13 @@ void main() {
           'ready': true,
         },
         {
+          'skillId': 'openhue',
+          'androidSupport': 'needs_pack',
+          'requiredPacks': ['android-cli-core-pack'],
+          'runtimeStatus': 'ready',
+          'ready': true,
+        },
+        {
           'skillId': 'apple-notes',
           'androidSupport': 'unsupported_on_android',
           'ready': false,
@@ -67,11 +74,15 @@ void main() {
     expect(model.readyRequiredLabel, '13/13');
     expect(model.readyOptionalCount, 2);
     expect(model.readyOptionalLabel, '2');
-    expect(model.androidRelevantReady, 3);
+    expect(model.androidRelevantReady, 4);
     expect(model.releaseGatePass, isTrue);
     expect(model.topNeedsConfig.single.skillId, 'github');
     expect(model.topNeedsConfig.single.detail, contains('GITHUB_TOKEN'));
     expect(model.topNeedsConfig.single.detail, contains('missing_native_bin'));
+    expect(model.needsConfigTaxonomyCount, 16);
+    expect(model.needsPackTaxonomyCount, 20);
+    expect(model.blockedNeedsConfigCount, 1);
+    expect(model.blockedNeedsPackCount, 0);
     expect(model.topNeedsPack, isEmpty);
   });
 
@@ -121,6 +132,8 @@ void main() {
       model.topNeedsPack.map((item) => item.skillId),
       ['pack-1', 'pack-2', 'pack-3', 'pack-4', 'pack-5', 'pack-6'],
     );
+    expect(model.blockedNeedsConfigCount, 5);
+    expect(model.blockedNeedsPackCount, 6);
   });
 
   test('pack gate detail prefers concrete missing payload data', () {
