@@ -185,21 +185,38 @@ Device proof status:
 
 ```text
 Target device: RZCX30KA9AW
-ADB state during install attempt: unstable/offline
-Install command attempted after build: adb install -r build/app/outputs/flutter-apk/app-debug.apk
-Result: blocked by ADB device offline / no devices during streamed install
+Date: 2026-06-08
+ADB state: device
+Install command: adb install -r build/app/outputs/flutter-apk/app-debug.apk
+Install result: Success
+Forward command: adb forward tcp:8765 tcp:8765
+Forward result: tcp:8765
+
+/device/health:
+releaseGatePass: true
+ready_required: 13/13
+classified default manifest: 61
+installed Native workspace skills: 65
+counts: ready_required 13, ready_optional 7, needs_config 14,
+        needs_pack 17, unsupported_on_android 6,
+        manual_proot_compat 2, hidden_desktop_only 2
+
+/api/tools after install:
+registered tools: 22
+github present: true
+discord present: true
+notion present: true
+trello present: true
+slack present: false
 ```
 
-Do not mark this milestone as device-installed until `RZCX30KA9AW` is stable
-again and the hardened APK is installed. The next retry should only do:
+The hardened config wizard APK is now installed and live on `RZCX30KA9AW`.
+The Slack config UI behavior is covered by widget tests. A dummy-token device
+save was not performed because it would write fake Slack values into the live
+Native `.env` / `openclaw.json`; use real credentials or a cleared app profile
+for that proof.
 
-```text
-adb devices
-adb install -r build/app/outputs/flutter-apk/app-debug.apk
-adb forward tcp:8765 tcp:8765
-```
-
-Then open Skills and smoke Slack config UI:
+Device UI smoke checklist remains:
 
 ```text
 Slack config chip opens service-aware fields.
