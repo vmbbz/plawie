@@ -220,6 +220,13 @@ For CLI-core, payload file names must be executable names from each bundled
 `SKILL.md`, not necessarily skill IDs: for example `blucli` requires `blu`,
 and `sonoscli` requires `sonos`.
 
+When a known CLI-core executable is required but no APK payload or validated
+pack advertises it, provisioning emits an `android-cli-core-pack:<bin>`
+missing-pack action. Android readiness copies this into `/device/health` as
+`dependencyGateStatus`, `missingPacks`, `missingBins`, and
+`dependencyGateMessage`, so the Skills page can explain the exact missing
+payload without pretending the skill is runnable.
+
 ## Gateway `tools.allow`
 
 `tools.allow` is a strict Gateway allowlist. OpenClaw applies `tools.profile`

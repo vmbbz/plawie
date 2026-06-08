@@ -122,4 +122,42 @@ void main() {
       ['pack-1', 'pack-2', 'pack-3', 'pack-4', 'pack-5', 'pack-6'],
     );
   });
+
+  test('pack gate detail prefers concrete missing payload data', () {
+    final model = AndroidSkillReadinessViewModel.fromReadiness({
+      'totalManifestSkills': 1,
+      'readyRequired': {'ready': 0, 'total': 0},
+      'releaseGatePass': true,
+      'unexpectedMissingDependency': 0,
+      'countsByClass': {
+        'needs_pack': 1,
+      },
+      'skills': [
+        {
+          'skillId': 'openhue',
+          'androidSupport': 'needs_pack',
+          'requiredPacks': ['android-cli-core-pack'],
+          'missingPacks': ['android-cli-core-pack'],
+          'missingBins': ['openhue'],
+          'dependencyGateMessage':
+              'Android CLI-core payload is missing "openhue". Bundle assets/openclaw/cli-core/bin/openhue in the APK or publish a signed dependency pack for arm64-v8a.',
+          'ready': false,
+        },
+      ],
+    });
+
+    expect(model.topNeedsPack.single.skillId, 'openhue');
+    expect(
+      model.topNeedsPack.single.detail,
+      contains('pack unavailable: android-cli-core-pack'),
+    );
+    expect(
+      model.topNeedsPack.single.detail,
+      contains('missing binaries: openhue'),
+    );
+    expect(
+      model.topNeedsPack.single.detail,
+      contains('assets/openclaw/cli-core/bin/openhue'),
+    );
+  });
 }

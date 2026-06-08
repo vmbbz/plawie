@@ -1650,7 +1650,24 @@ binary names (`blu`, `eightctl`, `himalaya`, `openhue`, `sonos`, `wacli`).
 audit proved it is instruction-only. That means the payload lane prepares
 installation for true CLI binaries but does not invent a renderer binary.
 
-Local proof:
+CLI-core missing-payload diagnostics now landed:
+
+```text
+dependencyGateStatus: missing_pack
+missingPacks: android-cli-core-pack
+missingBins: exact executable name, for example openhue
+dependencyGateMessage: asset path or signed dependency-pack route
+```
+
+If a pack-gated skill needs a known CLI-core executable but the APK has no real
+payload file, provisioning now emits an explicit `android-cli-core-pack:<bin>`
+missing-pack action before the generic missing-binary action. Android readiness
+copies that into `/device/health`, and the Skills page pack-gate tooltips prefer
+the concrete message. This is a product-truth improvement only; it does not mark
+any CLI skill ready until the actual binary is bundled or supplied by a signed,
+validated pack.
+
+Earlier local proof:
 
 ```text
 flutter analyze lib/services/dependency_pack_manifest.dart \
@@ -1664,11 +1681,27 @@ flutter test test/dependency_pack_manifest_test.dart \
 flutter test test/android_cli_core_payload_packaging_test.dart \
   test/skill_provisioning_service_test.dart --no-pub
 
+flutter test test/android_skill_readiness_service_test.dart \
+  test/android_skill_readiness_view_model_test.dart
+
 flutter build apk --debug
 
 Result: analyzer clean; dependency-manifest/provisioning suite 14/14 passing;
 payload/provisioning suite 11/11 passing; debug APK built; APK contains
 `assets/openclaw/cli-core/bin/.gitkeep` only.
+```
+
+Latest host proof after the CLI-core diagnostics slice:
+
+```text
+flutter test test/skill_provisioning_service_test.dart \
+  test/android_cli_core_payload_packaging_test.dart \
+  test/dependency_pack_manifest_test.dart
+Result: 20/20 passing
+
+flutter test test/android_skill_readiness_service_test.dart \
+  test/android_skill_readiness_view_model_test.dart
+Result: 13/13 passing
 ```
 
 This does not yet mean a remote `android-cli-core-pack` is built, hosted,

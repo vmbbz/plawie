@@ -282,6 +282,62 @@ requirements:
     );
   });
 
+  test('provisioning explains missing Android CLI-core payload bins', () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_cli_missing_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills =
+        Directory(path.join(nativeRoot, 'workspace', 'skills'));
+    final bundledBinDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'bin',
+    ));
+    await nativeSkills.create(recursive: true);
+    await bundledBinDir.create(recursive: true);
+
+    final openhue = Directory(path.join(nativeSkills.path, 'openhue'));
+    await openhue.create(recursive: true);
+    await File(path.join(openhue.path, 'SKILL.md')).writeAsString('''
+---
+requirements:
+  bins:
+    - openhue
+---
+# OpenHue
+''');
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      snapshot,
+      skillId: 'openhue',
+    );
+
+    expect(report.changed, isFalse);
+    expect(report.results.single.status, SkillProvisioningStatus.missingBinary);
+    final packAction = report.results.single.actions.singleWhere(
+      (action) =>
+          action.type == SkillProvisioningActionType.dependencyPack &&
+          action.key == 'android-cli-core-pack:openhue',
+    );
+    expect(packAction.status, SkillProvisioningActionStatus.missingPack);
+    expect(
+        packAction.message, contains('assets/openclaw/cli-core/bin/openhue'));
+    expect(packAction.message, contains('signed dependency pack'));
+  });
+
   test('provisioning does not advertise diagram-maker as CLI-core binary',
       () async {
     final temp =

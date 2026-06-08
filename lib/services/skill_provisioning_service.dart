@@ -766,6 +766,17 @@ class SkillProvisioningService {
             'No Native dependency pack advertises runtime "$runtime" for arm64-v8a.',
       ));
     }
+    for (final bin in requiredBins.difference(coveredBins)) {
+      final isCliCoreBin = _androidCliCorePackBins.contains(bin);
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.dependencyPack,
+        key: isCliCoreBin ? '$_androidCliCorePackId:$bin' : 'bin:$bin',
+        status: SkillProvisioningActionStatus.missingPack,
+        message: isCliCoreBin
+            ? 'Android CLI-core payload is missing "$bin". Bundle assets/openclaw/cli-core/bin/$bin in the APK or publish a signed dependency pack for arm64-v8a.'
+            : 'No Native dependency pack advertises binary "$bin" for arm64-v8a.',
+      ));
+    }
     for (final pack in selected) {
       final receipt = await _readDependencyReceipt(layout, pack.id);
       if (receipt != null &&

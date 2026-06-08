@@ -262,6 +262,48 @@ void main() {
     expect(optional['releaseBlocking'], isFalse);
     expect(optional['runtimeStatus'], 'app_native_ready');
   });
+
+  test('pack-gated skills expose concrete missing pack payload details', () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([
+        missingEntry('openhue', 'missing_native_bin'),
+      ]),
+      provisioning: provisioningWith([
+        provisioningResult(
+          'openhue',
+          SkillProvisioningStatus.missingBinary,
+          actions: const [
+            SkillProvisioningAction(
+              type: SkillProvisioningActionType.dependencyPack,
+              key: 'android-cli-core-pack:openhue',
+              status: SkillProvisioningActionStatus.missingPack,
+              message:
+                  'Android CLI-core payload is missing "openhue". Bundle assets/openclaw/cli-core/bin/openhue in the APK or publish a signed dependency pack for arm64-v8a.',
+            ),
+            SkillProvisioningAction(
+              type: SkillProvisioningActionType.binary,
+              key: 'openhue',
+              status: SkillProvisioningActionStatus.missingBinary,
+              message: 'openhue is not available in Native.',
+            ),
+          ],
+        ),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        packManifestEntry('openhue', ['android-cli-core-pack']),
+      ]),
+    );
+
+    final openhue = summary.skills.single;
+    expect(openhue['ready'], isFalse);
+    expect(openhue['dependencyGateStatus'], 'missing_pack');
+    expect(openhue['missingPacks'], ['android-cli-core-pack']);
+    expect(openhue['missingBins'], ['openhue']);
+    expect(
+      openhue['dependencyGateMessage'],
+      contains('assets/openclaw/cli-core/bin/openhue'),
+    );
+  });
 }
 
 SkillParitySnapshot snapshotWith(
@@ -370,14 +412,15 @@ SkillProvisioningSkillResult unsupportedResult(String skillId) {
 
 SkillProvisioningSkillResult provisioningResult(
   String skillId,
-  SkillProvisioningStatus status,
-) {
+  SkillProvisioningStatus status, {
+  List<SkillProvisioningAction> actions = const <SkillProvisioningAction>[],
+}) {
   return SkillProvisioningSkillResult(
     skillId: skillId,
     readiness: status.wireName,
     status: status,
     primaryGate: null,
-    actions: const <SkillProvisioningAction>[],
+    actions: actions,
     changed: false,
     reloadRecommended: false,
   );

@@ -85,20 +85,36 @@ class AndroidSkillReadinessViewModel {
 class AndroidSkillGateSummary {
   final String skillId;
   final String detail;
+  final List<String> missingBins;
+  final List<String> missingPacks;
+  final String? dependencyGateMessage;
 
   const AndroidSkillGateSummary({
     required this.skillId,
     required this.detail,
+    this.missingBins = const <String>[],
+    this.missingPacks = const <String>[],
+    this.dependencyGateMessage,
   });
 
   factory AndroidSkillGateSummary.fromSkill(Map<String, dynamic> skill) {
     final config = _stringList(skill['requiredConfig']);
     final packs = _stringList(skill['requiredPacks']);
+    final missingBins = _stringList(skill['missingBins']);
+    final missingPacks = _stringList(skill['missingPacks']);
+    final dependencyGateMessage =
+        skill['dependencyGateMessage']?.toString().trim();
     final runtime = skill['runtimeStatus']?.toString().trim();
     final gate = skill['primaryGate']?.toString().trim();
     final parts = <String>[
       if (config.isNotEmpty) 'config: ${config.join(', ')}',
-      if (packs.isNotEmpty) 'pack: ${packs.join(', ')}',
+      if (missingPacks.isNotEmpty)
+        'pack unavailable: ${missingPacks.join(', ')}'
+      else if (packs.isNotEmpty)
+        'pack: ${packs.join(', ')}',
+      if (missingBins.isNotEmpty) 'missing binaries: ${missingBins.join(', ')}',
+      if (dependencyGateMessage != null && dependencyGateMessage.isNotEmpty)
+        dependencyGateMessage,
       if (gate != null && gate.isNotEmpty) gate,
       if (gate == null || gate.isEmpty)
         if (runtime != null && runtime.isNotEmpty) runtime,
@@ -106,6 +122,12 @@ class AndroidSkillGateSummary {
     return AndroidSkillGateSummary(
       skillId: skill['skillId']?.toString().trim() ?? 'unknown',
       detail: parts.isEmpty ? 'gate pending' : parts.join(' | '),
+      missingBins: missingBins,
+      missingPacks: missingPacks,
+      dependencyGateMessage:
+          dependencyGateMessage == null || dependencyGateMessage.isEmpty
+              ? null
+              : dependencyGateMessage,
     );
   }
 }

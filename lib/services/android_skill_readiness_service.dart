@@ -44,6 +44,9 @@ class AndroidSkillReadinessService {
       final releaseRelevant =
           entry.status == AndroidSkillSupportStatus.readyRequired;
       final appNativeOwned = _isAppNativeOwned(entry);
+      final dependencyGateDetails = appNativeOwned
+          ? const <String, dynamic>{}
+          : _dependencyGateDetails(provisioningResult);
       if (releaseRelevant) {
         readyRequiredTotal += 1;
         if (ready) {
@@ -68,6 +71,7 @@ class AndroidSkillReadinessService {
           snapshot,
           provisioningResult,
         ),
+        ...dependencyGateDetails,
         'ready': ready,
         'releaseBlocking': releaseRelevant && !ready,
       });
@@ -147,6 +151,57 @@ class AndroidSkillReadinessService {
     }
     if (appNativeConfigGated) return 'needs_user_config';
     return provisioningResult?.status.wireName ?? 'not_planned';
+  }
+
+  static Map<String, dynamic> _dependencyGateDetails(
+    SkillProvisioningSkillResult? provisioningResult,
+  ) {
+    if (provisioningResult == null) return const <String, dynamic>{};
+    final missingBins = <String>{};
+    final missingPacks = <String>{};
+    final messages = <String>[];
+    String? status;
+
+    for (final action in provisioningResult.actions) {
+      final key = action.key.trim();
+      if (action.type == SkillProvisioningActionType.dependencyPack &&
+          action.status == SkillProvisioningActionStatus.missingPack) {
+        status ??= action.status.wireName;
+        final colon = key.indexOf(':');
+        if (colon > 0) {
+          final prefix = key.substring(0, colon).trim();
+          final suffix = key.substring(colon + 1).trim();
+          if (prefix == 'bin') {
+            if (suffix.isNotEmpty) missingBins.add(suffix);
+          } else if (prefix != 'runtime' && prefix != 'python-package') {
+            missingPacks.add(prefix);
+            if (suffix.isNotEmpty) missingBins.add(suffix);
+          }
+        } else if (key.isNotEmpty) {
+          missingPacks.add(key);
+        }
+        if (action.message.trim().isNotEmpty) {
+          messages.add(action.message.trim());
+        }
+      }
+      if (action.type == SkillProvisioningActionType.binary &&
+          action.status == SkillProvisioningActionStatus.missingBinary &&
+          key.isNotEmpty) {
+        status ??= action.status.wireName;
+        missingBins.add(key);
+      }
+    }
+
+    if (status == null && missingBins.isEmpty && missingPacks.isEmpty) {
+      return const <String, dynamic>{};
+    }
+    return {
+      if (status != null) 'dependencyGateStatus': status,
+      if (missingPacks.isNotEmpty)
+        'missingPacks': missingPacks.toList()..sort(),
+      if (missingBins.isNotEmpty) 'missingBins': missingBins.toList()..sort(),
+      if (messages.isNotEmpty) 'dependencyGateMessage': messages.first,
+    };
   }
 
   static bool _isAppNativeOwned(AndroidSkillSupportEntry manifestEntry) {
