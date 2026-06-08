@@ -25,6 +25,7 @@ import 'capabilities/nano_pdf_capability.dart';
 import 'capabilities/notion_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/session_logs_capability.dart';
+import 'capabilities/slack_capability.dart';
 import 'capabilities/summarize_capability.dart';
 import 'capabilities/trello_capability.dart';
 import 'capabilities/vibration_capability.dart';
@@ -90,6 +91,7 @@ class AgentSkillServer {
   final NotionCapability _notionCapability = NotionCapability();
   final SensorCapability _sensorCapability = SensorCapability();
   final SessionLogsCapability _sessionLogsCapability = SessionLogsCapability();
+  final SlackCapability _slackCapability = SlackCapability();
   final SummarizeCapability _summarizeCapability = SummarizeCapability();
   final TrelloCapability _trelloCapability = TrelloCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
@@ -1975,6 +1977,13 @@ class AgentSkillServer {
       'discord.me': 'discord.me',
       'discord_status': 'discord.me',
       'discord.status': 'discord.me',
+      'slack': 'slack.me',
+      'slack_me': 'slack.me',
+      'slack.me': 'slack.me',
+      'slack_status': 'slack.me',
+      'slack.status': 'slack.me',
+      'slack_post': 'slack.post',
+      'slack.post': 'slack.post',
       'github': 'github.user',
       'github_user': 'github.user',
       'github.user': 'github.user',
@@ -2170,6 +2179,22 @@ class AgentSkillServer {
           code: 'ok',
           message: 'discord.me arguments are dispatchable',
         );
+      case 'slack.me':
+        return const _NativeGatewayDryRunArgumentValidation(
+          ok: true,
+          code: 'ok',
+          message: 'slack.me arguments are dispatchable',
+        );
+      case 'slack.post':
+        final text = input['text']?.toString().trim();
+        final ok = text != null && text.isNotEmpty;
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: ok,
+          code: ok ? 'ok' : 'missing_text',
+          message: ok
+              ? 'slack.post arguments are dispatchable'
+              : 'slack.post requires text',
+        );
       case 'github.user':
         return const _NativeGatewayDryRunArgumentValidation(
           ok: true,
@@ -2282,6 +2307,8 @@ class AgentSkillServer {
         return 'BlogWatcherCapability';
       case 'session-logs':
         return 'SessionLogsCapability';
+      case 'slack':
+        return 'SlackCapability';
       case 'camera':
         return 'CameraCapability';
       case 'canvas':
@@ -2407,6 +2434,23 @@ class AgentSkillServer {
         case 'discord.status':
           final frame = await _discordCapability.handle(
             'discord.me',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'slack':
+        case 'slack_me':
+        case 'slack.me':
+        case 'slack_status':
+        case 'slack.status':
+          final frame = await _slackCapability.handle(
+            'slack.me',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'slack_post':
+        case 'slack.post':
+          final frame = await _slackCapability.handle(
+            'slack.post',
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);

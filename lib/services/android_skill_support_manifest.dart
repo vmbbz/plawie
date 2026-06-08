@@ -386,7 +386,10 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsConfig(
     'slack',
     config: ['SLACK_BOT_TOKEN', 'channels.slack'],
-    smoke: 'Read Slack bot identity and configured channel metadata.',
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke:
+        'Read Slack bot identity or post a bounded message through the app-native REST adapter.',
   ),
   _needsPack(
     'songsee',

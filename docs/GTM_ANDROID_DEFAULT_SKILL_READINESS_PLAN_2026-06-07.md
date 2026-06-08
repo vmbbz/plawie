@@ -73,15 +73,18 @@ goplaces: needs_config + stale missing_native_bin -> needs_config app-native con
 notion: needs_config + stale missing_native_bin -> needs_config app-native config-only
 discord: needs_config + stale missing_native_bin -> needs_config app-native config-only
 trello: needs_config + stale missing_native_bin -> needs_config app-native config-only
+slack: needs_config -> needs_config app-native config-only
 
 /api/tools after install:
-toolCount: 22
+toolCount: 23
 github present: true
 gh-issues present: true
 goplaces present: true
 notion present: true
 discord present: true
 trello present: true
+slack present: true
+slack actions: me,status,post
 
 /device/health after install:
 releaseGatePass: true
@@ -101,6 +104,8 @@ discord: runtimeStatus needs_config, provisioningStatus needs_user_config,
 primaryGate absent, gates absent
 trello: runtimeStatus needs_config, provisioningStatus needs_user_config,
 primaryGate absent, gates absent
+slack: runtimeStatus needs_config, provisioningStatus needs_user_config,
+primaryGate absent, gates absent
 
 /api/tools/execute missing-config proof:
 github: HTTP 400 MISSING_GITHUB_TOKEN, no secret leak
@@ -109,12 +114,12 @@ goplaces: HTTP 400 MISSING_GOOGLE_PLACES_API_KEY, no secret leak
 notion: HTTP 400 MISSING_NOTION_TOKEN, no secret value leak
 discord: HTTP 400 MISSING_DISCORD_BOT_TOKEN, no secret value leak
 trello: HTTP 400 MISSING_TRELLO_CONFIG, no secret value leak
+slack: HTTP 400 MISSING_SLACK_CONFIG, no secret value leak
 ```
 
-The Notion, Discord, and Trello adapters were installed together on
-`RZCX30KA9AW` after the Trello debug build. The installed app exposes 22 tools
-through `/api/tools`; all three new config adapters show `needs_config` with
-no stale `primaryGate` or `gates`.
+The Notion, Discord, Trello, and Slack adapters are installed on `RZCX30KA9AW`.
+The installed app exposes 23 tools through `/api/tools`; the config adapters
+show `needs_config` with no stale `primaryGate` or `gates`.
 
 The `/api/debug/app-native-chat-tool-smoke` endpoint remains unreliable for
 final-response proof. During the milestone smoke it timed out once and then
@@ -184,6 +189,9 @@ Result: built build/app/outputs/flutter-apk/app-debug.apk
 Device proof status:
 
 ```text
+Historical note: this proof was captured before the Slack app-native adapter
+landed. Current Slack adapter proof is recorded later in this document.
+
 Target device: RZCX30KA9AW
 Date: 2026-06-08
 ADB state: device
@@ -225,8 +233,7 @@ Default Slack channel appears under Workspace.
 Save & Check routes through provisioning.
 ```
 
-After this wizard milestone, the next highest-value adapter target remains
-Slack because it needs both `SLACK_BOT_TOKEN` and `channels.slack`. After Slack:
+After the Slack adapter milestone, the next highest-value config targets are
 `mcporter`, `openai-whisper-api`, then `ordercli` / `sag` if their APIs are
 sane enough for app-native Android support.
 
@@ -240,7 +247,8 @@ Read this carefully:
 - `xurl`, `camsnap`, `summarize`, `blogwatcher`, `session-logs`, and
   `nano-pdf` are now app-native ready optional: usable through
   Gateway-visible tool execution, but not part of the launch-critical gate.
-- `github`, `gh-issues`, `goplaces`, `notion`, `discord`, and `trello` are
+- `github`, `gh-issues`, `goplaces`, `notion`, `discord`, `trello`, and
+  `slack` are
   still needs-config skills, but no longer depend on Native CLI binaries once
   their env keys are present. They use bounded app-native REST adapters through
   the same Gateway-visible tool path.
@@ -388,21 +396,23 @@ runtime gate. On the current device, several Class B skills also report
 
 Important second correction: app-native config-gated adapters must not keep
 stale OpenClaw binary gates. `github`, `gh-issues`, `goplaces`, `notion`,
-`discord`, and `trello` are the first adapter cases: until their env keys exist
-they show `needs_config`; after the keys exist they become app-native ready
-without requiring CLI binaries.
+`discord`, `trello`, and `slack` are adapter cases: until their env/config keys
+exist they show `needs_config`; after the keys exist they become app-native
+ready without requiring CLI binaries.
 
-Therefore the app must show layered gates:
+Therefore the app must show config gates that are actionable without implying a
+missing binary:
 
 ```text
 Skill: slack
 Product class: Needs config
 User config: SLACK_BOT_TOKEN, channels.slack
-Runtime gate: missing_native_bin
-Next action: install verified pack or use app-native adapter
+Runtime gate before config: needs_config
+Runtime gate after config: app_native_ready
+Next action: configure SLACK_BOT_TOKEN and channels.slack in the Skills page
 ```
 
-For GitHub and Google Places specifically the app-facing gates are:
+For app-native config adapters the app-facing gates are:
 
 ```text
 Skill: github / gh-issues
@@ -439,6 +449,13 @@ User config: TRELLO_API_KEY, TRELLO_TOKEN
 Runtime gate before credentials: needs_config
 Runtime gate after credentials: app_native_ready
 Next action: configure TRELLO_API_KEY and TRELLO_TOKEN in the Skills page
+
+Skill: slack
+Product class: Needs config
+User config: SLACK_BOT_TOKEN, channels.slack
+Runtime gate before config: needs_config
+Runtime gate after config: app_native_ready
+Next action: configure SLACK_BOT_TOKEN and channels.slack in the Skills page
 ```
 
 `github` reads bounded authenticated profile metadata through `github.user`.
@@ -449,7 +466,9 @@ using an explicit response field mask.
 `notion.search`.
 `discord` reads bounded Discord bot status metadata through `discord.me`.
 `trello` reads bounded Trello board summaries through `trello.boards`.
-All six are exposed in `/api/tools`, route `/api/tools/execute` through
+`slack` reads Slack bot identity through `slack.me` and posts bounded channel
+messages through `slack.post`.
+All seven are exposed in `/api/tools`, route `/api/tools/execute` through
 `AgentSkillServer`, and keep tokens/API keys out of tool input, result
 payloads, and visible chat chunks.
 
@@ -1330,6 +1349,76 @@ Build proof:
 flutter build apk --debug
 
 Result: built build/app/outputs/flutter-apk/app-debug.apk
+```
+
+Twelfth adapter landed:
+
+```text
+slack
+status: needs_config
+runtime after config: app-native Slack REST adapter
+Gateway tool: slack
+commands underneath: slack.me, slack.post
+manifest movement: generic needs_config -> app-native config-only
+scope: bot identity/status plus bounded channel message post
+safety: SLACK_BOT_TOKEN is read from Native .env and channels.slack is read
+from Native openclaw.json; neither is accepted in tool input or returned in
+payloads/chat chunks
+```
+
+Local proof:
+
+```text
+flutter test test/slack_app_native_adapter_test.dart --no-pub
+
+Result: 8/8 passing
+```
+
+Combined local proof:
+
+```text
+flutter test test/slack_app_native_adapter_test.dart \
+  test/discord_app_native_adapter_test.dart \
+  test/trello_app_native_adapter_test.dart \
+  test/android_skill_support_manifest_test.dart \
+  test/android_skill_config_form_model_test.dart \
+  test/android_skill_config_sheet_test.dart \
+  test/skill_provisioning_service_test.dart \
+  --no-pub
+
+Result: 48/48 passing
+```
+
+Analyzer proof:
+
+```text
+flutter analyze lib/services/capabilities/slack_capability.dart \
+  lib/services/app_native_chat_tool_router.dart \
+  lib/services/agent_skill_server.dart \
+  lib/services/skills_service.dart \
+  lib/services/android_skill_support_manifest.dart \
+  lib/services/gateway_tool_catalog.dart \
+  test/slack_app_native_adapter_test.dart
+
+Result: No issues found
+```
+
+Device proof after Slack install:
+
+```text
+Target device: RZCX30KA9AW
+Date: 2026-06-08
+Install result: Success
+releaseGatePass: true
+ready_required: 13/13
+counts: ready_required 13, ready_optional 7, needs_config 14,
+        needs_pack 17, unsupported_on_android 6,
+        manual_proot_compat 2, hidden_desktop_only 2
+classified default manifest: 61
+installed Native workspace skills: 65
+/api/tools: toolCount 23, slack present true, actions me/status/post
+/api/tools/execute name=slack action=me:
+  HTTP 400 MISSING_SLACK_CONFIG on an unconfigured device, no secret leak
 ```
 
 Host inspection note: for the phone-owned `AgentSkillServer` bridge on port

@@ -17,6 +17,7 @@ import 'capabilities/nano_pdf_capability.dart';
 import 'capabilities/notion_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/session_logs_capability.dart';
+import 'capabilities/slack_capability.dart';
 import 'capabilities/summarize_capability.dart';
 import 'capabilities/trello_capability.dart';
 import 'capabilities/vibration_capability.dart';
@@ -68,6 +69,7 @@ class AppNativeChatToolRouter {
     GoPlacesCapability? goplaces,
     NotionCapability? notion,
     SessionLogsCapability? sessionLogs,
+    SlackCapability? slack,
     TrelloCapability? trello,
     XurlCapability? xurl,
   })  : _blogWatcher = blogWatcher ?? BlogWatcherCapability(),
@@ -76,6 +78,7 @@ class AppNativeChatToolRouter {
         _goplaces = goplaces ?? GoPlacesCapability(),
         _notion = notion ?? NotionCapability(),
         _sessionLogs = sessionLogs ?? SessionLogsCapability(),
+        _slack = slack ?? SlackCapability(),
         _trello = trello ?? TrelloCapability(),
         _xurl = xurl ?? XurlCapability();
 
@@ -86,6 +89,7 @@ class AppNativeChatToolRouter {
     GoPlacesCapability? goplaces,
     NotionCapability? notion,
     SessionLogsCapability? sessionLogs,
+    SlackCapability? slack,
     TrelloCapability? trello,
     XurlCapability? xurl,
   }) =>
@@ -96,6 +100,7 @@ class AppNativeChatToolRouter {
         goplaces: goplaces,
         notion: notion,
         sessionLogs: sessionLogs,
+        slack: slack,
         trello: trello,
         xurl: xurl,
       );
@@ -115,6 +120,7 @@ class AppNativeChatToolRouter {
   final NotionCapability _notion;
   final SensorCapability _sensor = SensorCapability();
   final SessionLogsCapability _sessionLogs;
+  final SlackCapability _slack;
   final SummarizeCapability _summarize = SummarizeCapability();
   final TrelloCapability _trello;
   final VibrationCapability _vibration = VibrationCapability();
@@ -205,6 +211,8 @@ class AppNativeChatToolRouter {
       'avatar.sequence' ||
       'blogwatcher.check' ||
       'discord.me' ||
+      'slack.me' ||
+      'slack.post' ||
       'haptic.vibrate' ||
       'flash.on' ||
       'flash.off' ||
@@ -495,6 +503,9 @@ class AppNativeChatToolRouter {
     final discordPlan = _discordPlan(trimmed);
     if (discordPlan != null) return discordPlan;
 
+    final slackPlan = _slackPlan(trimmed);
+    if (slackPlan != null) return slackPlan;
+
     final githubPlan = _githubPlan(trimmed);
     if (githubPlan != null) return githubPlan;
 
@@ -604,6 +615,12 @@ class AppNativeChatToolRouter {
           ));
         case 'discord.me':
           return _frameToMap(await _discord.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'slack.me':
+        case 'slack.post':
+          return _frameToMap(await _slack.handle(
             plan.command,
             plan.input,
           ));
@@ -806,6 +823,18 @@ class AppNativeChatToolRouter {
         return username?.isNotEmpty == true
             ? 'Discord bot status retrieved for $username.'
             : 'Discord bot status retrieved.';
+      case 'slack.me':
+        final team = result['team']?.toString().trim();
+        final user = result['user']?.toString().trim();
+        if (team?.isNotEmpty == true && user?.isNotEmpty == true) {
+          return 'Slack bot status retrieved for $user in $team.';
+        }
+        return 'Slack bot status retrieved.';
+      case 'slack.post':
+        final channel = result['channel']?.toString().trim();
+        return channel?.isNotEmpty == true
+            ? 'Slack message posted to $channel.'
+            : 'Slack message posted.';
       case 'github.user':
         final login = result['login']?.toString().trim();
         return login?.isNotEmpty == true
@@ -1277,6 +1306,42 @@ class AppNativeChatToolRouter {
     return const _AppNativeToolPlan(
       toolName: 'discord',
       command: 'discord.me',
+      input: {
+        'action': 'me',
+        'source': 'app-native-chat-router',
+      },
+    );
+  }
+
+  _AppNativeToolPlan? _slackPlan(String message) {
+    final postMatch = RegExp(
+      r'^\s*slack\s+(?:post|send|message)\s+(?:(#[A-Za-z0-9._-]+|[CDG][A-Za-z0-9]+)\s*:?\s+)?(.+?)\s*$',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (postMatch != null) {
+      final channel = postMatch.group(1)?.trim();
+      final text = (postMatch.group(2) ?? '').trim();
+      if (text.isEmpty) return null;
+      return _AppNativeToolPlan(
+        toolName: 'slack',
+        command: 'slack.post',
+        input: {
+          'action': 'post',
+          'text': text,
+          if (channel != null && channel.isNotEmpty) 'channel': channel,
+          'source': 'app-native-chat-router',
+        },
+      );
+    }
+
+    final statusMatch = RegExp(
+      r'^\s*slack(?:\s+(?:bot\s+)?(?:status|me|user))?\s*$',
+      caseSensitive: false,
+    ).firstMatch(message);
+    if (statusMatch == null) return null;
+    return const _AppNativeToolPlan(
+      toolName: 'slack',
+      command: 'slack.me',
       input: {
         'action': 'me',
         'source': 'app-native-chat-router',

@@ -1,6 +1,6 @@
 # Tools, Skills, And Gateway Intelligence Architecture
 
-Last updated: 2026-06-07
+Last updated: 2026-06-08
 
 Engineers touching `gateway_service.dart`, `openclaw_service.dart`,
 `model_provider_catalog.dart`, `local_llm_service.dart`, or the Skills Manager
@@ -12,7 +12,7 @@ screen should read this before changing tool behavior.
 | --- | --- | --- | --- |
 | Gateway primitives | OpenClaw Gateway | Built-in tool groups such as web/files/runtime/nodes | `tools.profile`, `tools.allow`, `tools.deny` |
 | OpenClaw/npm skills | OpenClaw skills runtime | Installed skills and Gateway-managed capabilities | Gateway skill loading |
-| Android node capabilities | Plawie node / capability bridge | Camera, canvas, xurl HTTP requests, GitHub and Google Places REST adapters, weather, ClawHub metadata, meme image creation, haptics, sensors, flashlight, screen, avatar/TTS actions | `gateway.nodes.allowCommands`, port `8765` |
+| Android node capabilities | Plawie node / capability bridge | Camera, canvas, xurl HTTP requests, config-gated REST adapters such as GitHub, Google Places, Notion, Discord, Trello, and Slack, weather, ClawHub metadata, meme image creation, haptics, sensors, flashlight, screen, avatar/TTS actions | `gateway.nodes.allowCommands`, port `8765` |
 | Direct local tools | Dart local NDK loop | Lightweight local actions when using `local-llm/...` | `LocalLlmService` native fllama tools |
 
 Do not mix these layers. A string that is valid as an Android node command is
@@ -58,6 +58,16 @@ The current app-side `/api/tools` catalog definition contains:
 avatar-control
 tts-voice
 device-node
+blogwatcher
+discord
+slack
+session-logs
+nano-pdf
+camsnap
+github
+gh-issues
+goplaces
+notion
 avatar_overlay
 base-chain
 twilio-voice
@@ -65,15 +75,9 @@ agent-card
 molt-launch
 valeo-sentinel
 moonpay
-blogwatcher
-session-logs
-nano-pdf
-camsnap
-github
-gh-issues
-goplaces
-summarize
 xurl
+summarize
+trello
 ```
 
 The current Android node command allowlist contains avatar, camera, canvas,
@@ -81,7 +85,8 @@ weather, ClawHub metadata, flashlight/torch, location, screen recording, sensor,
 simple meme image creation, blogwatcher RSS/Atom feed checks, camsnap camera
 capture, app-owned session log queries, small text-PDF byte extraction,
 provided-text summarization, GitHub profile/issue REST adapters, Google Places
-Text Search, xurl HTTP requests, and haptic commands.
+Text Search, Notion search, Discord bot status, Trello board summaries, Slack
+bot status/message posting, xurl HTTP requests, and haptic commands.
 It does not currently prove a generic third-party app launcher or a safe
 WhatsApp message-sending command.
 
@@ -126,6 +131,29 @@ remains `needs_config` until `GOOGLE_PLACES_API_KEY` is present in the Native
 environment, then runs through `goplaces.search` without a CLI binary. It uses
 an explicit response field mask, bounded result count, and returns only compact
 place metadata.
+
+`notion` is a config-gated app-native Notion search adapter. It remains
+`needs_config` until `NOTION_TOKEN` is present in the Native environment, then
+runs through `notion.search` without a CLI binary. It returns bounded workspace
+metadata and never exposes the token in tool input, tool output, or chat chunks.
+
+`discord` is a config-gated app-native Discord REST adapter. It remains
+`needs_config` until `DISCORD_BOT_TOKEN` is present in the Native environment,
+then runs through `discord.me` without a CLI binary. It reads bounded bot
+identity/status metadata and never accepts or returns the bot token.
+
+`trello` is a config-gated app-native Trello REST adapter. It remains
+`needs_config` until `TRELLO_API_KEY` and `TRELLO_TOKEN` are present in the
+Native environment, then runs through `trello.boards` without a CLI binary. It
+returns bounded board summaries only.
+
+`slack` is a config-gated app-native Slack REST adapter. It remains
+`needs_config` until `SLACK_BOT_TOKEN` is present in Native `.env` and
+`channels.slack` is present in Native `openclaw.json`. It runs through
+`slack.me` for bot/workspace identity and `slack.post` for bounded channel
+messages using the configured default channel unless an explicit channel is
+provided. Tokens and configured channel values are not accepted as secret tool
+inputs and are not returned in visible chunks.
 
 `summarize` is a named app-native extractive adapter for text supplied directly
 in the tool input. It is intentionally bounded and deterministic. It does not
@@ -207,7 +235,7 @@ Why this shape:
 | ID family | Correct home |
 | --- | --- |
 | `twilio`, `crypto`, `base`, `calculator`, `calendar` | OpenClaw skill install/load path |
-| `blogwatcher.check`, `session-logs.query`, `nano-pdf.extract`, `github.user`, `gh-issues.list`, `goplaces.search`, `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `summarize.text`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
+| `blogwatcher.check`, `session-logs.query`, `nano-pdf.extract`, `github.user`, `gh-issues.list`, `goplaces.search`, `notion.search`, `discord.me`, `trello.boards`, `slack.me`, `slack.post`, `camera`, `camsnap`, `canvas`, `weather.current`, `weather.forecast`, `clawhub.search`, `clawhub.info`, `meme-maker.create`, `summarize.text`, `xurl.request`, `flash`, `torch`, `location`, `screen`, `haptic`, `sensor` | Android node command declarations / `gateway.nodes.allowCommands` |
 | local NDK helper names | `LocalLlmService` direct local tool schemas |
 
 If Gateway logs `tools.allow allowlist contains unknown entries`, treat the

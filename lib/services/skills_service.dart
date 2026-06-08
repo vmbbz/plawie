@@ -101,6 +101,15 @@ class SkillsService {
     'notion_search': 'notion',
     'notion search': 'notion',
     'notion.search': 'notion',
+    'slack_me': 'slack',
+    'slack me': 'slack',
+    'slack.me': 'slack',
+    'slack_status': 'slack',
+    'slack status': 'slack',
+    'slack.status': 'slack',
+    'slack_post': 'slack',
+    'slack post': 'slack',
+    'slack.post': 'slack',
   };
 
   Stream<SkillsEvent> get events => _eventController.stream;
@@ -182,6 +191,7 @@ class SkillsService {
       _createDeviceNodeSkill(),
       _createBlogWatcherSkill(),
       _createDiscordSkill(),
+      _createSlackSkill(),
       _createSessionLogsSkill(),
       _createNanoPdfSkill(),
       _createCamsnapSkill(),
@@ -246,6 +256,8 @@ class SkillsService {
         return await _executeBlogWatcherSkill(skill, params, ctx);
       case 'discord':
         return await _executeDiscordSkill(skill, params, ctx);
+      case 'slack':
+        return await _executeSlackSkill(skill, params, ctx);
       case 'session':
         return await _executeSessionLogsSkill(skill, params, ctx);
       case 'pdf':
@@ -645,6 +657,23 @@ class SkillsService {
       return SkillResult.error('Discord skill fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Discord skill unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeSlackSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('Slack skill fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('Slack skill unreachable: $e');
     }
   }
 
@@ -1191,6 +1220,18 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createSlackSkill() => Skill(
+      id: 'slack',
+      name: 'slack',
+      description:
+          'Read Slack bot identity or post bounded channel messages with an app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'slack',
+      tags: ['slack', 'bot', 'channel', 'rest'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createSessionLogsSkill() => Skill(
       id: 'session-logs',
       name: 'session-logs',
@@ -1586,6 +1627,33 @@ class SkillsService {
                 'enum': ['me', 'status'],
                 'description':
                     'Use me or status to read the configured bot metadata.',
+              },
+            },
+            'required': ['action'],
+          },
+        };
+      case 'slack':
+        return {
+          'name': skill.id,
+          'description':
+              'Read Slack bot identity or post bounded channel messages through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['me', 'status', 'post'],
+                'description':
+                    'Use me/status to read bot identity or post to send a channel message.',
+              },
+              'channel': {
+                'type': 'string',
+                'description':
+                    'Optional Slack channel id or name. Defaults to configured channels.slack.',
+              },
+              'text': {
+                'type': 'string',
+                'description': 'Message text. Required when action is post.',
               },
             },
             'required': ['action'],
