@@ -75,6 +75,15 @@ length 10813736, sha256
 411713ad1cd0e6841db7f5a6583d9d2f1767c1ef8c5f1cf143a666d5717ee8b5
 ```
 
-Device proof for `sonos --version` and any LAN discovery/control smoke is still
-pending. During this round `adb devices -l` returned no connected devices after
-the earlier ADB drop.
+Device no-secret proof on 2026-06-09:
+
+```text
+adb shell run-as com.nxg.openclawproot \
+  files/native-node-embedded/native-home/.openclaw/bin/sonos --version
+
+sonos 0.3.1
+```
+
+`/device/health` reports `sonoscli` with no missing pack/bin fields after APK
+install, but the skill remains `needs_config` until Sonos target/device setup is
+available. LAN discovery/control smoke is still pending.

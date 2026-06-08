@@ -42,6 +42,10 @@ void main() {
     await expectAndroidArm64ElfPayload('eightctl');
   });
 
+  test('Himalaya APK payload is a real Android arm64 ELF executable', () async {
+    await expectAndroidArm64ElfPayload('himalaya');
+  });
+
   test('Sonos APK payload is a real Android arm64 ELF executable', () async {
     await expectAndroidArm64ElfPayload('sonos');
   });
@@ -95,6 +99,29 @@ void main() {
     expect(script, contains(r"$env:GOARCH = 'arm64'"));
     expect(script, contains(r"$env:CGO_ENABLED = '0'"));
     expect(docs, contains(eightctlCommit));
+    expect(docs.toLowerCase(), contains(payloadSha));
+  });
+
+  test('Himalaya payload has pinned Rust build provenance', () async {
+    const himalayaCommit = '1b70c4e0eaa72dee48353f0211e6cc0f0776fe98';
+    const rustupInitSha =
+        '86478e53f769379d7f0ebfa7c9aa97cb76ca92233f79aa2cc0dbee2efaac73c7';
+
+    final script =
+        await File('scripts/cli_core/build_himalaya_android_arm64.ps1')
+            .readAsString();
+    final docs =
+        await File('docs/CLI_CORE_HIMALAYA_ANDROID_PAYLOAD.md').readAsString();
+    final payloadSha =
+        await sha256File(File('assets/openclaw/cli-core/bin/himalaya'));
+
+    expect(script, contains(himalayaCommit));
+    expect(script.toLowerCase(), contains(rustupInitSha));
+    expect(script, contains('1.93.0'));
+    expect(script, contains('aarch64-linux-android'));
+    expect(script, contains(r'$env:CC_aarch64_linux_android'));
+    expect(script, contains(r'Remove-Item Env:CC'));
+    expect(docs, contains(himalayaCommit));
     expect(docs.toLowerCase(), contains(payloadSha));
   });
 

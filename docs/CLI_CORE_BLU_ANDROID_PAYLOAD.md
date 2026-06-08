@@ -75,6 +75,15 @@ length 8257832, sha256
 9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442
 ```
 
-Device proof for `blu --version` and BluOS discovery/control smoke is still
-pending. During this round `adb devices -l` returned no connected devices after
-the earlier ADB drop.
+Device no-secret proof on 2026-06-09:
+
+```text
+adb shell run-as com.nxg.openclawproot \
+  files/native-node-embedded/native-home/.openclaw/bin/blu --version
+
+v0.1.4
+```
+
+`/device/health` reports `blucli` as `ready`, with runtime and provisioning
+status both `ready`, and no missing pack/bin fields. BluOS discovery/control
+smoke is still pending against a real network/player.

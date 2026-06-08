@@ -28,7 +28,8 @@ Hide or demote skills that are not Android-release safe.
 
 ## Current Scorecard
 
-Current host/APK truth on 2026-06-08 after the `wacli` payload slice:
+Current host/APK and installed-device truth on 2026-06-09 after the
+`himalaya` payload slice:
 
 ```text
 Classified default manifest: 61
@@ -52,32 +53,81 @@ unexpected_missing_dependency: 0
 releaseGatePass: true
 
 Current APK-local android-cli-core payloads:
-blu, eightctl, openhue, sonos, wacli
+blu, eightctl, himalaya, openhue, sonos, wacli
 
 Remaining android-cli-core payload gaps:
-himalaya
+none
 
-Host-projected fresh-user floor after APK install/provisioning:
-Android ready now: 25/51
+Clean host/APK fresh-user floor after APK install/provisioning:
+Android ready floor: 24/51
   = 13 ready_required
   + 7 ready_optional
-  + 5 bundled CLI-core pack skills
+  + 4 bundled CLI-core skills that need no extra config today
+    (blucli, himalaya, openhue, wacli)
+
+Installed-device Android-relevant ready now: 25/51
+Raw ready rows in /device/health: 26
+  = Android-relevant ready 25
+  + node-connect manual_proot_compat, which is not part of the Android
+    release denominator
+
 Unresolved config blockers: 14
-Unresolved pack blockers floor: 12
-  = 17 needs_pack taxonomy entries - 5 bundled CLI-core payloads
+Unresolved pack blockers floor: 11
+  = 17 needs_pack taxonomy entries - 6 bundled CLI-core payloads
+
+Pack-satisfied but still needs user/device config:
+eightctl, sonoscli
 ```
 
 The release gate is not supposed to inflate above `13/13`; it stays the
 launch-critical fresh-user boot promise. The ceiling moves through
-`Android ready now` and the unresolved blocker counts. The Skills page now shows
+the Android-relevant ready count and the unresolved blocker counts. The Skills
+page now shows
 `CONFIG BLOCKERS` and `PACK BLOCKERS`, not raw static taxonomy counts, so the UI
 reflects bundled payload progress when `/device/health` reports pack-gated
 skills as `ready: true`.
 
-Device proof caveat: the latest installed-device proof is still older than the
-last four CLI payload commits because ADB dropped during install and currently
-returns no connected devices. Treat `25/51` as the host/APK-projected fresh-user
-floor until `/device/health` confirms it on an installed APK.
+Device proof caveat: APK extraction, provisioning, `/device/health`, and
+no-secret version execution are now installed-device-proven for all six
+CLI-core payloads. Account, LAN, and real-service workflow smokes are still
+pending where a skill requires credentials, devices, local network discovery,
+or a real external service.
+
+## Latest Installed Device Truth
+
+Live device health on 2026-06-09 after the `himalaya` payload install reported:
+
+```text
+Target device: RZCX30KA9AW / Samsung SM-A556E
+Install result: Success
+releaseGatePass: true
+ready_required: 13/13
+classified default manifest: 61
+installed Native workspace skills: 65
+
+Android-relevant ready: 25/51
+Raw ready rows: 26
+manual ready row excluded from Android denominator: node-connect
+
+CLI-core pack status:
+blucli: ready true, runtimeStatus ready, provisioningStatus ready
+eightctl: ready false, runtimeStatus needs_config,
+          provisioningStatus needs_user_config, no missing pack/bin
+himalaya: ready true, runtimeStatus ready, provisioningStatus ready
+openhue: ready true, runtimeStatus ready, provisioningStatus ready
+sonoscli: ready false, runtimeStatus needs_config,
+          provisioningStatus needs_user_config, no missing pack/bin
+wacli: ready true, runtimeStatus ready, provisioningStatus ready
+
+No-secret managed-bin version smokes:
+blu --version -> v0.1.4
+eightctl version -> 2f2c73f
+himalaya --version -> himalaya v1.2.0 +maildir +wizard +smtp
+                      +pgp-commands +sendmail +imap
+openhue version -> 0.24-1-g08e940a
+sonos --version -> sonos 0.3.1
+wacli version -> v0.11.0-10-gbe2d22f
+```
 
 ## Last Installed Device Truth
 
@@ -592,12 +642,13 @@ Current APK-local pack satisfaction:
 android-cli-core-pack satisfied by bundled APK payload:
 blucli -> blu
 eightctl -> eightctl
+himalaya -> himalaya
 openhue -> openhue
 sonoscli -> sonos
 wacli -> wacli
 
 android-cli-core-pack still missing APK payload:
-himalaya
+none
 ```
 
 Class C acceptance:
@@ -1744,6 +1795,19 @@ payload sha256: 8242e7624b6c0e3c9bd1fa932b515f8d589c47be09940da9032230f75d88d755
 rebuild script: scripts/cli_core/build_eightctl_android_arm64.ps1 -InstallAsset
 provenance: docs/CLI_CORE_EIGHTCTL_ANDROID_PAYLOAD.md
 
+skill id: himalaya
+asset: assets/openclaw/cli-core/bin/himalaya
+source: https://github.com/pimalaya/himalaya
+source commit: 1b70c4e0eaa72dee48353f0211e6cc0f0776fe98
+build target: aarch64-linux-android
+rust toolchain: 1.93.0
+android ndk: 29.0.14206865
+verified format: ELF64 little-endian AArch64
+payload bytes: 28958664
+payload sha256: 83c900e58ff0ab931187fea7c49a36a29343e291ea8179b876c37bfbb34d572b
+rebuild script: scripts/cli_core/build_himalaya_android_arm64.ps1 -InstallAsset
+provenance: docs/CLI_CORE_HIMALAYA_ANDROID_PAYLOAD.md
+
 skill id: sonoscli
 asset: assets/openclaw/cli-core/bin/sonos
 source: https://github.com/steipete/sonoscli
@@ -1780,9 +1844,9 @@ rebuild script: scripts/cli_core/build_wacli_android_arm64.ps1 -InstallAsset
 provenance: docs/CLI_CORE_WACLI_ANDROID_PAYLOAD.md
 ```
 
-The remaining CLI-core binary (`himalaya`) is still absent from the APK payload
-and remains pack-gated until a real Android arm64 binary is built and verified.
-No placeholder payloads are allowed.
+All audited `android-cli-core-pack` binaries are now present as APK-local
+Android arm64 payloads. No placeholder payloads are allowed; future CLI-core
+expansion still needs the same source, hash, script, APK, and device proof.
 
 CLI-core missing-payload diagnostics now landed:
 
@@ -1913,12 +1977,17 @@ length 10158376, sha256
 8242e7624b6c0e3c9bd1fa932b515f8d589c47be09940da9032230f75d88d755
 ```
 
-Eightctl device proof is still pending for this round. The phone appeared as
-`RZCX30KA9AW`, then ADB dropped during `adb install -r` with
-`no devices/emulators found`; after `adb kill-server`, `adb start-server`, and
-a wait/recheck, `adb devices -l` returned no connected devices. Do not treat
-`eightctl` as device-smoked until `/device/health` and `eightctl version` are
-verified on an installed APK.
+Eightctl installed-device proof now confirms managed-bin execution:
+
+```text
+adb shell run-as com.nxg.openclawproot \
+  files/native-node-embedded/native-home/.openclaw/bin/eightctl version
+
+2f2c73f
+```
+
+`/device/health` reports no missing pack/bin fields for `eightctl`, but the
+skill remains `needs_config` until Eight Sleep account/device config exists.
 
 Latest host/APK proof after the Sonos payload slice:
 
@@ -1947,11 +2016,19 @@ length 10813736, sha256
 411713ad1cd0e6841db7f5a6583d9d2f1767c1ef8c5f1cf143a666d5717ee8b5
 ```
 
-Sonos device proof is still pending for this round because `adb devices -l`
-returned no connected devices after the earlier ADB drop. Do not treat
-`sonoscli` as LAN-smoked until `/device/health`, `sonos --version`, and a
-bounded discovery/control smoke are verified on an installed APK and a real
-network.
+Sonos installed-device proof now confirms managed-bin execution:
+
+```text
+adb shell run-as com.nxg.openclawproot \
+  files/native-node-embedded/native-home/.openclaw/bin/sonos --version
+
+sonos 0.3.1
+```
+
+`/device/health` reports no missing pack/bin fields for `sonoscli`, but the
+skill remains `needs_config` until Sonos target/device setup exists. Do not
+treat `sonoscli` as LAN-smoked until bounded discovery/control smoke is
+verified on a real network.
 
 Latest host/APK proof after the Blu payload slice:
 
@@ -1980,10 +2057,18 @@ length 8257832, sha256
 9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442
 ```
 
-Blu device proof is still pending for this round because `adb devices -l`
-returned no connected devices after the earlier ADB drop. Do not treat `blucli`
-as BluOS-smoked until `/device/health`, `blu --version`, and a bounded
-discovery/control smoke are verified on an installed APK and a real network.
+Blu installed-device proof now confirms `/device/health` readiness and
+managed-bin execution:
+
+```text
+adb shell run-as com.nxg.openclawproot \
+  files/native-node-embedded/native-home/.openclaw/bin/blu --version
+
+v0.1.4
+```
+
+Do not treat `blucli` as BluOS-smoked until bounded discovery/control smoke is
+verified on a real network/player.
 
 Latest host/APK proof after the Wacli payload slice:
 
@@ -2012,10 +2097,60 @@ length 21713936, sha256
 63d36f54e82d8a2e76b2ef9ae44fe41b3c0bc0474ea19b9f31aae39ab9b43453
 ```
 
-Wacli device proof is still pending for this round because `adb devices -l`
-returned no connected devices. Do not treat `wacli` as WhatsApp-smoked until
-`/device/health`, `wacli version`, `wacli auth status`, QR pairing, and a
-bounded account workflow are verified on an installed APK and a real account.
+Wacli installed-device proof now confirms `/device/health` readiness and
+managed-bin execution:
+
+```text
+adb shell run-as com.nxg.openclawproot \
+  files/native-node-embedded/native-home/.openclaw/bin/wacli version
+
+v0.11.0-10-gbe2d22f
+```
+
+Do not treat `wacli` as account-smoked until `wacli auth status`, QR pairing,
+and a bounded account workflow are verified against a real account.
+
+Latest host/APK proof after the Himalaya payload slice:
+
+```text
+.\scripts\cli_core\build_himalaya_android_arm64.ps1 -InstallAsset
+Result: deterministic rebuild/install PASS twice; output and asset SHA both
+83c900e58ff0ab931187fea7c49a36a29343e291ea8179b876c37bfbb34d572b
+
+flutter test test/android_cli_core_payload_packaging_test.dart --no-pub
+Result: 14/14 passing
+
+flutter test test/skill_provisioning_service_test.dart \
+  test/android_cli_core_payload_packaging_test.dart \
+  test/dependency_pack_manifest_test.dart \
+  test/android_skill_readiness_service_test.dart \
+  test/android_skill_readiness_view_model_test.dart --no-pub
+Result: 45/45 passing
+
+flutter analyze test/android_cli_core_payload_packaging_test.dart
+Result: no issues
+
+flutter build apk --debug
+Result: PASS, APK includes
+assets/flutter_assets/assets/openclaw/cli-core/bin/himalaya
+length 28958664, sha256
+83c900e58ff0ab931187fea7c49a36a29343e291ea8179b876c37bfbb34d572b
+```
+
+Himalaya installed-device proof confirms `/device/health` readiness and
+managed-bin execution:
+
+```text
+adb shell run-as com.nxg.openclawproot \
+  files/native-node-embedded/native-home/.openclaw/bin/himalaya --version
+
+himalaya v1.2.0 +maildir +wizard +smtp +pgp-commands +sendmail +imap
+build: android  aarch64
+git: v1.2.0, rev 1b70c4e0eaa72dee48353f0211e6cc0f0776fe98
+```
+
+Do not treat `himalaya` as mail-account-smoked until account discovery and a
+configured IMAP/SMTP workflow are verified against real user mail config.
 
 Classification correction landed after the CLI SKILL audit:
 
@@ -2039,12 +2174,15 @@ CLI-core build priority from source audit:
    pairing/local-network smoke still pending.
 2. eightctl: built and bundled as an APK-local Android arm64 payload; Eight
    Sleep credentials and real account/device smoke still pending.
-3. sonoscli/sonos: built and bundled as an APK-local Android arm64 payload;
+3. himalaya: built and bundled as an APK-local Android arm64 Rust payload;
+   configured mail account discovery and IMAP/SMTP workflow smoke are still
+   pending.
+4. sonoscli/sonos: built and bundled as an APK-local Android arm64 payload;
    local-network discovery needs Android multicast/network review.
-4. blucli/blu: built and bundled as an APK-local Android arm64 payload; BluOS
+5. blucli/blu: built and bundled as an APK-local Android arm64 payload; BluOS
    mDNS/LSDP discovery, player control, and target config are the main smoke
    blockers.
-5. wacli: built and bundled as an APK-local Android arm64 cgo payload; WhatsApp
+6. wacli: built and bundled as an APK-local Android arm64 cgo payload; WhatsApp
    QR pairing, account auth persistence, and device workflow smoke are still
    pending.
 ```

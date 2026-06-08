@@ -85,6 +85,15 @@ length 21713936, sha256
 63d36f54e82d8a2e76b2ef9ae44fe41b3c0bc0474ea19b9f31aae39ab9b43453
 ```
 
-Device proof for `wacli version`, `wacli auth status`, QR pairing, and account
-workflow smoke is still pending because `adb devices -l` returned no connected
-devices during this round.
+Device no-secret proof on 2026-06-09:
+
+```text
+adb shell run-as com.nxg.openclawproot \
+  files/native-node-embedded/native-home/.openclaw/bin/wacli version
+
+v0.11.0-10-gbe2d22f
+```
+
+`/device/health` reports `wacli` as `ready`, with runtime and provisioning
+status both `ready`, and no missing pack/bin fields. `wacli auth status`, QR
+pairing, and account workflow smoke are still pending against a real account.

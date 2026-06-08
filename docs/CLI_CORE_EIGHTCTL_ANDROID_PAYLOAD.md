@@ -74,7 +74,15 @@ length 10158376, sha256
 8242e7624b6c0e3c9bd1fa932b515f8d589c47be09940da9032230f75d88d755
 ```
 
-Device proof for `eightctl version` is still pending. During this round the
-phone disappeared from ADB during `adb install -r`; after `adb kill-server`,
-`adb start-server`, and a wait/recheck, `adb devices -l` returned no connected
-devices.
+Device no-secret proof on 2026-06-09:
+
+```text
+adb shell run-as com.nxg.openclawproot \
+  files/native-node-embedded/native-home/.openclaw/bin/eightctl version
+
+2f2c73f
+```
+
+`/device/health` reports `eightctl` with no missing pack/bin fields after APK
+install, but the skill remains `needs_config` until Eight Sleep account/device
+credentials are supplied.
