@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -25,9 +26,50 @@ void main() {
     );
     expect(
       bootstrap,
-      contains('copyCliCoreBinAssets(File(workDir(applicationContext), "provisioning/bin"))'),
+      contains(
+          'copyCliCoreBinAssets(File(workDir(applicationContext), "provisioning/bin"))'),
     );
     expect(bootstrap, contains('assets.list(CLI_CORE_BIN_ASSET_DIR)'));
     expect(bootstrap, contains('target.setExecutable(true, false)'));
+  });
+
+  test('OpenHue APK payload is a real Android arm64 ELF executable', () async {
+    final openhue = File('assets/openclaw/cli-core/bin/openhue');
+
+    expect(await openhue.exists(), isTrue);
+    final bytes = await openhue.readAsBytes();
+    expect(bytes.length, greaterThan(1024 * 1024));
+    expect(String.fromCharCodes(bytes.take(2)), isNot('#!'));
+    expect(bytes[0], 0x7f);
+    expect(bytes[1], 0x45);
+    expect(bytes[2], 0x4c);
+    expect(bytes[3], 0x46);
+    expect(bytes[4], 2, reason: 'ELF64');
+    expect(bytes[5], 1, reason: 'little endian');
+
+    final data = ByteData.sublistView(Uint8List.fromList(bytes));
+    expect(data.getUint16(18, Endian.little), 183, reason: 'AArch64');
+  });
+
+  test('OpenHue payload has pinned build provenance', () async {
+    const openHueCommit = '08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21';
+    const goArchiveSha =
+        '3ca8fb4630b07c419cbdd51f754e31363cfcfb83b3a5354d9e895c90be2cc345';
+    const payloadSha =
+        '281cf0c17f593a32fe83571db7f467c956cd92a1b4bded26f6c8a8408f0ba3f9';
+
+    final script =
+        await File('scripts/cli_core/build_openhue_android_arm64.ps1')
+            .readAsString();
+    final docs =
+        await File('docs/CLI_CORE_OPENHUE_ANDROID_PAYLOAD.md').readAsString();
+
+    expect(script, contains(openHueCommit));
+    expect(script.toLowerCase(), contains(goArchiveSha));
+    expect(script, contains(r"$env:GOOS = 'android'"));
+    expect(script, contains(r"$env:GOARCH = 'arm64'"));
+    expect(script, contains(r"$env:CGO_ENABLED = '0'"));
+    expect(docs, contains(openHueCommit));
+    expect(docs.toLowerCase(), contains(payloadSha));
   });
 }

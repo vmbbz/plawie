@@ -1644,11 +1644,30 @@ target: filesDir/native-node-embedded/provisioning/bin
 
 The debug APK now carries the CLI-core asset directory and the native bootstrap
 copies any non-dot files from that directory into the provisioning bin with
-executable permissions. Current APK payload audit still shows no real CLI-core
-binary names (`blu`, `eightctl`, `himalaya`, `openhue`, `sonos`, `wacli`).
-`diagram-maker` was removed from this pack lane after its `SKILL.md`
-audit proved it is instruction-only. That means the payload lane prepares
-installation for true CLI binaries but does not invent a renderer binary.
+executable permissions. `diagram-maker` was removed from this pack lane after
+its `SKILL.md` audit proved it is instruction-only. That means the payload lane
+prepares installation for true CLI binaries but does not invent renderer
+binaries.
+
+First real CLI-core APK payload landed:
+
+```text
+skill id: openhue
+asset: assets/openclaw/cli-core/bin/openhue
+source: https://github.com/openhue/openhue-cli
+source commit: 08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21
+build target: GOOS=android GOARCH=arm64 CGO_ENABLED=0
+verified format: ELF64 little-endian AArch64
+payload bytes: 11206952
+payload sha256: 281cf0c17f593a32fe83571db7f467c956cd92a1b4bded26f6c8a8408f0ba3f9
+rebuild script: scripts/cli_core/build_openhue_android_arm64.ps1 -InstallAsset
+provenance: docs/CLI_CORE_OPENHUE_ANDROID_PAYLOAD.md
+```
+
+The remaining CLI-core binaries (`blu`, `eightctl`, `himalaya`, `sonos`,
+`wacli`) are still absent from the APK payload and remain pack-gated until real
+Android arm64 binaries are built and verified. No placeholder payloads are
+allowed.
 
 CLI-core missing-payload diagnostics now landed:
 
@@ -1687,8 +1706,8 @@ flutter test test/android_skill_readiness_service_test.dart \
 flutter build apk --debug
 
 Result: analyzer clean; dependency-manifest/provisioning suite 14/14 passing;
-payload/provisioning suite 11/11 passing; debug APK built; APK contains
-`assets/openclaw/cli-core/bin/.gitkeep` only.
+payload/provisioning suite 11/11 passing; debug APK built; APK contained
+`assets/openclaw/cli-core/bin/.gitkeep` only at that earlier checkpoint.
 ```
 
 Latest host proof after the CLI-core diagnostics slice:
@@ -1702,13 +1721,55 @@ Result: 20/20 passing
 flutter test test/android_skill_readiness_service_test.dart \
   test/android_skill_readiness_view_model_test.dart
 Result: 13/13 passing
+
+.\scripts\cli_core\build_openhue_android_arm64.ps1 -InstallAsset
+Result: deterministic rebuild/install PASS twice; output and asset SHA both
+281cf0c17f593a32fe83571db7f467c956cd92a1b4bded26f6c8a8408f0ba3f9
+
+flutter test test/skill_provisioning_service_test.dart \
+  test/android_cli_core_payload_packaging_test.dart \
+  test/dependency_pack_manifest_test.dart \
+  test/android_skill_readiness_service_test.dart \
+  test/android_skill_readiness_view_model_test.dart
+Result: 35/35 passing
+
+flutter analyze touched Dart files
+Result: no issues
+
+flutter build apk --debug
+Result: PASS, APK includes
+assets/flutter_assets/assets/openclaw/cli-core/bin/openhue
+length 11206952, sha256
+281cf0c17f593a32fe83571db7f467c956cd92a1b4bded26f6c8a8408f0ba3f9
+```
+
+Device proof after installing the debug APK on Samsung SM-A556E:
+
+```text
+/device/health:
+releaseGatePass: true
+readyRequired: 13/13
+androidRelevantReady: 22/51
+openhue.ready: true
+openhue.runtimeStatus: ready
+openhue.provisioningStatus: ready
+openhue missing pack/bin fields: none
+
+adb shell run-as com.nxg.openclawproot \
+  files/native-node-embedded/native-home/.openclaw/bin/openhue version
+
+#  Version      0.24-1-g08e940a
+#   Commit      https://github.com/openhue/openhue-cli/commit/08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21
+# Built at      2026-06-08T00:00:00Z
 ```
 
 This does not yet mean a remote `android-cli-core-pack` is built, hosted,
-signed by a production key, or safe to install for users. It means APK-provided
-CLI-core binaries can now be discovered, selected as a dependency pack, copied
-into managed Native state, receipted, and reinstalled if the managed file
-disappears.
+signed by a production key, or safe to install for users. It also does not yet
+mean the OpenHue bridge pairing/local-network smoke passed against an actual Hue
+bridge. It means APK-provided CLI-core binaries can now be discovered, selected
+as a dependency pack, copied into managed Native state, receipted, executed, and
+reinstalled if the managed file disappears; `openhue` is now the first real
+payload in that lane.
 
 Classification correction landed after the CLI SKILL audit:
 
@@ -1728,16 +1789,14 @@ does not need.
 CLI-core build priority from source audit:
 
 ```text
-1. openhue: exact binary name, Go build, best first candidate.
+1. openhue: built and bundled as first APK-local Android arm64 payload; device
+   provisioning and bridge/network smoke still pending.
 2. eightctl: exact binary name, Go build, auth needed only for functional smoke.
 3. sonoscli/sonos: strong Go candidate after the bin-name correction, but
    local-network discovery needs Android multicast/network review.
 4. blucli/blu: same bin-name correction done; device discovery and target config
    are the main smoke blockers.
 ```
-
-This machine currently has no `go` on PATH, so producing real APK payloads
-requires a builder/toolchain setup before the next binary-pack milestone.
 
 ### Phase 6: Fresh-User Proof
 
