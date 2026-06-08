@@ -28,7 +28,7 @@ Hide or demote skills that are not Android-release safe.
 
 ## Current Scorecard
 
-Current host/APK truth on 2026-06-08 after the `blu` payload slice:
+Current host/APK truth on 2026-06-08 after the `wacli` payload slice:
 
 ```text
 Classified default manifest: 61
@@ -52,19 +52,19 @@ unexpected_missing_dependency: 0
 releaseGatePass: true
 
 Current APK-local android-cli-core payloads:
-blu, eightctl, openhue, sonos
+blu, eightctl, openhue, sonos, wacli
 
 Remaining android-cli-core payload gaps:
-himalaya, wacli
+himalaya
 
 Host-projected fresh-user floor after APK install/provisioning:
-Android ready now: 24/51
+Android ready now: 25/51
   = 13 ready_required
   + 7 ready_optional
-  + 4 bundled CLI-core pack skills
+  + 5 bundled CLI-core pack skills
 Unresolved config blockers: 14
-Unresolved pack blockers floor: 13
-  = 17 needs_pack taxonomy entries - 4 bundled CLI-core payloads
+Unresolved pack blockers floor: 12
+  = 17 needs_pack taxonomy entries - 5 bundled CLI-core payloads
 ```
 
 The release gate is not supposed to inflate above `13/13`; it stays the
@@ -75,8 +75,8 @@ reflects bundled payload progress when `/device/health` reports pack-gated
 skills as `ready: true`.
 
 Device proof caveat: the latest installed-device proof is still older than the
-last three CLI payload commits because ADB dropped during install and currently
-returns no connected devices. Treat `24/51` as the host/APK-projected fresh-user
+last four CLI payload commits because ADB dropped during install and currently
+returns no connected devices. Treat `25/51` as the host/APK-projected fresh-user
 floor until `/device/health` confirms it on an installed APK.
 
 ## Last Installed Device Truth
@@ -594,10 +594,10 @@ blucli -> blu
 eightctl -> eightctl
 openhue -> openhue
 sonoscli -> sonos
+wacli -> wacli
 
 android-cli-core-pack still missing APK payload:
 himalaya
-wacli
 ```
 
 Class C acceptance:
@@ -1765,11 +1765,24 @@ payload bytes: 8257832
 payload sha256: 9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442
 rebuild script: scripts/cli_core/build_blu_android_arm64.ps1 -InstallAsset
 provenance: docs/CLI_CORE_BLU_ANDROID_PAYLOAD.md
+
+skill id: wacli
+asset: assets/openclaw/cli-core/bin/wacli
+source: https://github.com/openclaw/wacli
+source commit: be2d22fe9d8ca99bf4c027708ae494e9035fe489
+build target: GOOS=android GOARCH=arm64 CGO_ENABLED=1
+c compiler: Android NDK aarch64-linux-android29-clang.cmd
+go build tags: sqlite_fts5
+verified format: ELF64 little-endian AArch64
+payload bytes: 21713936
+payload sha256: 63d36f54e82d8a2e76b2ef9ae44fe41b3c0bc0474ea19b9f31aae39ab9b43453
+rebuild script: scripts/cli_core/build_wacli_android_arm64.ps1 -InstallAsset
+provenance: docs/CLI_CORE_WACLI_ANDROID_PAYLOAD.md
 ```
 
-The remaining CLI-core binaries (`himalaya`, `wacli`) are still absent from the
-APK payload and remain pack-gated until real Android arm64 binaries are built
-and verified. No placeholder payloads are allowed.
+The remaining CLI-core binary (`himalaya`) is still absent from the APK payload
+and remains pack-gated until a real Android arm64 binary is built and verified.
+No placeholder payloads are allowed.
 
 CLI-core missing-payload diagnostics now landed:
 
@@ -1972,6 +1985,38 @@ returned no connected devices after the earlier ADB drop. Do not treat `blucli`
 as BluOS-smoked until `/device/health`, `blu --version`, and a bounded
 discovery/control smoke are verified on an installed APK and a real network.
 
+Latest host/APK proof after the Wacli payload slice:
+
+```text
+.\scripts\cli_core\build_wacli_android_arm64.ps1 -InstallAsset
+Result: deterministic rebuild/install PASS twice; output and asset SHA both
+63d36f54e82d8a2e76b2ef9ae44fe41b3c0bc0474ea19b9f31aae39ab9b43453
+
+flutter test test/android_cli_core_payload_packaging_test.dart --no-pub
+Result: 12/12 passing
+
+flutter test test/skill_provisioning_service_test.dart \
+  test/android_cli_core_payload_packaging_test.dart \
+  test/dependency_pack_manifest_test.dart \
+  test/android_skill_readiness_service_test.dart \
+  test/android_skill_readiness_view_model_test.dart --no-pub
+Result: 43/43 passing
+
+flutter analyze test/android_cli_core_payload_packaging_test.dart
+Result: no issues
+
+flutter build apk --debug
+Result: PASS, APK includes
+assets/flutter_assets/assets/openclaw/cli-core/bin/wacli
+length 21713936, sha256
+63d36f54e82d8a2e76b2ef9ae44fe41b3c0bc0474ea19b9f31aae39ab9b43453
+```
+
+Wacli device proof is still pending for this round because `adb devices -l`
+returned no connected devices. Do not treat `wacli` as WhatsApp-smoked until
+`/device/health`, `wacli version`, `wacli auth status`, QR pairing, and a
+bounded account workflow are verified on an installed APK and a real account.
+
 Classification correction landed after the CLI SKILL audit:
 
 ```text
@@ -1999,6 +2044,9 @@ CLI-core build priority from source audit:
 4. blucli/blu: built and bundled as an APK-local Android arm64 payload; BluOS
    mDNS/LSDP discovery, player control, and target config are the main smoke
    blockers.
+5. wacli: built and bundled as an APK-local Android arm64 cgo payload; WhatsApp
+   QR pairing, account auth persistence, and device workflow smoke are still
+   pending.
 ```
 
 ### Phase 6: Fresh-User Proof

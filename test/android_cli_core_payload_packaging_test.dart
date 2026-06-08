@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -47,6 +48,10 @@ void main() {
 
   test('Blu APK payload is a real Android arm64 ELF executable', () async {
     await expectAndroidArm64ElfPayload('blu');
+  });
+
+  test('Wacli APK payload is a real Android arm64 ELF executable', () async {
+    await expectAndroidArm64ElfPayload('wacli');
   });
 
   test('OpenHue payload has pinned build provenance', () async {
@@ -134,6 +139,31 @@ void main() {
     expect(docs, contains(bluCommit));
     expect(docs.toLowerCase(), contains(payloadSha));
   });
+
+  test('Wacli payload has pinned cgo build provenance', () async {
+    const wacliCommit = 'be2d22fe9d8ca99bf4c027708ae494e9035fe489';
+    const goArchiveSha =
+        '3ca8fb4630b07c419cbdd51f754e31363cfcfb83b3a5354d9e895c90be2cc345';
+
+    final script = await File('scripts/cli_core/build_wacli_android_arm64.ps1')
+        .readAsString();
+    final docs =
+        await File('docs/CLI_CORE_WACLI_ANDROID_PAYLOAD.md').readAsString();
+    final payloadSha =
+        await sha256File(File('assets/openclaw/cli-core/bin/wacli'));
+
+    expect(script, contains(wacliCommit));
+    expect(script.toLowerCase(), contains(goArchiveSha));
+    expect(script, contains(r"$env:GOOS = 'android'"));
+    expect(script, contains(r"$env:GOARCH = 'arm64'"));
+    expect(script, contains(r"$env:CGO_ENABLED = '1'"));
+    expect(script, contains(r'$env:CC'));
+    expect(script, contains('aarch64-linux-android'));
+    expect(script, contains('-tags'));
+    expect(script, contains('sqlite_fts5'));
+    expect(docs, contains(wacliCommit));
+    expect(docs.toLowerCase(), contains(payloadSha));
+  });
 }
 
 Future<void> expectAndroidArm64ElfPayload(String binaryName) async {
@@ -152,4 +182,9 @@ Future<void> expectAndroidArm64ElfPayload(String binaryName) async {
 
   final data = ByteData.sublistView(Uint8List.fromList(bytes));
   expect(data.getUint16(18, Endian.little), 183, reason: 'AArch64');
+}
+
+Future<String> sha256File(File file) async {
+  final bytes = await file.readAsBytes();
+  return crypto.sha256.convert(bytes).toString();
 }
