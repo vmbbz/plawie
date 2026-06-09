@@ -1941,6 +1941,14 @@ coding-agent: android-agent-cli-pack, one verified Android-safe agent CLI plus
 ready floor impact: none until a real payload and device smoke land
 ```
 
+Skills page follow-up:
+
+```text
+Pack-gate previews keep raw pack IDs in structured health data, but display
+user-readable labels such as Standalone Node executable pack, Android Gemini CLI
+pack, and Android agent CLI pack.
+```
+
 Phase 5C Android vision-media runtime lane landed as plumbing:
 
 ```text
@@ -2669,6 +2677,7 @@ Stale android-node-debug-pack planning bucket is removed from active manifest tr
 node-inspect-debugger is parked behind android-node-executable-pack only.
 gemini is parked behind android-gemini-cli-pack plus auth/config truth.
 coding-agent is parked behind android-agent-cli-pack plus auth/config truth.
+Skills page pack-gate previews display user-readable pack labels.
 Ready count stays 27/51 until a real payload and installed-device smoke land.
 Commit made.
 ```

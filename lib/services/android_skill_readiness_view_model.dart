@@ -117,9 +117,9 @@ class AndroidSkillGateSummary {
     final parts = <String>[
       if (config.isNotEmpty) 'config: ${config.join(', ')}',
       if (missingPacks.isNotEmpty)
-        'pack unavailable: ${missingPacks.join(', ')}'
+        'pack unavailable: ${_packListLabel(missingPacks)}'
       else if (packs.isNotEmpty)
-        'pack: ${packs.join(', ')}',
+        'pack: ${_packListLabel(packs)}',
       if (missingBins.isNotEmpty) 'missing binaries: ${missingBins.join(', ')}',
       if (dependencyGateMessage != null && dependencyGateMessage.isNotEmpty)
         dependencyGateMessage,
@@ -138,6 +138,34 @@ class AndroidSkillGateSummary {
               : dependencyGateMessage,
     );
   }
+}
+
+String _packListLabel(List<String> packs) => packs.map(_packLabel).join(', ');
+
+String _packLabel(String packId) {
+  switch (packId.trim()) {
+    case 'android-cli-core-pack':
+      return 'Android CLI core pack';
+    case 'android-vision-media-runtime':
+      return 'Android vision media runtime';
+    case 'android-python-debug-runtime':
+      return 'Android Python debug runtime';
+    case 'android-terminal-pack':
+      return 'Android terminal pack';
+    case 'android-node-executable-pack':
+      return 'Standalone Node executable pack';
+    case 'android-gemini-cli-pack':
+      return 'Android Gemini CLI pack';
+    case 'android-agent-cli-pack':
+      return 'Android agent CLI pack';
+    case 'android-whisper-runtime':
+      return 'Android Whisper runtime';
+    case 'android-tts-runtime':
+      return 'Android TTS runtime';
+    case 'android-audio-runtime':
+      return 'Android audio runtime';
+  }
+  return packId.trim().replaceAll('-', ' ');
 }
 
 Map<String, dynamic> _mapValue(dynamic value) {

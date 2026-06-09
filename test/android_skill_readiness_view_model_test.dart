@@ -162,7 +162,7 @@ void main() {
     expect(model.topNeedsPack.single.skillId, 'openhue');
     expect(
       model.topNeedsPack.single.detail,
-      contains('pack unavailable: android-cli-core-pack'),
+      contains('pack unavailable: Android CLI core pack'),
     );
     expect(
       model.topNeedsPack.single.detail,
@@ -171,6 +171,53 @@ void main() {
     expect(
       model.topNeedsPack.single.detail,
       contains('assets/openclaw/cli-core/bin/openhue'),
+    );
+  });
+
+  test('pack gate detail labels split node family lanes for users', () {
+    final model = AndroidSkillReadinessViewModel.fromReadiness({
+      'totalManifestSkills': 3,
+      'readyRequired': {'ready': 0, 'total': 0},
+      'releaseGatePass': true,
+      'unexpectedMissingDependency': 0,
+      'countsByClass': {
+        'needs_pack': 3,
+      },
+      'skills': [
+        {
+          'skillId': 'node-inspect-debugger',
+          'androidSupport': 'needs_pack',
+          'requiredPacks': ['android-node-executable-pack'],
+          'ready': false,
+        },
+        {
+          'skillId': 'gemini',
+          'androidSupport': 'needs_pack',
+          'requiredPacks': ['android-gemini-cli-pack'],
+          'ready': false,
+        },
+        {
+          'skillId': 'coding-agent',
+          'androidSupport': 'needs_pack',
+          'requiredPacks': ['android-agent-cli-pack'],
+          'ready': false,
+        },
+      ],
+    });
+
+    final details = {
+      for (final item in model.topNeedsPack) item.skillId: item.detail,
+    };
+
+    expect(
+      details['node-inspect-debugger'],
+      contains('Standalone Node executable pack'),
+    );
+    expect(details['gemini'], contains('Android Gemini CLI pack'));
+    expect(details['coding-agent'], contains('Android agent CLI pack'));
+    expect(
+      details['node-inspect-debugger'],
+      isNot(contains('android-node-executable-pack')),
     );
   });
 }
