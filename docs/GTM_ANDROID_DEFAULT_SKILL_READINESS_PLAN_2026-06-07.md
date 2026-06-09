@@ -1778,6 +1778,43 @@ release gate for `android-node-debug-pack`, `android-vision-media-runtime`, and
 `tmux` can now build on the same verifier instead of inventing one-off smoke
 paths.
 
+Phase 5B reality check landed as a decision record:
+
+```text
+docs/ANDROID_NODE_RUNTIME_PHASE_5B_REALITY_CHECK_2026-06-09.md
+```
+
+Result: do not spend the next GTM implementation round trying to ship a strict
+standalone Android arm64 `node` executable. The direct Node 22 executable build
+attempt previously reached target `libnode.a` but did not produce
+`out/Release/node`; the blocker is a real Node/V8 host/target cross-build
+issue, documented in `docs/native-node-gateway/13-node-22-android-build-attempt.md`.
+The embedded `libnode.so` lane is proven and architecturally valuable, but it
+is not a shell `node` binary in `.openclaw/bin`, so it must not be used to mark
+shell-binary-gated skills ready.
+
+Honest movement from a true standalone `node` pack would be only:
+
+```text
+node-inspect-debugger: needs_pack -> ready
+fresh Android floor: 24/51 -> 25/51
+installed-device Android-relevant ready: 25/51 -> 26/51
+```
+
+Do not count `gemini`, `coding-agent`, or `node-connect` as moved by `node`
+alone. `gemini` still needs a real Gemini CLI and auth/config truth.
+`coding-agent` still needs one of `claude`, `codex`, `opencode`, or `pi`, plus
+config/auth truth. `node-connect` remains manual PRoot compatibility.
+
+Phase 5B implementation pivot:
+
+```text
+next binary payload lane: android-vision-media-runtime
+first honest target: ffmpeg -> video-frames
+kept blocked until real binary: gifgrep
+parked research lane: android-node-executable-pack, expected +1 only
+```
+
 Audit truth slice now landed:
 
 ```text
