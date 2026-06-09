@@ -204,8 +204,9 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _needsPack(
     'coding-agent',
-    packs: ['android-node-debug-pack'],
-    smoke: 'Run a dry coding-agent command in the app-owned workspace.',
+    packs: ['android-agent-cli-pack'],
+    smoke:
+        'Run a dry coding-agent command with a verified Android-safe agent CLI.',
   ),
   _readyOptional(
     'diagram-maker',
@@ -228,8 +229,8 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _needsPack(
     'gemini',
-    packs: ['android-node-debug-pack'],
-    smoke: 'Run Gemini CLI smoke through the verified Node tool pack.',
+    packs: ['android-gemini-cli-pack'],
+    smoke: 'Run Gemini CLI smoke through a verified Android Gemini CLI pack.',
   ),
   _needsConfig(
     'gh-issues',
@@ -310,8 +311,9 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _needsPack(
     'node-inspect-debugger',
-    packs: ['android-node-debug-pack'],
-    smoke: 'Run node inspector discovery against a local debug fixture.',
+    packs: ['android-node-executable-pack'],
+    smoke:
+        'Run standalone node inspector discovery against a local debug fixture.',
   ),
   _needsConfig(
     'notion',

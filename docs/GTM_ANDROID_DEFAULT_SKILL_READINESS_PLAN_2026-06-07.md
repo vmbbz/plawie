@@ -749,12 +749,12 @@ These are Android-relevant, but need verified runtime/binary/media packs:
 
 ```text
 blucli: android-cli-core-pack
-coding-agent: android-node-debug-pack
+coding-agent: android-agent-cli-pack
 eightctl: android-cli-core-pack
-gemini: android-node-debug-pack
+gemini: android-gemini-cli-pack
 gifgrep: android-vision-media-runtime
 himalaya: android-cli-core-pack
-node-inspect-debugger: android-node-debug-pack
+node-inspect-debugger: android-node-executable-pack
 openai-whisper: android-whisper-runtime
 openhue: android-cli-core-pack
 python-debugpy: android-python-debug-runtime
@@ -780,6 +780,13 @@ wacli -> wacli
 
 android-cli-core-pack still missing APK payload:
 none
+
+Node/Gemini/agent pack taxonomy correction:
+the old broad `android-node-debug-pack` planning bucket is no longer used for
+default-readiness truth. A standalone `node` executable can only move
+`node-inspect-debugger`. `gemini` needs a real Gemini CLI plus auth/config
+truth. `coding-agent` needs a verified Android-safe agent CLI such as `claude`,
+`codex`, `opencode`, or `pi`, plus its auth/config truth.
 
 android-vision-media-runtime APK resolver:
 ffmpeg only, backed by the bundled Android arm64 FFmpeg payload at
@@ -1825,7 +1832,9 @@ Pack lanes:
 
 ```text
 android-cli-core-pack
-android-node-debug-pack
+android-node-executable-pack
+android-gemini-cli-pack
+android-agent-cli-pack
 android-vision-media-runtime
 android-whisper-runtime
 android-python-debug-runtime
@@ -1878,10 +1887,11 @@ strategy, applies executable permissions from the manifest, runs the command
 from managed `.openclaw/bin` with `runInShell: false`, bounded output, and a
 timeout, and writes the receipt only after exit code `0`. Failed command smokes
 roll back installed pack files and leave the skill blocked. This is the shared
-release gate for `android-node-debug-pack`, `android-vision-media-runtime`, and
-`android-terminal-pack`; payload work for standalone `node`, `ffmpeg`, and
-`tmux` can now build on the same verifier instead of inventing one-off smoke
-paths.
+release gate for executable packs such as `android-node-executable-pack`,
+`android-vision-media-runtime`, `android-terminal-pack`,
+`android-gemini-cli-pack`, and `android-agent-cli-pack`; payload work for
+standalone `node`, `ffmpeg`, `tmux`, Gemini CLI, or agent CLIs can now build on
+the same verifier instead of inventing one-off smoke paths.
 
 Phase 5B reality check landed as a decision record:
 
@@ -1918,6 +1928,17 @@ next binary payload lane: android-vision-media-runtime
 first honest target: ffmpeg -> video-frames
 kept blocked until real binary: gifgrep
 parked research lane: android-node-executable-pack, expected +1 only
+```
+
+Phase 5H taxonomy correction landed after the terminal payload proof:
+
+```text
+removed stale planning bucket: android-node-debug-pack
+node-inspect-debugger: android-node-executable-pack, standalone node only
+gemini: android-gemini-cli-pack, real Gemini CLI plus auth/config truth
+coding-agent: android-agent-cli-pack, one verified Android-safe agent CLI plus
+              auth/config truth
+ready floor impact: none until a real payload and device smoke land
 ```
 
 Phase 5C Android vision-media runtime lane landed as plumbing:
@@ -2638,6 +2659,17 @@ Real Android arm64 tmux payload is bundled from pinned Termux aarch64 packages.
 Required shared libraries install into managed .openclaw/lib.
 Host ELF/hash/provenance tests, Android debug build, and installed-device smoke pass.
 tmux moves from needs_pack to ready after .openclaw/bin/tmux -V proof.
+Commit made.
+```
+
+Round 5H target:
+
+```text
+Stale android-node-debug-pack planning bucket is removed from active manifest truth.
+node-inspect-debugger is parked behind android-node-executable-pack only.
+gemini is parked behind android-gemini-cli-pack plus auth/config truth.
+coding-agent is parked behind android-agent-cli-pack plus auth/config truth.
+Ready count stays 27/51 until a real payload and installed-device smoke land.
 Commit made.
 ```
 

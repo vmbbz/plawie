@@ -94,6 +94,18 @@ void main() {
       manifest.entryFor('openai-whisper')!.status,
       AndroidSkillSupportStatus.needsPack,
     );
+    expect(
+      manifest.entryFor('node-inspect-debugger')!.requiredPacks,
+      ['android-node-executable-pack'],
+    );
+    expect(
+      manifest.entryFor('gemini')!.requiredPacks,
+      ['android-gemini-cli-pack'],
+    );
+    expect(
+      manifest.entryFor('coding-agent')!.requiredPacks,
+      ['android-agent-cli-pack'],
+    );
     expect(manifest.entryFor('xurl')!.toJson(), {
       'skillId': 'xurl',
       'androidSupport': 'ready_optional',

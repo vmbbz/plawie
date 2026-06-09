@@ -362,6 +362,16 @@ shared libraries. Provisioning copies terminal libraries into managed
 the binary/libs, provisioning installs them into `.openclaw`, and `tmux -V`
 passes on device.
 
+Node-family pack gates are split by runnable artifact, not by ecosystem label.
+A future standalone `node` executable belongs to
+`android-node-executable-pack` and can only satisfy `node-inspect-debugger`.
+`gemini` remains behind `android-gemini-cli-pack` because it needs a real
+Gemini CLI and auth/config truth. `coding-agent` remains behind
+`android-agent-cli-pack` because it needs a verified Android-safe agent CLI
+such as `claude`, `codex`, `opencode`, or `pi`, plus auth/config truth. The
+embedded `libnode.so` Native Gateway lane is architecturally valuable, but it
+is not a managed shell `node` binary and does not satisfy those pack gates.
+
 ## Gateway `tools.allow`
 
 `tools.allow` is a strict Gateway allowlist. OpenClaw applies `tools.profile`

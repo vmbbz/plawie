@@ -326,8 +326,9 @@ Fill `_entries` with the inventory policy above, using exact pack IDs and config
 
 ```text
 android-whisper-runtime, android-vision-media-runtime, android-python-debug-runtime,
-android-cli-core-pack, android-node-debug-pack, android-audio-runtime,
-android-tts-runtime, android-terminal-pack
+android-cli-core-pack, android-node-executable-pack, android-gemini-cli-pack,
+android-agent-cli-pack, android-audio-runtime, android-tts-runtime,
+android-terminal-pack
 ```
 
 - [ ] **Step 4: Run the manifest test and format the new files**

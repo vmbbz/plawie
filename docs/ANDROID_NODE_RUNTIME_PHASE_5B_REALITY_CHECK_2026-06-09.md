@@ -39,6 +39,11 @@ launch-required gate: unchanged at 13/13
 This is a useful win, but it is only `+1`. It does not justify pretending the
 embedded `libnode.so` runtime is a shell `node` executable.
 
+Post Phase 5G note: the current clean Android floor is now `27/51` after the
+FFmpeg, debugpy, and tmux payload proofs. A future true standalone Node
+executable payload would therefore move the current floor to `28/51`, still
+only by making `node-inspect-debugger` ready.
+
 ## What Node Alone Does Not Move
 
 Do not claim these as fixed by a standalone `node` pack:
@@ -102,6 +107,18 @@ android-node-executable-pack: research / later
 expected honest movement: +1 only
 primary blocker: Node 22 Android executable build
 ```
+
+After the Phase 5G terminal proof, active manifest truth splits the stale
+`android-node-debug-pack` planning bucket into:
+
+```text
+node-inspect-debugger: android-node-executable-pack
+gemini: android-gemini-cli-pack
+coding-agent: android-agent-cli-pack
+```
+
+This prevents a future standalone `node` payload from accidentally claiming
+Gemini CLI or coding-agent readiness.
 
 ## Required If Node Lane Is Resumed
 
