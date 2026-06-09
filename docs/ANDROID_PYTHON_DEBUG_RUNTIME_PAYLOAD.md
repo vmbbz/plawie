@@ -77,16 +77,17 @@ Android build:
 flutter build apk --debug --no-pub
 ```
 
-Device proof is pending because `adb devices` showed no connected device after
-an ADB server refresh. Do not move GTM readiness counts until the installed APK
-smokes below pass.
+## Device Evidence
 
-## Required Device Smokes
-
-Before moving fresh-user counts, prove on an installed APK:
+Verified on Samsung SM-A556E / `RZCX30KA9AW` on 2026-06-09:
 
 ```text
-provisioning/python-debug/wheels/debugpy-1.8.21-py2.py3-none-any.whl exists
-/api/python/exec import debugpy -> 1.8.21
-/device/health: python-debugpy ready
+install: adb install -r -d build/app/outputs/flutter-apk/app-debug.apk -> Success
+wheel: files/native-node-embedded/provisioning/python-debug/wheels/debugpy-1.8.21-py2.py3-none-any.whl
+site-packages: files/native-node-embedded/native-home/.openclaw/runtimes/python/site-packages/debugpy
+dist-info: files/native-node-embedded/native-home/.openclaw/runtimes/python/site-packages/debugpy-1.8.21.dist-info
+pack receipt: dependencies/receipts/android-python-debug-runtime.json
+wheel receipt: dependencies/receipts/python-wheels/debugpy.json, smokePassed true
+/api/python/exec: import debugpy -> 1.8.21
+/device/health: python-debugpy ready true
 ```

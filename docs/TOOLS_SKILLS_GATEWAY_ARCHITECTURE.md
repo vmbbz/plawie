@@ -315,13 +315,14 @@ payload sha256: b1e37d333663c8851516a47364ef473da127f9caebe4417e6df6f5825a7e9a92
 provenance: docs/ANDROID_PYTHON_DEBUG_RUNTIME_PAYLOAD.md
 ```
 
-The `android-python-debug-runtime` resolver is host-proven and APK-built. It
-advertises the pack only when the APK-copied provisioning roots contain a
-compatible `debugpy` wheel, then installs the real wheel into
+The `android-python-debug-runtime` resolver is device-proven. It advertises the
+pack only when the APK-copied provisioning roots contain a compatible `debugpy`
+wheel, then installs the real wheel into
 `.openclaw/runtimes/python/site-packages` and writes both dependency-pack and
-wheel receipts. GTM counts remain unchanged until device smoke proves
-`import debugpy` through the Chaquopy bridge and `/device/health` reports
-`python-debugpy` ready from this APK-local pack.
+wheel receipts. On the 2026-06-09 debug APK smoke, the installed app copied the
+`debugpy 1.8.21` wheel into `provisioning/python-debug/wheels`, installed it
+into Native Python site-packages, imported it through `/api/python/exec` via the
+Chaquopy bridge, and reported `python-debugpy` ready through `/device/health`.
 
 ## Gateway `tools.allow`
 

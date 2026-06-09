@@ -28,8 +28,8 @@ Hide or demote skills that are not Android-release safe.
 
 ## Current Scorecard
 
-Current host/APK and installed-device truth on 2026-06-08 after the
-`anyBins` / Python package gate audit slice:
+Current host/APK and installed-device truth on 2026-06-09 after the Phase 5E
+Python debug runtime device proof:
 
 ```text
 Classified default manifest: 61
@@ -74,8 +74,10 @@ into Native managed bin, smoked with `ffmpeg -version`, and proven by a tiny
 video-to-JPEG extraction on device on 2026-06-09.
 
 Current APK-local android-python-debug-runtime payloads:
-debugpy is host-proven and APK-local, but the release count has not moved yet
-because installed-device proof is still pending:
+debugpy is device-proven and APK-local. The release count moved after the
+installed APK copied the wheel, provisioned it into Native Python site-packages,
+smoked `import debugpy` through the Chaquopy bridge, and reported
+`python-debugpy` ready through `/device/health`:
 
 ```text
 asset: assets/openclaw/python-debug-runtime/wheels/debugpy-1.8.21-py2.py3-none-any.whl
@@ -86,18 +88,24 @@ install target: .openclaw/runtimes/python/site-packages
 provenance: docs/ANDROID_PYTHON_DEBUG_RUNTIME_PAYLOAD.md
 ```
 
-Device proof blocker: on 2026-06-09 the host APK build passed, but `adb devices`
-showed no connected device after an ADB server refresh. Do not raise the clean
-fresh-user floor from `25/51` to `26/51` until the installed APK copies the
-wheel, imports `debugpy` through `/api/python/exec`, and `/device/health`
-reports `python-debugpy` ready from this pack.
+Device proof passed on 2026-06-09 on `RZCX30KA9AW` / Samsung SM-A556E:
+
+```text
+install: adb install -r -d build/app/outputs/flutter-apk/app-debug.apk -> Success
+wheel: files/native-node-embedded/provisioning/python-debug/wheels/debugpy-1.8.21-py2.py3-none-any.whl
+site-packages: .openclaw/runtimes/python/site-packages/debugpy
+pack receipt: dependencies/receipts/android-python-debug-runtime.json
+wheel receipt: dependencies/receipts/python-wheels/debugpy.json, smokePassed true
+/api/python/exec: import debugpy -> 1.8.21, runtime chaquopy-python-bridge
+/device/health: python-debugpy ready true, runtimeStatus ready, provisioningStatus ready
+```
 
 Clean host/APK fresh-user floor after APK install/provisioning:
-Android ready floor: 25/51
+Android ready floor: 26/51
   = 13 ready_required
   + 7 ready_optional
-  + 5 bundled pack skills that need no extra config today
-    (blucli, himalaya, openhue, video-frames, wacli)
+  + 6 bundled pack skills that need no extra config today
+    (blucli, himalaya, openhue, python-debugpy, video-frames, wacli)
 
 Installed-device Android-relevant ready now: 26/51
 Raw ready rows in /device/health: 27
@@ -108,15 +116,17 @@ Raw ready rows in /device/health: 27
 Installed-device delta from the audit slice:
 spotify-player is no longer false-ready; it correctly exposes the
 spogo-or-spotify_player alternative-bin blocker.
-python-debugpy is ready only on this existing device because debugpy 1.8.21 is
-already installed in the Native Python site-packages with a wheel receipt. Do
-not count it in the clean fresh-user floor until android-python-debug-runtime is
-packaged and fresh-installed.
+python-debugpy is now clean fresh-user ready because debugpy 1.8.21 is supplied
+by the APK-local android-python-debug-runtime pack and installed as a real
+wheel, not a fake marker. Installed-device headline count did not move because
+this phone already had debugpy ready before the APK-local proof; the clean APK
+floor is what moved.
 
 Unresolved config blockers: 14
-Unresolved pack blockers floor: 10
+Unresolved pack blockers floor: 9
   = 17 needs_pack taxonomy entries - 6 bundled CLI-core payloads
     - 1 bundled vision-media payload
+    - 1 bundled python-debug payload
 
 Pack-satisfied but still needs user/device config:
 eightctl, sonoscli
@@ -131,16 +141,16 @@ reflects bundled payload progress when `/device/health` reports pack-gated
 skills as `ready: true`.
 
 Device proof caveat: APK extraction, provisioning, `/device/health`,
-no-secret version execution, and tiny media extraction are now
+no-secret version execution, tiny media extraction, and Python debug import are now
 installed-device-proven for all six CLI-core payloads plus the FFmpeg
-vision-media payload. Account, LAN, and real-service workflow smokes are still
-pending where a skill requires credentials, devices, local network discovery,
-or a real external service.
+vision-media payload plus the debugpy Python payload. Account, LAN, and
+real-service workflow smokes are still pending where a skill requires
+credentials, devices, local network discovery, or a real external service.
 
 ## Latest Installed Device Truth
 
-Live device health on 2026-06-09 after the Phase 5D FFmpeg install/provisioning
-smoke reported:
+Live device health on 2026-06-09 after the Phase 5E Python debug runtime
+install/provisioning smoke reported:
 
 ```text
 Target device: RZCX30KA9AW / Samsung SM-A556E
@@ -160,7 +170,8 @@ coding-agent: requiredAnyBins [claude, codex, opencode, pi],
 spotify-player: requiredAnyBins [spogo, spotify_player],
                 runtimeStatus missing_dependency,
                 provisioningStatus missing_binary
-python-debugpy: runtimeStatus ready on this existing device only,
+python-debugpy: runtimeStatus ready, provisioningStatus ready,
+                android-python-debug-runtime receipt exists,
                 debugpy 1.8.21 import smoke passed through
                 /api/python/exec / chaquopy-python-bridge
 tmux: missing tmux, not a bogus rg cleanup-example blocker
@@ -171,9 +182,13 @@ video-frames: runtimeStatus ready, provisioningStatus ready,
               managed ffmpeg sha256
               5359bcf9ee6b0deff2c9352ab28fde51602bbac75325f3f8b41781a7a4d0a09e
 
-Python proof on existing device:
-/api/python/exec import debugpy -> stdout 1.8.21
-debugpy wheel receipt: dependencies/receipts/python-wheels/debugpy.json
+Python debug runtime proof:
+provisioning/python-debug/wheels/debugpy-1.8.21-py2.py3-none-any.whl
+site-packages/debugpy and debugpy-1.8.21.dist-info exist
+pack receipt: dependencies/receipts/android-python-debug-runtime.json
+wheel receipt: dependencies/receipts/python-wheels/debugpy.json,
+               smokePassed true
+/api/python/exec import debugpy -> stdout {"version":"1.8.21", ...}
 
 CLI-core pack status:
 blucli: ready true, runtimeStatus ready, provisioningStatus ready
@@ -211,9 +226,9 @@ Previous installed-device truth before Phase 5D was `25/51`. The earlier
 pre-audit `25/51` was partly wrong because `spotify-player` was counted ready
 before `anyBins` was enforced. The current `26/51` is composed of real
 app-native/required/optional/CLI-core readiness, the FFmpeg-backed
-`video-frames` movement, plus the existing-device `python-debugpy` package
-state. Clean fresh install is now `25/51`; it will not count `python-debugpy`
-until the Android Python debug runtime pack is made real.
+`video-frames` movement, and the APK-local `python-debugpy` package state.
+Clean fresh install is now also `26/51`; Phase 5E moved the fresh-user floor,
+not the already-warm installed-device headline.
 
 ## Last Installed Device Truth
 
@@ -1907,7 +1922,7 @@ Installed-device proof passed on 2026-06-09. `/device/health` reports
 `video-frames` ready and provisioned, and a real tiny MP4 extraction returned a
 JPEG frame from managed FFmpeg. `gifgrep` stays blocked by design.
 
-Phase 5E Python debug runtime lane is host-proven / device-pending:
+Phase 5E Python debug runtime lane is device-proven:
 
 ```text
 payload: assets/openclaw/python-debug-runtime/wheels/debugpy-1.8.21-py2.py3-none-any.whl
@@ -1917,9 +1932,24 @@ runtime path: Native Python site-packages via verified APK-local wheel install
 provenance: docs/ANDROID_PYTHON_DEBUG_RUNTIME_PAYLOAD.md
 ```
 
-The host implementation and debug APK build pass. Count movement is deliberately
-held until device proof because the current installed-device `python-debugpy`
-readiness can be contaminated by prior state.
+Device proof passed on 2026-06-09 after reinstalling the debug APK on
+`RZCX30KA9AW` / Samsung SM-A556E:
+
+```text
+adb install -r -d build/app/outputs/flutter-apk/app-debug.apk -> Success
+provisioning/python-debug/wheels/debugpy-1.8.21-py2.py3-none-any.whl exists
+.openclaw/runtimes/python/site-packages/debugpy exists
+.openclaw/runtimes/python/site-packages/debugpy-1.8.21.dist-info exists
+android-python-debug-runtime.json receipt exists
+python-wheels/debugpy.json receipt exists with smokePassed true
+/api/python/exec import debugpy -> 1.8.21
+/device/health python-debugpy ready true
+```
+
+Count movement: clean fresh-user floor is now `26/51`. Installed-device
+Android-relevant ready remains `26/51` because this phone already counted
+`python-debugpy` before Phase 5E; Phase 5E removes the prior-state caveat by
+proving the APK-local pack path.
 
 Audit truth slice now landed:
 
@@ -1934,10 +1964,9 @@ python3 -m debugpy / python3 -c "import debugpy" creates a real debugpy
 This corrected two important readiness mistakes. `spotify-player` is no longer
 ready unless either `spogo` or `spotify_player` exists. `python-debugpy` is not
 considered solved by a Python bridge alone; it needs `debugpy` present and
-verified. The current phone happens to have `debugpy 1.8.21` installed from
-existing Native Python state, but a clean fresh user still needs a verified
-`android-python-debug-runtime` pack before that skill belongs in the fresh-user
-floor.
+verified. `python-debugpy` now belongs in the clean fresh-user floor because
+`android-python-debug-runtime` installs real wheel contents from the APK and
+smokes the import through the Native Python bridge.
 
 The first resolver is deliberately APK-local only. `android-cli-core-pack` is
 advertised only when the installed APK already has matching bundled binaries in

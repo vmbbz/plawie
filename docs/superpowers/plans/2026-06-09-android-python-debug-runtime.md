@@ -202,7 +202,7 @@ adb install -r build\app\outputs\flutter-apk\app-debug.apk
 adb shell monkey -p com.nxg.openclawproot -c android.intent.category.LAUNCHER 1
 ```
 
-- [ ] **Step 3: Device smoke**
+- [x] **Step 3: Device smoke**
 
 Prove:
 
@@ -214,7 +214,7 @@ provisioning/python-debug/wheels contains debugpy wheel
 /device/health python-debugpy ready true
 ```
 
-- [ ] **Step 4: Update scorecard after proof**
+- [x] **Step 4: Update scorecard after proof**
 
 Only after device proof, update:
 
@@ -227,7 +227,7 @@ If the existing device already counted `python-debugpy`, keep installed-device
 unchanged and explicitly explain that this phase moved the clean-fresh floor,
 not the existing-device headline.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 Stage only source, tests, docs, script, and the approved wheel payload. Do not
 stage APKs, `.tmp`, build reports, gateway logs, or unrelated local files.
