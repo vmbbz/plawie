@@ -328,7 +328,7 @@ class ChatRuntimeService extends ChangeNotifier {
                 maxFrames: 8,
               );
               if (frames.isEmpty) {
-                yield 'Could not extract frames. Make sure ffmpeg is installed in PRoot.';
+                yield 'Could not extract frames. Provision android-vision-media-runtime so Native ffmpeg is available.';
                 return;
               }
               yield* localLlm.analyseVideoFrames(

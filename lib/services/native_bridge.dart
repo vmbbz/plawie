@@ -4,6 +4,20 @@ import 'package:flutter/services.dart';
 import 'preferences_service.dart';
 import '../constants/openclaw_paths.dart';
 
+class NativeFfmpegRunResult {
+  final int exitCode;
+  final String stdout;
+  final String stderr;
+
+  const NativeFfmpegRunResult({
+    required this.exitCode,
+    required this.stdout,
+    required this.stderr,
+  });
+
+  bool get ok => exitCode == 0;
+}
+
 class NativeBridge {
   static const _channel = MethodChannel('com.nxg.openclawproot/native');
   static const _eventChannel =
@@ -71,6 +85,25 @@ class NativeBridge {
       'stdout': '',
       'stderr': 'Native Python bridge returned a non-object response.',
     };
+  }
+
+  static Future<NativeFfmpegRunResult> runManagedFfmpeg(
+    List<String> args, {
+    required int timeoutSeconds,
+  }) async {
+    final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'runManagedFfmpeg',
+      {
+        'args': args,
+        'timeoutSeconds': timeoutSeconds,
+      },
+    );
+    final result = Map<String, dynamic>.from(raw ?? const <dynamic, dynamic>{});
+    return NativeFfmpegRunResult(
+      exitCode: (result['exitCode'] as num?)?.toInt() ?? 1,
+      stdout: result['stdout']?.toString() ?? '',
+      stderr: result['stderr']?.toString() ?? '',
+    );
   }
 
   static Future<bool> startNativeNodeSkillRunnerRuntime() async {

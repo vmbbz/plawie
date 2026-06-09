@@ -51,6 +51,7 @@ import io.flutter.plugin.common.MethodChannel
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.nxg.openclawproot/native"
@@ -329,6 +330,23 @@ class MainActivity : FlutterActivity() {
                         } catch (e: Exception) {
                             runOnUiThread {
                                 result.error("NATIVE_PYTHON_ERROR", e.message, null)
+                            }
+                        }
+                    }.start()
+                }
+                "runManagedFfmpeg" -> {
+                    val rawArgs = call.argument<List<*>>("args") ?: emptyList<Any>()
+                    val timeoutSeconds = call.argument<Int>("timeoutSeconds")?.toLong() ?: 30L
+                    Thread {
+                        try {
+                            val output = runManagedFfmpeg(
+                                rawArgs.map { it?.toString() ?: "" },
+                                timeoutSeconds
+                            )
+                            runOnUiThread { result.success(output) }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.error("MANAGED_FFMPEG_ERROR", e.message, null)
                             }
                         }
                     }.start()
@@ -1030,6 +1048,91 @@ class MainActivity : FlutterActivity() {
         return py.getModule("openclaw_python_runner")
             .callAttr("run", payloadJson)
             .toString()
+    }
+
+    private fun runManagedFfmpeg(args: List<String>, timeoutSeconds: Long): Map<String, Any> {
+        if (args.size > 64) {
+            throw IllegalArgumentException("Too many ffmpeg arguments.")
+        }
+        if (args.any { it.isBlank() || it.contains('\u0000') }) {
+            throw IllegalArgumentException("Unsafe ffmpeg argument.")
+        }
+
+        val managedBin = File(
+            filesDir,
+            "native-node-embedded/native-home/.openclaw/bin"
+        ).canonicalFile
+        val ffmpeg = File(managedBin, "ffmpeg").canonicalFile
+        if (!ffmpeg.path.startsWith(managedBin.path + File.separator)) {
+            throw IllegalStateException("Resolved ffmpeg path escaped managed bin.")
+        }
+        if (!ffmpeg.exists()) {
+            throw IllegalStateException(
+                "ffmpeg is missing from android-vision-media-runtime."
+            )
+        }
+        if (!ffmpeg.canExecute()) {
+            ffmpeg.setExecutable(true, false)
+        }
+        if (!ffmpeg.canExecute()) {
+            throw IllegalStateException("ffmpeg is not executable.")
+        }
+
+        val command = listOf(ffmpeg.absolutePath) + args
+        val process = ProcessBuilder(command)
+            .directory(cacheDir)
+            .redirectErrorStream(false)
+            .apply {
+                environment()["PATH"] = managedBin.absolutePath
+                environment()["OPENCLAW_NATIVE_MANAGED_BIN"] = managedBin.absolutePath
+                environment()["TMPDIR"] = cacheDir.absolutePath
+            }
+            .start()
+
+        val stdout = StringBuilder()
+        val stderr = StringBuilder()
+        val stdoutThread = Thread {
+            stdout.append(readProcessStreamBounded(process.inputStream, 64 * 1024))
+        }
+        val stderrThread = Thread {
+            stderr.append(readProcessStreamBounded(process.errorStream, 64 * 1024))
+        }
+        stdoutThread.start()
+        stderrThread.start()
+
+        val boundedTimeout = timeoutSeconds.coerceIn(1L, 120L)
+        val finished = process.waitFor(boundedTimeout, TimeUnit.SECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+        }
+        stdoutThread.join(1000L)
+        stderrThread.join(1000L)
+
+        return mapOf(
+            "exitCode" to if (finished) process.exitValue() else 124,
+            "stdout" to stdout.toString(),
+            "stderr" to stderr.toString(),
+            "binaryPath" to ffmpeg.absolutePath
+        )
+    }
+
+    private fun readProcessStreamBounded(
+        stream: java.io.InputStream,
+        maxChars: Int
+    ): String {
+        val output = StringBuilder()
+        stream.bufferedReader().use { reader ->
+            val buffer = CharArray(4096)
+            while (true) {
+                val read = reader.read(buffer)
+                if (read == -1) break
+                val remaining = maxChars - output.length
+                if (remaining > 0) {
+                    output.append(buffer, 0, minOf(read, remaining))
+                }
+            }
+        }
+        return output.toString()
     }
 
     private fun speakNativeTts(text: String, speed: Float, result: MethodChannel.Result) {

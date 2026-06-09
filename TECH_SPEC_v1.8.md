@@ -126,7 +126,7 @@ The following older v1.8 proposals are no longer active implementation targets:
 
 - PRoot `llama-server` on `:8081`.
 - OpenAI vision payloads sent to local `llama-server`.
-- PRoot ffmpeg frames into `llama-server`.
+- PRoot ffmpeg frames into `llama-server`; current video-frame extraction uses the APK-local Native `ffmpeg` runtime instead.
 - LAN discovery for Ollama or LM Studio as a setup route.
 - Ollama local/cloud model sync.
 

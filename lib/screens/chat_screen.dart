@@ -1526,8 +1526,7 @@ class _ChatScreenState extends State<ChatScreen>
               final frames = await VideoFrameExtractor.extractFrames(mp4Bytes,
                   fps: 1, maxFrames: 8);
               if (frames.isEmpty) {
-                yield '⚠️ Could not extract frames. Make sure ffmpeg is installed in PRoot '
-                    '(`apt-get install -y ffmpeg` in a terminal session).';
+                yield '⚠️ Could not extract frames. Provision android-vision-media-runtime so Native ffmpeg is available.';
                 return;
               }
               yield* localLlm.analyseVideoFrames(frames,

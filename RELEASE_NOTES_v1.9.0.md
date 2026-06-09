@@ -20,7 +20,7 @@ Switch between four high-performance voice engines to find your perfect companio
 
 ### 📹 2. Video Vision AI (Offline + Cloud)
 Plawie can now see and interpret the physical world.
-- **Offline Analysis**: Record clips and extract frames via PRoot `ffmpeg` for 100% local analysis using Qwen2-VL or LLaVA.
+- **Offline Analysis**: Record clips and extract frames through the APK-local Native `ffmpeg` runtime for local analysis using Qwen2-VL or LLaVA once the vision-media pack is provisioned.
 - **Gemini Native**: Direct cloud-routing for massive multimodal context on Gemini 1.5/2.0 Pro.
 
 ### 🗣️ 3. Wake Word "Plawie"

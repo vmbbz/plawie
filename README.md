@@ -156,7 +156,7 @@ Plawie ships with a production-grade, multi-engine voice stack designed for high
 ### 5. Video Vision AI
 Your agent can see the world around you:
 - **📷 Photo** — Attach any camera snapshot to a message; routed to local multimodal LLM or cloud Gemini.
-- **📹 Video Clips** — Record 2–30s clips, extract key frames via PRoot `ffmpeg`, analyse each frame with the local vision model, then produce a coherent summary — 100% offline.
+- **📹 Video Clips** — Record 2–30s clips, extract key frames through the APK-local Native `ffmpeg` runtime, analyse each frame with the local vision model, then produce a coherent summary — 100% offline after the vision-media pack is provisioned.
 - **Cloud Fallback** — When no local vision path is active, media is routed through the selected cloud provider.
 
 ### 6. Private Offline LLM (NDK)

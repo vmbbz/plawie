@@ -291,11 +291,21 @@ Their provenance and deterministic rebuild commands are recorded in
 `android-cli-core-pack` executable set is fully APK-local; future CLI-core tools
 stay pack-gated until real Android arm64 binaries are produced and verified.
 
-Current APK-local vision-media payloads: none. The
-`android-vision-media-runtime` asset lane and resolver exist, but
-`video-frames` remains pack-gated until a real Android arm64 `ffmpeg`
-executable is bundled, provisioned, and smoked on device. `gifgrep` remains
-blocked; it is not satisfied by `ffmpeg`.
+Current APK-local vision-media payloads:
+
+```text
+ffmpeg: Android arm64 ELF, FFmpeg 8.1.1, LGPL-only build
+payload sha256: 5359bcf9ee6b0deff2c9352ab28fde51602bbac75325f3f8b41781a7a4d0a09e
+provenance: docs/ANDROID_VISION_MEDIA_FFMPEG_PAYLOAD.md
+notice: docs/THIRD_PARTY_NOTICES_FFMPEG.md
+```
+
+The `android-vision-media-runtime` asset lane and resolver now have a real
+device-proven FFmpeg payload. On the 2026-06-09 debug APK smoke, the app copied
+`ffmpeg` into provisioning bin, provisioned it into managed `.openclaw/bin`,
+ran `ffmpeg -version`, extracted a JPEG from a tiny MP4 fixture, and reported
+`video-frames` ready through `/device/health`. `gifgrep` remains blocked; it is
+not satisfied by `ffmpeg`.
 
 ## Gateway `tools.allow`
 

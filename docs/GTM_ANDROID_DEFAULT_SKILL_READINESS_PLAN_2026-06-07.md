@@ -59,20 +59,30 @@ Remaining android-cli-core payload gaps:
 none
 
 Current APK-local android-vision-media-runtime payloads:
-none yet. Phase 5C has the APK asset lane and ffmpeg-only resolver, but the
-release count does not move until a real Android arm64 ffmpeg payload is
-bundled, provisioned, smoked, and device-proven.
+ffmpeg is now host-built and APK-local:
+
+```text
+binary: assets/openclaw/vision-media/bin/ffmpeg
+source: FFmpeg 8.1.1 official release tarball
+source sha256: b6863adde98898f42602017462871b5f6333e65aec803fdd7a6308639c52edf3
+payload sha256: 5359bcf9ee6b0deff2c9352ab28fde51602bbac75325f3f8b41781a7a4d0a09e
+license mode: LGPL-only, --disable-gpl, --disable-nonfree, no external libs
+```
+
+The release count moved after the payload was installed from the APK, copied
+into Native managed bin, smoked with `ffmpeg -version`, and proven by a tiny
+video-to-JPEG extraction on device on 2026-06-09.
 
 Clean host/APK fresh-user floor after APK install/provisioning:
-Android ready floor: 24/51
+Android ready floor: 25/51
   = 13 ready_required
   + 7 ready_optional
-  + 4 bundled CLI-core skills that need no extra config today
-    (blucli, himalaya, openhue, wacli)
+  + 5 bundled pack skills that need no extra config today
+    (blucli, himalaya, openhue, video-frames, wacli)
 
-Installed-device Android-relevant ready now: 25/51
-Raw ready rows in /device/health: 26
-  = Android-relevant ready 25
+Installed-device Android-relevant ready now: 26/51
+Raw ready rows in /device/health: 27
+  = Android-relevant ready 26
   + node-connect manual_proot_compat, which is not part of the Android
     release denominator
 
@@ -85,8 +95,9 @@ not count it in the clean fresh-user floor until android-python-debug-runtime is
 packaged and fresh-installed.
 
 Unresolved config blockers: 14
-Unresolved pack blockers floor: 11
+Unresolved pack blockers floor: 10
   = 17 needs_pack taxonomy entries - 6 bundled CLI-core payloads
+    - 1 bundled vision-media payload
 
 Pack-satisfied but still needs user/device config:
 eightctl, sonoscli
@@ -100,26 +111,28 @@ page now shows
 reflects bundled payload progress when `/device/health` reports pack-gated
 skills as `ready: true`.
 
-Device proof caveat: APK extraction, provisioning, `/device/health`, and
-no-secret version execution are now installed-device-proven for all six
-CLI-core payloads. Account, LAN, and real-service workflow smokes are still
+Device proof caveat: APK extraction, provisioning, `/device/health`,
+no-secret version execution, and tiny media extraction are now
+installed-device-proven for all six CLI-core payloads plus the FFmpeg
+vision-media payload. Account, LAN, and real-service workflow smokes are still
 pending where a skill requires credentials, devices, local network discovery,
 or a real external service.
 
 ## Latest Installed Device Truth
 
-Live device health on 2026-06-08 after the audit truth install reported:
+Live device health on 2026-06-09 after the Phase 5D FFmpeg install/provisioning
+smoke reported:
 
 ```text
 Target device: RZCX30KA9AW / Samsung SM-A556E
-Install result: Success
+Install result: Success, debug reinstall with data preserved
 releaseGatePass: true
 ready_required: 13/13
 classified default manifest: 61
 installed Native workspace skills: 65
 
-Android-relevant ready: 25/51
-Raw ready rows: 26
+Android-relevant ready: 26/51
+Raw ready rows: 27
 manual ready row excluded from Android denominator: node-connect
 
 Parser/audit truth:
@@ -135,6 +148,9 @@ tmux: missing tmux, not a bogus rg cleanup-example blocker
 node-inspect-debugger: missing standalone node binary;
                        embedded libnode is not counted as a shell node bin
 gemini: missing real gemini CLI
+video-frames: runtimeStatus ready, provisioningStatus ready,
+              managed ffmpeg sha256
+              5359bcf9ee6b0deff2c9352ab28fde51602bbac75325f3f8b41781a7a4d0a09e
 
 Python proof on existing device:
 /api/python/exec import debugpy -> stdout 1.8.21
@@ -158,20 +174,27 @@ himalaya --version -> himalaya v1.2.0 +maildir +wizard +smtp
 openhue version -> 0.24-1-g08e940a
 sonos --version -> sonos 0.3.1
 wacli version -> v0.11.0-10-gbe2d22f
+ffmpeg -version -> FFmpeg 8.1.1, exit 0
+
+Vision-media device smoke:
+provisioning/bin/ffmpeg bytes -> 3287176
+managed .openclaw/bin/ffmpeg bytes -> 3287176
+tiny mpeg4 MP4 -> frame_001.jpg 1740 bytes
+JPEG header -> ff d8 ff
 
 Vision-media pack status:
-video-frames remains blocked until assets/openclaw/vision-media/bin/ffmpeg
-contains a real Android arm64 executable and the provisioned ffmpeg path is
-smoked on device.
+video-frames is now ready on installed device after APK provisioning and frame
+extraction proof.
 gifgrep remains blocked; ffmpeg alone must not satisfy it.
 ```
 
-Previous installed-device truth before the audit correction had the same
-headline `25/51`, but it was partly wrong: `spotify-player` was counted ready
-because `anyBins` was not enforced. The corrected `25/51` is now composed of
-real app-native/required/optional/CLI-core readiness plus the existing-device
-`python-debugpy` package state. Clean fresh install remains `24/51` until the
-Python debug runtime pack is made real.
+Previous installed-device truth before Phase 5D was `25/51`. The earlier
+pre-audit `25/51` was partly wrong because `spotify-player` was counted ready
+before `anyBins` was enforced. The current `26/51` is composed of real
+app-native/required/optional/CLI-core readiness, the FFmpeg-backed
+`video-frames` movement, plus the existing-device `python-debugpy` package
+state. Clean fresh install is now `25/51`; it will not count `python-debugpy`
+until the Android Python debug runtime pack is made real.
 
 ## Last Installed Device Truth
 
@@ -695,11 +718,11 @@ android-cli-core-pack still missing APK payload:
 none
 
 android-vision-media-runtime APK resolver:
-ffmpeg only, and only when an actual bundled payload exists at
-assets/openclaw/vision-media/bin/ffmpeg and is copied into the Native
-provisioning bin. This can satisfy video-frames after payload smoke/device
-proof. It must not satisfy gifgrep, which remains blocked until its real
-binary/runtime contract is implemented.
+ffmpeg only, backed by the bundled Android arm64 FFmpeg payload at
+assets/openclaw/vision-media/bin/ffmpeg. This satisfies video-frames after APK
+install, Native provisioning copy, no-secret `ffmpeg -version`, and tiny
+video-to-JPEG device proof. It must not satisfy gifgrep, which remains blocked
+until its real binary/runtime contract is implemented.
 ```
 
 Class C acceptance:
@@ -1849,6 +1872,22 @@ bundle real Android arm64 ffmpeg, provision video-frames through Gateway/health,
 run a no-secret ffmpeg smoke, then run the video frame extraction smoke on
 device before changing scorecard numbers.
 
+Phase 5D FFmpeg payload lane is device-proven:
+
+```text
+payload: assets/openclaw/vision-media/bin/ffmpeg
+source: FFmpeg 8.1.1 official release tarball
+source sha256: b6863adde98898f42602017462871b5f6333e65aec803fdd7a6308639c52edf3
+payload sha256: 5359bcf9ee6b0deff2c9352ab28fde51602bbac75325f3f8b41781a7a4d0a09e
+runtime path: Native managed bin only, no shell, bounded MethodChannel runner
+provenance: docs/ANDROID_VISION_MEDIA_FFMPEG_PAYLOAD.md
+third-party notice: docs/THIRD_PARTY_NOTICES_FFMPEG.md
+```
+
+Installed-device proof passed on 2026-06-09. `/device/health` reports
+`video-frames` ready and provisioned, and a real tiny MP4 extraction returned a
+JPEG frame from managed FFmpeg. `gifgrep` stays blocked by design.
+
 Audit truth slice now landed:
 
 ```text
@@ -2384,6 +2423,16 @@ android-vision-media-runtime APK-local lane exists.
 ffmpeg is the only advertised vision-media binary.
 video-frames remains blocked until real ffmpeg payload + smoke/device proof.
 gifgrep remains blocked.
+Commit made.
+```
+
+Round 5D target:
+
+```text
+Real Android arm64 FFmpeg payload is built from pinned official source.
+video-frames extraction uses Native managed-bin ffmpeg, not PRoot.
+Payload provenance, LGPL notice, host ELF/hash tests, and Android build pass.
+Scorecard numbers move only after installed-device video proof.
 Commit made.
 ```
 

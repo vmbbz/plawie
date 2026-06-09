@@ -82,6 +82,12 @@ void main() {
     await expectAndroidArm64ElfPayload('wacli');
   });
 
+  test('FFmpeg APK payload is a real Android arm64 ELF executable', () async {
+    await expectAndroidArm64ElfPayloadAt(
+      File('assets/openclaw/vision-media/bin/ffmpeg'),
+    );
+  });
+
   test('OpenHue payload has pinned build provenance', () async {
     const openHueCommit = '08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21';
     const goArchiveSha =
@@ -215,11 +221,48 @@ void main() {
     expect(docs, contains(wacliCommit));
     expect(docs.toLowerCase(), contains(payloadSha));
   });
+
+  test('FFmpeg payload has pinned LGPL Android build provenance', () async {
+    const ffmpegVersion = '8.1.1';
+    const sourceSha =
+        'b6863adde98898f42602017462871b5f6333e65aec803fdd7a6308639c52edf3';
+
+    final script =
+        await File('scripts/vision_media/build_ffmpeg_android_arm64.sh')
+            .readAsString();
+    final docs = await File('docs/ANDROID_VISION_MEDIA_FFMPEG_PAYLOAD.md')
+        .readAsString();
+    final notices =
+        await File('docs/THIRD_PARTY_NOTICES_FFMPEG.md').readAsString();
+    final payloadSha =
+        await sha256File(File('assets/openclaw/vision-media/bin/ffmpeg'));
+
+    expect(script, contains('ffmpeg-$ffmpegVersion.tar.xz'));
+    expect(script.toLowerCase(), contains(sourceSha));
+    expect(script, contains('--target-os=android'));
+    expect(script, contains('--arch=aarch64'));
+    expect(script, contains('--enable-cross-compile'));
+    expect(script, contains('--disable-gpl'));
+    expect(script, contains('--disable-nonfree'));
+    expect(script, isNot(contains('--enable-gpl')));
+    expect(script, isNot(contains('--enable-nonfree')));
+    expect(script, contains('aarch64-linux-android'));
+    expect(docs, contains('FFmpeg $ffmpegVersion'));
+    expect(docs.toLowerCase(), contains(sourceSha));
+    expect(docs.toLowerCase(), contains(payloadSha));
+    expect(docs, contains('LGPL'));
+    expect(notices, contains('FFmpeg'));
+    expect(notices, contains('LGPL'));
+  });
 }
 
 Future<void> expectAndroidArm64ElfPayload(String binaryName) async {
-  final payload = File('assets/openclaw/cli-core/bin/$binaryName');
+  await expectAndroidArm64ElfPayloadAt(
+    File('assets/openclaw/cli-core/bin/$binaryName'),
+  );
+}
 
+Future<void> expectAndroidArm64ElfPayloadAt(File payload) async {
   expect(await payload.exists(), isTrue);
   final bytes = await payload.readAsBytes();
   expect(bytes.length, greaterThan(1024 * 1024));
