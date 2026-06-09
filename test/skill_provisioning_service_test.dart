@@ -338,6 +338,207 @@ requirements:
     expect(packAction.message, contains('signed dependency pack'));
   });
 
+  test('provisioning installs APK-provided vision media pack for ffmpeg',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_vision_media_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills =
+        Directory(path.join(nativeRoot, 'workspace', 'skills'));
+    final bundledBinDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'bin',
+    ));
+    await nativeSkills.create(recursive: true);
+    await bundledBinDir.create(recursive: true);
+
+    final videoFrames = Directory(path.join(nativeSkills.path, 'video-frames'));
+    await videoFrames.create(recursive: true);
+    await File(path.join(videoFrames.path, 'SKILL.md')).writeAsString('''
+---
+requirements:
+  bins:
+    - ffmpeg
+---
+# Video Frames
+''');
+    await File(path.join(bundledBinDir.path, 'ffmpeg')).writeAsString(
+      '#!/system/bin/sh\nprintf "ffmpeg test\\n"\n',
+      flush: true,
+    );
+
+    final before = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    expect(
+      before.executionMatrix
+          .singleWhere((entry) => entry.skillId == 'video-frames')
+          .gates,
+      contains('missing_native_bin'),
+    );
+
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      before,
+      skillId: 'video-frames',
+    );
+
+    expect(report.changed, isTrue);
+    expect(report.reloadRecommended, isTrue);
+    expect(report.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(
+      report.results.single.actions
+          .where((action) =>
+              action.type == SkillProvisioningActionType.dependencyPack)
+          .map((action) => action.key),
+      contains('android-vision-media-runtime'),
+    );
+    expect(
+      report.results.single.actions
+          .where((action) => action.type == SkillProvisioningActionType.binary)
+          .map((action) => action.key),
+      isNot(contains('ffmpeg')),
+    );
+    expect(await File(path.join(nativeRoot, 'bin', 'ffmpeg')).exists(), isTrue);
+    expect(
+      await File(path.join(
+        nativeRoot,
+        'dependencies',
+        'receipts',
+        'android-vision-media-runtime.json',
+      )).exists(),
+      isTrue,
+    );
+  });
+
+  test('provisioning explains missing Android vision media ffmpeg payload',
+      () async {
+    final temp = await Directory.systemTemp
+        .createTemp('skill_provision_ffmpeg_missing_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills =
+        Directory(path.join(nativeRoot, 'workspace', 'skills'));
+    final bundledBinDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'bin',
+    ));
+    await nativeSkills.create(recursive: true);
+    await bundledBinDir.create(recursive: true);
+
+    final videoFrames = Directory(path.join(nativeSkills.path, 'video-frames'));
+    await videoFrames.create(recursive: true);
+    await File(path.join(videoFrames.path, 'SKILL.md')).writeAsString('''
+---
+requirements:
+  bins:
+    - ffmpeg
+---
+# Video Frames
+''');
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      snapshot,
+      skillId: 'video-frames',
+    );
+
+    expect(report.changed, isFalse);
+    expect(report.results.single.status, SkillProvisioningStatus.missingBinary);
+    final packAction = report.results.single.actions.singleWhere(
+      (action) =>
+          action.type == SkillProvisioningActionType.dependencyPack &&
+          action.key == 'android-vision-media-runtime:ffmpeg',
+    );
+    expect(packAction.status, SkillProvisioningActionStatus.missingPack);
+    expect(packAction.message,
+        contains('assets/openclaw/vision-media/bin/ffmpeg'));
+    expect(packAction.message, contains('signed dependency pack'));
+  });
+
+  test('gifgrep remains blocked when only ffmpeg vision media payload exists',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_gifgrep_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills =
+        Directory(path.join(nativeRoot, 'workspace', 'skills'));
+    final bundledBinDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'bin',
+    ));
+    await nativeSkills.create(recursive: true);
+    await bundledBinDir.create(recursive: true);
+
+    final gifgrep = Directory(path.join(nativeSkills.path, 'gifgrep'));
+    await gifgrep.create(recursive: true);
+    await File(path.join(gifgrep.path, 'SKILL.md')).writeAsString('''
+---
+requirements:
+  bins:
+    - gifgrep
+---
+# Gifgrep
+''');
+    await File(path.join(bundledBinDir.path, 'ffmpeg')).writeAsString(
+      '#!/system/bin/sh\nprintf "ffmpeg test\\n"\n',
+      flush: true,
+    );
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      snapshot,
+      skillId: 'gifgrep',
+    );
+
+    expect(report.changed, isFalse);
+    expect(report.results.single.status, SkillProvisioningStatus.missingBinary);
+    expect(
+      report.results.single.actions
+          .where((action) =>
+              action.type == SkillProvisioningActionType.dependencyPack)
+          .map((action) => action.key),
+      isNot(contains('android-vision-media-runtime')),
+    );
+    expect(
+        await File(path.join(nativeRoot, 'bin', 'gifgrep')).exists(), isFalse);
+  });
+
   test('provisioning does not advertise diagram-maker as CLI-core binary',
       () async {
     final temp =

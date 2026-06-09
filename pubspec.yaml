@@ -89,6 +89,7 @@ flutter:
     - assets/openclaw/mobile_gateway_probe.js
     - assets/openclaw/mobile_skill_registry.js
     - assets/openclaw/cli-core/bin/
+    - assets/openclaw/vision-media/bin/
     - assets/openclaw/skills/battery.md
     - assets/openclaw/skills/vibrate.md
     - assets/openclaw/skills/sensors.md

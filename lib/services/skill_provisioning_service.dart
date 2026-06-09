@@ -30,6 +30,11 @@ class SkillProvisioningService {
     'sonos',
     'wacli',
   };
+  static const _androidVisionMediaPackId = 'android-vision-media-runtime';
+  static const _androidVisionMediaPackVersion = 'apk-bundled-v1';
+  static const _androidVisionMediaPackBins = <String>{
+    'ffmpeg',
+  };
   static const _defaultPythonWheelIndexes = <String>[
     'https://chaquo.com/pypi-13.1/',
     'https://pypi.org/simple/',
@@ -327,6 +332,11 @@ class SkillProvisioningService {
         installDependencyPacks ? await _apkProvidedCliCorePack(layout) : null;
     final apkProvidedCliCoreBins =
         apkProvidedCliCorePack?.providesBins ?? const <String>{};
+    final apkProvidedVisionMediaPack = installDependencyPacks
+        ? await _apkProvidedVisionMediaPack(layout)
+        : null;
+    final apkProvidedVisionMediaBins =
+        apkProvidedVisionMediaPack?.providesBins ?? const <String>{};
     if (pythonCommandBins.isNotEmpty &&
         !missingRuntimes.map(_normalizeDependencyName).contains('python')) {
       missingRuntimes = [...missingRuntimes, 'python'];
@@ -383,7 +393,8 @@ class SkillProvisioningService {
     var unresolvedNonRuntimeMissingBins = <String>[];
     for (final bin in nonRuntimeMissingBins) {
       final normalizedBin = _normalizeBinRequirement(bin);
-      if (apkProvidedCliCoreBins.contains(normalizedBin)) {
+      if (apkProvidedCliCoreBins.contains(normalizedBin) ||
+          apkProvidedVisionMediaBins.contains(normalizedBin)) {
         unresolvedNonRuntimeMissingBins.add(bin);
         continue;
       }
@@ -769,13 +780,20 @@ class SkillProvisioningService {
     }
     for (final bin in requiredBins.difference(coveredBins)) {
       final isCliCoreBin = _androidCliCorePackBins.contains(bin);
+      final isVisionMediaBin = _androidVisionMediaPackBins.contains(bin);
       actions.add(SkillProvisioningAction(
         type: SkillProvisioningActionType.dependencyPack,
-        key: isCliCoreBin ? '$_androidCliCorePackId:$bin' : 'bin:$bin',
+        key: isCliCoreBin
+            ? '$_androidCliCorePackId:$bin'
+            : isVisionMediaBin
+                ? '$_androidVisionMediaPackId:$bin'
+                : 'bin:$bin',
         status: SkillProvisioningActionStatus.missingPack,
         message: isCliCoreBin
             ? 'Android CLI-core payload is missing "$bin". Bundle assets/openclaw/cli-core/bin/$bin in the APK or publish a signed dependency pack for arm64-v8a.'
-            : 'No Native dependency pack advertises binary "$bin" for arm64-v8a.',
+            : isVisionMediaBin
+                ? 'Android vision-media payload is missing "$bin". Bundle assets/openclaw/vision-media/bin/$bin in the APK or publish a signed dependency pack for arm64-v8a.'
+                : 'No Native dependency pack advertises binary "$bin" for arm64-v8a.',
       ));
     }
     for (final pack in selected) {
@@ -1676,6 +1694,10 @@ class SkillProvisioningService {
     final cliCorePack = await _apkProvidedCliCorePack(layout);
     if (cliCorePack != null) {
       packs.add(cliCorePack);
+    }
+    final visionMediaPack = await _apkProvidedVisionMediaPack(layout);
+    if (visionMediaPack != null) {
+      packs.add(visionMediaPack);
     }
 
     Future<void> mergeManifest(Map<String, dynamic>? manifest) async {
@@ -3408,6 +3430,23 @@ class SkillProvisioningService {
     return _DependencyPack.apk(
       id: _androidCliCorePackId,
       version: _androidCliCorePackVersion,
+      providesBins: providedBins,
+    );
+  }
+
+  static Future<_DependencyPack?> _apkProvidedVisionMediaPack(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final providedBins = <String>{};
+    for (final bin in _androidVisionMediaPackBins) {
+      if (await _findBundledNativeBinary(layout, bin) != null) {
+        providedBins.add(bin);
+      }
+    }
+    if (providedBins.isEmpty) return null;
+    return _DependencyPack.apk(
+      id: _androidVisionMediaPackId,
+      version: _androidVisionMediaPackVersion,
       providesBins: providedBins,
     );
   }

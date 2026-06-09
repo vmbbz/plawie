@@ -211,13 +211,13 @@ smoke removes installed pack files and prevents the dependency receipt from
 being written. Python package packs keep the Native Python bridge/import smoke
 path instead of trying to execute the shell `python3` shim directly.
 
-Pack selection covers runtimes, Python packages, and managed binaries. The
-first binary resolver is intentionally APK-provided only: `android-cli-core-pack`
-is advertised only when the installed APK already has matching bundled CLI-core
-files. Provisioning copies those files into `.openclaw/bin`, writes a receipt,
-and treats a stale receipt as invalid if any advertised managed binary is
-missing. Remote executable pack distribution remains blocked behind hash,
-signature, smoke, rollback, and policy review.
+Pack selection covers runtimes, Python packages, and managed binaries. APK-local
+binary resolvers are intentionally conservative: `android-cli-core-pack` and
+`android-vision-media-runtime` are advertised only when the installed APK
+already has matching bundled executable files. Provisioning copies those files
+into `.openclaw/bin`, writes a receipt, and treats a stale receipt as invalid if
+any advertised managed binary is missing. Remote executable pack distribution
+remains blocked behind hash, signature, smoke, rollback, and policy review.
 
 APK-provided CLI-core payloads are loaded from
 `assets/openclaw/cli-core/bin/`. During full Native Gateway bootstrap,
@@ -229,12 +229,26 @@ For CLI-core, payload file names must be executable names from each bundled
 `SKILL.md`, not necessarily skill IDs: for example `blucli` requires `blu`,
 and `sonoscli` requires `sonos`.
 
+APK-provided vision-media payloads use the parallel lane
+`assets/openclaw/vision-media/bin/`, copied into the same
+`filesDir/native-node-embedded/provisioning/bin` staging directory during full
+Native Gateway bootstrap. The current resolver advertises only `ffmpeg`, and
+only when that exact payload exists after APK extraction. An empty directory or
+`.gitkeep` does not advertise a pack. `ffmpeg` can satisfy `video-frames` after
+payload smoke/device proof; it does not satisfy `gifgrep`.
+
 When a known CLI-core executable is required but no APK payload or validated
 pack advertises it, provisioning emits an `android-cli-core-pack:<bin>`
 missing-pack action. Android readiness copies this into `/device/health` as
 `dependencyGateStatus`, `missingPacks`, `missingBins`, and
 `dependencyGateMessage`, so the Skills page can explain the exact missing
 payload without pretending the skill is runnable.
+
+The same missing-pack behavior applies to known vision-media executables. If
+`video-frames` requires `ffmpeg` and no payload is present, provisioning emits
+`android-vision-media-runtime:ffmpeg` with remediation pointing at
+`assets/openclaw/vision-media/bin/ffmpeg` or a future signed arm64-v8a
+dependency pack.
 
 The readiness scorecard distinguishes static taxonomy from unresolved gates.
 `countsByClass.needs_pack` remains the number of manifest entries whose product
@@ -276,6 +290,12 @@ Their provenance and deterministic rebuild commands are recorded in
 `docs/CLI_CORE_WACLI_ANDROID_PAYLOAD.md`. The currently audited
 `android-cli-core-pack` executable set is fully APK-local; future CLI-core tools
 stay pack-gated until real Android arm64 binaries are produced and verified.
+
+Current APK-local vision-media payloads: none. The
+`android-vision-media-runtime` asset lane and resolver exist, but
+`video-frames` remains pack-gated until a real Android arm64 `ffmpeg`
+executable is bundled, provisioned, and smoked on device. `gifgrep` remains
+blocked; it is not satisfied by `ffmpeg`.
 
 ## Gateway `tools.allow`
 
@@ -482,6 +502,8 @@ with a real tool-call prompt after every tool-policy change.
 6. Direct node smoke: create a simple meme with top/bottom text.
 7. Direct local NDK: "Explain what you can and cannot do in offline mode."
 8. NDK bridge: "Try to vibrate the phone once, then answer from the tool result."
+9. After a real vision-media payload is added: managed-bin `ffmpeg -version`
+   and a `video-frames` extraction smoke against a tiny fixture.
 
 For bridge failures, record whether the local model produced valid `tool_calls`
 before blaming Gateway.

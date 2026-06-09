@@ -54,6 +54,8 @@ class NativeNodeEmbeddedService : Service() {
         private const val OPENCLAW_TARBALL_ASSET =
             "flutter_assets/assets/openclaw-node-modules.tar.gz"
         private const val CLI_CORE_BIN_ASSET_DIR = "flutter_assets/assets/openclaw/cli-core/bin"
+        private const val VISION_MEDIA_BIN_ASSET_DIR =
+            "flutter_assets/assets/openclaw/vision-media/bin"
         private const val ACTION_START = "com.nxg.openclawproot.native_node.START"
         private const val ACTION_STOP = "com.nxg.openclawproot.native_node.STOP"
         private const val EXTRA_PORT = "port"
@@ -372,7 +374,9 @@ class NativeNodeEmbeddedService : Service() {
             packageDir,
             File(workDir(applicationContext), "tmp/openclaw")
         )
-        val cliCoreBinCount = copyCliCoreBinAssets(File(workDir(applicationContext), "provisioning/bin"))
+        val provisioningBin = File(workDir(applicationContext), "provisioning/bin")
+        val cliCoreBinCount = copyCliCoreBinAssets(provisioningBin)
+        val visionMediaBinCount = copyVisionMediaBinAssets(provisioningBin)
 
         if (!launcher.exists()) {
             throw IllegalStateException("OpenClaw launcher missing after extraction: ${launcher.absolutePath}")
@@ -403,6 +407,8 @@ class NativeNodeEmbeddedService : Service() {
                 .put("fileCount", fileCount)
                 .put("cliCoreBinAssetDir", CLI_CORE_BIN_ASSET_DIR)
                 .put("cliCoreBinCount", cliCoreBinCount)
+                .put("visionMediaBinAssetDir", VISION_MEDIA_BIN_ASSET_DIR)
+                .put("visionMediaBinCount", visionMediaBinCount)
                 .put("androidTmpPatchCount", androidTmpPatchCount)
                 .put("bindHost", HOST)
                 .put("bindPort", port)
@@ -514,36 +520,44 @@ class NativeNodeEmbeddedService : Service() {
     }
 
     private fun copyCliCoreBinAssets(targetDir: File): Int {
+        return copyBundledBinAssets(CLI_CORE_BIN_ASSET_DIR, targetDir, "CLI-core")
+    }
+
+    private fun copyVisionMediaBinAssets(targetDir: File): Int {
+        return copyBundledBinAssets(VISION_MEDIA_BIN_ASSET_DIR, targetDir, "vision-media")
+    }
+
+    private fun copyBundledBinAssets(assetDir: String, targetDir: File, label: String): Int {
         targetDir.mkdirs()
         val names = try {
-            assets.list(CLI_CORE_BIN_ASSET_DIR) ?: emptyArray()
+            assets.list(assetDir) ?: emptyArray()
         } catch (e: Exception) {
-            appendLog("CLI-core asset directory unavailable: ${e.message}")
+            appendLog("$label asset directory unavailable: ${e.message}")
             emptyArray()
         }
         var copied = 0
         names.sorted().forEach { name ->
-            if (!isSafeCliCoreAssetName(name)) {
-                appendLog("skipped unsafe CLI-core asset name=$name")
+            if (!isSafeBundledBinAssetName(name)) {
+                appendLog("skipped unsafe $label asset name=$name")
                 return@forEach
             }
             val target = File(targetDir, name)
             try {
-                assets.open("$CLI_CORE_BIN_ASSET_DIR/$name").use { input ->
+                assets.open("$assetDir/$name").use { input ->
                     FileOutputStream(target).use { output -> input.copyTo(output) }
                 }
                 target.setReadable(true, false)
                 target.setExecutable(true, false)
                 copied++
             } catch (e: Exception) {
-                appendLog("failed copying CLI-core asset name=$name: ${e.message}")
+                appendLog("failed copying $label asset name=$name: ${e.message}")
             }
         }
-        appendLog("CLI-core asset copy completed count=$copied target=${targetDir.absolutePath}")
+        appendLog("$label asset copy completed count=$copied target=${targetDir.absolutePath}")
         return copied
     }
 
-    private fun isSafeCliCoreAssetName(name: String): Boolean {
+    private fun isSafeBundledBinAssetName(name: String): Boolean {
         return name.isNotBlank() &&
             !name.startsWith(".") &&
             !name.contains("/") &&

@@ -28,10 +28,34 @@ void main() {
     expect(
       bootstrap,
       contains(
-          'copyCliCoreBinAssets(File(workDir(applicationContext), "provisioning/bin"))'),
+          'val provisioningBin = File(workDir(applicationContext), "provisioning/bin")'),
     );
-    expect(bootstrap, contains('assets.list(CLI_CORE_BIN_ASSET_DIR)'));
+    expect(bootstrap, contains('copyCliCoreBinAssets(provisioningBin)'));
+    expect(bootstrap, contains('copyBundledBinAssets(CLI_CORE_BIN_ASSET_DIR'));
     expect(bootstrap, contains('target.setExecutable(true, false)'));
+  });
+
+  test('Native bootstrap extracts vision-media assets into provisioning bin',
+      () async {
+    final pubspec = await File('pubspec.yaml').readAsString();
+    final bootstrap = await File(
+      'android/app/src/main/kotlin/com/nxg/openclawproot/'
+      'NativeNodeEmbeddedService.kt',
+    ).readAsString();
+
+    expect(pubspec, contains('assets/openclaw/vision-media/bin/'));
+    expect(bootstrap, contains('VISION_MEDIA_BIN_ASSET_DIR'));
+    expect(
+        bootstrap, contains('flutter_assets/assets/openclaw/vision-media/bin'));
+    expect(
+      bootstrap,
+      contains(
+          'val provisioningBin = File(workDir(applicationContext), "provisioning/bin")'),
+    );
+    expect(
+      bootstrap,
+      contains('copyVisionMediaBinAssets(provisioningBin)'),
+    );
   });
 
   test('OpenHue APK payload is a real Android arm64 ELF executable', () async {

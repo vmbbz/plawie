@@ -58,6 +58,11 @@ blu, eightctl, himalaya, openhue, sonos, wacli
 Remaining android-cli-core payload gaps:
 none
 
+Current APK-local android-vision-media-runtime payloads:
+none yet. Phase 5C has the APK asset lane and ffmpeg-only resolver, but the
+release count does not move until a real Android arm64 ffmpeg payload is
+bundled, provisioned, smoked, and device-proven.
+
 Clean host/APK fresh-user floor after APK install/provisioning:
 Android ready floor: 24/51
   = 13 ready_required
@@ -153,6 +158,12 @@ himalaya --version -> himalaya v1.2.0 +maildir +wizard +smtp
 openhue version -> 0.24-1-g08e940a
 sonos --version -> sonos 0.3.1
 wacli version -> v0.11.0-10-gbe2d22f
+
+Vision-media pack status:
+video-frames remains blocked until assets/openclaw/vision-media/bin/ffmpeg
+contains a real Android arm64 executable and the provisioned ffmpeg path is
+smoked on device.
+gifgrep remains blocked; ffmpeg alone must not satisfy it.
 ```
 
 Previous installed-device truth before the audit correction had the same
@@ -682,6 +693,13 @@ wacli -> wacli
 
 android-cli-core-pack still missing APK payload:
 none
+
+android-vision-media-runtime APK resolver:
+ffmpeg only, and only when an actual bundled payload exists at
+assets/openclaw/vision-media/bin/ffmpeg and is copied into the Native
+provisioning bin. This can satisfy video-frames after payload smoke/device
+proof. It must not satisfy gifgrep, which remains blocked until its real
+binary/runtime contract is implemented.
 ```
 
 Class C acceptance:
@@ -1815,6 +1833,22 @@ kept blocked until real binary: gifgrep
 parked research lane: android-node-executable-pack, expected +1 only
 ```
 
+Phase 5C Android vision-media runtime lane landed as plumbing:
+
+```text
+APK asset lane: assets/openclaw/vision-media/bin/
+Native bootstrap copy target: filesDir/native-node-embedded/provisioning/bin
+provisioning resolver: android-vision-media-runtime, ffmpeg only
+truth rule: advertise the pack only when ffmpeg exists in the bundled bin root
+blocked by design: gifgrep
+```
+
+This intentionally does not raise the ready count yet. It turns the next
+ffmpeg payload round into a straightforward, testable artifact drop plus smoke:
+bundle real Android arm64 ffmpeg, provision video-frames through Gateway/health,
+run a no-secret ffmpeg smoke, then run the video frame extraction smoke on
+device before changing scorecard numbers.
+
 Audit truth slice now landed:
 
 ```text
@@ -2340,6 +2374,16 @@ Round 5 target:
 
 ```text
 Dependency-pack manifest and first verified pack lane.
+Commit made.
+```
+
+Round 5C target:
+
+```text
+android-vision-media-runtime APK-local lane exists.
+ffmpeg is the only advertised vision-media binary.
+video-frames remains blocked until real ffmpeg payload + smoke/device proof.
+gifgrep remains blocked.
 Commit made.
 ```
 
