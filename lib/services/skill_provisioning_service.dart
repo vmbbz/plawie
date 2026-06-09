@@ -42,7 +42,7 @@ class SkillProvisioningService {
     'debugpy',
   };
   static const _androidTerminalPackId = 'android-terminal-pack';
-  static const _androidTerminalPackVersion = 'tmux-apk-lane-v1';
+  static const _androidTerminalPackVersion = 'termux-tmux-3.6b-apk-v1';
   static const _androidTerminalPackBins = <String>{
     'tmux',
   };

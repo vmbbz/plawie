@@ -109,6 +109,31 @@ void main() {
     expect(bootstrap, contains('terminalLibCount'));
   });
 
+  test('Tmux terminal APK payload is a real Android arm64 pack', () async {
+    const tmuxPayloadSha =
+        '9db38fdb4178abd13d19a32f40d265b61473694487e5c6ffc60e43ba11f1ca96';
+    const libSha = <String, String>{
+      'libandroid-glob.so':
+          'e47405b23e40aea9bd5aad4c3cbf518065cba8ef1c4e24c8aae7fd77e10fe850',
+      'libandroid-support.so':
+          '739cf829511d71dafd6c67fdbb70f3f0c6048642ea2e1967790ee961fde14430',
+      'libevent_core-2.1.so':
+          '3e5697cf20492127371704d935ef8c7538a6ea82a6dd0fc9b427f8a55b8001f3',
+      'libncursesw.so.6':
+          '795f855f5a988d9e89116847b2c9aa03720cedbc02026259ca735be25398c4c5',
+    };
+
+    final tmux = File('assets/openclaw/terminal/bin/tmux');
+    await expectAndroidArm64ElfPayloadAt(tmux, minBytes: 900 * 1024);
+    expect(await sha256File(tmux), tmuxPayloadSha);
+
+    for (final entry in libSha.entries) {
+      final library = File('assets/openclaw/terminal/lib/${entry.key}');
+      await expectAndroidArm64ElfPayloadAt(library, minBytes: 7 * 1024);
+      expect(await sha256File(library), entry.value);
+    }
+  });
+
   test('OpenHue APK payload is a real Android arm64 ELF executable', () async {
     await expectAndroidArm64ElfPayload('openhue');
   });
@@ -329,6 +354,40 @@ void main() {
     expect(docs, contains('debugpy $debugpyVersion'));
     expect(docs.toLowerCase(), contains(await sha256File(wheel)));
   });
+
+  test('Tmux payload has pinned Termux package provenance', () async {
+    const termuxTmuxDebSha =
+        'd52ab2155b036d03b47cfb824be41e9fe4fe67b80b457716d81faa38ec1c7319';
+    const termuxNcursesDebSha =
+        'f44bbfdc3d42ec0217bffa978309390e59cea5a48a9a83226d4a496c42ad0b99';
+    const termuxLibeventDebSha =
+        '9db37dd4a000ae43eff4e87422e5280be9b6348581702f582d2fe8bddc0f4572';
+    const termuxSupportDebSha =
+        'f2f145d6135ad4843ac9670153be3e3944dc1e6f1736d46d2306c28f2b86f517';
+    const termuxGlobDebSha =
+        '2276ae8adedf0db76c2f4ffc94cc4cceb2f4f5d78e021b54e2e046d1233e7826';
+
+    final docs =
+        await File('docs/ANDROID_TERMINAL_TMUX_PAYLOAD.md').readAsString();
+    final notices =
+        await File('docs/THIRD_PARTY_NOTICES_TMUX.md').readAsString();
+    final service = await File('lib/services/skill_provisioning_service.dart')
+        .readAsString();
+
+    expect(docs, contains('Termux package version: 3.6b'));
+    expect(docs, contains('Runtime-reported version: tmux 3.6a'));
+    expect(docs.toLowerCase(), contains(termuxTmuxDebSha));
+    expect(docs.toLowerCase(), contains(termuxNcursesDebSha));
+    expect(docs.toLowerCase(), contains(termuxLibeventDebSha));
+    expect(docs.toLowerCase(), contains(termuxSupportDebSha));
+    expect(docs.toLowerCase(), contains(termuxGlobDebSha));
+    expect(docs, contains('libncursesw.so.6'));
+    expect(docs, contains('LD_LIBRARY_PATH'));
+    expect(notices, contains('tmux'));
+    expect(notices, contains('libevent'));
+    expect(notices, contains('ncurses'));
+    expect(service, contains("termux-tmux-3.6b-apk-v1"));
+  });
 }
 
 Future<void> expectAndroidArm64ElfPayload(String binaryName) async {
@@ -337,10 +396,13 @@ Future<void> expectAndroidArm64ElfPayload(String binaryName) async {
   );
 }
 
-Future<void> expectAndroidArm64ElfPayloadAt(File payload) async {
+Future<void> expectAndroidArm64ElfPayloadAt(
+  File payload, {
+  int minBytes = 1024 * 1024,
+}) async {
   expect(await payload.exists(), isTrue);
   final bytes = await payload.readAsBytes();
-  expect(bytes.length, greaterThan(1024 * 1024));
+  expect(bytes.length, greaterThan(minBytes));
   expect(String.fromCharCodes(bytes.take(2)), isNot('#!'));
   expect(bytes[0], 0x7f);
   expect(bytes[1], 0x45);

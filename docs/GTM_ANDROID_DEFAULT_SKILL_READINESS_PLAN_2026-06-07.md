@@ -28,8 +28,8 @@ Hide or demote skills that are not Android-release safe.
 
 ## Current Scorecard
 
-Current host/APK and installed-device truth on 2026-06-09 after the Phase 5E
-Python debug runtime device proof:
+Current host/APK and installed-device truth on 2026-06-09 after the Phase 5G
+tmux terminal payload device proof:
 
 ```text
 Classified default manifest: 61
@@ -101,9 +101,10 @@ wheel receipt: dependencies/receipts/python-wheels/debugpy.json, smokePassed tru
 ```
 
 Current APK-local android-terminal-pack payloads:
-the bin/lib APK lane exists, but no real `tmux` payload is bundled yet. Counts
-do not move until an Android arm64 `tmux` binary and required shared libraries
-are bundled, provenance-tested, built into the APK, and device-smoked:
+tmux is device-proven and APK-local. The release count moved after the
+installed APK copied the `tmux` executable and four required shared libraries,
+provisioned them into managed `.openclaw/bin` and `.openclaw/lib`, and reported
+`tmux` ready through `/device/health`:
 
 ```text
 asset roots:
@@ -116,21 +117,25 @@ managed install targets:
   .openclaw/bin
   .openclaw/lib
 pack id: android-terminal-pack
-first target: tmux
-provenance plan: docs/superpowers/plans/2026-06-09-android-terminal-pack-lane.md
-status: plumbing landed, payload pending
+pack version: termux-tmux-3.6b-apk-v1
+payload: assets/openclaw/terminal/bin/tmux
+payload sha256: 9db38fdb4178abd13d19a32f40d265b61473694487e5c6ffc60e43ba11f1ca96
+Termux package version: 3.6b
+runtime-reported version: tmux 3.6a
+managed smoke: LD_LIBRARY_PATH=.openclaw/lib .openclaw/bin/tmux -V -> tmux 3.6a
+provenance: docs/ANDROID_TERMINAL_TMUX_PAYLOAD.md
 ```
 
 Clean host/APK fresh-user floor after APK install/provisioning:
-Android ready floor: 26/51
+Android ready floor: 27/51
   = 13 ready_required
   + 7 ready_optional
-  + 6 bundled pack skills that need no extra config today
-    (blucli, himalaya, openhue, python-debugpy, video-frames, wacli)
+  + 7 bundled pack skills that need no extra config today
+    (blucli, himalaya, openhue, python-debugpy, tmux, video-frames, wacli)
 
-Installed-device Android-relevant ready now: 26/51
-Raw ready rows in /device/health: 27
-  = Android-relevant ready 26
+Installed-device Android-relevant ready now: 27/51
+Raw ready rows in /device/health: 28
+  = Android-relevant ready 27
   + node-connect manual_proot_compat, which is not part of the Android
     release denominator
 
@@ -144,10 +149,11 @@ this phone already had debugpy ready before the APK-local proof; the clean APK
 floor is what moved.
 
 Unresolved config blockers: 14
-Unresolved pack blockers floor: 9
+Unresolved pack blockers floor: 8
   = 17 needs_pack taxonomy entries - 6 bundled CLI-core payloads
     - 1 bundled vision-media payload
     - 1 bundled python-debug payload
+    - 1 bundled terminal payload
 
 Pack-satisfied but still needs user/device config:
 eightctl, sonoscli
@@ -164,13 +170,14 @@ skills as `ready: true`.
 Device proof caveat: APK extraction, provisioning, `/device/health`,
 no-secret version execution, tiny media extraction, and Python debug import are now
 installed-device-proven for all six CLI-core payloads plus the FFmpeg
-vision-media payload plus the debugpy Python payload. Account, LAN, and
-real-service workflow smokes are still pending where a skill requires
-credentials, devices, local network discovery, or a real external service.
+vision-media payload plus the debugpy Python payload plus the tmux terminal
+payload. Account, LAN, and real-service workflow smokes are still pending where
+a skill requires credentials, devices, local network discovery, or a real
+external service.
 
 ## Latest Installed Device Truth
 
-Live device health on 2026-06-09 after the Phase 5E Python debug runtime
+Live device health on 2026-06-09 after the Phase 5G tmux terminal runtime
 install/provisioning smoke reported:
 
 ```text
@@ -181,8 +188,8 @@ ready_required: 13/13
 classified default manifest: 61
 installed Native workspace skills: 65
 
-Android-relevant ready: 26/51
-Raw ready rows: 27
+Android-relevant ready: 27/51
+Raw ready rows: 28
 manual ready row excluded from Android denominator: node-connect
 
 Parser/audit truth:
@@ -195,7 +202,9 @@ python-debugpy: runtimeStatus ready, provisioningStatus ready,
                 android-python-debug-runtime receipt exists,
                 debugpy 1.8.21 import smoke passed through
                 /api/python/exec / chaquopy-python-bridge
-tmux: missing tmux, not a bogus rg cleanup-example blocker
+tmux: runtimeStatus ready, provisioningStatus ready,
+      android-terminal-pack receipt version termux-tmux-3.6b-apk-v1,
+      managed .openclaw/bin/tmux -V -> tmux 3.6a
 node-inspect-debugger: missing standalone node binary;
                        embedded libnode is not counted as a shell node bin
 gemini: missing real gemini CLI
@@ -245,11 +254,11 @@ gifgrep remains blocked; ffmpeg alone must not satisfy it.
 
 Previous installed-device truth before Phase 5D was `25/51`. The earlier
 pre-audit `25/51` was partly wrong because `spotify-player` was counted ready
-before `anyBins` was enforced. The current `26/51` is composed of real
+before `anyBins` was enforced. At that point, `26/51` was composed of real
 app-native/required/optional/CLI-core readiness, the FFmpeg-backed
 `video-frames` movement, and the APK-local `python-debugpy` package state.
-Clean fresh install is now also `26/51`; Phase 5E moved the fresh-user floor,
-not the already-warm installed-device headline.
+Phase 5E moved the fresh-user floor to `26/51`, not the already-warm
+installed-device headline. Phase 5G later moved the current floor to `27/51`.
 
 ## Last Installed Device Truth
 
@@ -2005,15 +2014,14 @@ managed install targets:
   .openclaw/lib for terminal shared libraries
 smoke env:
   OPENCLAW_NATIVE_LIB and LD_LIBRARY_PATH include .openclaw/lib
-blocked until payload:
+Phase 5F blocked until payload:
   tmux
 ```
 
-This intentionally does not raise the ready count yet. It makes the next tmux
-round an artifact/provenance/device-smoke round instead of mixing payload work
-with installer architecture. A real terminal payload must still prove `tmux -V`
-from managed `.openclaw/bin` on device before `tmux` moves from `needs_pack` to
-ready.
+This Phase 5F plumbing-only checkpoint intentionally did not raise the ready
+count. It made the next tmux round an artifact/provenance/device-smoke round
+instead of mixing payload work with installer architecture. Phase 5G below is
+the payload proof that moved `tmux` from `needs_pack` to ready.
 
 Installed-device proof on 2026-06-09 confirmed the Phase 5F plumbing without
 moving counts:
@@ -2044,6 +2052,33 @@ Native bootstrap log:
 Interpretation: the APK-local terminal bin/lib lane exists and runs on device,
 but it contains no real Android arm64 terminal payload yet. `tmux` therefore
 correctly remains pack-blocked and non-release-blocking.
+
+Phase 5G Android terminal payload lane is device-proven:
+
+```text
+payloads:
+  assets/openclaw/terminal/bin/tmux
+  assets/openclaw/terminal/lib/libandroid-glob.so
+  assets/openclaw/terminal/lib/libandroid-support.so
+  assets/openclaw/terminal/lib/libevent_core-2.1.so
+  assets/openclaw/terminal/lib/libncursesw.so.6
+source:
+  Termux official aarch64 apt packages
+Termux package version:
+  tmux 3.6b
+runtime-reported version:
+  tmux 3.6a
+pack id/version:
+  android-terminal-pack / termux-tmux-3.6b-apk-v1
+managed smoke:
+  LD_LIBRARY_PATH=.openclaw/lib .openclaw/bin/tmux -V -> tmux 3.6a
+/device/health:
+  tmux runtimeStatus ready, provisioningStatus ready, ready true
+```
+
+This raises the clean Android-ready floor from `26/51` to `27/51` and drops the
+unresolved pack blocker floor from `9` to `8`. The release gate remains
+`13/13`; tmux is useful ceiling movement, not a launch-critical boot gate.
 
 The first resolver is deliberately APK-local only. `android-cli-core-pack` is
 advertised only when the installed APK already has matching bundled binaries in
@@ -2592,7 +2627,17 @@ android-terminal-pack APK-local bin/lib lane exists.
 tmux is the only advertised terminal binary.
 Terminal shared libraries install into managed .openclaw/lib.
 Dependency-pack smoke env exposes OPENCLAW_NATIVE_LIB and LD_LIBRARY_PATH.
-tmux remains blocked until real Android arm64 payload + smoke/device proof.
+tmux remains blocked at this plumbing-only checkpoint.
+Commit made.
+```
+
+Round 5G target:
+
+```text
+Real Android arm64 tmux payload is bundled from pinned Termux aarch64 packages.
+Required shared libraries install into managed .openclaw/lib.
+Host ELF/hash/provenance tests, Android debug build, and installed-device smoke pass.
+tmux moves from needs_pack to ready after .openclaw/bin/tmux -V proof.
 Commit made.
 ```
 

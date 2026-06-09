@@ -39,9 +39,9 @@ receipt, and keeps smoke-command environments ready for dynamic libraries via
 - [x] Add host tests for packaging and provisioning plumbing.
 - [x] Install debug APK and prove the terminal bin/lib lane appears in
   `/device/health` plus native bootstrap manifest/logs on SM-A556E.
-- [ ] Add real Android arm64 `tmux` payload with source/version/SHA/license.
-- [ ] Run `tmux -V` on device from managed `.openclaw/bin`.
-- [ ] Move fresh-user floor only after payload and device proof.
+- [x] Add real Android arm64 `tmux` payload with source/version/SHA/license.
+- [x] Run `tmux -V` on device from managed `.openclaw/bin`.
+- [x] Move fresh-user floor only after payload and device proof.
 
 ## Count Rule
 
@@ -73,3 +73,36 @@ terminal provisioning dirs:
 The zero counts are expected for this round because `.gitkeep` is intentionally
 rejected as an unsafe terminal payload name. This proves the lane, not `tmux`
 runtime readiness.
+
+## Payload Device Proof
+
+2026-06-09, Samsung SM-A556E / aarch64:
+
+```text
+payload source: Termux official aarch64 apt packages
+Termux package version: tmux 3.6b
+runtime-reported version: tmux 3.6a
+pack version: termux-tmux-3.6b-apk-v1
+bootstrap manifest:
+  terminalBinCount: 1
+  terminalLibCount: 4
+managed files:
+  .openclaw/bin/tmux
+  .openclaw/lib/libandroid-glob.so
+  .openclaw/lib/libandroid-support.so
+  .openclaw/lib/libevent_core-2.1.so
+  .openclaw/lib/libncursesw.so.6
+managed smoke:
+  LD_LIBRARY_PATH=.openclaw/lib .openclaw/bin/tmux -V -> tmux 3.6a
+/device/health:
+  tmux runtimeStatus ready
+  tmux provisioningStatus ready
+  raw ready rows: 28
+```
+
+Count movement:
+
+```text
+Android-relevant ready: 26/51 -> 27/51
+Unresolved pack blocker floor: 9 -> 8
+```

@@ -339,16 +339,28 @@ managed install roots:
 first advertised pack:
   android-terminal-pack, tmux only
 status:
-  plumbing only; no real tmux payload yet
+  device-proven tmux payload
+pack version:
+  termux-tmux-3.6b-apk-v1
+payload:
+  assets/openclaw/terminal/bin/tmux
+libraries:
+  libandroid-glob.so
+  libandroid-support.so
+  libevent_core-2.1.so
+  libncursesw.so.6
+managed smoke:
+  LD_LIBRARY_PATH=.openclaw/lib .openclaw/bin/tmux -V -> tmux 3.6a
 ```
 
 The terminal lane is separate from CLI-core because terminal tools can require
 shared libraries. Provisioning copies terminal libraries into managed
 `.openclaw/lib`, and dependency-pack smoke commands receive
 `OPENCLAW_NATIVE_LIB` plus an `LD_LIBRARY_PATH` that includes that directory.
-`tmux` remains pack-blocked until a real Android arm64 binary and its required
-shared libraries are bundled, provenance-tested, APK-built, and device-smoked
-with `tmux -V`.
+`tmux` is now backed by pinned Termux aarch64 package artifacts documented in
+`docs/ANDROID_TERMINAL_TMUX_PAYLOAD.md` and is ready only after the APK copies
+the binary/libs, provisioning installs them into `.openclaw`, and `tmux -V`
+passes on device.
 
 ## Gateway `tools.allow`
 
