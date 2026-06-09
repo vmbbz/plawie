@@ -372,6 +372,16 @@ such as `claude`, `codex`, `opencode`, or `pi`, plus auth/config truth. The
 embedded `libnode.so` Native Gateway lane is architecturally valuable, but it
 is not a managed shell `node` binary and does not satisfy those pack gates.
 
+The next pack lane is `android-audio-runtime` for `songsee` only. Phase 5I
+audited the remaining blockers and chose `songsee` because it can be proven
+offline with a tiny local audio fixture and does not require user account
+auth, provider API keys, a large ML model, or standalone Node. The audio
+runtime resolver must advertise only bins that exist in the APK-copied
+provisioning roots. A future `songsee` payload must not satisfy
+`spotify-player`; Spotify remains blocked until either `spogo` cookies or
+`spotify_player` auth/config are represented truthfully in the UI and runtime
+audit.
+
 ## Gateway `tools.allow`
 
 `tools.allow` is a strict Gateway allowlist. OpenClaw applies `tools.profile`

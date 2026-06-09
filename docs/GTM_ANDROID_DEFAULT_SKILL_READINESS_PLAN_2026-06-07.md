@@ -1949,6 +1949,29 @@ user-readable labels such as Standalone Node executable pack, Android Gemini CLI
 pack, and Android agent CLI pack.
 ```
 
+Phase 5I blocker audit landed as a decision record:
+
+```text
+docs/ANDROID_PACK_BLOCKER_PHASE_5I_AUDIT_2026-06-10.md
+```
+
+Result: the next payload lane should be `android-audio-runtime` for `songsee`
+only. It is the cleanest remaining `+1`: local audio input, image output, no
+account auth, no provider API key, and no ML model bundle. `gifgrep` is
+technically plausible but not first because its provider-search promise needs
+API-key/config truth unless Android narrows the promise to local GIF
+processing. `sherpa-onnx-tts` and local Whisper are credible but heavier model
+runtime lanes. Node, Gemini, coding-agent, and Spotify remain parked because
+they carry standalone-Node, auth, sandbox, account, or mixed pack/config risk.
+
+Phase 5I score impact:
+
+```text
+Android ready floor: unchanged at 27/51
+unresolved pack blockers: unchanged at 8
+release gate: unchanged at 13/13
+```
+
 Phase 5C Android vision-media runtime lane landed as plumbing:
 
 ```text
@@ -2679,6 +2702,18 @@ gemini is parked behind android-gemini-cli-pack plus auth/config truth.
 coding-agent is parked behind android-agent-cli-pack plus auth/config truth.
 Skills page pack-gate previews display user-readable pack labels.
 Ready count stays 27/51 until a real payload and installed-device smoke land.
+Commit made.
+```
+
+Round 5I target:
+
+```text
+Audit all eight remaining pack blockers against current code and real Android
+artifact paths.
+Choose songsee as the next payload lane.
+Keep gifgrep, Node, Gemini, coding-agent, Whisper, Sherpa TTS, and Spotify
+blocked until their real runtime/config risks are solved.
+Ready count stays 27/51 because this is a decision round, not payload proof.
 Commit made.
 ```
 
