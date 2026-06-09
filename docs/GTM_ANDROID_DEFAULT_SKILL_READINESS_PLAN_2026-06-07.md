@@ -2015,6 +2015,36 @@ with installer architecture. A real terminal payload must still prove `tmux -V`
 from managed `.openclaw/bin` on device before `tmux` moves from `needs_pack` to
 ready.
 
+Installed-device proof on 2026-06-09 confirmed the Phase 5F plumbing without
+moving counts:
+
+```text
+device: RZCX30KA9AW / Samsung SM-A556E / aarch64
+install: adb install -r -d app-debug.apk -> Success
+/device/health:
+  totalManifestSkills: 61
+  installedNativeSkills: 65
+  readyRequired: 13/13
+  releaseGatePass: true
+  unexpectedMissingDependency: 0
+  raw ready rows: 27
+  tmux: needs_pack, missing android-terminal-pack, missing tmux
+Native bootstrap full_gateway_manifest.json:
+  terminalBinAssetDir: flutter_assets/assets/openclaw/terminal/bin
+  terminalBinCount: 0
+  terminalLibAssetDir: flutter_assets/assets/openclaw/terminal/lib
+  terminalLibCount: 0
+Native bootstrap log:
+  skipped unsafe terminal asset name=.gitkeep
+  terminal asset copy completed count=0
+  skipped unsafe terminal library asset name=.gitkeep
+  terminal library asset copy completed count=0
+```
+
+Interpretation: the APK-local terminal bin/lib lane exists and runs on device,
+but it contains no real Android arm64 terminal payload yet. `tmux` therefore
+correctly remains pack-blocked and non-release-blocking.
+
 The first resolver is deliberately APK-local only. `android-cli-core-pack` is
 advertised only when the installed APK already has matching bundled binaries in
 the Native provisioning roots. Provisioning can now select dependency packs by
