@@ -81,6 +81,34 @@ void main() {
     expect(bootstrap, contains('pythonDebugWheelCount'));
   });
 
+  test('Native bootstrap declares terminal pack bin and lib asset lanes',
+      () async {
+    final pubspec = await File('pubspec.yaml').readAsString();
+    final bootstrap = await File(
+      'android/app/src/main/kotlin/com/nxg/openclawproot/'
+      'NativeNodeEmbeddedService.kt',
+    ).readAsString();
+
+    expect(pubspec, contains('assets/openclaw/terminal/bin/'));
+    expect(pubspec, contains('assets/openclaw/terminal/lib/'));
+    expect(bootstrap, contains('TERMINAL_BIN_ASSET_DIR'));
+    expect(bootstrap, contains('TERMINAL_LIB_ASSET_DIR'));
+    expect(
+      bootstrap,
+      contains('flutter_assets/assets/openclaw/terminal/bin'),
+    );
+    expect(
+      bootstrap,
+      contains('flutter_assets/assets/openclaw/terminal/lib'),
+    );
+    expect(bootstrap, contains('copyTerminalBinAssets'));
+    expect(bootstrap, contains('copyTerminalLibAssets'));
+    expect(bootstrap, contains('provisioning/terminal/bin'));
+    expect(bootstrap, contains('provisioning/terminal/lib'));
+    expect(bootstrap, contains('terminalBinCount'));
+    expect(bootstrap, contains('terminalLibCount'));
+  });
+
   test('OpenHue APK payload is a real Android arm64 ELF executable', () async {
     await expectAndroidArm64ElfPayload('openhue');
   });

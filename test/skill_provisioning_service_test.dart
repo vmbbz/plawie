@@ -539,6 +539,107 @@ requirements:
         await File(path.join(nativeRoot, 'bin', 'gifgrep')).exists(), isFalse);
   });
 
+  test('provisioning installs APK-provided terminal pack for tmux', () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_terminal_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills =
+        Directory(path.join(nativeRoot, 'workspace', 'skills'));
+    final bundledBinDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'terminal',
+      'bin',
+    ));
+    final bundledLibDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'terminal',
+      'lib',
+    ));
+    await nativeSkills.create(recursive: true);
+    await bundledBinDir.create(recursive: true);
+    await bundledLibDir.create(recursive: true);
+
+    final tmuxSkill = Directory(path.join(nativeSkills.path, 'tmux'));
+    await tmuxSkill.create(recursive: true);
+    await File(path.join(tmuxSkill.path, 'SKILL.md')).writeAsString('''
+---
+requirements:
+  bins:
+    - tmux
+---
+# Tmux
+''');
+    await File(path.join(bundledBinDir.path, 'tmux')).writeAsString(
+      '#!/system/bin/sh\nprintf "tmux 3.5a\\n"\n',
+      flush: true,
+    );
+    await File(path.join(bundledLibDir.path, 'libevent-2.1.so'))
+        .writeAsString('fake libevent payload', flush: true);
+
+    final before = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    expect(
+      before.executionMatrix
+          .singleWhere((entry) => entry.skillId == 'tmux')
+          .gates,
+      contains('missing_native_bin'),
+    );
+
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      before,
+      skillId: 'tmux',
+    );
+
+    expect(report.changed, isTrue);
+    expect(report.reloadRecommended, isTrue);
+    expect(report.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(
+      report.results.single.actions
+          .where((action) =>
+              action.type == SkillProvisioningActionType.dependencyPack)
+          .map((action) => action.key),
+      contains('android-terminal-pack'),
+    );
+    expect(await File(path.join(nativeRoot, 'bin', 'tmux')).exists(), isTrue);
+    expect(
+      await File(path.join(nativeRoot, 'lib', 'libevent-2.1.so')).exists(),
+      isTrue,
+    );
+    expect(
+      await File(path.join(
+        nativeRoot,
+        'dependencies',
+        'receipts',
+        'android-terminal-pack.json',
+      )).exists(),
+      isTrue,
+    );
+
+    final after = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final matrix = {
+      for (final entry in after.executionMatrix) entry.skillId: entry,
+    };
+    expect(matrix['tmux']?.status, SkillExecutionStatus.ready);
+  });
+
   test('provisioning does not advertise diagram-maker as CLI-core binary',
       () async {
     final temp =

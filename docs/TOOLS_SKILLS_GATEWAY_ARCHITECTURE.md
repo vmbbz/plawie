@@ -324,6 +324,32 @@ wheel receipts. On the 2026-06-09 debug APK smoke, the installed app copied the
 into Native Python site-packages, imported it through `/api/python/exec` via the
 Chaquopy bridge, and reported `python-debugpy` ready through `/device/health`.
 
+Current APK-local terminal payload lane:
+
+```text
+asset roots:
+  assets/openclaw/terminal/bin/
+  assets/openclaw/terminal/lib/
+bootstrap copy roots:
+  provisioning/terminal/bin/
+  provisioning/terminal/lib/
+managed install roots:
+  .openclaw/bin
+  .openclaw/lib
+first advertised pack:
+  android-terminal-pack, tmux only
+status:
+  plumbing only; no real tmux payload yet
+```
+
+The terminal lane is separate from CLI-core because terminal tools can require
+shared libraries. Provisioning copies terminal libraries into managed
+`.openclaw/lib`, and dependency-pack smoke commands receive
+`OPENCLAW_NATIVE_LIB` plus an `LD_LIBRARY_PATH` that includes that directory.
+`tmux` remains pack-blocked until a real Android arm64 binary and its required
+shared libraries are bundled, provenance-tested, APK-built, and device-smoked
+with `tmux -V`.
+
 ## Gateway `tools.allow`
 
 `tools.allow` is a strict Gateway allowlist. OpenClaw applies `tools.profile`

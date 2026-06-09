@@ -58,6 +58,10 @@ class NativeNodeEmbeddedService : Service() {
             "flutter_assets/assets/openclaw/vision-media/bin"
         private const val PYTHON_DEBUG_WHEEL_ASSET_DIR =
             "flutter_assets/assets/openclaw/python-debug-runtime/wheels"
+        private const val TERMINAL_BIN_ASSET_DIR =
+            "flutter_assets/assets/openclaw/terminal/bin"
+        private const val TERMINAL_LIB_ASSET_DIR =
+            "flutter_assets/assets/openclaw/terminal/lib"
         private const val ACTION_START = "com.nxg.openclawproot.native_node.START"
         private const val ACTION_STOP = "com.nxg.openclawproot.native_node.STOP"
         private const val EXTRA_PORT = "port"
@@ -382,6 +386,12 @@ class NativeNodeEmbeddedService : Service() {
         val pythonDebugWheelCount = copyPythonDebugWheelAssets(
             File(workDir(applicationContext), "provisioning/python-debug/wheels")
         )
+        val terminalBinCount = copyTerminalBinAssets(
+            File(workDir(applicationContext), "provisioning/terminal/bin")
+        )
+        val terminalLibCount = copyTerminalLibAssets(
+            File(workDir(applicationContext), "provisioning/terminal/lib")
+        )
 
         if (!launcher.exists()) {
             throw IllegalStateException("OpenClaw launcher missing after extraction: ${launcher.absolutePath}")
@@ -416,6 +426,10 @@ class NativeNodeEmbeddedService : Service() {
                 .put("visionMediaBinCount", visionMediaBinCount)
                 .put("pythonDebugWheelAssetDir", PYTHON_DEBUG_WHEEL_ASSET_DIR)
                 .put("pythonDebugWheelCount", pythonDebugWheelCount)
+                .put("terminalBinAssetDir", TERMINAL_BIN_ASSET_DIR)
+                .put("terminalBinCount", terminalBinCount)
+                .put("terminalLibAssetDir", TERMINAL_LIB_ASSET_DIR)
+                .put("terminalLibCount", terminalLibCount)
                 .put("androidTmpPatchCount", androidTmpPatchCount)
                 .put("bindHost", HOST)
                 .put("bindPort", port)
@@ -542,6 +556,18 @@ class NativeNodeEmbeddedService : Service() {
         )
     }
 
+    private fun copyTerminalBinAssets(targetDir: File): Int {
+        return copyBundledBinAssets(TERMINAL_BIN_ASSET_DIR, targetDir, "terminal")
+    }
+
+    private fun copyTerminalLibAssets(targetDir: File): Int {
+        return copyBundledLibraryAssets(
+            TERMINAL_LIB_ASSET_DIR,
+            targetDir,
+            "terminal"
+        )
+    }
+
     private fun copyBundledWheelAssets(assetDir: String, targetDir: File, label: String): Int {
         targetDir.mkdirs()
         val names = try {
@@ -568,6 +594,35 @@ class NativeNodeEmbeddedService : Service() {
             }
         }
         appendLog("$label wheel asset copy completed count=$copied target=${targetDir.absolutePath}")
+        return copied
+    }
+
+    private fun copyBundledLibraryAssets(assetDir: String, targetDir: File, label: String): Int {
+        targetDir.mkdirs()
+        val names = try {
+            assets.list(assetDir) ?: emptyArray()
+        } catch (e: Exception) {
+            appendLog("$label library asset directory unavailable: ${e.message}")
+            emptyArray()
+        }
+        var copied = 0
+        names.sorted().forEach { name ->
+            if (!isSafeBundledLibraryAssetName(name)) {
+                appendLog("skipped unsafe $label library asset name=$name")
+                return@forEach
+            }
+            val target = File(targetDir, name)
+            try {
+                assets.open("$assetDir/$name").use { input ->
+                    FileOutputStream(target).use { output -> input.copyTo(output) }
+                }
+                target.setReadable(true, false)
+                copied++
+            } catch (e: Exception) {
+                appendLog("failed copying $label library asset name=$name: ${e.message}")
+            }
+        }
+        appendLog("$label library asset copy completed count=$copied target=${targetDir.absolutePath}")
         return copied
     }
 
@@ -612,6 +667,17 @@ class NativeNodeEmbeddedService : Service() {
     private fun isSafeBundledWheelAssetName(name: String): Boolean {
         return name.isNotBlank() &&
             name.endsWith(".whl") &&
+            !name.startsWith(".") &&
+            !name.contains("..") &&
+            !name.contains("/") &&
+            !name.contains("\\") &&
+            !name.contains(":")
+    }
+
+    private fun isSafeBundledLibraryAssetName(name: String): Boolean {
+        return name.isNotBlank() &&
+            name.startsWith("lib") &&
+            name.contains(".so") &&
             !name.startsWith(".") &&
             !name.contains("..") &&
             !name.contains("/") &&

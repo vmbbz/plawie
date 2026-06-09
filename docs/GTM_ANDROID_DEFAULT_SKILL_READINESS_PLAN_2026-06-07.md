@@ -100,6 +100,27 @@ wheel receipt: dependencies/receipts/python-wheels/debugpy.json, smokePassed tru
 /device/health: python-debugpy ready true, runtimeStatus ready, provisioningStatus ready
 ```
 
+Current APK-local android-terminal-pack payloads:
+the bin/lib APK lane exists, but no real `tmux` payload is bundled yet. Counts
+do not move until an Android arm64 `tmux` binary and required shared libraries
+are bundled, provenance-tested, built into the APK, and device-smoked:
+
+```text
+asset roots:
+  assets/openclaw/terminal/bin/
+  assets/openclaw/terminal/lib/
+copy targets:
+  filesDir/native-node-embedded/provisioning/terminal/bin/
+  filesDir/native-node-embedded/provisioning/terminal/lib/
+managed install targets:
+  .openclaw/bin
+  .openclaw/lib
+pack id: android-terminal-pack
+first target: tmux
+provenance plan: docs/superpowers/plans/2026-06-09-android-terminal-pack-lane.md
+status: plumbing landed, payload pending
+```
+
 Clean host/APK fresh-user floor after APK install/provisioning:
 Android ready floor: 26/51
   = 13 ready_required
@@ -1968,6 +1989,32 @@ verified. `python-debugpy` now belongs in the clean fresh-user floor because
 `android-python-debug-runtime` installs real wheel contents from the APK and
 smokes the import through the Native Python bridge.
 
+Phase 5F Android terminal pack lane landed as plumbing:
+
+```text
+APK asset lanes:
+  assets/openclaw/terminal/bin/
+  assets/openclaw/terminal/lib/
+Native bootstrap copy targets:
+  filesDir/native-node-embedded/provisioning/terminal/bin
+  filesDir/native-node-embedded/provisioning/terminal/lib
+provisioning resolver:
+  android-terminal-pack, tmux only
+managed install targets:
+  .openclaw/bin for tmux
+  .openclaw/lib for terminal shared libraries
+smoke env:
+  OPENCLAW_NATIVE_LIB and LD_LIBRARY_PATH include .openclaw/lib
+blocked until payload:
+  tmux
+```
+
+This intentionally does not raise the ready count yet. It makes the next tmux
+round an artifact/provenance/device-smoke round instead of mixing payload work
+with installer architecture. A real terminal payload must still prove `tmux -V`
+from managed `.openclaw/bin` on device before `tmux` moves from `needs_pack` to
+ready.
+
 The first resolver is deliberately APK-local only. `android-cli-core-pack` is
 advertised only when the installed APK already has matching bundled binaries in
 the Native provisioning roots. Provisioning can now select dependency packs by
@@ -2505,6 +2552,17 @@ Real debugpy wheel payload is bundled from pinned PyPI wheel.
 android-python-debug-runtime installs real wheel contents, not fake markers.
 Host tests and Android debug build pass.
 Scorecard numbers move only after installed-device Python import proof.
+Commit made.
+```
+
+Round 5F target:
+
+```text
+android-terminal-pack APK-local bin/lib lane exists.
+tmux is the only advertised terminal binary.
+Terminal shared libraries install into managed .openclaw/lib.
+Dependency-pack smoke env exposes OPENCLAW_NATIVE_LIB and LD_LIBRARY_PATH.
+tmux remains blocked until real Android arm64 payload + smoke/device proof.
 Commit made.
 ```
 

@@ -41,6 +41,11 @@ class SkillProvisioningService {
   static const _androidPythonDebugPackages = <String>{
     'debugpy',
   };
+  static const _androidTerminalPackId = 'android-terminal-pack';
+  static const _androidTerminalPackVersion = 'tmux-apk-lane-v1';
+  static const _androidTerminalPackBins = <String>{
+    'tmux',
+  };
   static const _defaultPythonWheelIndexes = <String>[
     'https://chaquo.com/pypi-13.1/',
     'https://pypi.org/simple/',
@@ -343,6 +348,10 @@ class SkillProvisioningService {
         : null;
     final apkProvidedVisionMediaBins =
         apkProvidedVisionMediaPack?.providesBins ?? const <String>{};
+    final apkProvidedTerminalPack =
+        installDependencyPacks ? await _apkProvidedTerminalPack(layout) : null;
+    final apkProvidedTerminalBins =
+        apkProvidedTerminalPack?.providesBins ?? const <String>{};
     if (pythonCommandBins.isNotEmpty &&
         !missingRuntimes.map(_normalizeDependencyName).contains('python')) {
       missingRuntimes = [...missingRuntimes, 'python'];
@@ -400,7 +409,8 @@ class SkillProvisioningService {
     for (final bin in nonRuntimeMissingBins) {
       final normalizedBin = _normalizeBinRequirement(bin);
       if (apkProvidedCliCoreBins.contains(normalizedBin) ||
-          apkProvidedVisionMediaBins.contains(normalizedBin)) {
+          apkProvidedVisionMediaBins.contains(normalizedBin) ||
+          apkProvidedTerminalBins.contains(normalizedBin)) {
         unresolvedNonRuntimeMissingBins.add(bin);
         continue;
       }
@@ -787,19 +797,24 @@ class SkillProvisioningService {
     for (final bin in requiredBins.difference(coveredBins)) {
       final isCliCoreBin = _androidCliCorePackBins.contains(bin);
       final isVisionMediaBin = _androidVisionMediaPackBins.contains(bin);
+      final isTerminalBin = _androidTerminalPackBins.contains(bin);
       actions.add(SkillProvisioningAction(
         type: SkillProvisioningActionType.dependencyPack,
         key: isCliCoreBin
             ? '$_androidCliCorePackId:$bin'
             : isVisionMediaBin
                 ? '$_androidVisionMediaPackId:$bin'
-                : 'bin:$bin',
+                : isTerminalBin
+                    ? '$_androidTerminalPackId:$bin'
+                    : 'bin:$bin',
         status: SkillProvisioningActionStatus.missingPack,
         message: isCliCoreBin
             ? 'Android CLI-core payload is missing "$bin". Bundle assets/openclaw/cli-core/bin/$bin in the APK or publish a signed dependency pack for arm64-v8a.'
             : isVisionMediaBin
                 ? 'Android vision-media payload is missing "$bin". Bundle assets/openclaw/vision-media/bin/$bin in the APK or publish a signed dependency pack for arm64-v8a.'
-                : 'No Native dependency pack advertises binary "$bin" for arm64-v8a.',
+                : isTerminalBin
+                    ? 'Android terminal payload is missing "$bin". Bundle assets/openclaw/terminal/bin/$bin plus required assets/openclaw/terminal/lib/ shared libraries in the APK or publish a signed dependency pack for arm64-v8a.'
+                    : 'No Native dependency pack advertises binary "$bin" for arm64-v8a.',
       ));
     }
     for (final pack in selected) {
@@ -1708,6 +1723,10 @@ class SkillProvisioningService {
     final pythonDebugPack = await _apkProvidedPythonDebugPack(layout);
     if (pythonDebugPack != null) {
       packs.add(pythonDebugPack);
+    }
+    final terminalPack = await _apkProvidedTerminalPack(layout);
+    if (terminalPack != null) {
+      packs.add(terminalPack);
     }
 
     Future<void> mergeManifest(Map<String, dynamic>? manifest) async {
@@ -2885,6 +2904,9 @@ class SkillProvisioningService {
         );
       }
     }
+    if (pack.id == _androidTerminalPackId) {
+      await _copyBundledTerminalLibraries(layout);
+    }
     for (final package in pack.providesPythonPackages) {
       if (pack.id == _androidPythonDebugPackId) {
         final candidate = await _findBundledPythonWheelCandidate(
@@ -3260,6 +3282,11 @@ class SkillProvisioningService {
       'HOME': layout.nativeStateRoot,
       'OPENCLAW_HOME': layout.nativeStateRoot,
       'OPENCLAW_NATIVE_BIN': layout.nativeManagedBinDir.path,
+      'OPENCLAW_NATIVE_LIB': layout.nativeManagedLibDir.path,
+      'LD_LIBRARY_PATH': [
+        layout.nativeManagedLibDir.path,
+        Platform.environment['LD_LIBRARY_PATH'] ?? '',
+      ].where((item) => item.isNotEmpty).join(Platform.isWindows ? ';' : ':'),
       'PATH': [
         layout.nativeManagedBinDir.path,
         Platform.environment['PATH'] ?? '',
@@ -3525,6 +3552,23 @@ class SkillProvisioningService {
     );
   }
 
+  static Future<_DependencyPack?> _apkProvidedTerminalPack(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final providedBins = <String>{};
+    for (final bin in _androidTerminalPackBins) {
+      if (await _findBundledNativeBinary(layout, bin) != null) {
+        providedBins.add(bin);
+      }
+    }
+    if (providedBins.isEmpty) return null;
+    return _DependencyPack.apk(
+      id: _androidTerminalPackId,
+      version: _androidTerminalPackVersion,
+      providesBins: providedBins,
+    );
+  }
+
   static Future<_PythonWheelCandidate?> _findBundledPythonWheelCandidate(
     _SkillProvisioningLayout layout,
     String packageName, {
@@ -3607,6 +3651,40 @@ class SkillProvisioningService {
       try {
         await Process.run('chmod', ['755', target.path]);
       } catch (_) {}
+    }
+    return true;
+  }
+
+  static Future<int> _copyBundledTerminalLibraries(
+    _SkillProvisioningLayout layout,
+  ) async {
+    await layout.nativeManagedLibDir.create(recursive: true);
+    var copied = 0;
+    for (final root in layout.bundledTerminalLibraryRoots) {
+      try {
+        if (!await root.exists()) continue;
+        await for (final entity in root.list(recursive: false)) {
+          if (entity is! File) continue;
+          final name = path.basename(entity.path);
+          if (!_terminalLibraryAssetNameLooksSafe(name)) continue;
+          await entity.copy(path.join(layout.nativeManagedLibDir.path, name));
+          copied++;
+        }
+      } catch (_) {}
+    }
+    return copied;
+  }
+
+  static bool _terminalLibraryAssetNameLooksSafe(String fileName) {
+    if (fileName.isEmpty || fileName.startsWith('.')) return false;
+    if (!fileName.startsWith('lib') || !fileName.contains('.so')) {
+      return false;
+    }
+    if (fileName.contains('..') ||
+        fileName.contains('/') ||
+        fileName.contains(r'\') ||
+        fileName.contains(':')) {
+      return false;
     }
     return true;
   }
@@ -4006,6 +4084,8 @@ class _SkillProvisioningLayout {
       File(path.join(nativeStateRoot, 'openclaw.json'));
   Directory get nativeManagedBinDir =>
       Directory(path.join(nativeStateRoot, 'bin'));
+  Directory get nativeManagedLibDir =>
+      Directory(path.join(nativeStateRoot, 'lib'));
   Directory get nativePythonRoot =>
       Directory(path.join(nativeStateRoot, 'runtimes', 'python'));
   Directory get nativePythonBinDir =>
@@ -4080,6 +4160,50 @@ class _SkillProvisioningLayout {
           'full-openclaw',
           'provisioning',
           'bin',
+        )),
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'provisioning',
+          'terminal',
+          'bin',
+        )),
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'bundled-terminal',
+          'bin',
+        )),
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'full-openclaw',
+          'provisioning',
+          'terminal',
+          'bin',
+        )),
+      ];
+  List<Directory> get bundledTerminalLibraryRoots => [
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'provisioning',
+          'terminal',
+          'lib',
+        )),
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'bundled-terminal',
+          'lib',
+        )),
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'full-openclaw',
+          'provisioning',
+          'terminal',
+          'lib',
         )),
       ];
   List<Directory> get bundledPythonDebugWheelRoots => [
