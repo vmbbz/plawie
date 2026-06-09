@@ -28,8 +28,8 @@ Hide or demote skills that are not Android-release safe.
 
 ## Current Scorecard
 
-Current host/APK and installed-device truth on 2026-06-09 after the
-`himalaya` payload slice:
+Current host/APK and installed-device truth on 2026-06-08 after the
+`anyBins` / Python package gate audit slice:
 
 ```text
 Classified default manifest: 61
@@ -71,6 +71,14 @@ Raw ready rows in /device/health: 26
   + node-connect manual_proot_compat, which is not part of the Android
     release denominator
 
+Installed-device delta from the audit slice:
+spotify-player is no longer false-ready; it correctly exposes the
+spogo-or-spotify_player alternative-bin blocker.
+python-debugpy is ready only on this existing device because debugpy 1.8.21 is
+already installed in the Native Python site-packages with a wheel receipt. Do
+not count it in the clean fresh-user floor until android-python-debug-runtime is
+packaged and fresh-installed.
+
 Unresolved config blockers: 14
 Unresolved pack blockers floor: 11
   = 17 needs_pack taxonomy entries - 6 bundled CLI-core payloads
@@ -95,7 +103,7 @@ or a real external service.
 
 ## Latest Installed Device Truth
 
-Live device health on 2026-06-09 after the `himalaya` payload install reported:
+Live device health on 2026-06-08 after the audit truth install reported:
 
 ```text
 Target device: RZCX30KA9AW / Samsung SM-A556E
@@ -108,6 +116,24 @@ installed Native workspace skills: 65
 Android-relevant ready: 25/51
 Raw ready rows: 26
 manual ready row excluded from Android denominator: node-connect
+
+Parser/audit truth:
+coding-agent: requiredAnyBins [claude, codex, opencode, pi],
+              still missing an Android-safe agent CLI and config
+spotify-player: requiredAnyBins [spogo, spotify_player],
+                runtimeStatus missing_dependency,
+                provisioningStatus missing_binary
+python-debugpy: runtimeStatus ready on this existing device only,
+                debugpy 1.8.21 import smoke passed through
+                /api/python/exec / chaquopy-python-bridge
+tmux: missing tmux, not a bogus rg cleanup-example blocker
+node-inspect-debugger: missing standalone node binary;
+                       embedded libnode is not counted as a shell node bin
+gemini: missing real gemini CLI
+
+Python proof on existing device:
+/api/python/exec import debugpy -> stdout 1.8.21
+debugpy wheel receipt: dependencies/receipts/python-wheels/debugpy.json
 
 CLI-core pack status:
 blucli: ready true, runtimeStatus ready, provisioningStatus ready
@@ -128,6 +154,13 @@ openhue version -> 0.24-1-g08e940a
 sonos --version -> sonos 0.3.1
 wacli version -> v0.11.0-10-gbe2d22f
 ```
+
+Previous installed-device truth before the audit correction had the same
+headline `25/51`, but it was partly wrong: `spotify-player` was counted ready
+because `anyBins` was not enforced. The corrected `25/51` is now composed of
+real app-native/required/optional/CLI-core readiness plus the existing-device
+`python-debugpy` package state. Clean fresh install remains `24/51` until the
+Python debug runtime pack is made real.
 
 ## Last Installed Device Truth
 
@@ -1731,6 +1764,24 @@ missing file hashes/sizes
 missing smoke command
 missing rollback plan
 ```
+
+Audit truth slice now landed:
+
+```text
+structured bins suppress noisy prose/example command scans
+metadata.openclaw.requires.anyBins is enforced as alternatives
+requiredAnyBins is exposed through /device/health for the Skills page
+python3 -m debugpy / python3 -c "import debugpy" creates a real debugpy
+  Python package gate
+```
+
+This corrected two important readiness mistakes. `spotify-player` is no longer
+ready unless either `spogo` or `spotify_player` exists. `python-debugpy` is not
+considered solved by a Python bridge alone; it needs `debugpy` present and
+verified. The current phone happens to have `debugpy 1.8.21` installed from
+existing Native Python state, but a clean fresh user still needs a verified
+`android-python-debug-runtime` pack before that skill belongs in the fresh-user
+floor.
 
 The first resolver is deliberately APK-local only. `android-cli-core-pack` is
 advertised only when the installed APK already has matching bundled binaries in

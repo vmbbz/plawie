@@ -304,6 +304,47 @@ void main() {
       contains('assets/openclaw/cli-core/bin/openhue'),
     );
   });
+
+  test('pack-gated skills expose alternative binary requirements', () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([
+        matrixEntry(
+          'spotify-player',
+          status: SkillExecutionStatus.missingDependency,
+          primaryGate: 'missing_native_bin',
+          gates: const ['missing_native_bin'],
+          requiredAnyBins: const [
+            ['spogo', 'spotify_player'],
+          ],
+        ),
+      ]),
+      provisioning: provisioningWith([
+        provisioningResult(
+          'spotify-player',
+          SkillProvisioningStatus.missingBinary,
+          actions: const [
+            SkillProvisioningAction(
+              type: SkillProvisioningActionType.dependencyPack,
+              key: 'bin:spogo',
+              status: SkillProvisioningActionStatus.missingPack,
+              message:
+                  'No Native dependency pack advertises binary "spogo" for arm64-v8a.',
+            ),
+          ],
+        ),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        packManifestEntry('spotify-player', ['android-audio-runtime']),
+      ]),
+    );
+
+    final spotify = summary.skills.single;
+
+    expect(spotify['ready'], isFalse);
+    expect(spotify['requiredAnyBins'], [
+      ['spogo', 'spotify_player'],
+    ]);
+  });
 }
 
 SkillParitySnapshot snapshotWith(
@@ -365,6 +406,7 @@ SkillExecutionMatrixEntry matrixEntry(
   required SkillExecutionStatus status,
   String? primaryGate,
   List<String> gates = const <String>[],
+  List<List<String>> requiredAnyBins = const <List<String>>[],
 }) {
   return SkillExecutionMatrixEntry(
     skillId: skillId,
@@ -372,6 +414,7 @@ SkillExecutionMatrixEntry matrixEntry(
     primaryGate: primaryGate,
     gates: gates,
     requiredBins: const <String>[],
+    requiredAnyBins: requiredAnyBins,
     requiredEnv: const <String>[],
     requiredRuntimes: const <String>[],
     requiredPythonPackages: const <String>[],

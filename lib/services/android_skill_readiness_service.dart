@@ -66,6 +66,10 @@ class AndroidSkillReadinessService {
             matrixEntry != null &&
             matrixEntry.gates.isNotEmpty)
           'gates': matrixEntry.gates,
+        if (!appNativeOwned &&
+            matrixEntry != null &&
+            matrixEntry.requiredAnyBins.isNotEmpty)
+          'requiredAnyBins': matrixEntry.requiredAnyBins,
         'provisioningStatus': _provisioningStatus(
           entry,
           snapshot,

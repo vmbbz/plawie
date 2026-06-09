@@ -502,4 +502,165 @@ yfinance>=0.2.66
       isNot(contains('missing_native_bin:YFinance')),
     );
   });
+
+  test('structured bin requirements suppress noisy command examples', () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_structured_bins_test_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills = Directory(path.join(nativeRoot, 'skills'));
+    final nativeBin = Directory(path.join(nativeRoot, 'bin'));
+    await nativeSkills.create(recursive: true);
+    await nativeBin.create(recursive: true);
+    await File(path.join(nativeRoot, 'runtimes', 'python', 'bridge.json'))
+        .create(recursive: true)
+        .then((file) => file.writeAsString(jsonEncode({
+              'runtime': 'chaquopy',
+              'python': '3.13',
+              'version': '3.13-chaquopy-17.0.0',
+            })));
+    await File(path.join(nativeBin.path, 'python3')).writeAsString(
+      '#!/system/bin/sh\nexit 0\n',
+      flush: true,
+    );
+
+    final debugpy = Directory(path.join(nativeSkills.path, 'python-debugpy'));
+    await debugpy.create(recursive: true);
+    await File(path.join(debugpy.path, 'SKILL.md')).writeAsString(r'''
+---
+metadata: { "openclaw": { "requires": { "bins": ["python3"] } } }
+---
+# Python Debugpy
+
+Cleanup before commit:
+
+```bash
+rg -n 'breakpoint\(|pdb\.set_trace|debugpy\.' --type py
+```
+''');
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final entry = snapshot.executionMatrix.single;
+
+    expect(entry.requiredBins, ['python3']);
+    expect(entry.requiredBins, isNot(contains('rg')));
+    expect(entry.gates, isEmpty);
+    expect(entry.status, SkillExecutionStatus.ready);
+  });
+
+  test('python debugpy commands create a package gate beyond python3', () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_debugpy_package_test_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills = Directory(path.join(nativeRoot, 'skills'));
+    final nativeBin = Directory(path.join(nativeRoot, 'bin'));
+    await nativeSkills.create(recursive: true);
+    await nativeBin.create(recursive: true);
+    await File(path.join(nativeRoot, 'runtimes', 'python', 'bridge.json'))
+        .create(recursive: true)
+        .then((file) => file.writeAsString(jsonEncode({
+              'runtime': 'chaquopy',
+              'python': '3.13',
+              'version': '3.13-chaquopy-17.0.0',
+            })));
+    await File(path.join(nativeBin.path, 'python3')).writeAsString(
+      '#!/system/bin/sh\nexit 0\n',
+      flush: true,
+    );
+
+    final debugpy = Directory(path.join(nativeSkills.path, 'python-debugpy'));
+    await debugpy.create(recursive: true);
+    await File(path.join(debugpy.path, 'SKILL.md')).writeAsString('''
+---
+metadata: { "openclaw": { "requires": { "bins": ["python3"] } } }
+---
+# Python Debugpy
+
+```bash
+python3 -c "import debugpy"
+python3 -m debugpy --listen 127.0.0.1:5678 path/to/script.py
+```
+''');
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final entry = snapshot.executionMatrix.single;
+
+    expect(entry.requiredBins, ['python3']);
+    expect(entry.requiredPythonPackages, ['debugpy']);
+    expect(entry.gates, contains('missing_native_python_package'));
+    expect(entry.status, SkillExecutionStatus.missingDependency);
+  });
+
+  test('structured anyBins alternatives are enforced without body overreach',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_any_bins_test_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills = Directory(path.join(nativeRoot, 'skills'));
+    await nativeSkills.create(recursive: true);
+
+    final spotify = Directory(path.join(nativeSkills.path, 'spotify-player'));
+    await spotify.create(recursive: true);
+    await File(path.join(spotify.path, 'SKILL.md')).writeAsString('''
+---
+metadata:
+  openclaw:
+    requires:
+      anyBins:
+        - spogo
+        - spotify_player
+---
+# Spotify Player
+
+Common commands:
+
+```bash
+spogo status
+spotify_player playback play
+```
+''');
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final entry = snapshot.executionMatrix.single;
+
+    expect(entry.requiredBins, isEmpty);
+    expect(entry.requiredAnyBins, [
+      ['spogo', 'spotify_player'],
+    ]);
+    expect(entry.gates, contains('missing_native_bin'));
+    expect(entry.status, SkillExecutionStatus.missingDependency);
+    expect(snapshot.gates.single.detail, contains('spogo or spotify_player'));
+  });
 }

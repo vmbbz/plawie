@@ -52,6 +52,7 @@ class SkillParityAuditService {
     'charset-normalizer',
     'curl-cffi',
     'dateutils',
+    'debugpy',
     'frozendict',
     'html5lib',
     'idna',
@@ -181,6 +182,7 @@ class SkillParityAuditService {
         ...requirements.bins,
         ...?descriptorDependencies?.bins,
       };
+      final requiredAnyBins = requirements.anyBins;
       if (executionDescriptor?.runtime == SkillExecutionRuntime.http &&
           executionDescriptor?.mode == SkillExecutionMode.httpEndpoint) {
         requiredBins.remove('curl');
@@ -234,6 +236,20 @@ class SkillParityAuditService {
                 : '$bin was referenced by the skill but was not found in Native runtime paths.',
           ));
         }
+      }
+      for (final alternatives in requiredAnyBins) {
+        if (alternatives.isEmpty) continue;
+        if (alternatives.any(nativeBins.contains)) continue;
+        final prootHas = alternatives.any(prootBins.contains);
+        final label = alternatives.toList()..sort();
+        skillGates.add(SkillParityGate(
+          skillId: skill.id,
+          gate: 'missing_native_bin',
+          owner: 'native',
+          detail: prootHas
+              ? '${label.join(' or ')} exists in PRoot alternatives but none were found in Native runtime paths.'
+              : '${label.join(' or ')} was declared as required binary alternatives but none were found in Native runtime paths.',
+        ));
       }
 
       for (final envName in requiredEnv) {
@@ -359,6 +375,12 @@ class SkillParityAuditService {
           ...requiredBins,
         }.toList()
           ..sort(),
+        requiredAnyBins: requiredAnyBins
+            .map((alternatives) => alternatives.toList()..sort())
+            .toList()
+          ..sort((left, right) => left.join('\u0000').compareTo(
+                right.join('\u0000'),
+              )),
         requiredEnv: {
           ...requiredEnv,
         }.toList()
@@ -645,19 +667,30 @@ class SkillParityAuditService {
   ) async {
     final frontmatter = _parseYamlFrontmatter(body);
     final fromYaml = _requirementsFromYaml(frontmatter);
-    final pythonRequirements = await _readPythonRequirements(skill);
+    final pythonRequirements = {
+      ..._detectPythonPackageRequirements(body),
+      ...await _readPythonRequirements(skill),
+    };
     final nodePackages = await _readNodePackageRequirements(skill);
     final pythonRequirementNames = pythonRequirements.keys.toSet();
+    final heuristicBins = fromYaml.hasStructuredBinRequirements
+        ? const <String>{}
+        : _detectRequiredBins(body);
     final bins = {
       ...fromYaml.bins.map(_normalizeRequiredBin).whereType<String>(),
-      ..._detectRequiredBins(body),
+      ...heuristicBins,
     }..removeWhere((bin) {
         final normalized = _normalizePythonPackageName(bin);
         return pythonRequirementNames.contains(normalized) ||
             _knownPythonPackageNames.contains(normalized);
       });
+    final anyBins = [
+      for (final alternatives in fromYaml.anyBins)
+        _normalizeRequiredBins(alternatives)
+    ]..removeWhere((alternatives) => alternatives.isEmpty);
     return _SkillRequirements(
       bins: bins,
+      anyBins: anyBins,
       env: {...fromYaml.env, ..._detectRequiredEnv(body)},
       runtimes: {
         ...fromYaml.runtimes,
@@ -1383,6 +1416,15 @@ class SkillParityAuditService {
     return normalized.isEmpty ? null : normalized;
   }
 
+  static Set<String> _normalizeRequiredBins(Iterable<String> values) {
+    final normalized = <String>{};
+    for (final value in values) {
+      final bin = _normalizeRequiredBin(value);
+      if (bin != null) normalized.add(bin);
+    }
+    return normalized;
+  }
+
   static bool _pythonRequirementSatisfied(
     String installedVersion,
     String requirement,
@@ -1501,7 +1543,9 @@ class SkillParityAuditService {
         }
         continue;
       }
-      if (!inCommandFence && !_looksLikeCommandInvocation(trimmed)) {
+      if (!inCommandFence &&
+          !_looksLikeCommandInvocation(trimmed) &&
+          !_looksLikeBinRequirementLine(trimmed)) {
         continue;
       }
       final lower = trimmed.toLowerCase();
@@ -1513,6 +1557,51 @@ class SkillParityAuditService {
       }
     }
     return bins;
+  }
+
+  static Map<String, String> _detectPythonPackageRequirements(String body) {
+    if (body.trim().isEmpty) return const <String, String>{};
+    final requirements = <String, String>{};
+    var inCommandFence = false;
+    for (final line in body.split(RegExp(r'\r?\n'))) {
+      final trimmed = line.trim();
+      final fence = trimmed.toLowerCase();
+      if (fence.startsWith('```')) {
+        if (inCommandFence) {
+          inCommandFence = false;
+        } else {
+          final language = fence.substring(3).trim();
+          inCommandFence = language.isEmpty ||
+              language == 'bash' ||
+              language == 'sh' ||
+              language == 'shell' ||
+              language == 'console' ||
+              language == 'terminal' ||
+              language == 'zsh';
+        }
+        continue;
+      }
+      if (!inCommandFence && !_looksLikeCommandInvocation(trimmed)) {
+        continue;
+      }
+      final lower = trimmed.toLowerCase();
+      for (final package in _knownPythonPackageNames) {
+        final module = package.replaceAll('-', '_');
+        final escaped = RegExp.escape(module);
+        final moduleRun = RegExp(
+          r'\bpython(?:3)?\s+-m\s+' + escaped + r'\b',
+        );
+        final inlineImport = RegExp(
+          r'''\bpython(?:3)?\s+-c\s+["'][^"']*\bimport\s+''' +
+              escaped +
+              r'''\b''',
+        );
+        if (moduleRun.hasMatch(lower) || inlineImport.hasMatch(lower)) {
+          requirements[_normalizePythonPackageName(package)] = package;
+        }
+      }
+    }
+    return requirements;
   }
 
   static bool _looksLikeCommandInvocation(String line) {
@@ -1539,6 +1628,13 @@ class SkillParityAuditService {
           RegExp(r'\.(exe|cmd|bat|sh)$', caseSensitive: false), '');
     }
     return command != null && _knownBins.contains(command);
+  }
+
+  static bool _looksLikeBinRequirementLine(String line) {
+    final lower = line.toLowerCase();
+    return lower.contains('requires ') ||
+        lower.contains('required ') ||
+        lower.contains('requirements');
   }
 
   static Set<String> _detectRequiredEnv(String body) {
@@ -1591,17 +1687,27 @@ class SkillParityAuditService {
     ].where((value) => value != null).toList();
 
     final bins = <String>{};
+    final anyBins = <Set<String>>[];
     final env = <String>{};
     final runtimes = <String>{};
     final nodePackages = <String>{};
     final plugins = <String>{};
     final configKeys = <String>{};
+    var hasStructuredBinRequirements = false;
 
     for (final candidate in candidates) {
       if (candidate is Map) {
-        bins.addAll(_stringSetFromDynamic(candidate['bins']));
-        bins.addAll(_stringSetFromDynamic(candidate['binaries']));
-        bins.addAll(_stringSetFromDynamic(candidate['commands']));
+        final directBins = {
+          ..._stringSetFromDynamic(candidate['bins']),
+          ..._stringSetFromDynamic(candidate['binaries']),
+          ..._stringSetFromDynamic(candidate['commands']),
+        };
+        bins.addAll(directBins);
+        final alternativeBins = _anyBinGroupsFromDynamic(candidate['anyBins']);
+        anyBins.addAll(alternativeBins);
+        hasStructuredBinRequirements = hasStructuredBinRequirements ||
+            directBins.isNotEmpty ||
+            alternativeBins.isNotEmpty;
         env.addAll(_stringSetFromDynamic(candidate['env']));
         env.addAll(_stringSetFromDynamic(candidate['environment']));
         runtimes.addAll(_stringSetFromDynamic(candidate['runtimes']));
@@ -1634,11 +1740,13 @@ class SkillParityAuditService {
 
     return _SkillRequirements(
       bins: bins,
+      anyBins: anyBins,
       env: env,
       runtimes: runtimes,
       nodePackages: nodePackages,
       plugins: plugins,
       configKeys: configKeys,
+      hasStructuredBinRequirements: hasStructuredBinRequirements,
     );
   }
 
@@ -1706,6 +1814,25 @@ class SkillParityAuditService {
 
     collect(value);
     return result;
+  }
+
+  static List<Set<String>> _anyBinGroupsFromDynamic(dynamic value) {
+    if (value == null) return const <Set<String>>[];
+    if (value is Iterable) {
+      final items = value.toList();
+      final hasNested = items.any((item) => item is Iterable || item is Map);
+      if (!hasNested) {
+        final group = _stringSetFromDynamic(items);
+        return group.isEmpty ? const <Set<String>>[] : [group];
+      }
+      return [
+        for (final item in items)
+          if (_stringSetFromDynamic(item).isNotEmpty)
+            _stringSetFromDynamic(item),
+      ];
+    }
+    final group = _stringSetFromDynamic(value);
+    return group.isEmpty ? const <Set<String>>[] : [group];
   }
 
   static bool _looksLikeExtendedRuntime(String value) {
@@ -2097,6 +2224,7 @@ class SkillExecutionMatrixEntry {
   final String? primaryGate;
   final List<String> gates;
   final List<String> requiredBins;
+  final List<List<String>> requiredAnyBins;
   final List<String> requiredEnv;
   final List<String> requiredRuntimes;
   final List<String> requiredPythonPackages;
@@ -2112,6 +2240,7 @@ class SkillExecutionMatrixEntry {
     required this.primaryGate,
     required this.gates,
     required this.requiredBins,
+    this.requiredAnyBins = const <List<String>>[],
     required this.requiredEnv,
     required this.requiredRuntimes,
     required this.requiredPythonPackages,
@@ -2126,6 +2255,7 @@ class SkillExecutionMatrixEntry {
     required String skillId,
     required List<SkillParityGate> gates,
     required List<String> requiredBins,
+    List<List<String>> requiredAnyBins = const <List<String>>[],
     required List<String> requiredEnv,
     required List<String> requiredRuntimes,
     required List<String> requiredPythonPackages,
@@ -2143,6 +2273,7 @@ class SkillExecutionMatrixEntry {
       primaryGate: gateNames.isEmpty ? null : gateNames.first,
       gates: gateNames,
       requiredBins: requiredBins,
+      requiredAnyBins: requiredAnyBins,
       requiredEnv: requiredEnv,
       requiredRuntimes: requiredRuntimes,
       requiredPythonPackages: requiredPythonPackages,
@@ -2185,6 +2316,7 @@ class SkillExecutionMatrixEntry {
         if (primaryGate != null) 'primaryGate': primaryGate,
         'gates': gates,
         'requiredBins': requiredBins,
+        if (requiredAnyBins.isNotEmpty) 'requiredAnyBins': requiredAnyBins,
         'requiredEnv': requiredEnv,
         'requiredRuntimes': requiredRuntimes,
         'requiredPythonPackages': requiredPythonPackages,
@@ -2199,21 +2331,25 @@ class SkillExecutionMatrixEntry {
 
 class _SkillRequirements {
   final Set<String> bins;
+  final List<Set<String>> anyBins;
   final Set<String> env;
   final Set<String> runtimes;
   final Map<String, String> pythonRequirements;
   final Set<String> nodePackages;
   final Set<String> plugins;
   final Set<String> configKeys;
+  final bool hasStructuredBinRequirements;
 
   const _SkillRequirements({
     this.bins = const <String>{},
+    this.anyBins = const <Set<String>>[],
     this.env = const <String>{},
     this.runtimes = const <String>{},
     this.pythonRequirements = const <String, String>{},
     this.nodePackages = const <String>{},
     this.plugins = const <String>{},
     this.configKeys = const <String>{},
+    this.hasStructuredBinRequirements = false,
   });
 
   Set<String> get pythonPackages => pythonRequirements.keys.toSet();

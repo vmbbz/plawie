@@ -234,6 +234,16 @@ those entries. The Skills page therefore displays `PACK BLOCKERS` from
 unready `needs_pack` entries, not the raw taxonomy total. The same rule applies
 to `CONFIG BLOCKERS` for unready `needs_config` entries.
 
+The audit layer must prefer structured requirements over noisy examples. When a
+skill declares `metadata.openclaw.requires.bins`, the body scanner does not add
+extra binary gates from cleanup snippets or tutorial commands. When a skill
+declares `metadata.openclaw.requires.anyBins`, the alternatives are enforced as
+a group and exposed in `/device/health` as `requiredAnyBins` so the UI can say
+"install one of these" instead of pretending one arbitrary binary is the whole
+requirement. High-confidence Python command examples such as
+`python3 -m debugpy` and `python3 -c "import debugpy"` create Python package
+gates; a Python bridge alone is not enough to mark `python-debugpy` ready.
+
 Current APK-local CLI-core payloads are `openhue`, built from OpenHue CLI commit
 `08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21`; `eightctl`, built from
 `steipete/eightctl` commit `2f2c73f0a529e9138707a237135fcaadfe56617e`;
