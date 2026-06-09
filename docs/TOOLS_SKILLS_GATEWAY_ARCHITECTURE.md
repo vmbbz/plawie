@@ -202,6 +202,15 @@ complete signature block. Unsupported ABIs, unsafe install paths, unsafe file
 paths, missing file hashes/sizes, missing smoke commands, and missing rollback
 plans are rejected before install.
 
+For non-Python executable packs, `smokeCommand` is an executed gate, not a
+decorative manifest field. Provisioning resolves the command only inside the
+managed Native `.openclaw/bin` directory, requires that command to be advertised
+by `provides.bins`, starts it with `runInShell: false`, bounds stdout/stderr,
+uses a timeout, and accepts the pack only on exit code `0`. Failed command
+smoke removes installed pack files and prevents the dependency receipt from
+being written. Python package packs keep the Native Python bridge/import smoke
+path instead of trying to execute the shell `python3` shim directly.
+
 Pack selection covers runtimes, Python packages, and managed binaries. The
 first binary resolver is intentionally APK-provided only: `android-cli-core-pack`
 is advertised only when the installed APK already has matching bundled CLI-core

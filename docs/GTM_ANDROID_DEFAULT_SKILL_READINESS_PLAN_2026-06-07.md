@@ -1748,6 +1748,7 @@ DependencyPackManifestEntry
 DependencyPackManifestPolicy
 DependencyPackManifestValidation
 APK-provided android-cli-core-pack resolver
+non-Python dependency-pack command smoke executor
 ```
 
 The provisioning loader now validates dependency-pack manifests before pack
@@ -1764,6 +1765,18 @@ missing file hashes/sizes
 missing smoke command
 missing rollback plan
 ```
+
+Phase 5A command-smoke verifier landed next. Non-Python binary packs no longer
+become receipted just because a validated manifest and archive exist. The
+installer now preserves each pack's `smokeCommand`, file list, and rollback
+strategy, applies executable permissions from the manifest, runs the command
+from managed `.openclaw/bin` with `runInShell: false`, bounded output, and a
+timeout, and writes the receipt only after exit code `0`. Failed command smokes
+roll back installed pack files and leave the skill blocked. This is the shared
+release gate for `android-node-debug-pack`, `android-vision-media-runtime`, and
+`android-terminal-pack`; payload work for standalone `node`, `ffmpeg`, and
+`tmux` can now build on the same verifier instead of inventing one-off smoke
+paths.
 
 Audit truth slice now landed:
 

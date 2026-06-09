@@ -833,6 +833,136 @@ yfinance>=0.2.66
     );
   });
 
+  test('provisioning rejects binary dependency pack when command smoke fails',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_bin_smoke_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final skill = Directory(path.join(
+      nativeRoot,
+      'workspace',
+      'skills',
+      'video-smoke',
+    ));
+    await skill.create(recursive: true);
+
+    const commandName = 'video-smoke';
+    final fileName = Platform.isWindows ? '$commandName.exe' : commandName;
+    await File(path.join(skill.path, 'SKILL.md')).writeAsString('''
+---
+requirements:
+  bins:
+    - $commandName
+---
+# Video Smoke
+''');
+
+    final payloadBytes = Platform.isWindows
+        ? await File(Platform.environment['ComSpec'] ??
+                r'C:\Windows\System32\cmd.exe')
+            .readAsBytes()
+        : utf8.encode(
+            '#!/system/bin/sh\n'
+            'echo command smoke failed >&2\n'
+            'exit 17\n',
+          );
+    final smokeArgs = Platform.isWindows
+        ? <String>['/c', 'echo command smoke failed 1>&2 & exit /b 17']
+        : <String>['--smoke'];
+    final archive = Archive()
+      ..addFile(ArchiveFile(fileName, payloadBytes.length, payloadBytes));
+    final packBytes = ZipEncoder().encode(archive);
+    final packFile =
+        File(path.join(temp.path, 'android-command-smoke-fail-test.zip'));
+    await packFile.writeAsBytes(packBytes, flush: true);
+
+    final manifestFile = File(path.join(
+      nativeRoot,
+      'dependencies',
+      'dependency_packs.json',
+    ));
+    await manifestFile.create(recursive: true);
+    await manifestFile.writeAsString(jsonEncode({
+      'packs': [
+        {
+          'id': 'android-command-smoke-fail-test',
+          'version': '1.0.0',
+          'source': 'remote',
+          'url': Uri.file(packFile.path).toString(),
+          'abi': ['arm64-v8a'],
+          'sizeBytes': packBytes.length,
+          'sha256': crypto.sha256.convert(packBytes).toString(),
+          'signature': {
+            'type': 'test-ed25519',
+            'value': 'test-signature',
+            'keyId': 'test-key',
+          },
+          'archiveType': 'zip',
+          'installPath': 'bin',
+          'files': [
+            {
+              'path': fileName,
+              'sha256': crypto.sha256.convert(payloadBytes).toString(),
+              'sizeBytes': payloadBytes.length,
+              'executable': true,
+            }
+          ],
+          'smokeCommand': {
+            'command': commandName,
+            'args': smokeArgs,
+          },
+          'rollback': {
+            'strategy': 'remove_install_path',
+          },
+          'provides': {
+            'bins': [commandName],
+          },
+        },
+      ],
+    }));
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      snapshot,
+      skillId: 'video-smoke',
+    );
+
+    expect(report.changed, isFalse);
+    expect(report.results.single.status, SkillProvisioningStatus.missingBinary);
+    final failedSmoke = report.results.single.actions.singleWhere(
+      (action) =>
+          action.type == SkillProvisioningActionType.dependencyPack &&
+          action.key == 'android-command-smoke-fail-test' &&
+          action.status == SkillProvisioningActionStatus.failedSmoke,
+    );
+    expect(failedSmoke.status, SkillProvisioningActionStatus.failedSmoke);
+    expect(failedSmoke.message, contains('command smoke failed'));
+    expect(
+      await File(path.join(nativeRoot, 'bin', fileName)).exists(),
+      isFalse,
+    );
+    expect(
+      await File(path.join(
+        nativeRoot,
+        'dependencies',
+        'receipts',
+        'android-command-smoke-fail-test.json',
+      )).exists(),
+      isFalse,
+    );
+  });
+
   test('provisioning does not hide missing transitive Python dependencies',
       () async {
     final temp =

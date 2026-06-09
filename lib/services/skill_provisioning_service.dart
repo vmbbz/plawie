@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -1738,10 +1739,12 @@ class SkillProvisioningService {
       } else {
         await _downloadAndExtractPack(layout, pack);
       }
+      await _applyDependencyPackFileModes(layout, pack);
 
       final smoke = await _runDependencyPackSmoke(layout, pack);
       if (!smoke.ok) {
         debugPrint('[DEPS] smoke failed pack=${pack.id} error=${smoke.stderr}');
+        await _rollbackDependencyPackInstall(layout, pack);
         return _DependencyPackInstallResult(
           ok: false,
           action: SkillProvisioningAction(
@@ -2993,9 +2996,13 @@ class SkillProvisioningService {
 
       final installDir = layout.resolveInstallPath(pack.installPath);
       if (path.equals(
-        path.normalize(installDir.path),
-        path.normalize(layout.nativePythonSitePackagesDir.path),
-      )) {
+            path.normalize(installDir.path),
+            path.normalize(layout.nativePythonSitePackagesDir.path),
+          ) ||
+          path.equals(
+            path.normalize(installDir.path),
+            path.normalize(layout.nativeManagedBinDir.path),
+          )) {
         await _mergeDirectory(stage, installDir);
       } else {
         if (await installDir.exists()) {
@@ -3042,33 +3049,214 @@ class SkillProvisioningService {
     throw StateError('Unsupported dependency archive type for ${pack.id}.');
   }
 
+  static Future<void> _applyDependencyPackFileModes(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    if (Platform.isWindows) return;
+    final installDir = layout.resolveInstallPath(pack.installPath);
+    for (final file in pack.files.where((file) => file.executable)) {
+      final target = _dependencyPackInstalledFile(layout, pack, file.pathValue);
+      if (target == null || !await target.exists()) continue;
+      try {
+        await Process.run('chmod', ['755', target.path]);
+      } catch (error) {
+        debugPrint(
+          '[DEPS] failed chmod executable pack=${pack.id} '
+          'file=${path.relative(target.path, from: installDir.path)}: $error',
+        );
+      }
+    }
+  }
+
+  static Future<void> _rollbackDependencyPackInstall(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    final installDir = layout.resolveInstallPath(pack.installPath);
+    final installPath = path.normalize(installDir.path);
+    final sharedInstallPath = [
+      layout.nativeManagedBinDir.path,
+      layout.nativePythonSitePackagesDir.path,
+    ].map(path.normalize).any((shared) => path.equals(shared, installPath));
+
+    if (pack.rollbackStrategy == 'remove_install_path' &&
+        !sharedInstallPath &&
+        await installDir.exists()) {
+      await installDir.delete(recursive: true);
+      return;
+    }
+
+    for (final file in pack.files) {
+      final target = _dependencyPackInstalledFile(layout, pack, file.pathValue);
+      if (target == null) continue;
+      try {
+        if (await target.exists()) {
+          await target.delete();
+        }
+      } catch (error) {
+        debugPrint(
+          '[DEPS] failed rollback pack=${pack.id} file=${target.path}: $error',
+        );
+      }
+    }
+  }
+
+  static File? _dependencyPackInstalledFile(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+    String relativePath,
+  ) {
+    final installDir = layout.resolveInstallPath(pack.installPath);
+    final normalizedInstallDir = path.normalize(installDir.path);
+    final target = File(path.join(installDir.path, relativePath));
+    final normalizedTarget = path.normalize(target.path);
+    if (!path.isWithin(normalizedInstallDir, normalizedTarget) &&
+        !path.equals(normalizedInstallDir, normalizedTarget)) {
+      return null;
+    }
+    return target;
+  }
+
   static Future<_PythonSmokeResult> _runDependencyPackSmoke(
     _SkillProvisioningLayout layout,
     _DependencyPack pack,
   ) async {
-    if (pack.smokeImports.isEmpty) {
+    if (pack.smokeImports.isNotEmpty) {
+      if (!Platform.isAndroid) {
+        return const _PythonSmokeResult(ok: true, stdout: '', stderr: '');
+      }
+      final code = pack.smokeImports.map((name) => 'import $name').join('; ');
+      final result = await NativeBridge.runNativePython({
+        'args': ['-c', code],
+        'cwd': layout.nativeStateRoot,
+        'env': {
+          'HOME': layout.nativeStateRoot,
+          'OPENCLAW_NATIVE_PYTHON_HOME': layout.nativePythonRoot.path,
+          'OPENCLAW_NATIVE_PYTHON_SITE_PACKAGES':
+              layout.nativePythonSitePackagesDir.path,
+        },
+        'pythonPaths': [layout.nativePythonSitePackagesDir.path],
+      });
+      return _PythonSmokeResult(
+        ok: result['ok'] == true || result['exitCode'] == 0,
+        stdout: result['stdout']?.toString() ?? '',
+        stderr: result['stderr']?.toString() ?? '',
+      );
+    }
+
+    final command = pack.smokeCommand;
+    if (command == null) {
       return const _PythonSmokeResult(ok: true, stdout: '', stderr: '');
     }
-    if (!Platform.isAndroid) {
+    if (_isPythonCommandBin(command.command) &&
+        (pack.providesRuntimes.contains('python') ||
+            pack.providesPythonPackages.isNotEmpty)) {
       return const _PythonSmokeResult(ok: true, stdout: '', stderr: '');
     }
-    final code = pack.smokeImports.map((name) => 'import $name').join('; ');
-    final result = await NativeBridge.runNativePython({
-      'args': ['-c', code],
-      'cwd': layout.nativeStateRoot,
-      'env': {
-        'HOME': layout.nativeStateRoot,
-        'OPENCLAW_NATIVE_PYTHON_HOME': layout.nativePythonRoot.path,
-        'OPENCLAW_NATIVE_PYTHON_SITE_PACKAGES':
-            layout.nativePythonSitePackagesDir.path,
-      },
-      'pythonPaths': [layout.nativePythonSitePackagesDir.path],
-    });
-    return _PythonSmokeResult(
-      ok: result['ok'] == true || result['exitCode'] == 0,
-      stdout: result['stdout']?.toString() ?? '',
-      stderr: result['stderr']?.toString() ?? '',
-    );
+
+    final normalizedCommand = _normalizeBinRequirement(command.command);
+    if (!_smokeCommandLooksSafe(command.command)) {
+      return _PythonSmokeResult(
+        ok: false,
+        stdout: '',
+        stderr: 'Unsafe dependency pack smoke command: ${command.command}',
+      );
+    }
+    if (!pack.providesBins.contains(normalizedCommand)) {
+      return _PythonSmokeResult(
+        ok: false,
+        stdout: '',
+        stderr: 'Dependency pack ${pack.id} smoke command "$normalizedCommand" '
+            'is not advertised in provides.bins.',
+      );
+    }
+    final executable =
+        await _findManagedNativeBinary(layout, normalizedCommand);
+    if (executable == null) {
+      return _PythonSmokeResult(
+        ok: false,
+        stdout: '',
+        stderr: 'Dependency pack ${pack.id} smoke command "$normalizedCommand" '
+            'is missing from managed Native bin.',
+      );
+    }
+
+    await Directory(layout.nativeStateRoot).create(recursive: true);
+    final env = {
+      'HOME': layout.nativeStateRoot,
+      'OPENCLAW_HOME': layout.nativeStateRoot,
+      'OPENCLAW_NATIVE_BIN': layout.nativeManagedBinDir.path,
+      'PATH': [
+        layout.nativeManagedBinDir.path,
+        Platform.environment['PATH'] ?? '',
+      ].where((item) => item.isNotEmpty).join(Platform.isWindows ? ';' : ':'),
+    };
+    try {
+      final process = await Process.start(
+        executable.path,
+        command.args,
+        workingDirectory: layout.nativeStateRoot,
+        environment: env,
+        runInShell: false,
+      );
+      final stdoutFuture = _readBoundedProcessStream(process.stdout);
+      final stderrFuture = _readBoundedProcessStream(process.stderr);
+      var timedOut = false;
+      final exitCode = await process.exitCode.timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          timedOut = true;
+          process.kill(ProcessSignal.sigkill);
+          return -1;
+        },
+      );
+      final stdout = await stdoutFuture;
+      final stderr = await stderrFuture;
+      return _PythonSmokeResult(
+        ok: !timedOut && exitCode == 0,
+        stdout: stdout,
+        stderr: timedOut
+            ? 'Dependency pack ${pack.id} smoke command timed out.'
+            : stderr,
+      );
+    } catch (error) {
+      return _PythonSmokeResult(
+        ok: false,
+        stdout: '',
+        stderr: 'Dependency pack ${pack.id} smoke command failed to start: '
+            '$error',
+      );
+    }
+  }
+
+  static Future<String> _readBoundedProcessStream(Stream<List<int>> stream) {
+    final completer = Completer<String>();
+    const maxChars = 4096;
+    final buffer = StringBuffer();
+    late final StreamSubscription<String> subscription;
+    subscription = stream
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .listen((chunk) {
+      if (buffer.length >= maxChars) return;
+      final remaining = maxChars - buffer.length;
+      buffer.write(
+          chunk.length > remaining ? chunk.substring(0, remaining) : chunk);
+    }, onError: (Object error) {
+      if (!completer.isCompleted) completer.complete(buffer.toString());
+    }, onDone: () {
+      subscription.cancel();
+      if (!completer.isCompleted) completer.complete(buffer.toString());
+    }, cancelOnError: true);
+    return completer.future;
+  }
+
+  static bool _smokeCommandLooksSafe(String command) {
+    final trimmed = command.trim();
+    if (trimmed.isEmpty || trimmed.contains('/') || trimmed.contains(r'\')) {
+      return false;
+    }
+    return RegExp(r'^[A-Za-z0-9._+-]+$').hasMatch(trimmed);
   }
 
   static Future<bool> _dependencyPackMarkersPresent(
@@ -3263,10 +3451,31 @@ class SkillProvisioningService {
   static Future<bool> _managedNativeBinaryPresent(
     _SkillProvisioningLayout layout,
     String bin,
+  ) async =>
+      await _findManagedNativeBinary(layout, bin) != null;
+
+  static Future<File?> _findManagedNativeBinary(
+    _SkillProvisioningLayout layout,
+    String bin,
   ) async {
-    final target = File(path.join(
-        layout.nativeManagedBinDir.path, _normalizeBinRequirement(bin)));
-    return target.exists();
+    final normalizedBin = _normalizeBinRequirement(bin);
+    final names = <String>[
+      normalizedBin,
+      if (Platform.isWindows) '$normalizedBin.exe',
+      if (Platform.isWindows) '$normalizedBin.cmd',
+      if (Platform.isWindows) '$normalizedBin.bat',
+    ];
+    final root = path.normalize(layout.nativeManagedBinDir.path);
+    for (final name in names) {
+      final candidate = File(path.join(root, name));
+      final normalizedCandidate = path.normalize(candidate.path);
+      if (!path.isWithin(root, normalizedCandidate) &&
+          !path.equals(root, normalizedCandidate)) {
+        continue;
+      }
+      if (await candidate.exists()) return candidate;
+    }
+    return null;
   }
 
   static bool _envKeyLooksSafe(String key) {
@@ -4011,6 +4220,45 @@ class _DependencyPackReceipt {
   }
 }
 
+class _DependencyPackFile {
+  final String pathValue;
+  final bool executable;
+
+  const _DependencyPackFile({
+    required this.pathValue,
+    required this.executable,
+  });
+
+  static _DependencyPackFile? fromJson(Map<String, dynamic> json) {
+    final pathValue = json['path']?.toString().trim();
+    if (pathValue == null || pathValue.isEmpty) return null;
+    return _DependencyPackFile(
+      pathValue: pathValue,
+      executable: json['executable'] == true,
+    );
+  }
+}
+
+class _DependencyPackCommand {
+  final String command;
+  final List<String> args;
+
+  const _DependencyPackCommand({
+    required this.command,
+    required this.args,
+  });
+
+  static _DependencyPackCommand? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    final command = json['command']?.toString().trim();
+    if (command == null || command.isEmpty) return null;
+    return _DependencyPackCommand(
+      command: command,
+      args: _DependencyPack._stringList(json['args']),
+    );
+  }
+}
+
 class _DependencyPack {
   final String id;
   final String version;
@@ -4024,6 +4272,9 @@ class _DependencyPack {
   final Set<String> providesBins;
   final Set<String> providesPythonPackages;
   final List<String> smokeImports;
+  final List<_DependencyPackFile> files;
+  final _DependencyPackCommand? smokeCommand;
+  final String rollbackStrategy;
 
   const _DependencyPack({
     required this.id,
@@ -4038,6 +4289,9 @@ class _DependencyPack {
     required this.providesBins,
     required this.providesPythonPackages,
     required this.smokeImports,
+    required this.files,
+    required this.smokeCommand,
+    required this.rollbackStrategy,
   });
 
   factory _DependencyPack.apk({
@@ -4067,6 +4321,9 @@ class _DependencyPack {
           .map(SkillProvisioningService._normalizeDependencyName)
           .toSet(),
       smokeImports: smokeImports,
+      files: const <_DependencyPackFile>[],
+      smokeCommand: null,
+      rollbackStrategy: '',
     );
   }
 
@@ -4083,6 +4340,12 @@ class _DependencyPack {
     final source = sourceName == 'apk'
         ? _DependencyPackSource.apk
         : _DependencyPackSource.remote;
+    final smokeCommandJson = json['smokeCommand'] is Map
+        ? Map<String, dynamic>.from(json['smokeCommand'] as Map)
+        : null;
+    final rollbackJson = json['rollback'] is Map
+        ? Map<String, dynamic>.from(json['rollback'] as Map)
+        : const <String, dynamic>{};
     return _DependencyPack(
       id: id,
       version: version,
@@ -4096,6 +4359,17 @@ class _DependencyPack {
       providesBins: _stringSet(provides['bins']),
       providesPythonPackages: _stringSet(provides['pythonPackages']),
       smokeImports: _stringList(json['smokeImports']),
+      files: json['files'] is List
+          ? (json['files'] as List)
+              .whereType<Map>()
+              .map((item) => _DependencyPackFile.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .whereType<_DependencyPackFile>()
+              .toList(growable: false)
+          : const <_DependencyPackFile>[],
+      smokeCommand: _DependencyPackCommand.fromJson(smokeCommandJson),
+      rollbackStrategy: rollbackJson['strategy']?.toString().trim() ?? '',
     );
   }
 
