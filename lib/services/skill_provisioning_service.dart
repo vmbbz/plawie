@@ -35,6 +35,12 @@ class SkillProvisioningService {
   static const _androidVisionMediaPackBins = <String>{
     'ffmpeg',
   };
+  static const _androidPythonDebugPackId = 'android-python-debug-runtime';
+  static const _androidPythonDebugPackVersion = 'debugpy-1.8.21-apk-v1';
+  static const _androidPythonDebugVersion = '1.8.21';
+  static const _androidPythonDebugPackages = <String>{
+    'debugpy',
+  };
   static const _defaultPythonWheelIndexes = <String>[
     'https://chaquo.com/pypi-13.1/',
     'https://pypi.org/simple/',
@@ -1699,6 +1705,10 @@ class SkillProvisioningService {
     if (visionMediaPack != null) {
       packs.add(visionMediaPack);
     }
+    final pythonDebugPack = await _apkProvidedPythonDebugPack(layout);
+    if (pythonDebugPack != null) {
+      packs.add(pythonDebugPack);
+    }
 
     Future<void> mergeManifest(Map<String, dynamic>? manifest) async {
       if (manifest == null) return;
@@ -2244,15 +2254,8 @@ class SkillProvisioningService {
     try {
       await layout.nativePythonSitePackagesDir.create(recursive: true);
       await layout.dependencyTmpDir.create(recursive: true);
-      final response = await http.get(candidate.url).timeout(
-            const Duration(minutes: 4),
-          );
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw StateError(
-          'HTTP ${response.statusCode} while downloading ${candidate.url}',
-        );
-      }
-      final digest = crypto.sha256.convert(response.bodyBytes).toString();
+      final wheelBytes = await _readPythonWheelCandidateBytes(candidate);
+      final digest = crypto.sha256.convert(wheelBytes).toString();
       if (candidate.sha256 != null && digest != candidate.sha256) {
         return _PythonWheelInstallResult(
           ok: false,
@@ -2267,7 +2270,7 @@ class SkillProvisioningService {
         );
       }
 
-      final archive = ZipDecoder().decodeBytes(response.bodyBytes);
+      final archive = ZipDecoder().decodeBytes(wheelBytes);
       final metadata = _readWheelMetadata(archive);
       final metadataName = _normalizeDependencyName(
         metadata['name'] ?? candidate.name,
@@ -2883,11 +2886,37 @@ class SkillProvisioningService {
       }
     }
     for (final package in pack.providesPythonPackages) {
-      await _writePythonPackageMarker(
-        layout.nativePythonSitePackagesDir,
-        package,
-        pack.version,
-      );
+      if (pack.id == _androidPythonDebugPackId) {
+        final candidate = await _findBundledPythonWheelCandidate(
+          layout,
+          package,
+          requiredVersion: _androidPythonDebugVersion,
+        );
+        if (candidate == null) {
+          throw StateError(
+            'APK-provided dependency pack ${pack.id} is missing bundled wheel for $package.',
+          );
+        }
+        final install = await _downloadAndInstallPythonWheel(
+          layout,
+          _PythonRequirementRequest(
+            name: package,
+            raw: '$package==${candidate.version}',
+            root: true,
+            rootPackage: package,
+          ),
+          candidate,
+        );
+        if (!install.ok) {
+          throw StateError(install.action.message);
+        }
+      } else {
+        await _writePythonPackageMarker(
+          layout.nativePythonSitePackagesDir,
+          package,
+          pack.version,
+        );
+      }
     }
   }
 
@@ -3050,6 +3079,28 @@ class SkillProvisioningService {
     final response = await http.get(uri).timeout(const Duration(minutes: 4));
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError('HTTP ${response.statusCode} while downloading $url');
+    }
+    return response.bodyBytes;
+  }
+
+  static Future<List<int>> _readPythonWheelCandidateBytes(
+    _PythonWheelCandidate candidate,
+  ) async {
+    if (candidate.url.scheme == 'file') {
+      if (candidate.indexHost != 'apk') {
+        throw StateError(
+          'Local Python wheel candidates are only allowed from APK assets.',
+        );
+      }
+      return File.fromUri(candidate.url).readAsBytes();
+    }
+    final response = await http.get(candidate.url).timeout(
+          const Duration(minutes: 4),
+        );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(
+        'HTTP ${response.statusCode} while downloading ${candidate.url}',
+      );
     }
     return response.bodyBytes;
   }
@@ -3449,6 +3500,79 @@ class SkillProvisioningService {
       version: _androidVisionMediaPackVersion,
       providesBins: providedBins,
     );
+  }
+
+  static Future<_DependencyPack?> _apkProvidedPythonDebugPack(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final providedPackages = <String>{};
+    for (final package in _androidPythonDebugPackages) {
+      final candidate = await _findBundledPythonWheelCandidate(
+        layout,
+        package,
+        requiredVersion: _androidPythonDebugVersion,
+      );
+      if (candidate != null) {
+        providedPackages.add(package);
+      }
+    }
+    if (providedPackages.isEmpty) return null;
+    return _DependencyPack.apk(
+      id: _androidPythonDebugPackId,
+      version: _androidPythonDebugPackVersion,
+      providesPythonPackages: providedPackages,
+      smokeImports: const ['debugpy'],
+    );
+  }
+
+  static Future<_PythonWheelCandidate?> _findBundledPythonWheelCandidate(
+    _SkillProvisioningLayout layout,
+    String packageName, {
+    String? requiredVersion,
+  }) async {
+    final normalizedPackage = _normalizeDependencyName(packageName);
+    final candidates = <_PythonWheelCandidate>[];
+    for (final root in layout.bundledPythonDebugWheelRoots) {
+      try {
+        if (!await root.exists()) continue;
+        await for (final entity in root.list(recursive: false)) {
+          if (entity is! File) continue;
+          final fileName = path.basename(entity.path);
+          if (!_pythonWheelAssetNameLooksSafe(fileName)) continue;
+          final wheel = _parseWheelFileName(fileName);
+          if (wheel == null) continue;
+          if (wheel.name != normalizedPackage) continue;
+          if (requiredVersion != null && wheel.version != requiredVersion) {
+            continue;
+          }
+          if (!_wheelIsCompatible(wheel)) continue;
+          final bytes = await entity.readAsBytes();
+          candidates.add(_PythonWheelCandidate(
+            name: wheel.name,
+            version: wheel.version,
+            fileName: fileName,
+            url: Uri.file(entity.path),
+            sha256: crypto.sha256.convert(bytes).toString(),
+            indexHost: 'apk',
+          ));
+        }
+      } catch (_) {}
+    }
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) => _compareVersions(b.version, a.version));
+    return candidates.first;
+  }
+
+  static bool _pythonWheelAssetNameLooksSafe(String fileName) {
+    if (fileName.isEmpty || fileName.startsWith('.')) return false;
+    if (!fileName.toLowerCase().endsWith('.whl')) return false;
+    if (fileName.contains('..') ||
+        fileName.contains('/') ||
+        fileName.contains(r'\') ||
+        fileName.contains(':')) {
+      return false;
+    }
+    return true;
   }
 
   static Future<File?> _findBundledNativeBinary(
@@ -3956,6 +4080,29 @@ class _SkillProvisioningLayout {
           'full-openclaw',
           'provisioning',
           'bin',
+        )),
+      ];
+  List<Directory> get bundledPythonDebugWheelRoots => [
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'provisioning',
+          'python-debug',
+          'wheels',
+        )),
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'bundled-python-debug',
+          'wheels',
+        )),
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'full-openclaw',
+          'provisioning',
+          'python-debug',
+          'wheels',
         )),
       ];
 }

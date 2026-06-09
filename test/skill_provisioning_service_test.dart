@@ -935,6 +935,122 @@ requests>=2.28.0
     expect(second.results.single.status, SkillProvisioningStatus.ready);
   });
 
+  test('provisioning installs APK-provided debugpy wheel pack', () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_debugpy_pack_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills =
+        Directory(path.join(nativeRoot, 'workspace', 'skills'));
+    await nativeSkills.create(recursive: true);
+
+    final debugpySkill =
+        Directory(path.join(nativeSkills.path, 'python-debugpy'));
+    await debugpySkill.create(recursive: true);
+    await File(path.join(debugpySkill.path, 'SKILL.md')).writeAsString('''
+---
+metadata: { "openclaw": { "requires": { "bins": ["python3"] } } }
+---
+# Python Debugpy
+
+```bash
+python3 -c "import debugpy"
+python3 -m debugpy --listen 127.0.0.1:5678 path/to/script.py
+```
+''');
+
+    const debugpyVersion = '1.8.21';
+    final wheelBytes = _debugpyWheelFixture(debugpyVersion);
+    final wheelDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'python-debug',
+      'wheels',
+    ));
+    await wheelDir.create(recursive: true);
+    await File(path.join(
+      wheelDir.path,
+      'debugpy-$debugpyVersion-py2.py3-none-any.whl',
+    )).writeAsBytes(wheelBytes, flush: true);
+
+    final before = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final first = await SkillProvisioningService.instance.provisionSnapshot(
+      before,
+      skillId: 'python-debugpy',
+    );
+
+    expect(first.changed, isTrue);
+    expect(first.reloadRecommended, isTrue);
+    expect(first.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(
+      first.results.single.actions
+          .where((action) =>
+              action.type == SkillProvisioningActionType.dependencyPack)
+          .map((action) => action.key),
+      containsAll(['python-core', 'android-python-debug-runtime']),
+    );
+
+    final sitePackages =
+        path.join(nativeRoot, 'runtimes', 'python', 'site-packages');
+    expect(
+        await Directory(path.join(sitePackages, 'debugpy')).exists(), isTrue);
+    expect(
+      await File(path.join(
+        sitePackages,
+        'debugpy-$debugpyVersion.dist-info',
+        'METADATA',
+      )).exists(),
+      isTrue,
+    );
+    expect(
+      await File(path.join(
+        nativeRoot,
+        'dependencies',
+        'receipts',
+        'android-python-debug-runtime.json',
+      )).exists(),
+      isTrue,
+    );
+    expect(
+      await File(path.join(
+        nativeRoot,
+        'dependencies',
+        'receipts',
+        'python-wheels',
+        'debugpy.json',
+      )).exists(),
+      isTrue,
+    );
+
+    final after = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final matrix = {
+      for (final entry in after.executionMatrix) entry.skillId: entry,
+    };
+    expect(matrix['python-debugpy']?.status, SkillExecutionStatus.ready);
+
+    final second = await SkillProvisioningService.instance.provisionSnapshot(
+      after,
+      skillId: 'python-debugpy',
+    );
+    expect(second.changed, isFalse);
+    expect(second.results.single.status, SkillProvisioningStatus.ready);
+  });
+
   test('provisioning rejects invalid dependency pack manifests before install',
       () async {
     final temp =
@@ -1422,6 +1538,39 @@ Future<void> _writeNodeShim(String nativeRoot) async {
   final node = File(path.join(nativeRoot, 'bin', 'node'));
   await node.create(recursive: true);
   await node.writeAsString('native node shim');
+}
+
+List<int> _debugpyWheelFixture(String version) {
+  final metadata = utf8.encode('''
+Metadata-Version: 2.1
+Name: debugpy
+Version: $version
+Summary: Debugger for Python
+''');
+  final init = utf8.encode("__version__ = '$version'\n");
+  final serverInit = utf8.encode('');
+  final record = utf8.encode('''
+debugpy/__init__.py,,
+debugpy/server/__init__.py,,
+debugpy-$version.dist-info/METADATA,,
+debugpy-$version.dist-info/RECORD,,
+''');
+  final archive = Archive()
+    ..addFile(ArchiveFile('debugpy/__init__.py', init.length, init))
+    ..addFile(
+      ArchiveFile('debugpy/server/__init__.py', serverInit.length, serverInit),
+    )
+    ..addFile(
+      ArchiveFile(
+        'debugpy-$version.dist-info/METADATA',
+        metadata.length,
+        metadata,
+      ),
+    )
+    ..addFile(
+      ArchiveFile('debugpy-$version.dist-info/RECORD', record.length, record),
+    );
+  return ZipEncoder().encode(archive);
 }
 
 Future<void> _writeNodeSkill(

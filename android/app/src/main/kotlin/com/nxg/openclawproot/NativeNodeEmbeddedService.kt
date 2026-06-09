@@ -56,6 +56,8 @@ class NativeNodeEmbeddedService : Service() {
         private const val CLI_CORE_BIN_ASSET_DIR = "flutter_assets/assets/openclaw/cli-core/bin"
         private const val VISION_MEDIA_BIN_ASSET_DIR =
             "flutter_assets/assets/openclaw/vision-media/bin"
+        private const val PYTHON_DEBUG_WHEEL_ASSET_DIR =
+            "flutter_assets/assets/openclaw/python-debug-runtime/wheels"
         private const val ACTION_START = "com.nxg.openclawproot.native_node.START"
         private const val ACTION_STOP = "com.nxg.openclawproot.native_node.STOP"
         private const val EXTRA_PORT = "port"
@@ -377,6 +379,9 @@ class NativeNodeEmbeddedService : Service() {
         val provisioningBin = File(workDir(applicationContext), "provisioning/bin")
         val cliCoreBinCount = copyCliCoreBinAssets(provisioningBin)
         val visionMediaBinCount = copyVisionMediaBinAssets(provisioningBin)
+        val pythonDebugWheelCount = copyPythonDebugWheelAssets(
+            File(workDir(applicationContext), "provisioning/python-debug/wheels")
+        )
 
         if (!launcher.exists()) {
             throw IllegalStateException("OpenClaw launcher missing after extraction: ${launcher.absolutePath}")
@@ -409,6 +414,8 @@ class NativeNodeEmbeddedService : Service() {
                 .put("cliCoreBinCount", cliCoreBinCount)
                 .put("visionMediaBinAssetDir", VISION_MEDIA_BIN_ASSET_DIR)
                 .put("visionMediaBinCount", visionMediaBinCount)
+                .put("pythonDebugWheelAssetDir", PYTHON_DEBUG_WHEEL_ASSET_DIR)
+                .put("pythonDebugWheelCount", pythonDebugWheelCount)
                 .put("androidTmpPatchCount", androidTmpPatchCount)
                 .put("bindHost", HOST)
                 .put("bindPort", port)
@@ -527,6 +534,43 @@ class NativeNodeEmbeddedService : Service() {
         return copyBundledBinAssets(VISION_MEDIA_BIN_ASSET_DIR, targetDir, "vision-media")
     }
 
+    private fun copyPythonDebugWheelAssets(targetDir: File): Int {
+        return copyBundledWheelAssets(
+            PYTHON_DEBUG_WHEEL_ASSET_DIR,
+            targetDir,
+            "python-debug"
+        )
+    }
+
+    private fun copyBundledWheelAssets(assetDir: String, targetDir: File, label: String): Int {
+        targetDir.mkdirs()
+        val names = try {
+            assets.list(assetDir) ?: emptyArray()
+        } catch (e: Exception) {
+            appendLog("$label wheel asset directory unavailable: ${e.message}")
+            emptyArray()
+        }
+        var copied = 0
+        names.sorted().forEach { name ->
+            if (!isSafeBundledWheelAssetName(name)) {
+                appendLog("skipped unsafe $label wheel asset name=$name")
+                return@forEach
+            }
+            val target = File(targetDir, name)
+            try {
+                assets.open("$assetDir/$name").use { input ->
+                    FileOutputStream(target).use { output -> input.copyTo(output) }
+                }
+                target.setReadable(true, false)
+                copied++
+            } catch (e: Exception) {
+                appendLog("failed copying $label wheel asset name=$name: ${e.message}")
+            }
+        }
+        appendLog("$label wheel asset copy completed count=$copied target=${targetDir.absolutePath}")
+        return copied
+    }
+
     private fun copyBundledBinAssets(assetDir: String, targetDir: File, label: String): Int {
         targetDir.mkdirs()
         val names = try {
@@ -560,6 +604,16 @@ class NativeNodeEmbeddedService : Service() {
     private fun isSafeBundledBinAssetName(name: String): Boolean {
         return name.isNotBlank() &&
             !name.startsWith(".") &&
+            !name.contains("/") &&
+            !name.contains("\\") &&
+            !name.contains(":")
+    }
+
+    private fun isSafeBundledWheelAssetName(name: String): Boolean {
+        return name.isNotBlank() &&
+            name.endsWith(".whl") &&
+            !name.startsWith(".") &&
+            !name.contains("..") &&
             !name.contains("/") &&
             !name.contains("\\") &&
             !name.contains(":")

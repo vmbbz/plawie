@@ -73,6 +73,25 @@ The release count moved after the payload was installed from the APK, copied
 into Native managed bin, smoked with `ffmpeg -version`, and proven by a tiny
 video-to-JPEG extraction on device on 2026-06-09.
 
+Current APK-local android-python-debug-runtime payloads:
+debugpy is host-proven and APK-local, but the release count has not moved yet
+because installed-device proof is still pending:
+
+```text
+asset: assets/openclaw/python-debug-runtime/wheels/debugpy-1.8.21-py2.py3-none-any.whl
+payload sha256: b1e37d333663c8851516a47364ef473da127f9caebe4417e6df6f5825a7e9a92
+pack id: android-python-debug-runtime
+provided package: debugpy
+install target: .openclaw/runtimes/python/site-packages
+provenance: docs/ANDROID_PYTHON_DEBUG_RUNTIME_PAYLOAD.md
+```
+
+Device proof blocker: on 2026-06-09 the host APK build passed, but `adb devices`
+showed no connected device after an ADB server refresh. Do not raise the clean
+fresh-user floor from `25/51` to `26/51` until the installed APK copies the
+wheel, imports `debugpy` through `/api/python/exec`, and `/device/health`
+reports `python-debugpy` ready from this pack.
+
 Clean host/APK fresh-user floor after APK install/provisioning:
 Android ready floor: 25/51
   = 13 ready_required
@@ -1888,6 +1907,20 @@ Installed-device proof passed on 2026-06-09. `/device/health` reports
 `video-frames` ready and provisioned, and a real tiny MP4 extraction returned a
 JPEG frame from managed FFmpeg. `gifgrep` stays blocked by design.
 
+Phase 5E Python debug runtime lane is host-proven / device-pending:
+
+```text
+payload: assets/openclaw/python-debug-runtime/wheels/debugpy-1.8.21-py2.py3-none-any.whl
+package: debugpy 1.8.21
+payload sha256: b1e37d333663c8851516a47364ef473da127f9caebe4417e6df6f5825a7e9a92
+runtime path: Native Python site-packages via verified APK-local wheel install
+provenance: docs/ANDROID_PYTHON_DEBUG_RUNTIME_PAYLOAD.md
+```
+
+The host implementation and debug APK build pass. Count movement is deliberately
+held until device proof because the current installed-device `python-debugpy`
+readiness can be contaminated by prior state.
+
 Audit truth slice now landed:
 
 ```text
@@ -2433,6 +2466,16 @@ Real Android arm64 FFmpeg payload is built from pinned official source.
 video-frames extraction uses Native managed-bin ffmpeg, not PRoot.
 Payload provenance, LGPL notice, host ELF/hash tests, and Android build pass.
 Scorecard numbers move only after installed-device video proof.
+Commit made.
+```
+
+Round 5E target:
+
+```text
+Real debugpy wheel payload is bundled from pinned PyPI wheel.
+android-python-debug-runtime installs real wheel contents, not fake markers.
+Host tests and Android debug build pass.
+Scorecard numbers move only after installed-device Python import proof.
 Commit made.
 ```
 

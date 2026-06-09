@@ -307,6 +307,22 @@ ran `ffmpeg -version`, extracted a JPEG from a tiny MP4 fixture, and reported
 `video-frames` ready through `/device/health`. `gifgrep` remains blocked; it is
 not satisfied by `ffmpeg`.
 
+Current APK-local Python debug payloads:
+
+```text
+debugpy: Python wheel, debugpy 1.8.21
+payload sha256: b1e37d333663c8851516a47364ef473da127f9caebe4417e6df6f5825a7e9a92
+provenance: docs/ANDROID_PYTHON_DEBUG_RUNTIME_PAYLOAD.md
+```
+
+The `android-python-debug-runtime` resolver is host-proven and APK-built. It
+advertises the pack only when the APK-copied provisioning roots contain a
+compatible `debugpy` wheel, then installs the real wheel into
+`.openclaw/runtimes/python/site-packages` and writes both dependency-pack and
+wheel receipts. GTM counts remain unchanged until device smoke proves
+`import debugpy` through the Chaquopy bridge and `/device/health` reports
+`python-debugpy` ready from this APK-local pack.
+
 ## Gateway `tools.allow`
 
 `tools.allow` is a strict Gateway allowlist. OpenClaw applies `tools.profile`

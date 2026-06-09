@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -56,6 +57,28 @@ void main() {
       bootstrap,
       contains('copyVisionMediaBinAssets(provisioningBin)'),
     );
+  });
+
+  test('Native bootstrap extracts Python debug wheel assets into provisioning',
+      () async {
+    final pubspec = await File('pubspec.yaml').readAsString();
+    final bootstrap = await File(
+      'android/app/src/main/kotlin/com/nxg/openclawproot/'
+      'NativeNodeEmbeddedService.kt',
+    ).readAsString();
+
+    expect(pubspec, contains('assets/openclaw/python-debug-runtime/wheels/'));
+    expect(bootstrap, contains('PYTHON_DEBUG_WHEEL_ASSET_DIR'));
+    expect(
+      bootstrap,
+      contains('flutter_assets/assets/openclaw/python-debug-runtime/wheels'),
+    );
+    expect(bootstrap, contains('copyPythonDebugWheelAssets'));
+    expect(
+      bootstrap,
+      contains('provisioning/python-debug/wheels'),
+    );
+    expect(bootstrap, contains('pythonDebugWheelCount'));
   });
 
   test('OpenHue APK payload is a real Android arm64 ELF executable', () async {
@@ -253,6 +276,30 @@ void main() {
     expect(docs, contains('LGPL'));
     expect(notices, contains('FFmpeg'));
     expect(notices, contains('LGPL'));
+  });
+
+  test('Debugpy APK wheel payload has pinned provenance', () async {
+    const debugpyVersion = '1.8.21';
+    final wheel = File('assets/openclaw/python-debug-runtime/wheels/'
+        'debugpy-$debugpyVersion-py2.py3-none-any.whl');
+    final script =
+        await File('scripts/python_debug/build_debugpy_android_runtime.ps1')
+            .readAsString();
+    final docs = await File('docs/ANDROID_PYTHON_DEBUG_RUNTIME_PAYLOAD.md')
+        .readAsString();
+
+    expect(await wheel.exists(), isTrue);
+    final bytes = await wheel.readAsBytes();
+    expect(bytes.length, greaterThan(100 * 1024));
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final names = archive.files.map((file) => file.name).toSet();
+
+    expect(names, contains('debugpy/__init__.py'));
+    expect(names, contains('debugpy-$debugpyVersion.dist-info/METADATA'));
+    expect(script, contains('debugpy==$debugpyVersion'));
+    expect(script, contains('sha256'));
+    expect(docs, contains('debugpy $debugpyVersion'));
+    expect(docs.toLowerCase(), contains(await sha256File(wheel)));
   });
 }
 
