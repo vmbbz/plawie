@@ -558,6 +558,58 @@ rg -n 'breakpoint\(|pdb\.set_trace|debugpy\.' --type py
     expect(entry.status, SkillExecutionStatus.ready);
   });
 
+  test('provider-specific API keys in prose do not become hard env gates',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_optional_env_test_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills = Directory(path.join(nativeRoot, 'skills'));
+    final nativeBin = Directory(path.join(nativeRoot, 'bin'));
+    await nativeSkills.create(recursive: true);
+    await nativeBin.create(recursive: true);
+    await File(path.join(nativeBin.path, 'gifgrep')).writeAsString(
+      '#!/system/bin/sh\nexit 0\n',
+      flush: true,
+    );
+
+    final gifgrep = Directory(path.join(nativeSkills.path, 'gifgrep'));
+    await gifgrep.create(recursive: true);
+    await File(path.join(gifgrep.path, 'SKILL.md')).writeAsString('''
+---
+metadata:
+  openclaw:
+    requires:
+      bins:
+        - gifgrep
+---
+# gifgrep
+
+Providers
+
+- `GIPHY_API_KEY` required for `--source giphy`
+- `TENOR_API_KEY` optional (Tenor demo key used if unset)
+''');
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final entry = snapshot.executionMatrix.single;
+
+    expect(entry.requiredBins, ['gifgrep']);
+    expect(entry.requiredEnv, isEmpty);
+    expect(entry.gates, isEmpty);
+    expect(entry.status, SkillExecutionStatus.ready);
+  });
+
   test('python debugpy commands create a package gate beyond python3', () async {
     final temp =
         await Directory.systemTemp.createTemp('skill_debugpy_package_test_');

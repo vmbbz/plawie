@@ -1643,6 +1643,7 @@ class SkillParityAuditService {
     final vars = <String>{};
     for (final line in lines) {
       final lower = line.toLowerCase();
+      if (_looksLikeOptionalOrModeSpecificEnvLine(lower)) continue;
       final highConfidence = lower.contains('required') ||
           lower.contains('set ') ||
           lower.contains('env') ||
@@ -1657,6 +1658,15 @@ class SkillParityAuditService {
       }
     }
     return vars;
+  }
+
+  static bool _looksLikeOptionalOrModeSpecificEnvLine(String lower) {
+    if (lower.contains(' optional')) return true;
+    if (lower.contains('optional ')) return true;
+    if (RegExp(r'required\s+for\s+`?--').hasMatch(lower)) return true;
+    if (RegExp(r'required\s+only\s+for\b').hasMatch(lower)) return true;
+    if (RegExp(r'required\s+when\s+using\b').hasMatch(lower)) return true;
+    return false;
   }
 
   static Map<String, dynamic> _parseYamlFrontmatter(String body) {
