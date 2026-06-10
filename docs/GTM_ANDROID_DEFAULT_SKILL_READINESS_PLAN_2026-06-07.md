@@ -184,6 +184,11 @@ True binary-pack blockers inside needs_pack: 6
   = coding-agent, gemini, node-inspect-debugger, openai-whisper,
     sherpa-onnx-tts, spotify-player
 
+Sherpa TTS truth after installed-device health: `sherpa-onnx-tts` is not a
+simple TTS model/runtime pack blocker in the current skill shape. It also needs
+a standalone `node` execution host unless we replace that skill path with an
+app-native/JNI bridge.
+
 Pack-satisfied but still needs user/device config:
 eightctl
 
@@ -272,6 +277,11 @@ spotify-player: runtimeStatus missing_dependency,
 openai-whisper: runtimeStatus missing_dependency,
                 provisioningStatus missing_binary,
                 missingBins [whisper], stays in PACK GATES
+sherpa-onnx-tts: runtimeStatus needs_config/missing_dependency evidence
+                 includes missing standalone node plus
+                 SHERPA_ONNX_MODEL_DIR and SHERPA_ONNX_RUNTIME_DIR env;
+                 stays in PACK GATES as android-tts-runtime plus
+                 android-node-executable-pack
 
 Phase 5L current gate split:
 CONFIG GATES: 15
@@ -831,7 +841,7 @@ node-inspect-debugger: android-node-executable-pack
 openai-whisper: android-whisper-runtime
 openhue: android-cli-core-pack
 python-debugpy: android-python-debug-runtime
-sherpa-onnx-tts: android-tts-runtime
+sherpa-onnx-tts: android-tts-runtime + android-node-executable-pack
 songsee: android-audio-runtime
 sonoscli: android-cli-core-pack
 spotify-player: android-audio-runtime
@@ -2049,8 +2059,9 @@ account auth, no provider API key, and no ML model bundle. `gifgrep` is
 technically plausible but not first because its provider-search promise needs
 API-key/config truth unless Android narrows the promise to local GIF
 processing. `sherpa-onnx-tts` and local Whisper are credible but heavier model
-runtime lanes. Node, Gemini, coding-agent, and Spotify remain parked because
-they carry standalone-Node, auth, sandbox, account, or mixed pack/config risk.
+runtime lanes; Sherpa also remains coupled to standalone `node` in the current
+skill path. Node, Gemini, coding-agent, and Spotify remain parked because they
+carry standalone-Node, auth, sandbox, account, or mixed pack/config risk.
 
 Phase 5I score impact:
 
@@ -2199,6 +2210,25 @@ belongs in the interactive config path rather than the missing-pack path.
 If a row still has missing binary, missing pack, or dependency-gate evidence,
 it stays in the pack path even when it also has user config fields.
 
+Phase 5M Sherpa blocker truth correction:
+
+```text
+sherpa-onnx-tts required packs:
+  android-tts-runtime
+  android-node-executable-pack
+
+Why:
+  installed-device health showed Sherpa still needs standalone node in the
+  current skill execution path, plus SHERPA_ONNX_MODEL_DIR and
+  SHERPA_ONNX_RUNTIME_DIR. A TTS runtime/model pack alone would not honestly
+  move the skill to ready.
+
+Readiness impact:
+  release gate unchanged at 13/13
+  Android ready floor unchanged at 30/51
+  true binary-pack blockers unchanged at 6
+```
+
 Host-side proof:
 
 ```text
@@ -2220,9 +2250,11 @@ Parallel blocker audits on 2026-06-10 support the same strategy:
 ```text
 openai-whisper: keep blocked unless a real whisper.cpp Android runtime/model
                 pack is built and latency/size/licensing are proven
-sherpa-onnx-tts: viable later as android-tts-runtime, but it needs real native
-                  libs, model layout, espeak data, hashes, licenses, and
-                  synthesis smoke before readiness moves
+sherpa-onnx-tts: viable later, but currently mixed-gated by
+                  android-tts-runtime plus android-node-executable-pack; it
+                  needs real native libs, model layout, espeak data, hashes,
+                  licenses, standalone node or an app-native/JNI replacement
+                  path, and synthesis smoke before readiness moves
 node-inspect-debugger: keep parked; a standalone node executable is high effort
                        for +1 and libnode.so does not satisfy the shell binary
 gemini: keep parked behind standalone node plus explicit auth/config truth
@@ -2972,7 +3004,7 @@ Audit all eight remaining pack blockers against current code and real Android
 artifact paths.
 Choose songsee as the next payload lane.
 Keep gifgrep, Node, Gemini, coding-agent, Whisper, Sherpa TTS, and Spotify
-blocked until their real runtime/config risks are solved.
+blocked until their real runtime, standalone-node, and config risks are solved.
 Ready count stays 27/51 because this is a decision round, not payload proof.
 Commit made.
 ```

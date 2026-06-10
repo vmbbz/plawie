@@ -382,8 +382,9 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _needsPack(
     'sherpa-onnx-tts',
-    packs: ['android-tts-runtime'],
-    smoke: 'Synthesize a short phrase with the verified Sherpa ONNX pack.',
+    packs: ['android-tts-runtime', 'android-node-executable-pack'],
+    smoke:
+        'Synthesize a short phrase only after the Sherpa ONNX runtime/model pack and standalone Node execution host are verified.',
   ),
   _ready(
     'skill-creator',

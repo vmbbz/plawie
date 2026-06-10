@@ -1,4 +1,5 @@
 import 'package:clawa/services/android_skill_readiness_view_model.dart';
+import 'package:clawa/services/android_skill_support_manifest.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -175,13 +176,15 @@ void main() {
   });
 
   test('pack gate detail labels split node family lanes for users', () {
+    final sherpa =
+        AndroidSkillSupportManifest.instance.entryFor('sherpa-onnx-tts')!;
     final model = AndroidSkillReadinessViewModel.fromReadiness({
-      'totalManifestSkills': 3,
+      'totalManifestSkills': 4,
       'readyRequired': {'ready': 0, 'total': 0},
       'releaseGatePass': true,
       'unexpectedMissingDependency': 0,
       'countsByClass': {
-        'needs_pack': 3,
+        'needs_pack': 4,
       },
       'skills': [
         {
@@ -202,6 +205,12 @@ void main() {
           'requiredPacks': ['android-agent-cli-pack'],
           'ready': false,
         },
+        {
+          'skillId': sherpa.skillId,
+          'androidSupport': sherpa.status.wireName,
+          'requiredPacks': sherpa.requiredPacks,
+          'ready': false,
+        },
       ],
     });
 
@@ -215,9 +224,18 @@ void main() {
     );
     expect(details['gemini'], contains('Android Gemini CLI pack'));
     expect(details['coding-agent'], contains('Android agent CLI pack'));
+    expect(details['sherpa-onnx-tts'], contains('Android TTS runtime'));
+    expect(
+      details['sherpa-onnx-tts'],
+      contains('Standalone Node executable pack'),
+    );
     expect(
       details['node-inspect-debugger'],
       isNot(contains('android-node-executable-pack')),
+    );
+    expect(
+      details['sherpa-onnx-tts'],
+      isNot(contains('android-tts-runtime')),
     );
   });
 

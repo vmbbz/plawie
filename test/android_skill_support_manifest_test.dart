@@ -106,6 +106,10 @@ void main() {
       manifest.entryFor('coding-agent')!.requiredPacks,
       ['android-agent-cli-pack'],
     );
+    expect(
+      manifest.entryFor('sherpa-onnx-tts')!.requiredPacks,
+      ['android-tts-runtime', 'android-node-executable-pack'],
+    );
     expect(manifest.entryFor('xurl')!.toJson(), {
       'skillId': 'xurl',
       'androidSupport': 'ready_optional',

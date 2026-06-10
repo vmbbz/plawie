@@ -22,7 +22,7 @@ gemini: android-gemini-cli-pack
 gifgrep: android-vision-media-runtime
 node-inspect-debugger: android-node-executable-pack
 openai-whisper: android-whisper-runtime
-sherpa-onnx-tts: android-tts-runtime
+sherpa-onnx-tts: android-tts-runtime + android-node-executable-pack
 songsee: android-audio-runtime
 spotify-player: android-audio-runtime
 ```
@@ -112,6 +112,8 @@ Why it is credible:
 
 Why it is not next:
 
+- The current OpenClaw skill path also needs a standalone `node` execution
+  host; a TTS runtime/model pack alone would not make the skill ready.
 - It needs native libraries plus a TTS model policy.
 - Models can dominate APK size.
 - It needs a product decision around bundled voice, downloadable model pack, or
@@ -121,7 +123,8 @@ Expected order:
 
 ```text
 Do after songsee, unless we deliberately prioritize offline voice as a major
-release feature and accept APK/model work.
+release feature and accept APK/model work plus either standalone Node or an
+app-native/JNI replacement for the current skill execution path.
 ```
 
 ### 4. openai-whisper: credible but overlaps current API adapter
@@ -287,14 +290,37 @@ The same audit round keeps the remaining heavy lanes parked:
 ```text
 openai-whisper -> only move after a real whisper.cpp-style Android runtime and
                   model pack proves size, hash, license, and device latency
-sherpa-onnx-tts -> viable later, but requires native libs, model layout,
-                   espeak data, licenses, hashes, and synthesis smoke
+sherpa-onnx-tts -> viable later, but requires android-tts-runtime,
+                   standalone node unless replaced by an app-native/JNI path,
+                   model layout, espeak data, licenses, hashes, and synthesis
+                   smoke
 node-inspect-debugger -> standalone node executable only; libnode.so does not
                          satisfy the skill
 gemini -> blocked behind standalone node plus auth/config truth
 coding-agent -> product/security lane; choose exactly one CLI and sandbox model
 spotify-player -> choose spogo cookies vs spotify_player auth before packaging
 ```
+
+## Phase 5M Addendum
+
+Installed-device health after Phase 5L proved that `sherpa-onnx-tts` is a
+mixed blocker in the current default skill shape:
+
+```text
+required packs:
+  android-tts-runtime
+  android-node-executable-pack
+
+live gates:
+  missing standalone node
+  SHERPA_ONNX_MODEL_DIR
+  SHERPA_ONNX_RUNTIME_DIR
+```
+
+This does not make Sherpa less credible; it makes the release gate more honest.
+Do not count an `android-tts-runtime` payload alone as enough to move
+`sherpa-onnx-tts` ready unless the skill is also moved to an app-native/JNI
+execution path or a standalone Android `node` executable is present and smoked.
 
 ## Source Notes
 
