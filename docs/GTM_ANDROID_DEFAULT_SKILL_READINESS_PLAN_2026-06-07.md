@@ -2229,6 +2229,37 @@ Readiness impact:
   true binary-pack blockers unchanged at 6
 ```
 
+Phase 5N six-blocker reality check:
+
+```text
+audited remaining true PACK GATES:
+  coding-agent
+  gemini
+  node-inspect-debugger
+  openai-whisper
+  sherpa-onnx-tts
+  spotify-player
+
+decision:
+  none is the next industrial GTM implementation lane
+
+why:
+  node-inspect-debugger is technically coherent only after a real standalone
+  Android node executable, but it is high effort for a low-product-value +1
+  gemini is behind standalone node plus Google auth/config truth
+  coding-agent is a product/security/runtime lane, not a generic binary pack
+  openai-whisper needs a real local runtime, model policy, size/license review,
+  and device latency proof; the OpenAI API adapter already covers the practical
+  configured transcription path
+  sherpa-onnx-tts needs TTS runtime/model assets plus standalone node or an
+  app-native/JNI replacement path
+  spotify-player needs a backend/auth decision before binary packaging; songsee
+  in android-audio-runtime must not satisfy Spotify
+
+mainline pivot:
+  Phase 6A config-unlock quality
+```
+
 Host-side proof:
 
 ```text
@@ -3071,7 +3102,7 @@ Android ready floor remains 30/51
 Commit made.
 ```
 
-Round 5N next target:
+Round 5N reality-check target:
 
 ```text
 reality-check the remaining six true pack blockers after the Sherpa correction:
@@ -3082,11 +3113,41 @@ reality-check the remaining six true pack blockers after the Sherpa correction:
   sherpa-onnx-tts
   spotify-player
 
-Do not chase a fake quick +1. Pick the next implementation only if it has a
-sane Android artifact path, clear auth/config truth, Gateway/agent execution,
-and an installed-device smoke. If no remaining pack lane clears that bar, pivot
-to Phase 6A config-unlock quality: setup validation, test-connection actions,
-and clearer service-specific UI for the 15 config gates.
+decision:
+  no remaining pack lane clears the GTM bar today
+
+parked:
+  node/gemini/coding-agent until standalone node, auth, sandbox, and product
+  security truth exist
+  openai-whisper/sherpa until runtime, model, size, license, and device-smoke
+  truth exist
+  spotify-player until backend/auth setup is explicit
+
+mainline pivot:
+  Phase 6A config-unlock quality
+
+Commit made.
+```
+
+Phase 6A target:
+
+```text
+Improve the 15 CONFIG GATES so fresh users can enter, save, and verify service
+setup without guessing.
+
+First implementation slice:
+  define a small AndroidSkillConfigTestPlan model that maps configured skills
+  to safe Gateway/agent tool checks
+  expose Test Connection after Save & Check for app-native service adapters
+  keep secrets out of visible payloads, snackbars, logs, and docs
+  route checks through Gateway/AgentSkillServer tool execution, not ad hoc UI
+  HTTP calls to service APIs
+
+Release impact:
+  no readiness score inflation by itself
+  higher conversion from needs_config to ready for users who supply real keys
+  clearer support path for Slack, GitHub, Notion, Discord, Trello, MCPorter,
+  Google Places, OpenAI Whisper API, and later config-only services
 ```
 
 ## Success Definition
