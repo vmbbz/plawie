@@ -3150,6 +3150,31 @@ Release impact:
   Google Places, OpenAI Whisper API, and later config-only services
 ```
 
+Phase 6A first slice landed:
+
+```text
+AndroidSkillConfigTestPlan maps supported config-gated skills to local
+AgentSkillServer /api/tools/execute checks:
+  discord -> discord
+  github / gh-issues -> github
+  goplaces -> goplaces with query=OpenClaw limit=1
+  mcporter -> mcporter
+  notion -> notion with query=OpenClaw limit=1
+  openai-whisper-api -> openai-whisper-api with a tiny generated WAV fixture
+  slack -> slack
+  trello -> trello with limit=1
+
+AndroidSkillConfigTestService posts only to the local AgentSkillServer bridge
+and sanitizes UI-visible summaries. The Skills config sheet now keeps supported
+service-adapter flows open after Save & Check and reveals Test Connection.
+
+Readiness impact:
+  release gate unchanged at 13/13
+  Android ready floor unchanged at 30/51
+  CONFIG GATES are easier for users to unlock, but scores move only after real
+  user config and live service checks pass on device
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android

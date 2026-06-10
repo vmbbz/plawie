@@ -1,5 +1,7 @@
 import 'package:clawa/screens/management/skills/android_skill_config_sheet.dart';
 import 'package:clawa/services/android_skill_config_form_model.dart';
+import 'package:clawa/services/android_skill_config_test_plan.dart';
+import 'package:clawa/services/android_skill_config_test_service.dart';
 import 'package:clawa/services/skill_provisioning_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -92,6 +94,76 @@ void main() {
     expect(capturedConfig, {'channels.slack': 'C123'});
   });
 
+  testWidgets(
+      'successful save reveals test connection action for supported skill',
+      (tester) async {
+    AndroidSkillConfigTestPlan? capturedPlan;
+
+    await _pumpSheet(
+      tester,
+      _slackModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async =>
+          _satisfiedReport(skillId),
+      testConnection: (plan) async {
+        capturedPlan = plan;
+        return const AndroidSkillConfigTestResult(
+          ok: true,
+          message: 'Slack auth check passed.',
+          safeSummary: '{"team":"OpenClaw"}',
+        );
+      },
+    );
+
+    expect(find.text('Test Connection'), findsNothing);
+
+    await tester.enterText(_textFieldByLabel('Bot token'), 'xoxb-test-secret');
+    await tester.enterText(_textFieldByLabel('Default Slack channel'), 'C123');
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+
+    expect(find.text('Test Connection'), findsOneWidget);
+    await tester.tap(find.text('Test Connection'));
+    await tester.pump();
+
+    expect(capturedPlan?.toolName, 'slack');
+    expect(find.text('Slack auth check passed.'), findsOneWidget);
+    expect(find.textContaining('OpenClaw'), findsOneWidget);
+    expect(find.textContaining('must-not-leak'), findsNothing);
+  });
+
+  testWidgets('connection test failures stay sanitized', (tester) async {
+    await _pumpSheet(
+      tester,
+      _slackModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async =>
+          _satisfiedReport(skillId),
+      testConnection: (_) async => const AndroidSkillConfigTestResult(
+        ok: false,
+        message: 'Slack auth check failed.',
+        safeSummary: 'Bad token [secret]',
+      ),
+    );
+
+    await tester.enterText(_textFieldByLabel('Bot token'), 'xoxb-test-secret');
+    await tester.enterText(_textFieldByLabel('Default Slack channel'), 'C123');
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+    await tester.tap(find.text('Test Connection'));
+    await tester.pump();
+
+    expect(find.text('Slack auth check failed.'), findsOneWidget);
+    expect(find.textContaining('Bad token [secret]'), findsOneWidget);
+    expect(find.textContaining('xoxb-secret'), findsNothing);
+  });
+
   testWidgets('empty provisioning result is shown as an explicit failure',
       (tester) async {
     await _pumpSheet(
@@ -146,6 +218,7 @@ Future<void> _pumpSheet(
   WidgetTester tester,
   AndroidSkillConfigFormModel model, {
   AndroidSkillConfigApply? applyConfig,
+  AndroidSkillConfigTestApply? testConnection,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -153,6 +226,7 @@ Future<void> _pumpSheet(
         body: AndroidSkillConfigSheet(
           model: model,
           applyConfig: applyConfig,
+          testConnection: testConnection,
         ),
       ),
     ),

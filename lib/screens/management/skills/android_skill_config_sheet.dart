@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../../../app.dart';
 import '../../../providers/gateway_provider.dart';
 import '../../../services/android_skill_config_form_model.dart';
+import '../../../services/android_skill_config_test_plan.dart';
+import '../../../services/android_skill_config_test_service.dart';
 import '../../../services/skill_provisioning_service.dart';
 
 typedef AndroidSkillConfigApply = Future<SkillProvisioningReport> Function({
@@ -13,14 +15,19 @@ typedef AndroidSkillConfigApply = Future<SkillProvisioningReport> Function({
   required Map<String, dynamic> configValues,
 });
 
+typedef AndroidSkillConfigTestApply = Future<AndroidSkillConfigTestResult>
+    Function(AndroidSkillConfigTestPlan plan);
+
 class AndroidSkillConfigSheet extends StatefulWidget {
   final AndroidSkillConfigFormModel model;
   final AndroidSkillConfigApply? applyConfig;
+  final AndroidSkillConfigTestApply? testConnection;
 
   const AndroidSkillConfigSheet({
     super.key,
     required this.model,
     this.applyConfig,
+    this.testConnection,
   });
 
   @override
@@ -31,12 +38,17 @@ class AndroidSkillConfigSheet extends StatefulWidget {
 class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, bool> _obscure = {};
+  late final AndroidSkillConfigTestPlan? _testPlan;
   bool _isSaving = false;
+  bool _isTesting = false;
+  bool _configSaved = false;
   String? _error;
+  AndroidSkillConfigTestResult? _lastTestResult;
 
   @override
   void initState() {
     super.initState();
+    _testPlan = AndroidSkillConfigTestPlan.forSkill(widget.model.skillId);
     for (final field in widget.model.fields) {
       _controllers[field.key] = TextEditingController(
         text: field.inputKind == AndroidSkillConfigInputKind.provider &&
@@ -120,6 +132,11 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
       final gate = result?.primaryGate ??
           result?.status.wireName ??
           widget.model.runtimeGateLabel;
+      final canTestConnection = _testPlan != null;
+      setState(() {
+        _configSaved = canTestConnection;
+        _lastTestResult = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -131,7 +148,7 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
               ready ? AppColors.statusGreen : AppColors.statusAmber,
         ),
       );
-      if (Navigator.of(context).canPop()) {
+      if (!canTestConnection && Navigator.of(context).canPop()) {
         Navigator.of(context).pop(report);
       }
     } catch (error) {
@@ -142,6 +159,49 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  Future<void> _testConnection() async {
+    final plan = _testPlan;
+    if (plan == null) return;
+
+    setState(() {
+      _isTesting = true;
+      _error = null;
+      _lastTestResult = null;
+    });
+
+    try {
+      final result = await _runTestConnection(plan);
+      if (!mounted) return;
+      setState(() => _lastTestResult = result);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor:
+              result.ok ? AppColors.statusGreen : AppColors.statusRed,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+        () => _lastTestResult = const AndroidSkillConfigTestResult(
+          ok: false,
+          message: 'Connection check failed.',
+          safeSummary: 'The local tool bridge did not return a usable result.',
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isTesting = false);
+    }
+  }
+
+  Future<AndroidSkillConfigTestResult> _runTestConnection(
+    AndroidSkillConfigTestPlan plan,
+  ) {
+    final testConnection = widget.testConnection;
+    if (testConnection != null) return testConnection(plan);
+    return AndroidSkillConfigTestService().run(plan);
   }
 
   Future<SkillProvisioningReport> _applyConfig({
@@ -281,6 +341,48 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
                   label: Text(_isSaving ? 'Checking' : 'Save & Check'),
                 ),
               ),
+              if (_configSaved && _testPlan != null) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    onPressed: _isTesting ? null : _testConnection,
+                    icon: _isTesting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.wifi_tethering_rounded, size: 18),
+                    label: Text(
+                      _isTesting ? 'Testing' : _testPlan.buttonLabel,
+                    ),
+                  ),
+                ),
+              ],
+              if (_lastTestResult != null) ...[
+                const SizedBox(height: 12),
+                _Notice(
+                  color: _lastTestResult!.ok
+                      ? AppColors.statusGreen
+                      : AppColors.statusRed,
+                  icon: _lastTestResult!.ok
+                      ? Icons.verified_rounded
+                      : Icons.error_outline_rounded,
+                  text: _lastTestResult!.message,
+                ),
+                if (_lastTestResult!.safeSummary.trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _lastTestResult!.safeSummary,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.58),
+                      fontSize: 10.5,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ],
             ],
           ),
         ),
