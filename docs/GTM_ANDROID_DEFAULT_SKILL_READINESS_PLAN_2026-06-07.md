@@ -29,8 +29,8 @@ Hide or demote skills that are not Android-release safe.
 ## Current Scorecard
 
 Current host/APK and installed-device truth on 2026-06-10 after the Phase 5K
-Gifgrep vision-media payload device proof, plus the Phase 5L host-side
-config-unlock UI/readiness bridge:
+Gifgrep vision-media payload device proof, plus the Phase 5L installed-device
+config-unlock UI/readiness bridge proof:
 
 ```text
 Classified default manifest: 61
@@ -171,10 +171,11 @@ CLI-core `sonos` payload satisfies its binary gate. eightctl remains
 pack-satisfied but config-gated.
 
 Static needs_config taxonomy entries: 14
-Current config-gated rows users can unlock in UI after Phase 5L: 15
+Current config-gated rows users can unlock in UI after Phase 5L device proof: 15
   = 14 static needs_config entries
   + eightctl, whose APK-local binary pack is satisfied but whose live runtime
-    gate remains needs_config until Eight Sleep account/device config exists
+    gate remains needs_config until EIGHTCTL_PASSWORD / Eight Sleep
+    account/device config exists
 
 Unready needs_pack taxonomy entries: 7
   = 17 needs_pack taxonomy entries - 10 ready needs_pack skills
@@ -217,7 +218,8 @@ external service.
 ## Latest Installed Device Truth
 
 Live device health on 2026-06-10 after the Phase 5K Gifgrep vision-media
-runtime install/provisioning smoke reported:
+runtime install/provisioning smoke and the Phase 5L config-unlock bridge
+reinstall reported:
 
 ```text
 Target device: RZCX30KA9AW / Samsung SM-A556E
@@ -261,7 +263,24 @@ video-frames: runtimeStatus ready, provisioningStatus ready,
 sonoscli: runtimeStatus ready, provisioningStatus ready,
           APK-local sonos payload satisfies the binary gate
 eightctl: runtimeStatus needs_config, provisioningStatus needs_user_config,
-          APK-local eightctl payload exists but user config is still required
+          APK-local eightctl payload exists, requiredEnv EIGHTCTL_PASSWORD,
+          no missing pack/bin evidence, belongs in CONFIG GATES
+spotify-player: runtimeStatus missing_dependency,
+                provisioningStatus missing_binary,
+                requiredAnyBins [spogo, spotify_player],
+                missingBins [spogo], stays in PACK GATES
+openai-whisper: runtimeStatus missing_dependency,
+                provisioningStatus missing_binary,
+                missingBins [whisper], stays in PACK GATES
+
+Phase 5L current gate split:
+CONFIG GATES: 15
+  1password, discord, eightctl, gh-issues, github, gog, goplaces,
+  mcporter, notion, openai-whisper-api, ordercli, sag, slack, trello,
+  voice-call
+PACK GATES: 6
+  coding-agent, gemini, node-inspect-debugger, openai-whisper,
+  sherpa-onnx-tts, spotify-player
 
 Python debug runtime proof:
 provisioning/python-debug/wheels/debugpy-1.8.21-py2.py3-none-any.whl
@@ -277,8 +296,8 @@ eightctl: ready false, runtimeStatus needs_config,
           provisioningStatus needs_user_config, no missing pack/bin
 himalaya: ready true, runtimeStatus ready, provisioningStatus ready
 openhue: ready true, runtimeStatus ready, provisioningStatus ready
-sonoscli: ready false, runtimeStatus needs_config,
-          provisioningStatus needs_user_config, no missing pack/bin
+sonoscli: ready true, runtimeStatus ready, provisioningStatus ready,
+          APK-local sonos payload satisfies the binary gate
 wacli: ready true, runtimeStatus ready, provisioningStatus ready
 
 No-secret managed-bin version smokes:
