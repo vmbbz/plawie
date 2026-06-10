@@ -382,6 +382,20 @@ provisioning roots. A future `songsee` payload must not satisfy
 `spotify_player` auth/config are represented truthfully in the UI and runtime
 audit.
 
+The first `android-audio-runtime` plumbing slice is APK-local and songsee-only:
+
+```text
+asset root: assets/openclaw/audio-runtime/bin/
+bootstrap root: filesDir/native-node-embedded/provisioning/audio-runtime/bin
+managed install root: .openclaw/bin
+first advertised bin: songsee
+blocked by design: spotify-player
+```
+
+An empty directory or `.gitkeep` does not advertise the pack. The Dart resolver
+only advertises `android-audio-runtime` after the installed APK has copied a
+real `songsee` binary into the audio-runtime provisioning root.
+
 ## Gateway `tools.allow`
 
 `tools.allow` is a strict Gateway allowlist. OpenClaw applies `tools.profile`

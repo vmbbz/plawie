@@ -109,6 +109,24 @@ void main() {
     expect(bootstrap, contains('terminalLibCount'));
   });
 
+  test('Native bootstrap declares audio runtime bin asset lane', () async {
+    final pubspec = await File('pubspec.yaml').readAsString();
+    final bootstrap = await File(
+      'android/app/src/main/kotlin/com/nxg/openclawproot/'
+      'NativeNodeEmbeddedService.kt',
+    ).readAsString();
+
+    expect(pubspec, contains('assets/openclaw/audio-runtime/bin/'));
+    expect(bootstrap, contains('AUDIO_RUNTIME_BIN_ASSET_DIR'));
+    expect(
+      bootstrap,
+      contains('flutter_assets/assets/openclaw/audio-runtime/bin'),
+    );
+    expect(bootstrap, contains('copyAudioRuntimeBinAssets'));
+    expect(bootstrap, contains('provisioning/audio-runtime/bin'));
+    expect(bootstrap, contains('audioRuntimeBinCount'));
+  });
+
   test('Tmux terminal APK payload is a real Android arm64 pack', () async {
     const tmuxPayloadSha =
         '9db38fdb4178abd13d19a32f40d265b61473694487e5c6ffc60e43ba11f1ca96';

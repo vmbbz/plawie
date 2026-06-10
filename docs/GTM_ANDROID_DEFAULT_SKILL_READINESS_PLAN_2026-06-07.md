@@ -1972,6 +1972,24 @@ unresolved pack blockers: unchanged at 8
 release gate: unchanged at 13/13
 ```
 
+Phase 5J audio-runtime plumbing landed:
+
+```text
+APK asset lane: assets/openclaw/audio-runtime/bin/
+Native bootstrap copy target:
+  filesDir/native-node-embedded/provisioning/audio-runtime/bin
+provisioning resolver: android-audio-runtime, songsee only
+truth rule: advertise the pack only when songsee exists in the bundled
+            audio-runtime bin root
+blocked by design: spotify-player
+```
+
+This checkpoint intentionally does not raise the Android-ready floor. It only
+creates the safe lane for a future real `songsee` Android arm64 payload. A
+bundled `songsee` executable can move `songsee`; it must not satisfy
+`spotify-player`, whose real gates are `spogo` or `spotify_player` plus
+account/auth setup.
+
 Phase 5C Android vision-media runtime lane landed as plumbing:
 
 ```text
@@ -2714,6 +2732,17 @@ Choose songsee as the next payload lane.
 Keep gifgrep, Node, Gemini, coding-agent, Whisper, Sherpa TTS, and Spotify
 blocked until their real runtime/config risks are solved.
 Ready count stays 27/51 because this is a decision round, not payload proof.
+Commit made.
+```
+
+Round 5J plumbing target:
+
+```text
+android-audio-runtime APK-local bin lane exists.
+songsee is the only advertised audio-runtime binary.
+spotify-player remains blocked when only songsee exists.
+Ready count stays 27/51 until a real songsee payload and installed-device smoke
+land.
 Commit made.
 ```
 

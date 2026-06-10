@@ -56,6 +56,8 @@ class NativeNodeEmbeddedService : Service() {
         private const val CLI_CORE_BIN_ASSET_DIR = "flutter_assets/assets/openclaw/cli-core/bin"
         private const val VISION_MEDIA_BIN_ASSET_DIR =
             "flutter_assets/assets/openclaw/vision-media/bin"
+        private const val AUDIO_RUNTIME_BIN_ASSET_DIR =
+            "flutter_assets/assets/openclaw/audio-runtime/bin"
         private const val PYTHON_DEBUG_WHEEL_ASSET_DIR =
             "flutter_assets/assets/openclaw/python-debug-runtime/wheels"
         private const val TERMINAL_BIN_ASSET_DIR =
@@ -383,6 +385,9 @@ class NativeNodeEmbeddedService : Service() {
         val provisioningBin = File(workDir(applicationContext), "provisioning/bin")
         val cliCoreBinCount = copyCliCoreBinAssets(provisioningBin)
         val visionMediaBinCount = copyVisionMediaBinAssets(provisioningBin)
+        val audioRuntimeBinCount = copyAudioRuntimeBinAssets(
+            File(workDir(applicationContext), "provisioning/audio-runtime/bin")
+        )
         val pythonDebugWheelCount = copyPythonDebugWheelAssets(
             File(workDir(applicationContext), "provisioning/python-debug/wheels")
         )
@@ -424,6 +429,8 @@ class NativeNodeEmbeddedService : Service() {
                 .put("cliCoreBinCount", cliCoreBinCount)
                 .put("visionMediaBinAssetDir", VISION_MEDIA_BIN_ASSET_DIR)
                 .put("visionMediaBinCount", visionMediaBinCount)
+                .put("audioRuntimeBinAssetDir", AUDIO_RUNTIME_BIN_ASSET_DIR)
+                .put("audioRuntimeBinCount", audioRuntimeBinCount)
                 .put("pythonDebugWheelAssetDir", PYTHON_DEBUG_WHEEL_ASSET_DIR)
                 .put("pythonDebugWheelCount", pythonDebugWheelCount)
                 .put("terminalBinAssetDir", TERMINAL_BIN_ASSET_DIR)
@@ -546,6 +553,10 @@ class NativeNodeEmbeddedService : Service() {
 
     private fun copyVisionMediaBinAssets(targetDir: File): Int {
         return copyBundledBinAssets(VISION_MEDIA_BIN_ASSET_DIR, targetDir, "vision-media")
+    }
+
+    private fun copyAudioRuntimeBinAssets(targetDir: File): Int {
+        return copyBundledBinAssets(AUDIO_RUNTIME_BIN_ASSET_DIR, targetDir, "audio-runtime")
     }
 
     private fun copyPythonDebugWheelAssets(targetDir: File): Int {

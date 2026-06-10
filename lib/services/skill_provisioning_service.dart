@@ -35,6 +35,11 @@ class SkillProvisioningService {
   static const _androidVisionMediaPackBins = <String>{
     'ffmpeg',
   };
+  static const _androidAudioRuntimePackId = 'android-audio-runtime';
+  static const _androidAudioRuntimePackVersion = 'apk-bundled-v1';
+  static const _androidAudioRuntimePackBins = <String>{
+    'songsee',
+  };
   static const _androidPythonDebugPackId = 'android-python-debug-runtime';
   static const _androidPythonDebugPackVersion = 'debugpy-1.8.21-apk-v1';
   static const _androidPythonDebugVersion = '1.8.21';
@@ -348,6 +353,11 @@ class SkillProvisioningService {
         : null;
     final apkProvidedVisionMediaBins =
         apkProvidedVisionMediaPack?.providesBins ?? const <String>{};
+    final apkProvidedAudioRuntimePack = installDependencyPacks
+        ? await _apkProvidedAudioRuntimePack(layout)
+        : null;
+    final apkProvidedAudioRuntimeBins =
+        apkProvidedAudioRuntimePack?.providesBins ?? const <String>{};
     final apkProvidedTerminalPack =
         installDependencyPacks ? await _apkProvidedTerminalPack(layout) : null;
     final apkProvidedTerminalBins =
@@ -410,6 +420,7 @@ class SkillProvisioningService {
       final normalizedBin = _normalizeBinRequirement(bin);
       if (apkProvidedCliCoreBins.contains(normalizedBin) ||
           apkProvidedVisionMediaBins.contains(normalizedBin) ||
+          apkProvidedAudioRuntimeBins.contains(normalizedBin) ||
           apkProvidedTerminalBins.contains(normalizedBin)) {
         unresolvedNonRuntimeMissingBins.add(bin);
         continue;
@@ -797,6 +808,7 @@ class SkillProvisioningService {
     for (final bin in requiredBins.difference(coveredBins)) {
       final isCliCoreBin = _androidCliCorePackBins.contains(bin);
       final isVisionMediaBin = _androidVisionMediaPackBins.contains(bin);
+      final isAudioRuntimeBin = _androidAudioRuntimePackBins.contains(bin);
       final isTerminalBin = _androidTerminalPackBins.contains(bin);
       actions.add(SkillProvisioningAction(
         type: SkillProvisioningActionType.dependencyPack,
@@ -804,17 +816,21 @@ class SkillProvisioningService {
             ? '$_androidCliCorePackId:$bin'
             : isVisionMediaBin
                 ? '$_androidVisionMediaPackId:$bin'
-                : isTerminalBin
-                    ? '$_androidTerminalPackId:$bin'
-                    : 'bin:$bin',
+                : isAudioRuntimeBin
+                    ? '$_androidAudioRuntimePackId:$bin'
+                    : isTerminalBin
+                        ? '$_androidTerminalPackId:$bin'
+                        : 'bin:$bin',
         status: SkillProvisioningActionStatus.missingPack,
         message: isCliCoreBin
             ? 'Android CLI-core payload is missing "$bin". Bundle assets/openclaw/cli-core/bin/$bin in the APK or publish a signed dependency pack for arm64-v8a.'
             : isVisionMediaBin
                 ? 'Android vision-media payload is missing "$bin". Bundle assets/openclaw/vision-media/bin/$bin in the APK or publish a signed dependency pack for arm64-v8a.'
-                : isTerminalBin
-                    ? 'Android terminal payload is missing "$bin". Bundle assets/openclaw/terminal/bin/$bin plus required assets/openclaw/terminal/lib/ shared libraries in the APK or publish a signed dependency pack for arm64-v8a.'
-                    : 'No Native dependency pack advertises binary "$bin" for arm64-v8a.',
+                : isAudioRuntimeBin
+                    ? 'Android audio runtime payload is missing "$bin". Bundle assets/openclaw/audio-runtime/bin/$bin in the APK or publish a signed dependency pack for arm64-v8a.'
+                    : isTerminalBin
+                        ? 'Android terminal payload is missing "$bin". Bundle assets/openclaw/terminal/bin/$bin plus required assets/openclaw/terminal/lib/ shared libraries in the APK or publish a signed dependency pack for arm64-v8a.'
+                        : 'No Native dependency pack advertises binary "$bin" for arm64-v8a.',
       ));
     }
     for (final pack in selected) {
@@ -1719,6 +1735,10 @@ class SkillProvisioningService {
     final visionMediaPack = await _apkProvidedVisionMediaPack(layout);
     if (visionMediaPack != null) {
       packs.add(visionMediaPack);
+    }
+    final audioRuntimePack = await _apkProvidedAudioRuntimePack(layout);
+    if (audioRuntimePack != null) {
+      packs.add(audioRuntimePack);
     }
     final pythonDebugPack = await _apkProvidedPythonDebugPack(layout);
     if (pythonDebugPack != null) {
@@ -3529,6 +3549,23 @@ class SkillProvisioningService {
     );
   }
 
+  static Future<_DependencyPack?> _apkProvidedAudioRuntimePack(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final providedBins = <String>{};
+    for (final bin in _androidAudioRuntimePackBins) {
+      if (await _findBundledNativeBinary(layout, bin) != null) {
+        providedBins.add(bin);
+      }
+    }
+    if (providedBins.isEmpty) return null;
+    return _DependencyPack.apk(
+      id: _androidAudioRuntimePackId,
+      version: _androidAudioRuntimePackVersion,
+      providesBins: providedBins,
+    );
+  }
+
   static Future<_DependencyPack?> _apkProvidedPythonDebugPack(
     _SkillProvisioningLayout layout,
   ) async {
@@ -4159,6 +4196,27 @@ class _SkillProvisioningLayout {
           'native-node-embedded',
           'full-openclaw',
           'provisioning',
+          'bin',
+        )),
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'provisioning',
+          'audio-runtime',
+          'bin',
+        )),
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'bundled-audio-runtime',
+          'bin',
+        )),
+        Directory(path.join(
+          filesDir,
+          'native-node-embedded',
+          'full-openclaw',
+          'provisioning',
+          'audio-runtime',
           'bin',
         )),
         Directory(path.join(

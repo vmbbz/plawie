@@ -539,6 +539,152 @@ requirements:
         await File(path.join(nativeRoot, 'bin', 'gifgrep')).exists(), isFalse);
   });
 
+  test('provisioning installs APK-provided audio runtime pack for songsee',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_songsee_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills =
+        Directory(path.join(nativeRoot, 'workspace', 'skills'));
+    final bundledAudioBinDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'audio-runtime',
+      'bin',
+    ));
+    await nativeSkills.create(recursive: true);
+    await bundledAudioBinDir.create(recursive: true);
+
+    final songsee = Directory(path.join(nativeSkills.path, 'songsee'));
+    await songsee.create(recursive: true);
+    await File(path.join(songsee.path, 'SKILL.md')).writeAsString('''
+---
+requirements:
+  bins:
+    - songsee
+---
+# Songsee
+''');
+    await File(path.join(bundledAudioBinDir.path, 'songsee')).writeAsString(
+      '#!/system/bin/sh\nprintf "songsee test\\n"\n',
+      flush: true,
+    );
+
+    final before = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    expect(
+      before.executionMatrix
+          .singleWhere((entry) => entry.skillId == 'songsee')
+          .gates,
+      contains('missing_native_bin'),
+    );
+
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      before,
+      skillId: 'songsee',
+    );
+
+    expect(report.changed, isTrue);
+    expect(report.reloadRecommended, isTrue);
+    expect(report.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(
+      report.results.single.actions
+          .where((action) =>
+              action.type == SkillProvisioningActionType.dependencyPack)
+          .map((action) => action.key),
+      contains('android-audio-runtime'),
+    );
+    expect(await File(path.join(nativeRoot, 'bin', 'songsee')).exists(), isTrue);
+    expect(
+      await File(path.join(
+        nativeRoot,
+        'dependencies',
+        'receipts',
+        'android-audio-runtime.json',
+      )).exists(),
+      isTrue,
+    );
+  });
+
+  test('spotify-player remains blocked when only songsee audio payload exists',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_spotify_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills =
+        Directory(path.join(nativeRoot, 'workspace', 'skills'));
+    final bundledAudioBinDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'audio-runtime',
+      'bin',
+    ));
+    await nativeSkills.create(recursive: true);
+    await bundledAudioBinDir.create(recursive: true);
+
+    final spotify = Directory(path.join(nativeSkills.path, 'spotify-player'));
+    await spotify.create(recursive: true);
+    await File(path.join(spotify.path, 'SKILL.md')).writeAsString('''
+---
+metadata:
+  openclaw:
+    requires:
+      anyBins:
+        - spogo
+        - spotify_player
+---
+# Spotify Player
+''');
+    await File(path.join(bundledAudioBinDir.path, 'songsee')).writeAsString(
+      '#!/system/bin/sh\nprintf "songsee test\\n"\n',
+      flush: true,
+    );
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      snapshot,
+      skillId: 'spotify-player',
+    );
+
+    expect(report.changed, isFalse);
+    expect(report.results.single.status, SkillProvisioningStatus.missingBinary);
+    expect(
+      report.results.single.actions
+          .where((action) =>
+              action.type == SkillProvisioningActionType.dependencyPack)
+          .map((action) => action.key),
+      isNot(contains('android-audio-runtime')),
+    );
+    expect(
+      await File(path.join(nativeRoot, 'bin', 'spotify_player')).exists(),
+      isFalse,
+    );
+    expect(await File(path.join(nativeRoot, 'bin', 'spogo')).exists(), isFalse);
+  });
+
   test('provisioning installs APK-provided terminal pack for tmux', () async {
     final temp =
         await Directory.systemTemp.createTemp('skill_provision_terminal_');
