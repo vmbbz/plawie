@@ -3134,6 +3134,17 @@ mainline pivot:
 Commit made.
 ```
 
+Round 6D-A target:
+
+```text
+Non-destructive release rehearsal runner exists.
+Debug APK builds and installs over existing data.
+/device/health release gate and taxonomy counts are verified after launch.
+Safe headless Class A tool routes are smoked through AgentSkillServer.
+Interactive chat/UI-only lanes are recorded separately instead of being faked.
+Commit made.
+```
+
 Phase 6A target:
 
 ```text
@@ -3368,6 +3379,61 @@ Device proof after Phase 6C expansion install:
     live connection checks: 9
     conditional setup-status checks: 1
     save-only config gates: 5
+```
+
+Phase 6D-A non-destructive release rehearsal landed:
+
+```text
+Runner:
+  scripts/android/run_phase_6d_release_rehearsal.ps1
+
+Mode:
+  non-destructive; no app data clear and no uninstall
+
+Device:
+  RZCX30KA9AW / Samsung SM-A556E
+
+Build/install:
+  flutter build apk --debug: PASS
+  flutter install -d RZCX30KA9AW --debug: PASS
+  later proof reruns used -SkipBuild -SkipInstall against that installed APK
+
+Strict release proof:
+  releaseGatePass: true
+  ready_required: 13/13
+  classified default manifest: 61
+  installed Native workspace skills: 65
+  unexpected_missing_dependency: 0
+  /api/tools catalog count: 25
+
+Required headless tool smokes through AgentSkillServer:
+  device-health: PASS
+  device-status: PASS
+  battery: PASS
+  sensors: PASS
+  weather: PASS
+  clawhub: PASS
+  meme-maker: PASS
+  vibrate: PASS
+  avatar-status: PASS
+  total: 9/9
+
+Optional chat-smoke probe:
+  haptic prompt: TOOL_USE and TOOL_RESULT observed; final assistant text timed
+    out inside the smoke endpoint, so the tool lane passed but the model
+    continuation is not yet a clean final-answer proof.
+  device-health prompt: host request timed out before the endpoint returned.
+
+Interpretation:
+  Phase 6D-A proves the installed APK's release gate and concrete local
+  app-native tool routes without destroying user data. It does not yet replace
+  the true clean-data proof and it does not claim headless proof for
+  instruction-only or UI-stateful Class A lanes such as skill-creator, spike,
+  taskflow, taskflow-inbox-triage, and canvas.
+
+Next gate:
+  Phase 6D-B clean-data proof requires explicit approval to clear app data or
+  uninstall/reinstall because it destroys local app state.
 ```
 
 ## Success Definition
