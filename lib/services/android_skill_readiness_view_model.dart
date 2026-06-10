@@ -1,3 +1,5 @@
+import 'android_skill_config_test_plan.dart';
+
 class AndroidSkillReadinessViewModel {
   final int manifestTotal;
   final int readyRequiredReady;
@@ -39,6 +41,35 @@ class AndroidSkillReadinessViewModel {
   int get blockedNeedsConfigCount => topNeedsConfig.length;
 
   int get blockedNeedsPackCount => topNeedsPack.length;
+
+  int get liveConnectionTestCount => topNeedsConfig
+      .where(
+        (item) =>
+            item.configTestSupport ==
+            AndroidSkillConfigTestSupport.liveConnection,
+      )
+      .length;
+
+  int get conditionalSetupStatusCount => topNeedsConfig
+      .where(
+        (item) =>
+            item.configTestSupport ==
+            AndroidSkillConfigTestSupport.conditionalSetupStatus,
+      )
+      .length;
+
+  int get saveOnlyConfigCount => topNeedsConfig
+      .where(
+        (item) =>
+            item.configTestSupport == AndroidSkillConfigTestSupport.saveOnly,
+      )
+      .length;
+
+  String get configTestCoverageLabel =>
+      '$liveConnectionTestCount live + $conditionalSetupStatusCount setup / '
+      '$blockedNeedsConfigCount';
+
+  String get saveOnlyConfigLabel => '$saveOnlyConfigCount save-only';
 
   factory AndroidSkillReadinessViewModel.fromReadiness(
     Map<String, dynamic> readiness,
@@ -145,6 +176,7 @@ class AndroidSkillReadinessViewModel {
 class AndroidSkillGateSummary {
   final String skillId;
   final String detail;
+  final AndroidSkillConfigTestSupport configTestSupport;
   final List<String> missingBins;
   final List<String> missingPacks;
   final String? dependencyGateMessage;
@@ -152,12 +184,14 @@ class AndroidSkillGateSummary {
   const AndroidSkillGateSummary({
     required this.skillId,
     required this.detail,
+    required this.configTestSupport,
     this.missingBins = const <String>[],
     this.missingPacks = const <String>[],
     this.dependencyGateMessage,
   });
 
   factory AndroidSkillGateSummary.fromSkill(Map<String, dynamic> skill) {
+    final skillId = skill['skillId']?.toString().trim() ?? 'unknown';
     final env = _stringList(skill['requiredEnv']);
     final config = _stringList(skill['requiredConfig']);
     final packs = _stringList(skill['requiredPacks']);
@@ -182,8 +216,9 @@ class AndroidSkillGateSummary {
         if (runtime != null && runtime.isNotEmpty) runtime,
     ];
     return AndroidSkillGateSummary(
-      skillId: skill['skillId']?.toString().trim() ?? 'unknown',
+      skillId: skillId,
       detail: parts.isEmpty ? 'gate pending' : parts.join(' | '),
+      configTestSupport: AndroidSkillConfigTestPlan.supportForSkill(skillId),
       missingBins: missingBins,
       missingPacks: missingPacks,
       dependencyGateMessage:

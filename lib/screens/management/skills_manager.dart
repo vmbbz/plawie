@@ -13,6 +13,7 @@ import '../../app.dart';
 import '../../widgets/glass_card.dart';
 import '../../services/clawhub_service.dart';
 import '../../services/android_skill_config_form_model.dart';
+import '../../services/android_skill_config_test_plan.dart';
 import '../../services/android_skill_readiness_view_model.dart';
 import '../../services/gateway_service.dart';
 import '../../services/gateway_tool_catalog.dart';
@@ -2502,6 +2503,21 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
                 color: AppColors.statusAmber,
               ),
               _ReadinessMetric(
+                label: 'LIVE TESTS',
+                value: '${model.liveConnectionTestCount}',
+                color: AppColors.statusGreen,
+              ),
+              _ReadinessMetric(
+                label: 'SETUP CHECKS',
+                value: '${model.conditionalSetupStatusCount}',
+                color: Colors.lightBlueAccent,
+              ),
+              _ReadinessMetric(
+                label: 'SAVE ONLY',
+                value: '${model.saveOnlyConfigCount}',
+                color: AppColors.statusAmber.withValues(alpha: 0.9),
+              ),
+              _ReadinessMetric(
                 label: 'PACK BLOCKERS',
                 value: '${model.blockedNeedsPackCount}',
                 color: Colors.cyanAccent,
@@ -2513,6 +2529,10 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
               ),
             ],
           ),
+          if (model.blockedNeedsConfigCount > 0) ...[
+            const SizedBox(height: 10),
+            _ConfigCoverageNote(model: model),
+          ],
           if (model.topNeedsConfig.isNotEmpty ||
               model.topNeedsPack.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -2601,6 +2621,48 @@ class _ReadinessMetric extends StatelessWidget {
               fontSize: 8,
               fontWeight: FontWeight.w900,
               letterSpacing: 0.6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConfigCoverageNote extends StatelessWidget {
+  final AndroidSkillReadinessViewModel model;
+
+  const _ConfigCoverageNote({required this.model});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.035),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.fact_check_rounded,
+            size: 14,
+            color: Colors.lightBlueAccent,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Config coverage: ${model.configTestCoverageLabel}. '
+              '${model.saveOnlyConfigLabel} gates can save user config but '
+              'need a real Android production adapter before the app offers a '
+              'live check.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 10.5,
+                height: 1.35,
+              ),
             ),
           ),
         ],
@@ -2700,6 +2762,12 @@ class _ReadinessGatePreview extends StatelessWidget {
                             fontWeight: FontWeight.w800,
                           ),
                         ),
+                        if (onTap != null) ...[
+                          const SizedBox(width: 5),
+                          _ConfigSupportBadge(
+                            support: item.configTestSupport,
+                          ),
+                        ],
                         const SizedBox(width: 5),
                         Icon(
                           onTap == null
@@ -2716,6 +2784,44 @@ class _ReadinessGatePreview extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _ConfigSupportBadge extends StatelessWidget {
+  final AndroidSkillConfigTestSupport support;
+
+  const _ConfigSupportBadge({required this.support});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (support) {
+      AndroidSkillConfigTestSupport.liveConnection => AppColors.statusGreen,
+      AndroidSkillConfigTestSupport.conditionalSetupStatus =>
+        Colors.lightBlueAccent,
+      AndroidSkillConfigTestSupport.saveOnly => AppColors.statusAmber,
+    };
+    final label = switch (support) {
+      AndroidSkillConfigTestSupport.liveConnection => 'LIVE',
+      AndroidSkillConfigTestSupport.conditionalSetupStatus => 'SETUP',
+      AndroidSkillConfigTestSupport.saveOnly => 'SAVE',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 7.5,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
+      ),
     );
   }
 }

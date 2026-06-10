@@ -291,6 +291,34 @@ void main() {
     );
   });
 
+  testWidgets('full save-only gates explain missing Android adapter boundary',
+      (tester) async {
+    await _pumpSheet(
+      tester,
+      _onePasswordModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async =>
+          _satisfiedReport(skillId),
+    );
+
+    await tester.enterText(
+      _textFieldByLabel('Service account token'),
+      'op-secret-token',
+    );
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+
+    expect(find.text('Test Connection'), findsNothing);
+    expect(find.textContaining('1Password config saved'), findsOneWidget);
+    expect(
+      find.textContaining('Gateway/AgentSkillServer adapter'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('Twilio voice-call save reveals setup status check',
       (tester) async {
     AndroidSkillConfigTestPlan? capturedPlan;
@@ -461,6 +489,15 @@ AndroidSkillConfigFormModel _slackModel() {
     'skillId': 'slack',
     'androidSupport': 'needs_config',
     'requiredConfig': ['SLACK_BOT_TOKEN', 'channels.slack'],
+    'primaryGate': 'missing_native_config',
+  });
+}
+
+AndroidSkillConfigFormModel _onePasswordModel() {
+  return AndroidSkillConfigFormModel.fromSkill({
+    'skillId': '1password',
+    'androidSupport': 'needs_config',
+    'requiredConfig': ['OP_SERVICE_ACCOUNT_TOKEN'],
     'primaryGate': 'missing_native_config',
   });
 }

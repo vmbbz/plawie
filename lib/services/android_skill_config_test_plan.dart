@@ -6,6 +6,12 @@ enum AndroidSkillConfigTestRisk {
   billableRead,
 }
 
+enum AndroidSkillConfigTestSupport {
+  liveConnection,
+  conditionalSetupStatus,
+  saveOnly,
+}
+
 class AndroidSkillConfigTestPlan {
   final String skillId;
   final String toolName;
@@ -169,6 +175,25 @@ class AndroidSkillConfigTestPlan {
         );
     }
     return null;
+  }
+
+  static AndroidSkillConfigTestSupport supportForSkill(String skillId) {
+    final normalized = _normalizeSkillId(skillId);
+    switch (normalized) {
+      case 'discord':
+      case 'github':
+      case 'gh-issues':
+      case 'goplaces':
+      case 'mcporter':
+      case 'notion':
+      case 'openai-whisper-api':
+      case 'slack':
+      case 'trello':
+        return AndroidSkillConfigTestSupport.liveConnection;
+      case 'voice-call':
+        return AndroidSkillConfigTestSupport.conditionalSetupStatus;
+    }
+    return AndroidSkillConfigTestSupport.saveOnly;
   }
 }
 

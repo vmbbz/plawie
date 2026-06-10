@@ -327,8 +327,9 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
           'for Twilio voice-call provider; Telnyx and custom providers remain '
           'save-only until their production adapters are wired.';
     }
-    return 'Config saved. No live connection test is available yet for this '
-        'skill.';
+    return '${widget.model.title} config saved. This Android lane is '
+        'save-only until a Gateway/AgentSkillServer adapter can prove live '
+        'service access on this device.';
   }
 
   @override

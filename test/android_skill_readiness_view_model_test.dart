@@ -1,3 +1,4 @@
+import 'package:clawa/services/android_skill_config_test_plan.dart';
 import 'package:clawa/services/android_skill_readiness_view_model.dart';
 import 'package:clawa/services/android_skill_support_manifest.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -135,6 +136,74 @@ void main() {
     );
     expect(model.blockedNeedsConfigCount, 5);
     expect(model.blockedNeedsPackCount, 6);
+  });
+
+  test('summarizes config gate test coverage for Skills page cards', () {
+    final model = AndroidSkillReadinessViewModel.fromReadiness({
+      'totalManifestSkills': 15,
+      'readyRequired': {'ready': 0, 'total': 0},
+      'releaseGatePass': true,
+      'unexpectedMissingDependency': 0,
+      'countsByClass': {
+        'needs_config': 14,
+        'needs_pack': 1,
+      },
+      'skills': [
+        for (final skillId in const [
+          'discord',
+          'gh-issues',
+          'github',
+          'goplaces',
+          'mcporter',
+          'notion',
+          'openai-whisper-api',
+          'slack',
+          'trello',
+          '1password',
+          'gog',
+          'ordercli',
+          'sag',
+          'voice-call',
+        ])
+          {
+            'skillId': skillId,
+            'androidSupport': 'needs_config',
+            'requiredConfig': ['CONFIG_$skillId'],
+            'ready': false,
+          },
+        {
+          'skillId': 'eightctl',
+          'androidSupport': 'needs_pack',
+          'runtimeStatus': 'needs_config',
+          'provisioningStatus': 'needs_user_config',
+          'requiredEnv': ['EIGHTCTL_PASSWORD'],
+          'ready': false,
+        },
+      ],
+    });
+
+    expect(model.blockedNeedsConfigCount, 15);
+    expect(model.liveConnectionTestCount, 9);
+    expect(model.conditionalSetupStatusCount, 1);
+    expect(model.saveOnlyConfigCount, 5);
+    expect(model.configTestCoverageLabel, '9 live + 1 setup / 15');
+    expect(model.saveOnlyConfigLabel, '5 save-only');
+
+    final summaries = {
+      for (final item in model.topNeedsConfig) item.skillId: item,
+    };
+    expect(
+      summaries['slack']!.configTestSupport,
+      AndroidSkillConfigTestSupport.liveConnection,
+    );
+    expect(
+      summaries['voice-call']!.configTestSupport,
+      AndroidSkillConfigTestSupport.conditionalSetupStatus,
+    );
+    expect(
+      summaries['eightctl']!.configTestSupport,
+      AndroidSkillConfigTestSupport.saveOnly,
+    );
   });
 
   test('pack gate detail prefers concrete missing payload data', () {

@@ -122,6 +122,45 @@ void main() {
     expect(AndroidSkillConfigTestPlan.forSkill('sag'), isNull);
   });
 
+  test('classifies config support across all Phase 6C gates', () {
+    for (final skillId in const [
+      'discord',
+      'gh-issues',
+      'github',
+      'goplaces',
+      'mcporter',
+      'notion',
+      'openai-whisper-api',
+      'slack',
+      'trello',
+    ]) {
+      expect(
+        AndroidSkillConfigTestPlan.supportForSkill(skillId),
+        AndroidSkillConfigTestSupport.liveConnection,
+        reason: '$skillId has a production Gateway/AgentSkillServer check.',
+      );
+    }
+
+    expect(
+      AndroidSkillConfigTestPlan.supportForSkill('voice-call'),
+      AndroidSkillConfigTestSupport.conditionalSetupStatus,
+    );
+
+    for (final skillId in const [
+      '1password',
+      'eightctl',
+      'gog',
+      'ordercli',
+      'sag',
+    ]) {
+      expect(
+        AndroidSkillConfigTestPlan.supportForSkill(skillId),
+        AndroidSkillConfigTestSupport.saveOnly,
+        reason: '$skillId has no production Android connection surface yet.',
+      );
+    }
+  });
+
   test('covers every app-native config service in the Android manifest', () {
     final appNativeConfigSkills = AndroidSkillSupportManifest.instance.entries
         .where(

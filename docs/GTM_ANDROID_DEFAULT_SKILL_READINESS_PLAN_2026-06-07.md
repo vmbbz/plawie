@@ -992,11 +992,15 @@ Minimum GTM surface:
 
 ```text
 Android Default Skills
-Ready now by product class: 19/51 Native Android-relevant
+Android now: 30/51 Native Android-relevant ready on the current device
 Launch gate: 13/13 pass
-Ready optional: 6
-Needs config: 14
-Needs pack: 18
+Ready optional taxonomy: 7
+Config blockers: 15 = 14 needs_config + eightctl live config gate
+Config checks: 9 live connection + 1 provider setup status / 15
+Save-only config: 5 full gates plus non-Twilio voice-call providers
+Pack blockers: 6 true binary/runtime lanes after moving eightctl to config
+Needs config taxonomy: 14
+Needs pack taxonomy: 17
 Unsupported Android: 6
 Manual PRoot: 2
 Desktop/remote: 2
@@ -1011,6 +1015,7 @@ Each skill row/card should show:
 - Product class: ready, config, pack, unsupported, PRoot, desktop.
 - Runtime status: ready, missing binary, missing config, disabled, etc.
 - Required keys or packs.
+- Config check support: LIVE, SETUP, or SAVE for config-gated rows.
 - One next action.
 
 Examples:
@@ -3297,6 +3302,24 @@ Coverage after Phase 6C:
   release gate: unchanged at 13/13
   Android ready floor: unchanged at 30/51
 
+Phase 6C expansion / no-fake-readiness audit:
+  We rechecked every remaining config-gated Android default skill against the
+  actual Gateway, AgentSkillServer, app-native adapter, and bundled-payload
+  surfaces. No additional production-safe live adapter exists yet for
+  1Password, GOG, ordercli, SAG, or eightctl live account/device validation.
+  Those lanes stay save-only by design until a real Android execution surface
+  exists.
+
+  Skills page production UX now exposes this ceiling directly:
+    LIVE TESTS: app-native service adapters with a real bounded live check
+    SETUP CHECKS: provider-aware setup status checks such as Twilio voice-call
+    SAVE ONLY: user config can be saved, but no live Android adapter is present
+
+  Config-gated rows now carry LIVE / SETUP / SAVE badges, and save-only sheets
+  name the missing Gateway/AgentSkillServer adapter boundary instead of showing
+  a generic "no test yet" message. This raises user clarity without raising the
+  readiness count falsely.
+
 Device proof after Phase 6C install:
   releaseGatePass: true
   ready_required: 13/13
@@ -3313,6 +3336,23 @@ Device proof after Phase 6C install:
     HTTP 200, configured:false, connected:false, status: CONFIG_REQUIRED
   UI/service interpretation:
     failed setup-status check, not ready, no readiness inflation
+
+Device proof after Phase 6C expansion install:
+  releaseGatePass: true
+  ready_required: 13/13
+  classified default manifest: 61
+  installed Native workspace skills: 65
+  unexpected_missing_dependency: 0
+  ready_optional taxonomy: 7
+  needs_config taxonomy: 14
+  needs_pack taxonomy: 17
+  unsupported_on_android taxonomy: 6
+  manual_proot_compat taxonomy: 2
+  hidden_desktop_only taxonomy: 2
+  UI coverage model:
+    live connection checks: 9
+    conditional setup-status checks: 1
+    save-only config gates: 5
 ```
 
 ## Success Definition
