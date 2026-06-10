@@ -3175,6 +3175,73 @@ Readiness impact:
   user config and live service checks pass on device
 ```
 
+Phase 6A device proof and schema correction landed:
+
+```text
+Device: RZCX30KA9AW / Samsung SM-A556E
+Build/install: debug APK installed over existing app data
+
+/device/health after corrected install:
+releaseGatePass: true
+ready_required: 13/13
+classified default manifest: 61
+installed Native workspace skills: 65
+ready_optional: 7
+needs_config: 14
+needs_pack: 17
+unsupported_on_android: 6
+manual_proot_compat: 2
+hidden_desktop_only: 2
+unexpected_missing_dependency: 0
+
+Root-cause catch from device proof:
+the first Phase 6A plan used bridge-tolerated aliases for several service
+checks, but some payloads did not include the same `action` fields advertised
+by `/api/tools`. GTM-quality config tests should match the published tool
+schema, not rely on forgiving handler aliases.
+
+Corrected config-test payloads now include:
+discord action=me
+github / gh-issues action=user
+mcporter action=health
+slack action=me
+trello action=boards limit=1
+goplaces query=OpenClaw limit=1
+notion query=OpenClaw limit=1
+openai-whisper-api tiny WAV fixture, gpt-4o-mini-transcribe
+
+Live missing-config proof after corrected install:
+discord -> HTTP 400 MISSING_DISCORD_BOT_TOKEN
+github -> HTTP 400 MISSING_GITHUB_TOKEN
+goplaces -> HTTP 400 MISSING_GOOGLE_PLACES_API_KEY
+mcporter -> HTTP 400 MISSING_MCPORTER_CONFIG
+notion -> HTTP 400 MISSING_NOTION_TOKEN
+openai-whisper-api -> HTTP 400 MISSING_OPENAI_API_KEY
+slack -> HTTP 400 MISSING_SLACK_CONFIG
+trello -> HTTP 400 MISSING_TRELLO_CONFIG
+
+Readiness impact:
+release gate unchanged at 13/13
+Android ready floor unchanged at 30/51
+The connection-test UI is now aligned with the live AgentSkillServer tool
+schema for supported service adapters.
+```
+
+Next Phase 6B candidate:
+
+```text
+Risk-aware connection-test UX.
+
+Safe-read checks such as Slack/GitHub/Discord/Trello/MCPorter can run directly
+after Save & Check. Query-read checks such as Notion and Google Places should
+show the exact bounded query before execution. Billable checks such as OpenAI
+Whisper API should require an explicit confirmation before running.
+
+This should not raise readiness counts. It should reduce support risk and make
+the config wizard feel release-grade instead of surprising users with hidden
+network or billable test behavior.
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android

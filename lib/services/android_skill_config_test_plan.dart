@@ -31,7 +31,7 @@ class AndroidSkillConfigTestPlan {
         return const AndroidSkillConfigTestPlan(
           skillId: 'discord',
           toolName: 'discord',
-          input: {'source': source},
+          input: {'source': source, 'action': 'me'},
           risk: AndroidSkillConfigTestRisk.safeRead,
           successActionLabel: 'Discord bot',
         );
@@ -40,7 +40,7 @@ class AndroidSkillConfigTestPlan {
         return AndroidSkillConfigTestPlan(
           skillId: normalized,
           toolName: 'github',
-          input: const {'source': source},
+          input: const {'source': source, 'action': 'user'},
           risk: AndroidSkillConfigTestRisk.safeRead,
           successActionLabel: 'GitHub user',
         );
@@ -56,7 +56,7 @@ class AndroidSkillConfigTestPlan {
         return const AndroidSkillConfigTestPlan(
           skillId: 'mcporter',
           toolName: 'mcporter',
-          input: {'source': source},
+          input: {'source': source, 'action': 'health'},
           risk: AndroidSkillConfigTestRisk.safeRead,
           successActionLabel: 'MCPorter health',
         );
@@ -85,7 +85,7 @@ class AndroidSkillConfigTestPlan {
         return const AndroidSkillConfigTestPlan(
           skillId: 'slack',
           toolName: 'slack',
-          input: {'source': source},
+          input: {'source': source, 'action': 'me'},
           risk: AndroidSkillConfigTestRisk.safeRead,
           successActionLabel: 'Slack auth',
         );
@@ -93,7 +93,7 @@ class AndroidSkillConfigTestPlan {
         return const AndroidSkillConfigTestPlan(
           skillId: 'trello',
           toolName: 'trello',
-          input: {'source': source, 'limit': 1},
+          input: {'source': source, 'action': 'boards', 'limit': 1},
           risk: AndroidSkillConfigTestRisk.safeRead,
           successActionLabel: 'Trello boards',
         );

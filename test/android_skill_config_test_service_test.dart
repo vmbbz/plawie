@@ -38,7 +38,7 @@ void main() {
 
     expect(capturedBody, {
       'name': 'slack',
-      'input': {'source': 'android-skill-config-test'},
+      'input': {'source': 'android-skill-config-test', 'action': 'me'},
     });
     expect(result.ok, isTrue);
     expect(result.message, 'Slack auth check passed.');

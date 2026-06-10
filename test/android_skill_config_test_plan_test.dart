@@ -6,13 +6,19 @@ void main() {
     final slack = AndroidSkillConfigTestPlan.forSkill('slack')!;
     expect(slack.skillId, 'slack');
     expect(slack.toolName, 'slack');
-    expect(slack.input, {'source': 'android-skill-config-test'});
+    expect(slack.input, {
+      'source': 'android-skill-config-test',
+      'action': 'me',
+    });
     expect(slack.buttonLabel, 'Test Connection');
     expect(slack.risk, AndroidSkillConfigTestRisk.safeRead);
 
     final github = AndroidSkillConfigTestPlan.forSkill('gh-issues')!;
     expect(github.toolName, 'github');
-    expect(github.input, {'source': 'android-skill-config-test'});
+    expect(github.input, {
+      'source': 'android-skill-config-test',
+      'action': 'user',
+    });
     expect(github.successActionLabel, 'GitHub user');
 
     final notion = AndroidSkillConfigTestPlan.forSkill('notion')!;
@@ -29,6 +35,25 @@ void main() {
     expect(whisper.risk, AndroidSkillConfigTestRisk.billableRead);
     expect(whisper.input.keys, containsAll(['audioBase64', 'filename']));
     expect(whisper.input.values.join(' '), isNot(contains('OPENAI_API_KEY')));
+
+    final discord = AndroidSkillConfigTestPlan.forSkill('discord')!;
+    expect(discord.input, {
+      'source': 'android-skill-config-test',
+      'action': 'me',
+    });
+
+    final mcporter = AndroidSkillConfigTestPlan.forSkill('mcporter')!;
+    expect(mcporter.input, {
+      'source': 'android-skill-config-test',
+      'action': 'health',
+    });
+
+    final trello = AndroidSkillConfigTestPlan.forSkill('trello')!;
+    expect(trello.input, {
+      'source': 'android-skill-config-test',
+      'action': 'boards',
+      'limit': 1,
+    });
   });
 
   test('does not offer connection checks for config-only placeholders yet', () {
