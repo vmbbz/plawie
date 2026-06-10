@@ -128,11 +128,15 @@ runtimeStatus: ready
 provisioningStatus: ready
 ready: true
 
-/device/health gifgrep:
+/device/health gifgrep at this FFmpeg-only checkpoint:
 ready: false
 provisioningStatus: missing_binary
 dependencyGateMessage: No Native dependency pack advertises binary "gifgrep" for arm64-v8a.
 ```
+
+Later Phase 5K added a separate real `gifgrep` payload under the same
+vision-media lane. This FFmpeg payload still does not satisfy `gifgrep`; the
+new `gifgrep` binary does.
 
 ## Required Release Smokes
 
@@ -142,7 +146,7 @@ Before moving release counts, prove on a freshly installed APK:
 .openclaw/bin/ffmpeg -version
 video-frames tiny MP4 fixture -> at least one JPEG frame
 /device/health: video-frames ready
-/device/health: gifgrep still blocked
+/device/health: gifgrep ready only when the separate gifgrep payload is bundled
 ```
 
 These checks passed on the debug APK smoke above. Repeat them for the signed

@@ -233,10 +233,12 @@ and `sonoscli` requires `sonos`.
 APK-provided vision-media payloads use the parallel lane
 `assets/openclaw/vision-media/bin/`, copied into the same
 `filesDir/native-node-embedded/provisioning/bin` staging directory during full
-Native Gateway bootstrap. The current resolver advertises only `ffmpeg`, and
-only when that exact payload exists after APK extraction. An empty directory or
-`.gitkeep` does not advertise a pack. `ffmpeg` can satisfy `video-frames` after
-payload smoke/device proof; it does not satisfy `gifgrep`.
+Native Gateway bootstrap. The current resolver advertises exact per-binary
+payloads only when they exist after APK extraction. An empty directory or
+`.gitkeep` does not advertise a pack. `ffmpeg` satisfies `video-frames` after
+payload smoke/device proof; `gifgrep` satisfies local GIF processing after its
+own payload smoke/device proof. One vision-media binary must not satisfy a
+different binary gate.
 
 APK-provided audio-runtime payloads use
 `assets/openclaw/audio-runtime/bin/`, copied into
@@ -255,10 +257,10 @@ missing-pack action. Android readiness copies this into `/device/health` as
 payload without pretending the skill is runnable.
 
 The same missing-pack behavior applies to known vision-media executables. If
-`video-frames` requires `ffmpeg` and no payload is present, provisioning emits
-`android-vision-media-runtime:ffmpeg` with remediation pointing at
-`assets/openclaw/vision-media/bin/ffmpeg` or a future signed arm64-v8a
-dependency pack.
+`video-frames` requires `ffmpeg` or `gifgrep` requires `gifgrep` and no exact
+payload is present, provisioning emits `android-vision-media-runtime:<bin>` with
+remediation pointing at `assets/openclaw/vision-media/bin/<bin>` or a future
+signed arm64-v8a dependency pack.
 
 The same missing-pack behavior applies to known audio-runtime executables. If
 `songsee` requires `songsee` and no payload is present, provisioning emits
@@ -315,14 +317,26 @@ ffmpeg: Android arm64 ELF, FFmpeg 8.1.1, LGPL-only build
 payload sha256: 5359bcf9ee6b0deff2c9352ab28fde51602bbac75325f3f8b41781a7a4d0a09e
 provenance: docs/ANDROID_VISION_MEDIA_FFMPEG_PAYLOAD.md
 notice: docs/THIRD_PARTY_NOTICES_FFMPEG.md
+
+gifgrep: Android arm64 ELF, built from steipete/gifgrep
+source commit: 72e2cf8fe685e7baa0535c04c3cf2e238ebfd0bc
+payload sha256: 431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
+provenance: docs/ANDROID_VISION_MEDIA_GIFGREP_PAYLOAD.md
+notice: docs/THIRD_PARTY_NOTICES_GIFGREP.md
 ```
 
 The `android-vision-media-runtime` asset lane and resolver now have a real
 device-proven FFmpeg payload. On the 2026-06-09 debug APK smoke, the app copied
 `ffmpeg` into provisioning bin, provisioned it into managed `.openclaw/bin`,
 ran `ffmpeg -version`, extracted a JPEG from a tiny MP4 fixture, and reported
-`video-frames` ready through `/device/health`. `gifgrep` remains blocked; it is
-not satisfied by `ffmpeg`.
+`video-frames` ready through `/device/health`.
+
+The same lane now has a real device-proven Gifgrep payload. On the 2026-06-10
+debug APK smoke, the app copied `gifgrep` into provisioning bin, provisioned it
+into managed `.openclaw/bin`, ran `gifgrep --version`, rendered local GIF
+`still` and `sheet` PNG outputs, and reported `gifgrep` ready through
+`/device/health`. Provider search keys remain mode-specific config and are not
+hard gates for local GIF processing.
 
 Current APK-local audio-runtime payloads:
 

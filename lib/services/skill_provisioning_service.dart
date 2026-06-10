@@ -34,6 +34,7 @@ class SkillProvisioningService {
   static const _androidVisionMediaPackVersion = 'apk-bundled-v1';
   static const _androidVisionMediaPackBins = <String>{
     'ffmpeg',
+    'gifgrep',
   };
   static const _androidAudioRuntimePackId = 'android-audio-runtime';
   static const _androidAudioRuntimePackVersion = 'apk-bundled-v1';

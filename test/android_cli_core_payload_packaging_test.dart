@@ -182,6 +182,13 @@ void main() {
     );
   });
 
+  test('Gifgrep APK payload is a real Android arm64 ELF executable', () async {
+    await expectAndroidArm64ElfPayloadAt(
+      File('assets/openclaw/vision-media/bin/gifgrep'),
+      minBytes: 4 * 1024 * 1024,
+    );
+  });
+
   test('Songsee APK payload is a real Android arm64 ELF executable', () async {
     await expectAndroidArm64ElfPayloadAt(
       File('assets/openclaw/audio-runtime/bin/songsee'),
@@ -383,6 +390,41 @@ void main() {
     expect(docs, contains('LGPL'));
     expect(notices, contains('FFmpeg'));
     expect(notices, contains('LGPL'));
+  });
+
+  test('Gifgrep payload has pinned Android build provenance', () async {
+    const gifgrepCommit = '72e2cf8fe685e7baa0535c04c3cf2e238ebfd0bc';
+    const goArchiveSha =
+        'ae756cce1cb80c819b4fe01b0353807178f532211b47f72d7fa77949de054ebb';
+
+    final payload = File('assets/openclaw/vision-media/bin/gifgrep');
+    final script =
+        await File('scripts/vision_media/build_gifgrep_android_arm64.ps1')
+            .readAsString();
+    final docs = await File('docs/ANDROID_VISION_MEDIA_GIFGREP_PAYLOAD.md')
+        .readAsString();
+    final notices =
+        await File('docs/THIRD_PARTY_NOTICES_GIFGREP.md').readAsString();
+    final service =
+        await File('lib/services/skill_provisioning_service.dart')
+            .readAsString();
+    final payloadSha = await sha256File(payload);
+
+    expect(script, contains(gifgrepCommit));
+    expect(script.toLowerCase(), contains(goArchiveSha));
+    expect(script, contains(r"$env:GOOS = 'android'"));
+    expect(script, contains(r"$env:GOARCH = 'arm64'"));
+    expect(script, contains(r"$env:CGO_ENABLED = '0'"));
+    expect(script, contains('./cmd/gifgrep'));
+    expect(script, contains('assets\\openclaw\\vision-media\\bin\\gifgrep'));
+    expect(docs, contains('android-vision-media-runtime'));
+    expect(docs, contains(gifgrepCommit));
+    expect(docs.toLowerCase(), contains(payloadSha));
+    expect(docs, contains('MIT License'));
+    expect(docs, contains('local GIF'));
+    expect(notices, contains('gifgrep'));
+    expect(notices, contains('MIT'));
+    expect(service, contains("'gifgrep'"));
   });
 
   test('Debugpy APK wheel payload has pinned provenance', () async {

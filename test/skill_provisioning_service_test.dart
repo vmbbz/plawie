@@ -539,6 +539,90 @@ requirements:
         await File(path.join(nativeRoot, 'bin', 'gifgrep')).exists(), isFalse);
   });
 
+  test('provisioning installs APK-provided vision media pack for gifgrep',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_provision_gifgrep_pack_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills =
+        Directory(path.join(nativeRoot, 'workspace', 'skills'));
+    final bundledBinDir = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'provisioning',
+      'bin',
+    ));
+    await nativeSkills.create(recursive: true);
+    await bundledBinDir.create(recursive: true);
+
+    final gifgrep = Directory(path.join(nativeSkills.path, 'gifgrep'));
+    await gifgrep.create(recursive: true);
+    await File(path.join(gifgrep.path, 'SKILL.md')).writeAsString('''
+---
+requirements:
+  bins:
+    - gifgrep
+---
+# Gifgrep
+''');
+    await File(path.join(bundledBinDir.path, 'gifgrep')).writeAsString(
+      '#!/system/bin/sh\nprintf "gifgrep test\\n"\n',
+      flush: true,
+    );
+
+    final before = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    expect(
+      before.executionMatrix
+          .singleWhere((entry) => entry.skillId == 'gifgrep')
+          .gates,
+      contains('missing_native_bin'),
+    );
+
+    final report = await SkillProvisioningService.instance.provisionSnapshot(
+      before,
+      skillId: 'gifgrep',
+    );
+
+    expect(report.changed, isTrue);
+    expect(report.reloadRecommended, isTrue);
+    expect(report.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(
+      report.results.single.actions
+          .where((action) =>
+              action.type == SkillProvisioningActionType.dependencyPack)
+          .map((action) => action.key),
+      contains('android-vision-media-runtime'),
+    );
+    expect(
+      report.results.single.actions
+          .where((action) => action.type == SkillProvisioningActionType.binary)
+          .map((action) => action.key),
+      isNot(contains('gifgrep')),
+    );
+    expect(
+        await File(path.join(nativeRoot, 'bin', 'gifgrep')).exists(), isTrue);
+    expect(
+      await File(path.join(
+        nativeRoot,
+        'dependencies',
+        'receipts',
+        'android-vision-media-runtime.json',
+      )).exists(),
+      isTrue,
+    );
+  });
+
   test('provisioning installs APK-provided audio runtime pack for songsee',
       () async {
     final temp =

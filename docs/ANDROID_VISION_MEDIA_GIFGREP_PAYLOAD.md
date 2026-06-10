@@ -1,0 +1,118 @@
+# Android Vision Media Gifgrep Payload
+
+This document records the APK-local `android-vision-media-runtime` Gifgrep
+payload used by `gifgrep`. It is not a placeholder, shim, script stub, or fake
+readiness marker.
+
+## Payload
+
+```text
+asset: assets/openclaw/vision-media/bin/gifgrep
+runtime lane: android-vision-media-runtime
+provided binary: gifgrep
+source: https://github.com/steipete/gifgrep
+source commit: 72e2cf8fe685e7baa0535c04c3cf2e238ebfd0bc
+source describe: 72e2cf8
+upstream version: 0.3.0
+toolchain: go1.25.5 windows/amd64
+toolchain archive sha256: ae756cce1cb80c819b4fe01b0353807178f532211b47f72d7fa77949de054ebb
+build target: GOOS=android GOARCH=arm64 CGO_ENABLED=0
+payload bytes: 8782177
+payload sha256: 431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
+verified format: ELF64 little-endian AArch64
+license: MIT License
+```
+
+## Rebuild
+
+```powershell
+.\scripts\vision_media\build_gifgrep_android_arm64.ps1 -InstallAsset
+```
+
+The script downloads the pinned Go archive if needed, verifies its SHA-256,
+checks out the pinned Gifgrep commit, builds the real Go CLI for Android arm64,
+verifies the output is an ELF64 AArch64 executable, and only then copies it into
+the APK asset path when `-InstallAsset` is supplied.
+
+## Current Limits
+
+This payload can raise `gifgrep` for local GIF operations because the Android
+APK now carries a real `gifgrep` binary. The release smoke should use local GIF
+input such as `gifgrep still` and `gifgrep sheet`; those commands do not require
+network provider API keys.
+
+Provider search is separate user configuration:
+
+```text
+GIPHY_API_KEY: required only for --source giphy
+KLIPY_API_KEY: required only for --source klipy or --source tenor
+```
+
+Those keys are not hard launch gates for local GIF processing. The Skills UI and
+gateway configuration lanes should continue to treat provider keys as optional
+mode-specific configuration instead of making the whole skill unavailable.
+
+Debug APK packaging proof on 2026-06-10:
+
+```text
+apk: build/app/outputs/flutter-apk/app-debug.apk
+entry: assets/flutter_assets/assets/openclaw/vision-media/bin/gifgrep
+entry bytes: 8782177
+entry sha256: 431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
+```
+
+Device proof on 2026-06-10 with `RZCX30KA9AW` / Samsung `SM-A556E`:
+
+```text
+adb install -r -d build/app/outputs/flutter-apk/app-debug.apk: Success
+
+Native bootstrap manifest:
+visionMediaBinCount: 2
+
+/device/health gifgrep:
+runtimeStatus: ready
+provisioningStatus: ready
+ready: true
+
+/device/health video-frames:
+ready: true
+
+managed .openclaw/bin/gifgrep --version:
+gifgrep 0.3.0
+
+managed .openclaw/bin/gifgrep --help:
+commands include search, tui, still, and sheet
+
+managed .openclaw/bin/gifgrep sha256:
+431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
+
+provisioning/bin/gifgrep sha256:
+431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
+
+local GIF-to-PNG smoke:
+input: animexample2.gif, 2145 bytes
+command: gifgrep still --at=0s input.gif -o still.png --quiet
+output: still.png, 772 bytes
+command: gifgrep sheet input.gif --frames=4 --cols=2 -o sheet.png --quiet
+output: sheet.png, 2573 bytes
+PNG header for both outputs: 89 50 4e 47 0d 0a 1a 0a
+```
+
+## License Posture
+
+Gifgrep is distributed under the MIT License. Preserve
+`docs/THIRD_PARTY_NOTICES_GIFGREP.md` and this provenance document with release
+third-party notices or source/provenance materials.
+
+## Required Release Smokes
+
+Before final release, repeat on the signed release APK:
+
+```text
+.openclaw/bin/gifgrep --version
+.openclaw/bin/gifgrep --help
+.openclaw/bin/gifgrep still tiny.gif --at 0s -o still.png
+.openclaw/bin/gifgrep sheet tiny.gif --frames 4 --cols 2 -o sheet.png
+/device/health: gifgrep ready
+/device/health: video-frames still ready
+```

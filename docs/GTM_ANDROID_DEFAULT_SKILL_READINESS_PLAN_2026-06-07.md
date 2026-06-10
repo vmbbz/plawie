@@ -28,8 +28,8 @@ Hide or demote skills that are not Android-release safe.
 
 ## Current Scorecard
 
-Current host/APK and installed-device truth on 2026-06-09 after the Phase 5G
-tmux terminal payload device proof:
+Current host/APK and installed-device truth on 2026-06-10 after the Phase 5K
+Gifgrep vision-media payload device proof:
 
 ```text
 Classified default manifest: 61
@@ -59,7 +59,7 @@ Remaining android-cli-core payload gaps:
 none
 
 Current APK-local android-vision-media-runtime payloads:
-ffmpeg is now host-built and APK-local:
+ffmpeg and gifgrep are now host-built and APK-local:
 
 ```text
 binary: assets/openclaw/vision-media/bin/ffmpeg
@@ -67,11 +67,17 @@ source: FFmpeg 8.1.1 official release tarball
 source sha256: b6863adde98898f42602017462871b5f6333e65aec803fdd7a6308639c52edf3
 payload sha256: 5359bcf9ee6b0deff2c9352ab28fde51602bbac75325f3f8b41781a7a4d0a09e
 license mode: LGPL-only, --disable-gpl, --disable-nonfree, no external libs
+
+binary: assets/openclaw/vision-media/bin/gifgrep
+source: https://github.com/steipete/gifgrep
+source commit: 72e2cf8fe685e7baa0535c04c3cf2e238ebfd0bc
+payload sha256: 431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
+license: MIT License
 ```
 
 The release count moved after the payload was installed from the APK, copied
-into Native managed bin, smoked with `ffmpeg -version`, and proven by a tiny
-video-to-JPEG extraction on device on 2026-06-09.
+into Native managed bin, smoked with `ffmpeg -version`, `gifgrep --version`,
+and proven by tiny media-to-image extraction on device.
 
 Current APK-local android-python-debug-runtime payloads:
 debugpy is device-proven and APK-local. The release count moved after the
@@ -127,16 +133,16 @@ provenance: docs/ANDROID_TERMINAL_TMUX_PAYLOAD.md
 ```
 
 Clean host/APK fresh-user floor after APK install/provisioning:
-Android ready floor: 28/51
+Android ready floor: 30/51
   = 13 ready_required
   + 7 ready_optional
-  + 8 bundled pack skills that need no extra config today
-    (blucli, himalaya, openhue, python-debugpy, songsee, tmux,
-     video-frames, wacli)
+  + 10 bundled pack skills that need no extra config today
+    (blucli, gifgrep, himalaya, openhue, python-debugpy, songsee,
+     sonoscli, tmux, video-frames, wacli)
 
-Installed-device Android-relevant ready now: 28/51
-Raw ready rows in /device/health: 29
-  = Android-relevant ready 28
+Installed-device Android-relevant ready now: 30/51
+Raw ready rows in /device/health: 31
+  = Android-relevant ready 30
   + node-connect manual_proot_compat, which is not part of the Android
     release denominator
 
@@ -153,17 +159,33 @@ android-audio-runtime pack supplies a real Android arm64 `songsee` executable,
 provisions it into managed `.openclaw/bin`, and passes version plus tiny
 WAV-to-PNG device smoke. spotify-player remains blocked because the pack
 advertises only `songsee`, not `spogo` or `spotify_player`.
+gifgrep is now clean fresh-user ready because the APK-local
+android-vision-media-runtime pack supplies a real Android arm64 `gifgrep`
+executable, provisions it into managed `.openclaw/bin`, and passes version,
+help, local GIF still, and local GIF sheet PNG smokes. Provider search remains
+mode-specific config for `GIPHY_API_KEY` or `KLIPY_API_KEY`, not a hard launch
+gate for local GIF processing.
+sonoscli is ready in the live installed-device truth because the APK-local
+CLI-core `sonos` payload satisfies its binary gate. eightctl remains
+pack-satisfied but config-gated.
 
 Unresolved config blockers: 14
-Unresolved pack blockers floor: 7
-  = 17 needs_pack taxonomy entries - 6 bundled CLI-core payloads
-    - 1 bundled vision-media payload
+Unready needs_pack entries: 7
+  = 17 needs_pack taxonomy entries - 10 ready needs_pack skills
+
+True binary-pack blockers inside needs_pack: 6
+  = coding-agent, gemini, node-inspect-debugger, openai-whisper,
+    sherpa-onnx-tts, spotify-player
+
+Pack-satisfied but still needs user/device config:
+eightctl
+
+Ready needs_pack skills:
+  = 6 bundled CLI-core payload consumers
+    - 2 bundled vision-media payload consumers
     - 1 bundled python-debug payload
     - 1 bundled terminal payload
     - 1 bundled audio-runtime payload
-
-Pack-satisfied but still needs user/device config:
-eightctl, sonoscli
 ```
 
 The release gate is not supposed to inflate above `13/13`; it stays the
@@ -178,15 +200,15 @@ Device proof caveat: APK extraction, provisioning, `/device/health`,
 no-secret version execution, tiny media extraction, and Python debug import are now
 installed-device-proven for all six CLI-core payloads plus the FFmpeg
 vision-media payload plus the debugpy Python payload plus the tmux terminal
-payload plus the Songsee audio-runtime payload. Account, LAN, and real-service
-workflow smokes are still pending where a skill requires credentials, devices,
-local network discovery, or a real
+payload plus the Songsee audio-runtime payload plus the Gifgrep vision-media
+payload. Account, LAN, and real-service workflow smokes are still pending where
+a skill requires credentials, devices, local network discovery, or a real
 external service.
 
 ## Latest Installed Device Truth
 
-Live device health on 2026-06-09 after the Phase 5G tmux terminal runtime
-install/provisioning smoke reported:
+Live device health on 2026-06-10 after the Phase 5K Gifgrep vision-media
+runtime install/provisioning smoke reported:
 
 ```text
 Target device: RZCX30KA9AW / Samsung SM-A556E
@@ -196,8 +218,8 @@ ready_required: 13/13
 classified default manifest: 61
 installed Native workspace skills: 65
 
-Android-relevant ready: 28/51
-Raw ready rows: 29
+Android-relevant ready: 30/51
+Raw ready rows: 31
 manual ready row excluded from Android denominator: node-connect
 
 Parser/audit truth:
@@ -214,6 +236,10 @@ songsee: runtimeStatus ready, provisioningStatus ready,
          android-audio-runtime receipt advertises only songsee,
          managed .openclaw/bin/songsee sha256 matches APK payload,
          tiny WAV-to-PNG smoke produced a PNG image
+gifgrep: runtimeStatus ready, provisioningStatus ready,
+         android-vision-media-runtime receipt advertises gifgrep,
+         managed .openclaw/bin/gifgrep sha256 matches APK payload,
+         local GIF still and sheet smokes produced PNG images
 tmux: runtimeStatus ready, provisioningStatus ready,
       android-terminal-pack receipt version termux-tmux-3.6b-apk-v1,
       managed .openclaw/bin/tmux -V -> tmux 3.6a
@@ -223,6 +249,10 @@ gemini: missing real gemini CLI
 video-frames: runtimeStatus ready, provisioningStatus ready,
               managed ffmpeg sha256
               5359bcf9ee6b0deff2c9352ab28fde51602bbac75325f3f8b41781a7a4d0a09e
+sonoscli: runtimeStatus ready, provisioningStatus ready,
+          APK-local sonos payload satisfies the binary gate
+eightctl: runtimeStatus needs_config, provisioningStatus needs_user_config,
+          APK-local eightctl payload exists but user config is still required
 
 Python debug runtime proof:
 provisioning/python-debug/wheels/debugpy-1.8.21-py2.py3-none-any.whl
@@ -258,10 +288,11 @@ managed .openclaw/bin/ffmpeg bytes -> 3287176
 tiny mpeg4 MP4 -> frame_001.jpg 1740 bytes
 JPEG header -> ff d8 ff
 
-Vision-media pack status:
-video-frames is now ready on installed device after APK provisioning and frame
+Vision-media pack status at the FFmpeg-only checkpoint:
+video-frames became ready on installed device after APK provisioning and frame
 extraction proof.
-gifgrep remains blocked; ffmpeg alone must not satisfy it.
+gifgrep remained blocked at that checkpoint because ffmpeg alone must not
+satisfy it. Phase 5K later added a separate real gifgrep payload.
 ```
 
 Previous installed-device truth before Phase 5D was `25/51`. The earlier
@@ -270,8 +301,9 @@ before `anyBins` was enforced. At that point, `26/51` was composed of real
 app-native/required/optional/CLI-core readiness, the FFmpeg-backed
 `video-frames` movement, and the APK-local `python-debugpy` package state.
 Phase 5E moved the fresh-user floor to `26/51`, not the already-warm
-installed-device headline. Phase 5G later moved the current floor to `27/51`.
+installed-device headline. Phase 5G later moved the floor to `27/51`.
 Phase 5J moved it to `28/51` with the APK-local Songsee audio-runtime payload.
+Phase 5K's installed-device checkpoint now reports `30/51`.
 
 ## Last Installed Device Truth
 
@@ -802,11 +834,12 @@ truth. `coding-agent` needs a verified Android-safe agent CLI such as `claude`,
 `codex`, `opencode`, or `pi`, plus its auth/config truth.
 
 android-vision-media-runtime APK resolver:
-ffmpeg only, backed by the bundled Android arm64 FFmpeg payload at
-assets/openclaw/vision-media/bin/ffmpeg. This satisfies video-frames after APK
+ffmpeg and gifgrep are backed by bundled Android arm64 payloads at
+assets/openclaw/vision-media/bin/. ffmpeg satisfies video-frames after APK
 install, Native provisioning copy, no-secret `ffmpeg -version`, and tiny
-video-to-JPEG device proof. It must not satisfy gifgrep, which remains blocked
-until its real binary/runtime contract is implemented.
+video-to-JPEG device proof. gifgrep satisfies local GIF processing after APK
+install, Native provisioning copy, `gifgrep --version`, and local GIF still/sheet
+PNG proof. One binary must not satisfy another binary's gate.
 
 android-audio-runtime APK resolver:
 songsee only, backed by the bundled Android arm64 Songsee payload at
@@ -2058,14 +2091,65 @@ unresolved pack blocker floor from `8` to `7`. It still does not move
 `spotify-player`, whose real gates are `spogo` or `spotify_player` plus account
 and auth setup.
 
+Phase 5K Gifgrep vision-media payload landed:
+
+```text
+scanner truth fix:
+  provider-specific prose such as GIPHY_API_KEY required for --source giphy
+  no longer becomes a hard env gate for local GIF processing
+
+asset: assets/openclaw/vision-media/bin/gifgrep
+source: https://github.com/steipete/gifgrep
+source commit: 72e2cf8fe685e7baa0535c04c3cf2e238ebfd0bc
+upstream version: 0.3.0
+toolchain: go1.25.5 windows/amd64
+payload sha256: 431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
+provenance: docs/ANDROID_VISION_MEDIA_GIFGREP_PAYLOAD.md
+third-party notice: docs/THIRD_PARTY_NOTICES_GIFGREP.md
+host packaging proof: test/android_cli_core_payload_packaging_test.dart
+debug APK entry:
+  assets/flutter_assets/assets/openclaw/vision-media/bin/gifgrep
+```
+
+Installed-device proof landed on 2026-06-10:
+
+```text
+device: RZCX30KA9AW / Samsung SM-A556E
+install: adb install -r -d build/app/outputs/flutter-apk/app-debug.apk -> Success
+Native bootstrap manifest: visionMediaBinCount 2
+/device/health releaseGatePass: true
+/device/health ready_required: 13/13
+/device/health Android-relevant ready: 30/51
+/device/health raw ready rows: 31
+gifgrep: runtimeStatus ready, provisioningStatus ready, ready true
+video-frames: ready true
+managed/provisioning gifgrep sha256:
+  431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
+managed gifgrep --version: gifgrep 0.3.0
+managed gifgrep --help: exposes still and sheet local GIF commands
+local GIF smoke:
+  input bytes: 2145
+  gifgrep still --at=0s -> still.png, 772 bytes
+  gifgrep sheet --frames=4 --cols=2 -> sheet.png, 2573 bytes
+  PNG header for both outputs: 89 50 4e 47 0d 0a 1a 0a
+```
+
+This installed-device checkpoint raises the documented Android-ready floor from
+`28/51` to `30/51`. The visible delta is `gifgrep` becoming ready and the live
+planner now correctly reporting `sonoscli` as ready through the existing
+APK-local `sonos` payload. `eightctl` remains a `needs_user_config` case. True
+remaining binary-pack blockers inside `needs_pack` are now `coding-agent`,
+`gemini`, `node-inspect-debugger`, `openai-whisper`, `sherpa-onnx-tts`, and
+`spotify-player`.
+
 Phase 5C Android vision-media runtime lane landed as plumbing:
 
 ```text
 APK asset lane: assets/openclaw/vision-media/bin/
 Native bootstrap copy target: filesDir/native-node-embedded/provisioning/bin
-provisioning resolver: android-vision-media-runtime, ffmpeg only
-truth rule: advertise the pack only when ffmpeg exists in the bundled bin root
-blocked by design: gifgrep
+provisioning resolver: android-vision-media-runtime, per-binary exact payloads
+truth rule: advertise only binaries that exist in the bundled bin root
+current binaries: ffmpeg, gifgrep
 ```
 
 This intentionally does not raise the ready count yet. It turns the next
@@ -2732,9 +2816,9 @@ Round 5C target:
 
 ```text
 android-vision-media-runtime APK-local lane exists.
-ffmpeg is the only advertised vision-media binary.
+ffmpeg is the only advertised vision-media binary at this plumbing checkpoint.
 video-frames remains blocked until real ffmpeg payload + smoke/device proof.
-gifgrep remains blocked.
+gifgrep remains blocked at this checkpoint.
 Commit made.
 ```
 

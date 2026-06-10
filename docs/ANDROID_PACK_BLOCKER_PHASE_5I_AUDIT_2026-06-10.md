@@ -221,6 +221,27 @@ Minimum implementation requirements:
 8. Update provenance, third-party notice, GTM plan, and tests.
 ```
 
+## Phase 5K Addendum
+
+After Phase 5J moved `songsee`, Phase 5K revisited the Gifgrep lane with a
+narrower release promise: local GIF processing only, with provider search keys
+treated as mode-specific config. That removed the product ambiguity that kept
+Gifgrep out of Phase 5I's immediate payload slot.
+
+Result:
+
+```text
+gifgrep source commit: 72e2cf8fe685e7baa0535c04c3cf2e238ebfd0bc
+payload: assets/openclaw/vision-media/bin/gifgrep
+payload sha256: 431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
+device proof: gifgrep --version, --help, still PNG, sheet PNG
+/device/health: gifgrep ready
+```
+
+The original Phase 5I strategy remains correct: do not count provider search as
+ready without user API keys. The Phase 5K implementation counts only the
+Android-safe local GIF commands.
+
 ## Source Notes
 
 Primary sources checked during this audit:
@@ -252,4 +273,3 @@ Primary sources checked during this audit:
 - spogo and spotify-player repositories:
   https://github.com/openclaw/spogo and
   https://github.com/aome510/spotify-player
-
