@@ -345,6 +345,37 @@ void main() {
       ['spogo', 'spotify_player'],
     ]);
   });
+
+  test('pack-satisfied config gates expose live required env and config keys',
+      () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([
+        matrixEntry(
+          'eightctl',
+          status: SkillExecutionStatus.needsConfig,
+          primaryGate: 'missing_native_env',
+          gates: const ['missing_native_env', 'missing_native_config'],
+          requiredEnv: const ['EIGHT_SLEEP_EMAIL'],
+          requiredConfig: const ['eightctl.deviceId'],
+        ),
+      ]),
+      provisioning: provisioningWith([
+        needsConfigResult('eightctl'),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        packManifestEntry('eightctl', ['android-cli-core-pack']),
+      ]),
+    );
+
+    final eightctl = summary.skills.single;
+
+    expect(eightctl['androidSupport'], 'needs_pack');
+    expect(eightctl['runtimeStatus'], 'needs_config');
+    expect(eightctl['provisioningStatus'], 'needs_user_config');
+    expect(eightctl['requiredEnv'], ['EIGHT_SLEEP_EMAIL']);
+    expect(eightctl['requiredConfig'], ['eightctl.deviceId']);
+    expect(eightctl['ready'], isFalse);
+  });
 }
 
 SkillParitySnapshot snapshotWith(
@@ -407,6 +438,8 @@ SkillExecutionMatrixEntry matrixEntry(
   String? primaryGate,
   List<String> gates = const <String>[],
   List<List<String>> requiredAnyBins = const <List<String>>[],
+  List<String> requiredEnv = const <String>[],
+  List<String> requiredConfig = const <String>[],
 }) {
   return SkillExecutionMatrixEntry(
     skillId: skillId,
@@ -415,11 +448,11 @@ SkillExecutionMatrixEntry matrixEntry(
     gates: gates,
     requiredBins: const <String>[],
     requiredAnyBins: requiredAnyBins,
-    requiredEnv: const <String>[],
+    requiredEnv: requiredEnv,
     requiredRuntimes: const <String>[],
     requiredPythonPackages: const <String>[],
     requiredPlugins: const <String>[],
-    requiredConfig: const <String>[],
+    requiredConfig: requiredConfig,
   );
 }
 

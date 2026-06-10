@@ -47,6 +47,8 @@ class AndroidSkillReadinessService {
       final dependencyGateDetails = appNativeOwned
           ? const <String, dynamic>{}
           : _dependencyGateDetails(provisioningResult);
+      final liveRequiredEnv = _requiredEnv(matrixEntry);
+      final liveRequiredConfig = _requiredConfig(entry, matrixEntry);
       if (releaseRelevant) {
         readyRequiredTotal += 1;
         if (ready) {
@@ -70,6 +72,8 @@ class AndroidSkillReadinessService {
             matrixEntry != null &&
             matrixEntry.requiredAnyBins.isNotEmpty)
           'requiredAnyBins': matrixEntry.requiredAnyBins,
+        if (liveRequiredEnv.isNotEmpty) 'requiredEnv': liveRequiredEnv,
+        if (liveRequiredConfig.isNotEmpty) 'requiredConfig': liveRequiredConfig,
         'provisioningStatus': _provisioningStatus(
           entry,
           snapshot,
@@ -206,6 +210,34 @@ class AndroidSkillReadinessService {
       if (missingBins.isNotEmpty) 'missingBins': missingBins.toList()..sort(),
       if (messages.isNotEmpty) 'dependencyGateMessage': messages.first,
     };
+  }
+
+  static List<String> _requiredEnv(SkillExecutionMatrixEntry? matrixEntry) {
+    if (matrixEntry == null) return const <String>[];
+    return _uniqueStrings(matrixEntry.requiredEnv);
+  }
+
+  static List<String> _requiredConfig(
+    AndroidSkillSupportEntry manifestEntry,
+    SkillExecutionMatrixEntry? matrixEntry,
+  ) {
+    return _uniqueStrings([
+      ...manifestEntry.requiredConfig,
+      ...?matrixEntry?.requiredConfig,
+    ]);
+  }
+
+  static List<String> _uniqueStrings(Iterable<String> values) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final value in values) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) continue;
+      final normalized = trimmed.toLowerCase();
+      if (!seen.add(normalized)) continue;
+      result.add(trimmed);
+    }
+    return List.unmodifiable(result);
   }
 
   static bool _isAppNativeOwned(AndroidSkillSupportEntry manifestEntry) {

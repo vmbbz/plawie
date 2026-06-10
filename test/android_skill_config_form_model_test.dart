@@ -207,4 +207,37 @@ void main() {
       expect(field.secret, isTrue);
     }
   });
+
+  test('pack-class skills with runtime config gates are still configurable',
+      () {
+    final readiness = {
+      'skills': [
+        {
+          'skillId': 'eightctl',
+          'androidSupport': 'needs_pack',
+          'runtimeStatus': 'needs_config',
+          'provisioningStatus': 'needs_user_config',
+          'requiredEnv': ['EIGHT_SLEEP_EMAIL'],
+          'requiredConfig': ['eightctl.deviceId'],
+          'ready': false,
+        },
+        {
+          'skillId': 'openai-whisper',
+          'androidSupport': 'needs_pack',
+          'runtimeStatus': 'missing_dependency',
+          'requiredPacks': ['android-whisper-runtime'],
+          'ready': false,
+        },
+      ],
+    };
+
+    final forms = AndroidSkillConfigFormModel.allFromReadiness(readiness);
+    expect(forms.map((form) => form.skillId), ['eightctl']);
+
+    final eightctl = forms.single;
+    expect(eightctl.envKeys, ['EIGHT_SLEEP_EMAIL']);
+    expect(eightctl.configKeys, ['eightctl.deviceId']);
+    expect(eightctl.runtimeGate, 'needs_config');
+    expect(eightctl.configOnlyCanSatisfy, isTrue);
+  });
 }

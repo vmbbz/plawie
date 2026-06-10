@@ -242,6 +242,59 @@ The original Phase 5I strategy remains correct: do not count provider search as
 ready without user API keys. The Phase 5K implementation counts only the
 Android-safe local GIF commands.
 
+## Phase 5L Addendum
+
+Phase 5L is a config-unlock correctness phase, not a payload phase.
+
+Decision:
+
+```text
+Do not chase another heavy binary lane until the app cleanly exposes every
+current user-config unlock path.
+```
+
+Implementation result:
+
+```text
+/device/health readiness rows now expose live requiredEnv and requiredConfig
+from the skill execution matrix, merged with manifest requiredConfig.
+
+The Skills page now treats live runtimeStatus/provisioningStatus as the current
+gate. A needs_pack taxonomy row whose binary pack is satisfied but whose runtime
+gate is needs_config moves to CONFIG GATES and opens the dynamic config sheet.
+
+True missing-artifact rows stay in PACK GATES.
+```
+
+Expected user-facing effect after reinstall/device health refresh:
+
+```text
+release gate: unchanged at 13/13
+Android-relevant ready floor: unchanged at 30/51
+true binary-pack blockers: unchanged at 6
+CONFIG GATES: static needs_config rows plus pack-satisfied config-gated rows
+PACK GATES: only real missing artifact lanes
+```
+
+This specifically protects the `eightctl` pattern: the APK-local CLI-core
+payload can be real and installed, while the skill still remains unready until
+Eight Sleep account/device configuration exists. That is a config unlock path,
+not a missing-pack path.
+
+The same audit round keeps the remaining heavy lanes parked:
+
+```text
+openai-whisper -> only move after a real whisper.cpp-style Android runtime and
+                  model pack proves size, hash, license, and device latency
+sherpa-onnx-tts -> viable later, but requires native libs, model layout,
+                   espeak data, licenses, hashes, and synthesis smoke
+node-inspect-debugger -> standalone node executable only; libnode.so does not
+                         satisfy the skill
+gemini -> blocked behind standalone node plus auth/config truth
+coding-agent -> product/security lane; choose exactly one CLI and sandbox model
+spotify-player -> choose spogo cookies vs spotify_player auth before packaging
+```
+
 ## Source Notes
 
 Primary sources checked during this audit:

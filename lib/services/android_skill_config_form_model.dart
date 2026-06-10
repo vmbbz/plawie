@@ -80,18 +80,23 @@ class AndroidSkillConfigFormModel {
   factory AndroidSkillConfigFormModel.fromSkill(
     Map<String, dynamic> skill,
   ) {
+    final requiredEnv = _stringList(skill['requiredEnv']);
     final requiredConfig = _stringList(skill['requiredConfig']);
-    final envKeys = <String>[];
+    final envKeys = <String>[...requiredEnv];
     final configKeys = <String>[];
     for (final key in requiredConfig) {
       if (_looksLikeEnvKey(key)) {
-        envKeys.add(key);
+        if (!envKeys.contains(key)) envKeys.add(key);
       } else {
         configKeys.add(key);
       }
     }
     final skillId = skill['skillId']?.toString().trim() ?? 'unknown';
-    final fields = requiredConfig
+    final requiredFields = [
+      ...envKeys,
+      ...configKeys,
+    ];
+    final fields = requiredFields
         .map((key) => _fieldFor(skillId, key))
         .toList(growable: false);
 
@@ -107,9 +112,8 @@ class AndroidSkillConfigFormModel {
       configKeys: configKeys,
       fields: fields,
       runtimeGate: gate,
-      configOnlyCanSatisfy: requiredConfig.isNotEmpty &&
-          !_gateNeedsMoreThanConfig(gate) &&
-          skill['androidSupport']?.toString() != 'needs_pack',
+      configOnlyCanSatisfy:
+          requiredFields.isNotEmpty && !_gateNeedsMoreThanConfig(gate),
     );
   }
 
@@ -130,7 +134,7 @@ class AndroidSkillConfigFormModel {
     Map<String, dynamic> readiness,
   ) {
     return _mapList(readiness['skills'])
-        .where((skill) => skill['androidSupport']?.toString() == 'needs_config')
+        .where(_isConfigurableReadinessGate)
         .map(AndroidSkillConfigFormModel.fromSkill)
         .where((form) => form.hasFields)
         .toList(growable: false);
@@ -148,6 +152,12 @@ class AndroidSkillConfigFormModel {
         normalized == 'manual_proot_required' ||
         normalized == 'unsupported_native' ||
         normalized == 'unsupported_on_android';
+  }
+
+  static bool _isConfigurableReadinessGate(Map<String, dynamic> skill) {
+    return skill['androidSupport']?.toString() == 'needs_config' ||
+        skill['runtimeStatus']?.toString() == 'needs_config' ||
+        skill['provisioningStatus']?.toString() == 'needs_user_config';
   }
 }
 

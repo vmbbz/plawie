@@ -29,7 +29,8 @@ Hide or demote skills that are not Android-release safe.
 ## Current Scorecard
 
 Current host/APK and installed-device truth on 2026-06-10 after the Phase 5K
-Gifgrep vision-media payload device proof:
+Gifgrep vision-media payload device proof, plus the Phase 5L host-side
+config-unlock UI/readiness bridge:
 
 ```text
 Classified default manifest: 61
@@ -169,8 +170,13 @@ sonoscli is ready in the live installed-device truth because the APK-local
 CLI-core `sonos` payload satisfies its binary gate. eightctl remains
 pack-satisfied but config-gated.
 
-Unresolved config blockers: 14
-Unready needs_pack entries: 7
+Static needs_config taxonomy entries: 14
+Current config-gated rows users can unlock in UI after Phase 5L: 15
+  = 14 static needs_config entries
+  + eightctl, whose APK-local binary pack is satisfied but whose live runtime
+    gate remains needs_config until Eight Sleep account/device config exists
+
+Unready needs_pack taxonomy entries: 7
   = 17 needs_pack taxonomy entries - 10 ready needs_pack skills
 
 True binary-pack blockers inside needs_pack: 6
@@ -191,10 +197,11 @@ Ready needs_pack skills:
 The release gate is not supposed to inflate above `13/13`; it stays the
 launch-critical fresh-user boot promise. The ceiling moves through
 the Android-relevant ready count and the unresolved blocker counts. The Skills
-page now shows
-`CONFIG BLOCKERS` and `PACK BLOCKERS`, not raw static taxonomy counts, so the UI
-reflects bundled payload progress when `/device/health` reports pack-gated
-skills as `ready: true`.
+page now shows current gates, not just static taxonomy: `CONFIG BLOCKERS`
+includes rows whose live `runtimeStatus` or `provisioningStatus` says user
+config is needed, and `PACK BLOCKERS` keeps only true missing artifact lanes.
+That means a pack-class row such as `eightctl` moves to the config affordance
+after its binary payload is installed, without pretending it is ready.
 
 Device proof caveat: APK extraction, provisioning, `/device/health`,
 no-secret version execution, tiny media extraction, and Python debug import are now
@@ -2141,6 +2148,66 @@ APK-local `sonos` payload. `eightctl` remains a `needs_user_config` case. True
 remaining binary-pack blockers inside `needs_pack` are now `coding-agent`,
 `gemini`, `node-inspect-debugger`, `openai-whisper`, `sherpa-onnx-tts`, and
 `spotify-player`.
+
+Phase 5L config-unlock bridge landed:
+
+```text
+readiness JSON:
+  merges live matrix requiredEnv into each skill row
+  merges manifest requiredConfig with live matrix requiredConfig
+
+Skills page:
+  CONFIG GATES now follows live runtimeStatus/provisioningStatus
+  PACK GATES now excludes pack-class rows whose only current blocker is config
+  AndroidSkillConfigSheet now opens for runtime needs_config rows even when the
+  static taxonomy is needs_pack
+```
+
+This is not score inflation. It does not change:
+
+```text
+release gate: 13/13
+Android ready floor: 30/51
+true binary-pack blockers: 6
+```
+
+It changes the user's unlock path. A row such as `eightctl` remains unready
+until account/device configuration exists, but once the APK-local binary has
+been installed and the live audit says the remaining gate is config, the row
+belongs in the interactive config path rather than the missing-pack path.
+
+Host-side proof:
+
+```text
+flutter test test/android_skill_readiness_service_test.dart
+flutter test test/android_skill_config_form_model_test.dart
+flutter test test/android_skill_readiness_view_model_test.dart
+```
+
+All three targeted suites pass after adding regression coverage for:
+
+```text
+needs_pack + runtimeStatus needs_config exposes requiredEnv/requiredConfig
+pack-class config gates appear in AndroidSkillConfigFormModel.allFromReadiness
+pack-class config gates move from PACK GATES to CONFIG GATES in the view model
+```
+
+Parallel blocker audits on 2026-06-10 support the same strategy:
+
+```text
+openai-whisper: keep blocked unless a real whisper.cpp Android runtime/model
+                pack is built and latency/size/licensing are proven
+sherpa-onnx-tts: viable later as android-tts-runtime, but it needs real native
+                  libs, model layout, espeak data, hashes, licenses, and
+                  synthesis smoke before readiness moves
+node-inspect-debugger: keep parked; a standalone node executable is high effort
+                       for +1 and libnode.so does not satisfy the shell binary
+gemini: keep parked behind standalone node plus explicit auth/config truth
+coding-agent: keep parked until exactly one Android-safe agent CLI plus auth,
+              sandbox, provenance, and workspace policy is chosen
+spotify-player: keep parked until backend/auth choice is explicit; songsee does
+                not satisfy spogo or spotify_player
+```
 
 Phase 5C Android vision-media runtime lane landed as plumbing:
 

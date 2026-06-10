@@ -67,20 +67,36 @@ class AndroidSkillReadinessViewModel {
           _intValue(readiness['unexpectedMissingDependency']),
       releaseGatePass: readiness['releaseGatePass'] == true,
       countsByClass: counts,
-      topNeedsConfig: _topGateSummaries(skills, 'needs_config'),
-      topNeedsPack: _topGateSummaries(skills, 'needs_pack'),
+      topNeedsConfig: _topNeedsConfigSummaries(skills),
+      topNeedsPack: _topNeedsPackSummaries(skills),
     );
   }
 
-  static List<AndroidSkillGateSummary> _topGateSummaries(
+  static List<AndroidSkillGateSummary> _topNeedsConfigSummaries(
     List<Map<String, dynamic>> skills,
-    String androidSupport,
   ) {
     return skills
-        .where((skill) => skill['androidSupport']?.toString() == androidSupport)
         .where((skill) => skill['ready'] != true)
+        .where(_isConfigGate)
         .map(AndroidSkillGateSummary.fromSkill)
         .toList(growable: false);
+  }
+
+  static List<AndroidSkillGateSummary> _topNeedsPackSummaries(
+    List<Map<String, dynamic>> skills,
+  ) {
+    return skills
+        .where((skill) => skill['androidSupport']?.toString() == 'needs_pack')
+        .where((skill) => skill['ready'] != true)
+        .where((skill) => !_isConfigGate(skill))
+        .map(AndroidSkillGateSummary.fromSkill)
+        .toList(growable: false);
+  }
+
+  static bool _isConfigGate(Map<String, dynamic> skill) {
+    return skill['androidSupport']?.toString() == 'needs_config' ||
+        skill['runtimeStatus']?.toString() == 'needs_config' ||
+        skill['provisioningStatus']?.toString() == 'needs_user_config';
   }
 
   static bool _excludedAndroidSupport(String? support) {
@@ -106,6 +122,7 @@ class AndroidSkillGateSummary {
   });
 
   factory AndroidSkillGateSummary.fromSkill(Map<String, dynamic> skill) {
+    final env = _stringList(skill['requiredEnv']);
     final config = _stringList(skill['requiredConfig']);
     final packs = _stringList(skill['requiredPacks']);
     final missingBins = _stringList(skill['missingBins']);
@@ -115,6 +132,7 @@ class AndroidSkillGateSummary {
     final runtime = skill['runtimeStatus']?.toString().trim();
     final gate = skill['primaryGate']?.toString().trim();
     final parts = <String>[
+      if (env.isNotEmpty) 'env: ${env.join(', ')}',
       if (config.isNotEmpty) 'config: ${config.join(', ')}',
       if (missingPacks.isNotEmpty)
         'pack unavailable: ${_packListLabel(missingPacks)}'

@@ -220,4 +220,54 @@ void main() {
       isNot(contains('android-node-executable-pack')),
     );
   });
+
+  test('runtime config gates inside needs-pack taxonomy move to config preview',
+      () {
+    final model = AndroidSkillReadinessViewModel.fromReadiness({
+      'totalManifestSkills': 3,
+      'readyRequired': {'ready': 0, 'total': 0},
+      'releaseGatePass': true,
+      'unexpectedMissingDependency': 0,
+      'countsByClass': {
+        'needs_pack': 2,
+        'needs_config': 1,
+      },
+      'skills': [
+        {
+          'skillId': 'eightctl',
+          'androidSupport': 'needs_pack',
+          'runtimeStatus': 'needs_config',
+          'provisioningStatus': 'needs_user_config',
+          'requiredEnv': ['EIGHT_SLEEP_EMAIL'],
+          'requiredConfig': ['eightctl.deviceId'],
+          'ready': false,
+        },
+        {
+          'skillId': 'openai-whisper',
+          'androidSupport': 'needs_pack',
+          'runtimeStatus': 'missing_dependency',
+          'requiredPacks': ['android-whisper-runtime'],
+          'ready': false,
+        },
+        {
+          'skillId': 'slack',
+          'androidSupport': 'needs_config',
+          'runtimeStatus': 'needs_config',
+          'requiredConfig': ['SLACK_BOT_TOKEN', 'channels.slack'],
+          'ready': false,
+        },
+      ],
+    });
+
+    expect(
+      model.topNeedsConfig.map((item) => item.skillId),
+      ['eightctl', 'slack'],
+    );
+    expect(model.topNeedsConfig.first.detail, contains('EIGHT_SLEEP_EMAIL'));
+    expect(model.topNeedsConfig.first.detail, contains('eightctl.deviceId'));
+    expect(
+      model.topNeedsPack.map((item) => item.skillId),
+      ['openai-whisper'],
+    );
+  });
 }
