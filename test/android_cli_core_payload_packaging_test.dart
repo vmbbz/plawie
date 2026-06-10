@@ -182,6 +182,42 @@ void main() {
     );
   });
 
+  test('Songsee APK payload is a real Android arm64 ELF executable', () async {
+    await expectAndroidArm64ElfPayloadAt(
+      File('assets/openclaw/audio-runtime/bin/songsee'),
+      minBytes: 2 * 1024 * 1024,
+    );
+  });
+
+  test('Songsee payload has pinned build provenance', () async {
+    const songseeCommit = '41d27ea22771ba447bdfb8b6adac2e6599601634';
+    const songseeVersion = 'v0.1.1-10-g41d27ea';
+    const goArchiveSha =
+        '6dad204d42719795f22067553b2b042c0e710b32c5a00f6c67892865167fdfd0';
+    final payload = File('assets/openclaw/audio-runtime/bin/songsee');
+    final script =
+        await File('scripts/audio_runtime/build_songsee_android_arm64.ps1')
+            .readAsString();
+    final docs =
+        await File('docs/ANDROID_AUDIO_RUNTIME_SONGSEE_PAYLOAD.md')
+            .readAsString();
+    final payloadSha = await sha256File(payload);
+
+    expect(script, contains(songseeCommit));
+    expect(script, contains(songseeVersion));
+    expect(script.toLowerCase(), contains(goArchiveSha));
+    expect(script, contains(r"$env:GOOS = 'android'"));
+    expect(script, contains(r"$env:GOARCH = 'arm64'"));
+    expect(script, contains(r"$env:CGO_ENABLED = '0'"));
+    expect(script, contains('./cmd/songsee'));
+    expect(script, contains('assets\\openclaw\\audio-runtime\\bin\\songsee'));
+    expect(docs, contains('android-audio-runtime'));
+    expect(docs, contains(songseeCommit));
+    expect(docs, contains(songseeVersion));
+    expect(docs.toLowerCase(), contains(payloadSha));
+    expect(docs, contains('MIT License'));
+  });
+
   test('OpenHue payload has pinned build provenance', () async {
     const openHueCommit = '08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21';
     const goArchiveSha =

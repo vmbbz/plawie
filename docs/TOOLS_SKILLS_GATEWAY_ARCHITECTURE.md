@@ -212,12 +212,13 @@ being written. Python package packs keep the Native Python bridge/import smoke
 path instead of trying to execute the shell `python3` shim directly.
 
 Pack selection covers runtimes, Python packages, and managed binaries. APK-local
-binary resolvers are intentionally conservative: `android-cli-core-pack` and
-`android-vision-media-runtime` are advertised only when the installed APK
-already has matching bundled executable files. Provisioning copies those files
-into `.openclaw/bin`, writes a receipt, and treats a stale receipt as invalid if
-any advertised managed binary is missing. Remote executable pack distribution
-remains blocked behind hash, signature, smoke, rollback, and policy review.
+binary resolvers are intentionally conservative: `android-cli-core-pack`,
+`android-vision-media-runtime`, and `android-audio-runtime` are advertised only
+when the installed APK already has matching bundled executable files.
+Provisioning copies those files into `.openclaw/bin`, writes a receipt, and
+treats a stale receipt as invalid if any advertised managed binary is missing.
+Remote executable pack distribution remains blocked behind hash, signature,
+smoke, rollback, and policy review.
 
 APK-provided CLI-core payloads are loaded from
 `assets/openclaw/cli-core/bin/`. During full Native Gateway bootstrap,
@@ -237,6 +238,15 @@ only when that exact payload exists after APK extraction. An empty directory or
 `.gitkeep` does not advertise a pack. `ffmpeg` can satisfy `video-frames` after
 payload smoke/device proof; it does not satisfy `gifgrep`.
 
+APK-provided audio-runtime payloads use
+`assets/openclaw/audio-runtime/bin/`, copied into
+`filesDir/native-node-embedded/provisioning/audio-runtime/bin` during full
+Native Gateway bootstrap. The current resolver advertises only `songsee`, and
+only when that exact payload exists after APK extraction. An empty directory or
+`.gitkeep` does not advertise a pack. `songsee` can satisfy `songsee` after
+payload smoke/device proof; it does not satisfy `spotify-player`, whose real
+binary gate remains `spogo` or `spotify_player`.
+
 When a known CLI-core executable is required but no APK payload or validated
 pack advertises it, provisioning emits an `android-cli-core-pack:<bin>`
 missing-pack action. Android readiness copies this into `/device/health` as
@@ -249,6 +259,13 @@ The same missing-pack behavior applies to known vision-media executables. If
 `android-vision-media-runtime:ffmpeg` with remediation pointing at
 `assets/openclaw/vision-media/bin/ffmpeg` or a future signed arm64-v8a
 dependency pack.
+
+The same missing-pack behavior applies to known audio-runtime executables. If
+`songsee` requires `songsee` and no payload is present, provisioning emits
+`android-audio-runtime:songsee` with remediation pointing at
+`assets/openclaw/audio-runtime/bin/songsee` or a future signed arm64-v8a
+dependency pack. The resolver intentionally advertises only the payloads that
+actually exist, so bundling `songsee` does not move `spotify-player`.
 
 The readiness scorecard distinguishes static taxonomy from unresolved gates.
 `countsByClass.needs_pack` remains the number of manifest entries whose product
@@ -306,6 +323,23 @@ device-proven FFmpeg payload. On the 2026-06-09 debug APK smoke, the app copied
 ran `ffmpeg -version`, extracted a JPEG from a tiny MP4 fixture, and reported
 `video-frames` ready through `/device/health`. `gifgrep` remains blocked; it is
 not satisfied by `ffmpeg`.
+
+Current APK-local audio-runtime payloads:
+
+```text
+songsee: Android arm64 ELF, built from steipete/songsee
+source commit: 41d27ea22771ba447bdfb8b6adac2e6599601634
+payload sha256: 98ba6bbd89e69f515192300e0fbbecb607e3e1aba7697e138431ccfd86cf2cab
+provenance: docs/ANDROID_AUDIO_RUNTIME_SONGSEE_PAYLOAD.md
+notice: docs/THIRD_PARTY_NOTICES_SONGSEE.md
+```
+
+The `android-audio-runtime` asset lane and resolver now have a real host-proven
+Songsee payload. It remains an installed-device proof item until the APK copies
+`songsee` into provisioning, provisions it into managed `.openclaw/bin`, runs
+`songsee --version` plus a tiny WAV-to-image smoke, and reports `songsee` ready
+through `/device/health`. `spotify-player` remains blocked; it is not satisfied
+by `songsee`.
 
 Current APK-local Python debug payloads:
 

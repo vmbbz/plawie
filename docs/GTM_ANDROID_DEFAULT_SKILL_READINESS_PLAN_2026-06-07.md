@@ -794,6 +794,13 @@ assets/openclaw/vision-media/bin/ffmpeg. This satisfies video-frames after APK
 install, Native provisioning copy, no-secret `ffmpeg -version`, and tiny
 video-to-JPEG device proof. It must not satisfy gifgrep, which remains blocked
 until its real binary/runtime contract is implemented.
+
+android-audio-runtime APK resolver:
+songsee only, backed by the bundled Android arm64 Songsee payload at
+assets/openclaw/audio-runtime/bin/songsee. This can satisfy songsee after APK
+install, Native provisioning copy, `songsee --version`, and tiny WAV-to-image
+device proof. It must not satisfy spotify-player, which remains blocked until
+`spogo` or `spotify_player` plus real account/auth behavior exists.
 ```
 
 Class C acceptance:
@@ -1990,6 +1997,28 @@ bundled `songsee` executable can move `songsee`; it must not satisfy
 `spotify-player`, whose real gates are `spogo` or `spotify_player` plus
 account/auth setup.
 
+Phase 5J real Songsee payload landed on host:
+
+```text
+asset: assets/openclaw/audio-runtime/bin/songsee
+source: https://github.com/steipete/songsee
+source commit: 41d27ea22771ba447bdfb8b6adac2e6599601634
+source describe: v0.1.1-10-g41d27ea
+toolchain: go1.25.4 windows/amd64
+payload sha256: 98ba6bbd89e69f515192300e0fbbecb607e3e1aba7697e138431ccfd86cf2cab
+provenance: docs/ANDROID_AUDIO_RUNTIME_SONGSEE_PAYLOAD.md
+third-party notice: docs/THIRD_PARTY_NOTICES_SONGSEE.md
+host packaging proof: test/android_cli_core_payload_packaging_test.dart
+debug APK entry:
+  assets/flutter_assets/assets/openclaw/audio-runtime/bin/songsee
+```
+
+This host proof still does not raise the Android-ready floor by itself. The
+count moves only after installed-device proof shows `songsee` copied from APK
+assets, provisioned into managed `.openclaw/bin`, executable on Android, ready
+in `/device/health`, and `spotify-player` still blocked on `spogo` or
+`spotify_player`.
+
 Phase 5C Android vision-media runtime lane landed as plumbing:
 
 ```text
@@ -2744,6 +2773,16 @@ spotify-player remains blocked when only songsee exists.
 Ready count stays 27/51 until a real songsee payload and installed-device smoke
 land.
 Commit made.
+```
+
+Round 5J payload target:
+
+```text
+real Android arm64 songsee ELF is bundled in assets/openclaw/audio-runtime/bin
+rebuild script verifies Go archive, source commit, Android target, and ELF
+payload provenance and MIT notice are documented
+packaging tests prove the payload and provenance
+Ready count stays 27/51 until installed-device proof lands.
 ```
 
 ## Success Definition
