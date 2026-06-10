@@ -3033,6 +3033,62 @@ Ready count moves 27/51 -> 28/51.
 Commit made.
 ```
 
+Round 5K payload target:
+
+```text
+real Android arm64 gifgrep ELF is bundled in assets/openclaw/vision-media/bin
+gifgrep local still/sheet commands are smoked against a tiny local GIF fixture
+provider search remains a separate API-key/config promise
+installed-device proof shows gifgrep ready through android-vision-media-runtime
+sonoscli stale planner truth is corrected to ready through the existing sonos
+APK payload
+Ready count moves 28/51 -> 30/51.
+Commit made.
+```
+
+Round 5L config-unlock target:
+
+```text
+readiness JSON merges live requiredEnv with manifest requiredConfig
+Skills page CONFIG GATES follows live runtimeStatus/provisioningStatus
+pack-satisfied config blockers such as eightctl move to user setup affordances
+mixed missing-pack-plus-config blockers stay in PACK GATES
+release gate remains 13/13
+Android ready floor remains 30/51
+Commit made.
+```
+
+Round 5M truth-correction target:
+
+```text
+sherpa-onnx-tts is corrected from TTS-runtime-only to mixed gated:
+  android-tts-runtime
+  android-node-executable-pack
+A TTS model/runtime pack alone must not move Sherpa ready in the current skill
+path.
+release gate remains 13/13
+Android ready floor remains 30/51
+Commit made.
+```
+
+Round 5N next target:
+
+```text
+reality-check the remaining six true pack blockers after the Sherpa correction:
+  coding-agent
+  gemini
+  node-inspect-debugger
+  openai-whisper
+  sherpa-onnx-tts
+  spotify-player
+
+Do not chase a fake quick +1. Pick the next implementation only if it has a
+sane Android artifact path, clear auth/config truth, Gateway/agent execution,
+and an installed-device smoke. If no remaining pack lane clears that bar, pivot
+to Phase 6A config-unlock quality: setup validation, test-connection actions,
+and clearer service-specific UI for the 15 config gates.
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android
