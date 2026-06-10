@@ -174,7 +174,7 @@ Static needs_config taxonomy entries: 14
 Current config-gated rows users can unlock in UI after Phase 5L device proof: 15
   = 14 static needs_config entries
   + eightctl, whose APK-local binary pack is satisfied but whose live runtime
-    gate remains needs_config until EIGHTCTL_PASSWORD / Eight Sleep
+    gate remains needs_config until EIGHT_SLEEP_EMAIL plus eightctl.deviceId
     account/device config exists
 
 Unready needs_pack taxonomy entries: 7
@@ -268,7 +268,8 @@ video-frames: runtimeStatus ready, provisioningStatus ready,
 sonoscli: runtimeStatus ready, provisioningStatus ready,
           APK-local sonos payload satisfies the binary gate
 eightctl: runtimeStatus needs_config, provisioningStatus needs_user_config,
-          APK-local eightctl payload exists, requiredEnv EIGHTCTL_PASSWORD,
+          APK-local eightctl payload exists, requiredEnv EIGHT_SLEEP_EMAIL,
+          requiredConfig eightctl.deviceId,
           no missing pack/bin evidence, belongs in CONFIG GATES
 spotify-player: runtimeStatus missing_dependency,
                 provisioningStatus missing_binary,
@@ -3202,7 +3203,8 @@ schema, not rely on forgiving handler aliases.
 
 Corrected config-test payloads now include:
 discord action=me
-github / gh-issues action=user
+github action=user
+gh-issues owner=openai repo=codex state=open limit=1
 mcporter action=health
 slack action=me
 trello action=boards limit=1
@@ -3213,6 +3215,7 @@ openai-whisper-api tiny WAV fixture, gpt-4o-mini-transcribe
 Live missing-config proof after corrected install:
 discord -> HTTP 400 MISSING_DISCORD_BOT_TOKEN
 github -> HTTP 400 MISSING_GITHUB_TOKEN
+gh-issues -> HTTP 400 MISSING_GITHUB_TOKEN
 goplaces -> HTTP 400 MISSING_GOOGLE_PLACES_API_KEY
 mcporter -> HTTP 400 MISSING_MCPORTER_CONFIG
 notion -> HTTP 400 MISSING_NOTION_TOKEN
@@ -3224,22 +3227,38 @@ Readiness impact:
 release gate unchanged at 13/13
 Android ready floor unchanged at 30/51
 The connection-test UI is now aligned with the live AgentSkillServer tool
-schema for supported service adapters.
+schema for supported service adapters. The nine app-native config services have
+connection-test plans; the six remaining config gates are save-only until a
+real production service/test surface exists.
 ```
 
-Next Phase 6B candidate:
+Phase 6B risk-aware UX landed:
 
 ```text
 Risk-aware connection-test UX.
 
-Safe-read checks such as Slack/GitHub/Discord/Trello/MCPorter can run directly
-after Save & Check. Query-read checks such as Notion and Google Places should
-show the exact bounded query before execution. Billable checks such as OpenAI
-Whisper API should require an explicit confirmation before running.
+Safe-read checks such as Slack, GitHub, GitHub Issues, Discord, Trello, and
+MCPorter run directly after Save & Check. Query-read checks such as Notion and
+Google Places show the exact bounded query before execution. Billable checks
+such as OpenAI Whisper API require explicit confirmation before posting to
+AgentSkillServer /api/tools/execute.
 
-This should not raise readiness counts. It should reduce support risk and make
-the config wizard feel release-grade instead of surprising users with hidden
-network or billable test behavior.
+Save-only config gates are explicit in the sheet: 1Password, eightctl, GOG,
+ordercli, SAG, and voice-call can save env/config through the same provisioning
+path, but the app does not pretend they have live connection tests yet.
+
+Coverage:
+connection tests: 9/15 live config gates
+save-only config UX: 6/15 live config gates
+release gate: unchanged at 13/13
+Android ready floor: unchanged at 30/51
+
+Device proof after Phase 6B install:
+releaseGatePass: true
+ready_required: 13/13
+classified default manifest: 61
+installed Native workspace skills: 65
+gh-issues schema-shaped execute -> HTTP 400 MISSING_GITHUB_TOKEN
 ```
 
 ## Success Definition

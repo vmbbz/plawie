@@ -164,6 +164,121 @@ void main() {
     expect(find.textContaining('xoxb-secret'), findsNothing);
   });
 
+  testWidgets('query checks show bounded input before testing', (tester) async {
+    AndroidSkillConfigTestPlan? capturedPlan;
+
+    await _pumpSheet(
+      tester,
+      _notionModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async =>
+          _satisfiedReport(skillId),
+      testConnection: (plan) async {
+        capturedPlan = plan;
+        return const AndroidSkillConfigTestResult(
+          ok: true,
+          message: 'Notion search check passed.',
+          safeSummary: '{"count":"1"}',
+        );
+      },
+    );
+
+    await tester.enterText(
+      _textFieldByLabel('Integration token'),
+      'secret_notion_token',
+    );
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+
+    expect(find.text('Bounded query'), findsOneWidget);
+    expect(find.textContaining('Query: OpenClaw, limit: 1'), findsOneWidget);
+
+    await tester.tap(find.text('Test Connection'));
+    await tester.pump();
+
+    expect(capturedPlan?.skillId, 'notion');
+    expect(find.text('Notion search check passed.'), findsOneWidget);
+  });
+
+  testWidgets('billable checks require explicit confirmation', (tester) async {
+    AndroidSkillConfigTestPlan? capturedPlan;
+
+    await _pumpSheet(
+      tester,
+      _openAiWhisperModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async =>
+          _satisfiedReport(skillId),
+      testConnection: (plan) async {
+        capturedPlan = plan;
+        return const AndroidSkillConfigTestResult(
+          ok: true,
+          message: 'OpenAI transcription check passed.',
+          safeSummary: '{"text":""}',
+        );
+      },
+    );
+
+    await tester.enterText(
+      _textFieldByLabel('OpenAI API key'),
+      'sk-secret-openai',
+    );
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+
+    expect(find.text('Billable API call'), findsOneWidget);
+    expect(find.textContaining('openclaw-config-test.wav'), findsOneWidget);
+
+    await tester.tap(find.text('Test Connection'));
+    await tester.pumpAndSettle();
+
+    expect(capturedPlan, isNull);
+    expect(find.text('Run billable connection test?'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.textContaining('sk-secret-openai'),
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('Run Test'));
+    await tester.pump();
+
+    expect(capturedPlan?.skillId, 'openai-whisper-api');
+    expect(find.text('OpenAI transcription check passed.'), findsOneWidget);
+  });
+
+  testWidgets('save-only config gates show no live test message',
+      (tester) async {
+    await _pumpSheet(
+      tester,
+      _voiceCallModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async =>
+          _satisfiedReport(skillId),
+    );
+
+    await tester.enterText(_textFieldByLabel('Account identifier'), 'acct_123');
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+
+    expect(find.text('Test Connection'), findsNothing);
+    expect(
+      find.textContaining('No live connection test is available yet'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('empty provisioning result is shown as an explicit failure',
       (tester) async {
     await _pumpSheet(
@@ -256,6 +371,24 @@ AndroidSkillConfigFormModel _voiceCallModel() {
     'skillId': 'voice-call',
     'androidSupport': 'needs_config',
     'requiredConfig': ['VOICE_CALL_PROVIDER', 'VOICE_CALL_ACCOUNT'],
+    'primaryGate': 'missing_native_config',
+  });
+}
+
+AndroidSkillConfigFormModel _notionModel() {
+  return AndroidSkillConfigFormModel.fromSkill({
+    'skillId': 'notion',
+    'androidSupport': 'needs_config',
+    'requiredConfig': ['NOTION_TOKEN'],
+    'primaryGate': 'missing_native_config',
+  });
+}
+
+AndroidSkillConfigFormModel _openAiWhisperModel() {
+  return AndroidSkillConfigFormModel.fromSkill({
+    'skillId': 'openai-whisper-api',
+    'androidSupport': 'needs_config',
+    'requiredConfig': ['OPENAI_API_KEY'],
     'primaryGate': 'missing_native_config',
   });
 }

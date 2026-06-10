@@ -75,8 +75,12 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
         .toList(growable: false);
     if (missing.isNotEmpty) {
       setState(
-        () => _error =
-            'Missing values: ${missing.map((field) => field.label).join(', ')}',
+        () {
+          _configSaved = false;
+          _lastTestResult = null;
+          _error =
+              'Missing values: ${missing.map((field) => field.label).join(', ')}';
+        },
       );
       return;
     }
@@ -91,8 +95,12 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
     }).toList(growable: false);
     if (invalidUrls.isNotEmpty) {
       setState(
-        () => _error =
-            'Invalid URL: ${invalidUrls.map((field) => field.label).join(', ')}',
+        () {
+          _configSaved = false;
+          _lastTestResult = null;
+          _error =
+              'Invalid URL: ${invalidUrls.map((field) => field.label).join(', ')}';
+        },
       );
       return;
     }
@@ -100,6 +108,7 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
     setState(() {
       _isSaving = true;
       _error = null;
+      _lastTestResult = null;
     });
 
     try {
@@ -121,8 +130,12 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
       if (!mounted) return;
       if (report.results.isEmpty) {
         setState(
-          () => _error =
-              'No provisioning result returned for ${widget.model.title}.',
+          () {
+            _configSaved = false;
+            _lastTestResult = null;
+            _error =
+                'No provisioning result returned for ${widget.model.title}.';
+          },
         );
         return;
       }
@@ -132,9 +145,8 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
       final gate = result?.primaryGate ??
           result?.status.wireName ??
           widget.model.runtimeGateLabel;
-      final canTestConnection = _testPlan != null;
       setState(() {
-        _configSaved = canTestConnection;
+        _configSaved = true;
         _lastTestResult = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -148,13 +160,14 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
               ready ? AppColors.statusGreen : AppColors.statusAmber,
         ),
       );
-      if (!canTestConnection && Navigator.of(context).canPop()) {
-        Navigator.of(context).pop(report);
-      }
     } catch (error) {
       if (!mounted) return;
       setState(
-        () => _error = 'Save failed. Check skill configuration and try again.',
+        () {
+          _configSaved = false;
+          _lastTestResult = null;
+          _error = 'Save failed. Check skill configuration and try again.';
+        },
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -164,6 +177,10 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
   Future<void> _testConnection() async {
     final plan = _testPlan;
     if (plan == null) return;
+    if (plan.requiresConfirmation) {
+      final confirmed = await _confirmConnectionTest(plan);
+      if (!mounted || !confirmed) return;
+    }
 
     setState(() {
       _isTesting = true;
@@ -202,6 +219,43 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
     final testConnection = widget.testConnection;
     if (testConnection != null) return testConnection(plan);
     return AndroidSkillConfigTestService().run(plan);
+  }
+
+  Future<bool> _confirmConnectionTest(AndroidSkillConfigTestPlan plan) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF151821),
+          title: const Text(
+            'Run billable connection test?',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: Text(
+            [
+              plan.riskDescription,
+              if (plan.visibleInputSummary.isNotEmpty) plan.visibleInputSummary,
+            ].join('\n\n'),
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.72),
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Run Test'),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed == true;
   }
 
   Future<SkillProvisioningReport> _applyConfig({
@@ -343,6 +397,8 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
               ),
               if (_configSaved && _testPlan != null) ...[
                 const SizedBox(height: 10),
+                _ConnectionTestRiskNotice(plan: _testPlan),
+                const SizedBox(height: 10),
                 SizedBox(
                   height: 44,
                   child: OutlinedButton.icon(
@@ -358,6 +414,15 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
                       _isTesting ? 'Testing' : _testPlan.buttonLabel,
                     ),
                   ),
+                ),
+              ],
+              if (_configSaved && _testPlan == null) ...[
+                const SizedBox(height: 10),
+                _Notice(
+                  color: AppColors.statusAmber,
+                  icon: Icons.info_outline_rounded,
+                  text:
+                      'Config saved. No live connection test is available yet for this skill.',
                 ),
               ],
               if (_lastTestResult != null) ...[
@@ -544,6 +609,77 @@ class _SectionLabel extends StatelessWidget {
         fontSize: 9,
         fontWeight: FontWeight.w900,
         letterSpacing: 0.8,
+      ),
+    );
+  }
+}
+
+class _ConnectionTestRiskNotice extends StatelessWidget {
+  final AndroidSkillConfigTestPlan plan;
+
+  const _ConnectionTestRiskNotice({required this.plan});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (plan.risk) {
+      AndroidSkillConfigTestRisk.safeRead => AppColors.statusGreen,
+      AndroidSkillConfigTestRisk.queryRead => Colors.lightBlueAccent,
+      AndroidSkillConfigTestRisk.billableRead => AppColors.statusAmber,
+    };
+    final icon = switch (plan.risk) {
+      AndroidSkillConfigTestRisk.safeRead => Icons.visibility_rounded,
+      AndroidSkillConfigTestRisk.queryRead => Icons.search_rounded,
+      AndroidSkillConfigTestRisk.billableRead => Icons.paid_rounded,
+    };
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 15),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  plan.riskLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  plan.riskDescription,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.72),
+                    fontSize: 11,
+                    height: 1.35,
+                  ),
+                ),
+                if (plan.visibleInputSummary.isNotEmpty) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    plan.visibleInputSummary,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.58),
+                      fontSize: 10.5,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

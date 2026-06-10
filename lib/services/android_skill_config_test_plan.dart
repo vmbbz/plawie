@@ -23,6 +23,40 @@ class AndroidSkillConfigTestPlan {
     this.buttonLabel = 'Test Connection',
   });
 
+  String get riskLabel {
+    return switch (risk) {
+      AndroidSkillConfigTestRisk.safeRead => 'Safe read',
+      AndroidSkillConfigTestRisk.queryRead => 'Bounded query',
+      AndroidSkillConfigTestRisk.billableRead => 'Billable API call',
+    };
+  }
+
+  String get riskDescription {
+    return switch (risk) {
+      AndroidSkillConfigTestRisk.safeRead =>
+        'Reads account metadata only and does not create or update remote data.',
+      AndroidSkillConfigTestRisk.queryRead =>
+        'Runs a bounded read query using the visible OpenClaw test input.',
+      AndroidSkillConfigTestRisk.billableRead =>
+        'Sends a tiny local fixture to the configured transcription API and may use paid API quota.',
+    };
+  }
+
+  bool get requiresConfirmation =>
+      risk == AndroidSkillConfigTestRisk.billableRead;
+
+  String get visibleInputSummary {
+    return switch (skillId) {
+      'gh-issues' => 'Repository: ${input['owner']}/${input['repo']}, '
+          'state: ${input['state']}, limit: ${input['limit']}',
+      'goplaces' => 'Query: ${input['query']}, limit: ${input['limit']}',
+      'notion' => 'Query: ${input['query']}, limit: ${input['limit']}',
+      'openai-whisper-api' =>
+        'Fixture: ${input['filename']}, model: ${input['model']}',
+      _ => '',
+    };
+  }
+
   static AndroidSkillConfigTestPlan? forSkill(String skillId) {
     final normalized = _normalizeSkillId(skillId);
     const source = 'android-skill-config-test';
@@ -36,13 +70,26 @@ class AndroidSkillConfigTestPlan {
           successActionLabel: 'Discord bot',
         );
       case 'github':
-      case 'gh-issues':
         return AndroidSkillConfigTestPlan(
           skillId: normalized,
           toolName: 'github',
           input: const {'source': source, 'action': 'user'},
           risk: AndroidSkillConfigTestRisk.safeRead,
           successActionLabel: 'GitHub user',
+        );
+      case 'gh-issues':
+        return const AndroidSkillConfigTestPlan(
+          skillId: 'gh-issues',
+          toolName: 'gh-issues',
+          input: {
+            'source': source,
+            'owner': 'openai',
+            'repo': 'codex',
+            'state': 'open',
+            'limit': 1,
+          },
+          risk: AndroidSkillConfigTestRisk.safeRead,
+          successActionLabel: 'GitHub issues',
         );
       case 'goplaces':
         return const AndroidSkillConfigTestPlan(

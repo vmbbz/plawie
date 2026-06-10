@@ -1,4 +1,5 @@
 import 'package:clawa/services/android_skill_config_test_plan.dart';
+import 'package:clawa/services/android_skill_support_manifest.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -13,13 +14,28 @@ void main() {
     expect(slack.buttonLabel, 'Test Connection');
     expect(slack.risk, AndroidSkillConfigTestRisk.safeRead);
 
-    final github = AndroidSkillConfigTestPlan.forSkill('gh-issues')!;
+    final github = AndroidSkillConfigTestPlan.forSkill('github')!;
     expect(github.toolName, 'github');
     expect(github.input, {
       'source': 'android-skill-config-test',
       'action': 'user',
     });
     expect(github.successActionLabel, 'GitHub user');
+
+    final issues = AndroidSkillConfigTestPlan.forSkill('gh-issues')!;
+    expect(issues.toolName, 'gh-issues');
+    expect(issues.input, {
+      'source': 'android-skill-config-test',
+      'owner': 'openai',
+      'repo': 'codex',
+      'state': 'open',
+      'limit': 1,
+    });
+    expect(issues.successActionLabel, 'GitHub issues');
+    expect(
+      issues.visibleInputSummary,
+      'Repository: openai/codex, state: open, limit: 1',
+    );
 
     final notion = AndroidSkillConfigTestPlan.forSkill('notion')!;
     expect(notion.toolName, 'notion');
@@ -29,12 +45,17 @@ void main() {
       'limit': 1,
     });
     expect(notion.risk, AndroidSkillConfigTestRisk.queryRead);
+    expect(notion.visibleInputSummary, 'Query: OpenClaw, limit: 1');
 
     final whisper = AndroidSkillConfigTestPlan.forSkill('openai-whisper-api')!;
     expect(whisper.toolName, 'openai-whisper-api');
     expect(whisper.risk, AndroidSkillConfigTestRisk.billableRead);
     expect(whisper.input.keys, containsAll(['audioBase64', 'filename']));
     expect(whisper.input.values.join(' '), isNot(contains('OPENAI_API_KEY')));
+    expect(
+      whisper.visibleInputSummary,
+      'Fixture: openclaw-config-test.wav, model: gpt-4o-mini-transcribe',
+    );
 
     final discord = AndroidSkillConfigTestPlan.forSkill('discord')!;
     expect(discord.input, {
@@ -58,8 +79,58 @@ void main() {
 
   test('does not offer connection checks for config-only placeholders yet', () {
     expect(AndroidSkillConfigTestPlan.forSkill('1password'), isNull);
+    expect(AndroidSkillConfigTestPlan.forSkill('eightctl'), isNull);
+    expect(AndroidSkillConfigTestPlan.forSkill('gog'), isNull);
     expect(AndroidSkillConfigTestPlan.forSkill('ordercli'), isNull);
     expect(AndroidSkillConfigTestPlan.forSkill('sag'), isNull);
     expect(AndroidSkillConfigTestPlan.forSkill('voice-call'), isNull);
+  });
+
+  test('covers every app-native config service in the Android manifest', () {
+    final appNativeConfigSkills = AndroidSkillSupportManifest.instance.entries
+        .where(
+          (entry) =>
+              entry.status == AndroidSkillSupportStatus.needsConfig &&
+              entry.ownerLayer == AndroidSkillOwnerLayer.appNativeCapability,
+        )
+        .map((entry) => entry.skillId)
+        .toSet();
+
+    expect(appNativeConfigSkills, {
+      'discord',
+      'gh-issues',
+      'github',
+      'goplaces',
+      'mcporter',
+      'notion',
+      'openai-whisper-api',
+      'slack',
+      'trello',
+    });
+
+    for (final skillId in appNativeConfigSkills) {
+      expect(
+        AndroidSkillConfigTestPlan.forSkill(skillId),
+        isNotNull,
+        reason: '$skillId has a production app-native service adapter.',
+      );
+    }
+  });
+
+  test('exposes user-facing risk copy for every connection test', () {
+    final slack = AndroidSkillConfigTestPlan.forSkill('slack')!;
+    expect(slack.riskLabel, 'Safe read');
+    expect(slack.riskDescription, contains('metadata'));
+    expect(slack.requiresConfirmation, isFalse);
+
+    final notion = AndroidSkillConfigTestPlan.forSkill('notion')!;
+    expect(notion.riskLabel, 'Bounded query');
+    expect(notion.riskDescription, contains('OpenClaw'));
+    expect(notion.requiresConfirmation, isFalse);
+
+    final whisper = AndroidSkillConfigTestPlan.forSkill('openai-whisper-api')!;
+    expect(whisper.riskLabel, 'Billable API call');
+    expect(whisper.riskDescription, contains('transcription'));
+    expect(whisper.requiresConfirmation, isTrue);
   });
 }
