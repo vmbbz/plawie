@@ -240,4 +240,41 @@ void main() {
     expect(eightctl.runtimeGate, 'needs_config');
     expect(eightctl.configOnlyCanSatisfy, isTrue);
   });
+
+  test('mixed pack and config gates stay out of config unlock list', () {
+    final readiness = {
+      'skills': [
+        {
+          'skillId': 'eightctl',
+          'androidSupport': 'needs_pack',
+          'runtimeStatus': 'needs_config',
+          'provisioningStatus': 'needs_user_config',
+          'requiredEnv': ['EIGHT_SLEEP_EMAIL'],
+          'requiredConfig': ['eightctl.deviceId'],
+          'ready': false,
+        },
+        {
+          'skillId': 'spotify-player',
+          'androidSupport': 'needs_pack',
+          'runtimeStatus': 'needs_config',
+          'provisioningStatus': 'needs_user_config',
+          'primaryGate': 'missing_native_env',
+          'gates': ['missing_native_env', 'missing_native_bin'],
+          'missingBins': ['spogo'],
+          'requiredEnv': ['SPOTIFY_COOKIE'],
+          'requiredPacks': ['android-audio-runtime'],
+          'ready': false,
+        },
+      ],
+    };
+
+    final forms = AndroidSkillConfigFormModel.allFromReadiness(readiness);
+    expect(forms.map((form) => form.skillId), ['eightctl']);
+
+    final spotify = AndroidSkillConfigFormModel.fromReadiness(
+      readiness,
+      'spotify-player',
+    )!;
+    expect(spotify.configOnlyCanSatisfy, isFalse);
+  });
 }

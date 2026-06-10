@@ -270,4 +270,58 @@ void main() {
       ['openai-whisper'],
     );
   });
+
+  test('mixed pack and config gates stay in pack preview', () {
+    final model = AndroidSkillReadinessViewModel.fromReadiness({
+      'totalManifestSkills': 3,
+      'readyRequired': {'ready': 0, 'total': 0},
+      'releaseGatePass': true,
+      'unexpectedMissingDependency': 0,
+      'countsByClass': {
+        'needs_pack': 2,
+        'needs_config': 1,
+      },
+      'skills': [
+        {
+          'skillId': 'eightctl',
+          'androidSupport': 'needs_pack',
+          'runtimeStatus': 'needs_config',
+          'provisioningStatus': 'needs_user_config',
+          'requiredEnv': ['EIGHT_SLEEP_EMAIL'],
+          'requiredConfig': ['eightctl.deviceId'],
+          'ready': false,
+        },
+        {
+          'skillId': 'spotify-player',
+          'androidSupport': 'needs_pack',
+          'runtimeStatus': 'needs_config',
+          'provisioningStatus': 'needs_user_config',
+          'primaryGate': 'missing_native_env',
+          'gates': ['missing_native_env', 'missing_native_bin'],
+          'missingBins': ['spogo'],
+          'requiredEnv': ['SPOTIFY_COOKIE'],
+          'requiredPacks': ['android-audio-runtime'],
+          'ready': false,
+        },
+        {
+          'skillId': 'slack',
+          'androidSupport': 'needs_config',
+          'runtimeStatus': 'needs_config',
+          'requiredConfig': ['SLACK_BOT_TOKEN', 'channels.slack'],
+          'ready': false,
+        },
+      ],
+    });
+
+    expect(
+      model.topNeedsConfig.map((item) => item.skillId),
+      ['eightctl', 'slack'],
+    );
+    expect(
+      model.topNeedsPack.map((item) => item.skillId),
+      ['spotify-player'],
+    );
+    expect(model.topNeedsPack.single.detail, contains('spogo'));
+    expect(model.topNeedsPack.single.detail, contains('SPOTIFY_COOKIE'));
+  });
 }

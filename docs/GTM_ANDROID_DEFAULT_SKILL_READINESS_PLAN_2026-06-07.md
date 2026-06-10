@@ -201,7 +201,9 @@ page now shows current gates, not just static taxonomy: `CONFIG BLOCKERS`
 includes rows whose live `runtimeStatus` or `provisioningStatus` says user
 config is needed, and `PACK BLOCKERS` keeps only true missing artifact lanes.
 That means a pack-class row such as `eightctl` moves to the config affordance
-after its binary payload is installed, without pretending it is ready.
+after its binary payload is installed, without pretending it is ready. Mixed
+pack-plus-config rows stay in `PACK BLOCKERS` until missing artifact evidence
+is gone.
 
 Device proof caveat: APK extraction, provisioning, `/device/health`,
 no-secret version execution, tiny media extraction, and Python debug import are now
@@ -2175,6 +2177,8 @@ It changes the user's unlock path. A row such as `eightctl` remains unready
 until account/device configuration exists, but once the APK-local binary has
 been installed and the live audit says the remaining gate is config, the row
 belongs in the interactive config path rather than the missing-pack path.
+If a row still has missing binary, missing pack, or dependency-gate evidence,
+it stays in the pack path even when it also has user config fields.
 
 Host-side proof:
 

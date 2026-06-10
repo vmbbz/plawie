@@ -94,9 +94,45 @@ class AndroidSkillReadinessViewModel {
   }
 
   static bool _isConfigGate(Map<String, dynamic> skill) {
-    return skill['androidSupport']?.toString() == 'needs_config' ||
-        skill['runtimeStatus']?.toString() == 'needs_config' ||
+    if (skill['androidSupport']?.toString() == 'needs_config') return true;
+    if (skill['androidSupport']?.toString() != 'needs_pack') return false;
+    final isConfigGate = skill['runtimeStatus']?.toString() == 'needs_config' ||
         skill['provisioningStatus']?.toString() == 'needs_user_config';
+    return isConfigGate && !_skillNeedsMoreThanConfig(skill);
+  }
+
+  static bool _skillNeedsMoreThanConfig(Map<String, dynamic> skill) {
+    if (_stringList(skill['missingBins']).isNotEmpty ||
+        _stringList(skill['missingPacks']).isNotEmpty) {
+      return true;
+    }
+    if (_gateNeedsMoreThanConfig(skill['dependencyGateStatus']?.toString())) {
+      return true;
+    }
+    if (_gateNeedsMoreThanConfig(skill['primaryGate']?.toString())) {
+      return true;
+    }
+    return _stringList(skill['gates']).any(_gateNeedsMoreThanConfig);
+  }
+
+  static bool _gateNeedsMoreThanConfig(String? gate) {
+    final normalized = gate?.trim().toLowerCase();
+    if (normalized == null || normalized.isEmpty) return false;
+    return normalized == 'missing_native_bin' ||
+        normalized == 'missing_native_runtime' ||
+        normalized == 'missing_native_python_package' ||
+        normalized == 'missing_native_node_package' ||
+        normalized == 'missing_native_plugin' ||
+        normalized == 'missing_native_skill' ||
+        normalized == 'missing_binary' ||
+        normalized == 'missing_dependency' ||
+        normalized == 'missing_plugin' ||
+        normalized == 'missing_pack' ||
+        normalized == 'missing_manifest' ||
+        normalized == 'dependency_pack' ||
+        normalized == 'manual_proot_required' ||
+        normalized == 'unsupported_native' ||
+        normalized == 'unsupported_on_android';
   }
 
   static bool _excludedAndroidSupport(String? support) {

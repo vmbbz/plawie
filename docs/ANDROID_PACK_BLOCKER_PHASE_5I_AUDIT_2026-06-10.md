@@ -263,7 +263,8 @@ The Skills page now treats live runtimeStatus/provisioningStatus as the current
 gate. A needs_pack taxonomy row whose binary pack is satisfied but whose runtime
 gate is needs_config moves to CONFIG GATES and opens the dynamic config sheet.
 
-True missing-artifact rows stay in PACK GATES.
+True missing-artifact rows stay in PACK GATES, including mixed rows that have
+both user config fields and missing binary/pack evidence.
 ```
 
 Expected user-facing effect after reinstall/device health refresh:
