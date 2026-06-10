@@ -2449,7 +2449,7 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
                     color: Colors.white.withValues(alpha: 0.82),
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 1.0,
+                    letterSpacing: 0,
                   ),
                 ),
               ),
@@ -2503,6 +2503,11 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
                 color: AppColors.statusAmber,
               ),
               _ReadinessMetric(
+                label: 'CONFIG CLASS',
+                value: '${model.needsConfigTaxonomyCount}',
+                color: AppColors.statusAmber.withValues(alpha: 0.72),
+              ),
+              _ReadinessMetric(
                 label: 'LIVE TESTS',
                 value: '${model.liveConnectionTestCount}',
                 color: AppColors.statusGreen,
@@ -2521,6 +2526,11 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
                 label: 'PACK BLOCKERS',
                 value: '${model.blockedNeedsPackCount}',
                 color: Colors.cyanAccent,
+              ),
+              _ReadinessMetric(
+                label: 'PACK CLASS',
+                value: '${model.needsPackTaxonomyCount}',
+                color: Colors.cyanAccent.withValues(alpha: 0.72),
               ),
               _ReadinessMetric(
                 label: 'OUTSIDE GTM',
@@ -2620,7 +2630,7 @@ class _ReadinessMetric extends StatelessWidget {
               color: Colors.white.withValues(alpha: 0.54),
               fontSize: 8,
               fontWeight: FontWeight.w900,
-              letterSpacing: 0.6,
+              letterSpacing: 0,
             ),
           ),
         ],
@@ -2657,7 +2667,9 @@ class _ConfigCoverageNote extends StatelessWidget {
               'Config coverage: ${model.configTestCoverageLabel}. '
               '${model.saveOnlyConfigLabel} gates can save user config but '
               'need a real Android production adapter before the app offers a '
-              'live check.',
+              'live check. Taxonomy: ${model.configPackTaxonomyLabel}. '
+              'Current blocker cards can differ when a pack-class skill is '
+              'now only waiting on user config.',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.6),
                 fontSize: 10.5,
@@ -2695,7 +2707,7 @@ class _ReadinessPill extends StatelessWidget {
           color: color,
           fontSize: 8,
           fontWeight: FontWeight.w900,
-          letterSpacing: 0.7,
+          letterSpacing: 0,
         ),
       ),
     );
@@ -2727,7 +2739,7 @@ class _ReadinessGatePreview extends StatelessWidget {
             color: color.withValues(alpha: 0.84),
             fontSize: 8.5,
             fontWeight: FontWeight.w900,
-            letterSpacing: 0.7,
+            letterSpacing: 0,
           ),
         ),
         const SizedBox(height: 5),

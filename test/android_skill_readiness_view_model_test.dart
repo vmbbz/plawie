@@ -83,6 +83,7 @@ void main() {
     expect(model.topNeedsConfig.single.detail, contains('missing_native_bin'));
     expect(model.needsConfigTaxonomyCount, 16);
     expect(model.needsPackTaxonomyCount, 20);
+    expect(model.configPackTaxonomyLabel, '16 config class / 20 pack class');
     expect(model.blockedNeedsConfigCount, 1);
     expect(model.blockedNeedsPackCount, 0);
     expect(model.topNeedsPack, isEmpty);
@@ -188,6 +189,7 @@ void main() {
     expect(model.saveOnlyConfigCount, 5);
     expect(model.configTestCoverageLabel, '9 live + 1 setup / 15');
     expect(model.saveOnlyConfigLabel, '5 save-only');
+    expect(model.configPackTaxonomyLabel, '14 config class / 1 pack class');
 
     final summaries = {
       for (final item in model.topNeedsConfig) item.skillId: item,

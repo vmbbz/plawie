@@ -38,6 +38,10 @@ class AndroidSkillReadinessViewModel {
 
   int get needsPackTaxonomyCount => _count(countsByClass, 'needs_pack');
 
+  String get configPackTaxonomyLabel =>
+      '$needsConfigTaxonomyCount config class / '
+      '$needsPackTaxonomyCount pack class';
+
   int get blockedNeedsConfigCount => topNeedsConfig.length;
 
   int get blockedNeedsPackCount => topNeedsPack.length;

@@ -3314,11 +3314,26 @@ Phase 6C expansion / no-fake-readiness audit:
     LIVE TESTS: app-native service adapters with a real bounded live check
     SETUP CHECKS: provider-aware setup status checks such as Twilio voice-call
     SAVE ONLY: user config can be saved, but no live Android adapter is present
+    CONFIG CLASS / PACK CLASS: static taxonomy counts from the Android default
+      manifest, shown beside current blocker counts so users can see why
+      pack-class rows such as eightctl can move into config gates after their
+      binary/runtime pack is satisfied
 
   Config-gated rows now carry LIVE / SETUP / SAVE badges, and save-only sheets
   name the missing Gateway/AgentSkillServer adapter boundary instead of showing
   a generic "no test yet" message. This raises user clarity without raising the
   readiness count falsely.
+
+Phase 6C second-pass UI count sweep:
+  Skills page cards now show both current actionable blocker counts and static
+  manifest taxonomy counts:
+    CONFIG BLOCKERS: 15 current gates users can act on now
+    CONFIG CLASS: 14 static needs_config manifest rows
+    PACK BLOCKERS: 6 remaining true missing artifact lanes
+    PACK CLASS: 17 static needs_pack manifest rows
+  The coverage note explains that current blocker cards can differ from
+  taxonomy when a pack-class skill is now only waiting on user config. This is
+  intentional product truth, not count drift.
 
 Device proof after Phase 6C install:
   releaseGatePass: true
