@@ -77,13 +77,49 @@ void main() {
     });
   });
 
+  test('offers Twilio-only setup status for voice-call config', () {
+    expect(AndroidSkillConfigTestPlan.forSkill('voice-call'), isNull);
+
+    final twilio = AndroidSkillConfigTestPlan.forSkill(
+      'voice-call',
+      envValues: const {'VOICE_CALL_PROVIDER': 'twilio'},
+    )!;
+    expect(twilio.skillId, 'voice-call');
+    expect(twilio.toolName, 'twilio-voice');
+    expect(twilio.input, {
+      'source': 'android-skill-config-test',
+      'method': 'get_status',
+    });
+    expect(twilio.buttonLabel, 'Check Setup Status');
+    expect(twilio.risk, AndroidSkillConfigTestRisk.safeRead);
+    expect(twilio.successActionLabel, 'Twilio Voice setup status');
+    expect(
+      twilio.visibleInputSummary,
+      'Provider: Twilio, method: get_status',
+    );
+
+    expect(
+      AndroidSkillConfigTestPlan.forSkill(
+        'voice-call',
+        envValues: const {'VOICE_CALL_PROVIDER': 'telnyx'},
+      ),
+      isNull,
+    );
+    expect(
+      AndroidSkillConfigTestPlan.forSkill(
+        'voice-call',
+        envValues: const {'VOICE_CALL_PROVIDER': 'custom'},
+      ),
+      isNull,
+    );
+  });
+
   test('does not offer connection checks for config-only placeholders yet', () {
     expect(AndroidSkillConfigTestPlan.forSkill('1password'), isNull);
     expect(AndroidSkillConfigTestPlan.forSkill('eightctl'), isNull);
     expect(AndroidSkillConfigTestPlan.forSkill('gog'), isNull);
     expect(AndroidSkillConfigTestPlan.forSkill('ordercli'), isNull);
     expect(AndroidSkillConfigTestPlan.forSkill('sag'), isNull);
-    expect(AndroidSkillConfigTestPlan.forSkill('voice-call'), isNull);
   });
 
   test('covers every app-native config service in the Android manifest', () {

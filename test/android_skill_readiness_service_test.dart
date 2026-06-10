@@ -354,9 +354,8 @@ void main() {
           'eightctl',
           status: SkillExecutionStatus.needsConfig,
           primaryGate: 'missing_native_env',
-          gates: const ['missing_native_env', 'missing_native_config'],
-          requiredEnv: const ['EIGHT_SLEEP_EMAIL'],
-          requiredConfig: const ['eightctl.deviceId'],
+          gates: const ['missing_native_env'],
+          requiredEnv: const ['EIGHTCTL_PASSWORD'],
         ),
       ]),
       provisioning: provisioningWith([
@@ -372,8 +371,8 @@ void main() {
     expect(eightctl['androidSupport'], 'needs_pack');
     expect(eightctl['runtimeStatus'], 'needs_config');
     expect(eightctl['provisioningStatus'], 'needs_user_config');
-    expect(eightctl['requiredEnv'], ['EIGHT_SLEEP_EMAIL']);
-    expect(eightctl['requiredConfig'], ['eightctl.deviceId']);
+    expect(eightctl['requiredEnv'], ['EIGHTCTL_PASSWORD']);
+    expect(eightctl['requiredConfig'], isNull);
     expect(eightctl['ready'], isFalse);
   });
 }

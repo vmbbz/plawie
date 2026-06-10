@@ -71,4 +71,65 @@ void main() {
     expect(result.safeSummary, contains('Bad token'));
     expect(result.safeSummary, isNot(contains('xoxb-secret')));
   });
+
+  test('treats setup-status payloads with missing config as failed', () async {
+    final service = AndroidSkillConfigTestService(
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'provider': 'Twilio Voice',
+            'configured': false,
+            'connected': false,
+            'status': 'CONFIG_REQUIRED',
+            'actionRequired':
+                'Configure Twilio Account SID and Auth Token AC1234567890abcdef1234567890abcdef',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final result = await service.run(
+      AndroidSkillConfigTestPlan.forSkill(
+        'voice-call',
+        envValues: const {'VOICE_CALL_PROVIDER': 'twilio'},
+      )!,
+    );
+
+    expect(result.ok, isFalse);
+    expect(result.message, 'Twilio Voice setup status check failed.');
+    expect(result.safeSummary, contains('CONFIG_REQUIRED'));
+    expect(result.safeSummary, isNot(contains('AC1234567890')));
+  });
+
+  test('accepts successful setup-status payloads without success wrapper',
+      () async {
+    final service = AndroidSkillConfigTestService(
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'provider': 'Twilio Voice',
+            'configured': true,
+            'connected': true,
+            'status': 'READY',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final result = await service.run(
+      AndroidSkillConfigTestPlan.forSkill(
+        'voice-call',
+        envValues: const {'VOICE_CALL_PROVIDER': 'twilio'},
+      )!,
+    );
+
+    expect(result.ok, isTrue);
+    expect(result.message, 'Twilio Voice setup status check passed.');
+    expect(result.safeSummary, contains('READY'));
+  });
 }

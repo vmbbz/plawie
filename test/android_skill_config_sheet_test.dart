@@ -59,6 +59,15 @@ void main() {
 
     expect(find.text('Provider'), findsOneWidget);
     expect(find.text('twilio'), findsOneWidget);
+    expect(find.text('Enable voice-call skill'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey(
+          'android-skill-config-field-plugins.entries.voice-call.enabled',
+        ),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('twilio'));
     await tester.pumpAndSettle();
@@ -255,8 +264,100 @@ void main() {
     expect(find.text('OpenAI transcription check passed.'), findsOneWidget);
   });
 
-  testWidgets('save-only config gates show no live test message',
+  testWidgets('eightctl save-only gate explains account validation boundary',
       (tester) async {
+    await _pumpSheet(
+      tester,
+      _eightctlModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async =>
+          _satisfiedReport(skillId),
+    );
+
+    await tester.enterText(
+      _textFieldByLabel('Eight Sleep password'),
+      'eight-password',
+    );
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+
+    expect(find.text('Test Connection'), findsNothing);
+    expect(
+      find.textContaining('live Eight Sleep account/device validation'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Twilio voice-call save reveals setup status check',
+      (tester) async {
+    AndroidSkillConfigTestPlan? capturedPlan;
+    Map<String, String>? capturedEnv;
+    Map<String, dynamic>? capturedConfig;
+
+    await _pumpSheet(
+      tester,
+      _voiceCallModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async {
+        capturedEnv = Map<String, String>.from(envValues);
+        capturedConfig = Map<String, dynamic>.from(configValues);
+        return _satisfiedReport(skillId);
+      },
+      testConnection: (plan) async {
+        capturedPlan = plan;
+        return const AndroidSkillConfigTestResult(
+          ok: false,
+          message: 'Twilio Voice setup status check failed.',
+          safeSummary: '{"status":"CONFIG_REQUIRED"}',
+        );
+      },
+    );
+
+    await tester.enterText(_textFieldByLabel('Account identifier'), 'acct_123');
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+
+    expect(capturedEnv, {
+      'VOICE_CALL_PROVIDER': 'twilio',
+      'VOICE_CALL_ACCOUNT': 'acct_123',
+    });
+    expect(capturedConfig, {
+      'plugins.entries.voice-call.enabled': 'true',
+    });
+    expect(find.text('Check Setup Status'), findsOneWidget);
+    expect(find.text('Safe read'), findsOneWidget);
+    expect(
+      find.textContaining('Provider: Twilio, method: get_status'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Check Setup Status'));
+    await tester.pumpAndSettle();
+
+    expect(capturedPlan?.toolName, 'twilio-voice');
+    expect(capturedPlan?.input, {
+      'source': 'android-skill-config-test',
+      'method': 'get_status',
+    });
+    await tester.scrollUntilVisible(
+      find.text('Twilio Voice setup status check failed.'),
+      80,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(
+      find.text('Twilio Voice setup status check failed.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('CONFIG_REQUIRED'), findsOneWidget);
+  });
+
+  testWidgets('non-Twilio voice-call providers stay save-only', (tester) async {
     await _pumpSheet(
       tester,
       _voiceCallModel(),
@@ -268,13 +369,20 @@ void main() {
           _satisfiedReport(skillId),
     );
 
+    await tester.tap(find.text('twilio'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('telnyx').last);
+    await tester.pumpAndSettle();
+
     await tester.enterText(_textFieldByLabel('Account identifier'), 'acct_123');
     await tester.tap(find.text('Save & Check'));
     await tester.pump();
 
+    expect(find.text('Check Setup Status'), findsNothing);
     expect(find.text('Test Connection'), findsNothing);
     expect(
-      find.textContaining('No live connection test is available yet'),
+      find.textContaining(
+          'setup checks are currently available only for Twilio'),
       findsOneWidget,
     );
   });
@@ -370,8 +478,23 @@ AndroidSkillConfigFormModel _voiceCallModel() {
   return AndroidSkillConfigFormModel.fromSkill({
     'skillId': 'voice-call',
     'androidSupport': 'needs_config',
-    'requiredConfig': ['VOICE_CALL_PROVIDER', 'VOICE_CALL_ACCOUNT'],
+    'requiredConfig': [
+      'VOICE_CALL_PROVIDER',
+      'VOICE_CALL_ACCOUNT',
+      'plugins.entries.voice-call.enabled',
+    ],
     'primaryGate': 'missing_native_config',
+  });
+}
+
+AndroidSkillConfigFormModel _eightctlModel() {
+  return AndroidSkillConfigFormModel.fromSkill({
+    'skillId': 'eightctl',
+    'androidSupport': 'needs_pack',
+    'runtimeStatus': 'needs_config',
+    'provisioningStatus': 'needs_user_config',
+    'requiredEnv': ['EIGHTCTL_PASSWORD'],
+    'ready': false,
   });
 }
 

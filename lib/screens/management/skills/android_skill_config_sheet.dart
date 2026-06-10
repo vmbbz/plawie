@@ -38,7 +38,7 @@ class AndroidSkillConfigSheet extends StatefulWidget {
 class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, bool> _obscure = {};
-  late final AndroidSkillConfigTestPlan? _testPlan;
+  AndroidSkillConfigTestPlan? _testPlan;
   bool _isSaving = false;
   bool _isTesting = false;
   bool _configSaved = false;
@@ -48,16 +48,18 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
   @override
   void initState() {
     super.initState();
-    _testPlan = AndroidSkillConfigTestPlan.forSkill(widget.model.skillId);
     for (final field in widget.model.fields) {
       _controllers[field.key] = TextEditingController(
         text: field.inputKind == AndroidSkillConfigInputKind.provider &&
                 field.enumOptions.isNotEmpty
             ? field.enumOptions.first
-            : '',
+            : field.inputKind == AndroidSkillConfigInputKind.toggle
+                ? 'true'
+                : '',
       );
       _obscure[field.key] = field.secret;
     }
+    _testPlan = _buildTestPlan();
   }
 
   @override
@@ -112,16 +114,8 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
     });
 
     try {
-      final envValues = <String, String>{
-        for (final field in widget.model.fields)
-          if (field.target == AndroidSkillConfigFieldTarget.env)
-            field.key: _controllers[field.key]!.text.trim(),
-      };
-      final configValues = <String, dynamic>{
-        for (final field in widget.model.fields)
-          if (field.target == AndroidSkillConfigFieldTarget.config)
-            field.key: _controllers[field.key]!.text.trim(),
-      };
+      final envValues = _currentEnvValues();
+      final configValues = _currentConfigValues();
       final report = await _applyConfig(
         skillId: widget.model.skillId,
         envValues: envValues,
@@ -145,9 +139,14 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
       final gate = result?.primaryGate ??
           result?.status.wireName ??
           widget.model.runtimeGateLabel;
+      final testPlan = _buildTestPlan(
+        envValues: envValues,
+        configValues: configValues,
+      );
       setState(() {
         _configSaved = true;
         _lastTestResult = null;
+        _testPlan = testPlan;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -279,9 +278,63 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
     );
   }
 
+  AndroidSkillConfigTestPlan? _buildTestPlan({
+    Map<String, String>? envValues,
+    Map<String, dynamic>? configValues,
+  }) {
+    return AndroidSkillConfigTestPlan.forSkill(
+      widget.model.skillId,
+      envValues: envValues ?? _currentEnvValues(),
+      configValues: configValues ?? _currentConfigValues(),
+    );
+  }
+
+  Map<String, String> _currentEnvValues() {
+    return <String, String>{
+      for (final field in widget.model.fields)
+        if (field.target == AndroidSkillConfigFieldTarget.env)
+          field.key: _controllers[field.key]!.text.trim(),
+    };
+  }
+
+  Map<String, dynamic> _currentConfigValues() {
+    return <String, dynamic>{
+      for (final field in widget.model.fields)
+        if (field.target == AndroidSkillConfigFieldTarget.config)
+          field.key: _controllers[field.key]!.text.trim(),
+    };
+  }
+
+  void _invalidateSavedConfig() {
+    if (!_configSaved && _lastTestResult == null && _error == null) return;
+    setState(() {
+      _configSaved = false;
+      _lastTestResult = null;
+      _error = null;
+      _testPlan = _buildTestPlan();
+    });
+  }
+
+  String _saveOnlyNoticeText() {
+    final skillId = widget.model.skillId.trim().toLowerCase();
+    if (skillId == 'eightctl') {
+      return 'Config saved. Local eightctl binary readiness is tracked by '
+          'device health; live Eight Sleep account/device validation is not '
+          'available yet.';
+    }
+    if (skillId == 'voice-call') {
+      return 'Config saved. Live setup checks are currently available only '
+          'for Twilio voice-call provider; Telnyx and custom providers remain '
+          'save-only until their production adapters are wired.';
+    }
+    return 'Config saved. No live connection test is available yet for this '
+        'skill.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final model = widget.model;
+    final testPlan = _testPlan;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return SafeArea(
@@ -395,9 +448,9 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
                   label: Text(_isSaving ? 'Checking' : 'Save & Check'),
                 ),
               ),
-              if (_configSaved && _testPlan != null) ...[
+              if (_configSaved && testPlan != null) ...[
                 const SizedBox(height: 10),
-                _ConnectionTestRiskNotice(plan: _testPlan),
+                _ConnectionTestRiskNotice(plan: testPlan),
                 const SizedBox(height: 10),
                 SizedBox(
                   height: 44,
@@ -411,18 +464,17 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
                           )
                         : const Icon(Icons.wifi_tethering_rounded, size: 18),
                     label: Text(
-                      _isTesting ? 'Testing' : _testPlan.buttonLabel,
+                      _isTesting ? 'Testing' : testPlan.buttonLabel,
                     ),
                   ),
                 ),
               ],
-              if (_configSaved && _testPlan == null) ...[
+              if (_configSaved && testPlan == null) ...[
                 const SizedBox(height: 10),
                 _Notice(
                   color: AppColors.statusAmber,
                   icon: Icons.info_outline_rounded,
-                  text:
-                      'Config saved. No live connection test is available yet for this skill.',
+                  text: _saveOnlyNoticeText(),
                 ),
               ],
               if (_lastTestResult != null) ...[
@@ -460,6 +512,9 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
         field.enumOptions.isNotEmpty) {
       return _providerField(field);
     }
+    if (field.inputKind == AndroidSkillConfigInputKind.toggle) {
+      return _toggleField(field);
+    }
 
     final isObscured = _obscure[field.key] ?? false;
     return Padding(
@@ -471,6 +526,7 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
         enableSuggestions: !field.secret,
         autocorrect: false,
         keyboardType: _keyboardTypeFor(field),
+        onChanged: (_) => _invalidateSavedConfig(),
         style: const TextStyle(color: Colors.white, fontSize: 13),
         decoration: _inputDecoration(
           field,
@@ -488,6 +544,58 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
                   },
                 )
               : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _toggleField(AndroidSkillConfigFieldModel field) {
+    final enabled =
+        _controllers[field.key]!.text.trim().toLowerCase() != 'false';
+    final color = _colorForField(field);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.055),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.13),
+          ),
+        ),
+        child: SwitchListTile(
+          key: ValueKey('android-skill-config-field-${field.key}'),
+          contentPadding: const EdgeInsets.fromLTRB(12, 2, 10, 2),
+          activeThumbColor: color,
+          secondary: Icon(
+            _iconForField(field),
+            color: color,
+            size: 18,
+          ),
+          title: Text(
+            field.label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          subtitle: field.inputHint.isEmpty
+              ? null
+              : Text(
+                  field.inputHint,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.46),
+                    fontSize: 11,
+                  ),
+                ),
+          value: enabled,
+          onChanged: (value) {
+            setState(() {
+              _controllers[field.key]!.text = value ? 'true' : 'false';
+            });
+            _invalidateSavedConfig();
+          },
         ),
       ),
     );
@@ -515,6 +623,7 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
         onChanged: (value) {
           if (value == null) return;
           setState(() => _controllers[field.key]!.text = value);
+          _invalidateSavedConfig();
         },
       ),
     );
@@ -580,6 +689,8 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
         return Icons.badge_rounded;
       case AndroidSkillConfigInputKind.provider:
         return Icons.account_tree_rounded;
+      case AndroidSkillConfigInputKind.toggle:
+        return Icons.toggle_on_rounded;
       case AndroidSkillConfigInputKind.secret:
       case AndroidSkillConfigInputKind.text:
         return Icons.tune_rounded;
@@ -590,6 +701,9 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
     if (field.secret) return AppColors.statusAmber;
     if (field.inputKind == AndroidSkillConfigInputKind.url) {
       return Colors.lightBlueAccent;
+    }
+    if (field.inputKind == AndroidSkillConfigInputKind.toggle) {
+      return AppColors.statusGreen;
     }
     return Colors.cyanAccent;
   }

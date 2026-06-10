@@ -174,8 +174,7 @@ Static needs_config taxonomy entries: 14
 Current config-gated rows users can unlock in UI after Phase 5L device proof: 15
   = 14 static needs_config entries
   + eightctl, whose APK-local binary pack is satisfied but whose live runtime
-    gate remains needs_config until EIGHT_SLEEP_EMAIL plus eightctl.deviceId
-    account/device config exists
+    gate remains needs_config until EIGHTCTL_PASSWORD account config exists
 
 Unready needs_pack taxonomy entries: 7
   = 17 needs_pack taxonomy entries - 10 ready needs_pack skills
@@ -268,8 +267,7 @@ video-frames: runtimeStatus ready, provisioningStatus ready,
 sonoscli: runtimeStatus ready, provisioningStatus ready,
           APK-local sonos payload satisfies the binary gate
 eightctl: runtimeStatus needs_config, provisioningStatus needs_user_config,
-          APK-local eightctl payload exists, requiredEnv EIGHT_SLEEP_EMAIL,
-          requiredConfig eightctl.deviceId,
+          APK-local eightctl payload exists, requiredEnv EIGHTCTL_PASSWORD,
           no missing pack/bin evidence, belongs in CONFIG GATES
 spotify-player: runtimeStatus missing_dependency,
                 provisioningStatus missing_binary,
@@ -720,7 +718,8 @@ ordercli: ORDERCLI_API_KEY
 sag: SAG_API_KEY
 slack: SLACK_BOT_TOKEN, channels.slack
 trello: TRELLO_API_KEY, TRELLO_TOKEN
-voice-call: VOICE_CALL_PROVIDER, VOICE_CALL_ACCOUNT
+voice-call: VOICE_CALL_PROVIDER, VOICE_CALL_ACCOUNT,
+            plugins.entries.voice-call.enabled
 ```
 
 Important correction: `needs_config` is a product class, not always the first
@@ -3259,6 +3258,61 @@ ready_required: 13/13
 classified default manifest: 61
 installed Native workspace skills: 65
 gh-issues schema-shaped execute -> HTTP 400 MISSING_GITHUB_TOKEN
+```
+
+Phase 6C provider-aware setup truth landed:
+
+```text
+The config sheet now builds connection/setup plans from the saved field values,
+not just from the skill ID. This matters for generic skills whose production
+tool surface only exists for one provider.
+
+voice-call:
+  VOICE_CALL_PROVIDER=twilio now reveals a Gateway-routed setup-status check:
+    tool: twilio-voice
+    input: { source: android-skill-config-test, method: get_status }
+    risk: safe read
+    button: Check Setup Status
+  VOICE_CALL_PROVIDER=telnyx/custom remains save-only until real provider
+  adapters exist.
+
+The setup-status check is deliberately stricter than HTTP success:
+  configured:false, connected:false, ready:false, CONFIG_REQUIRED, MISSING,
+  ERROR, FAILED, or DISCONNECTED are treated as failed checks even if the
+  bridge returns HTTP 200 or success:true.
+
+eightctl:
+  remains save-only for live account/device validation.
+  UI now labels the setup as Eight Sleep, with an Eight Sleep password field.
+  The sheet tells users the APK-local eightctl binary is tracked by device
+  health, but live Eight Sleep account/device validation is not available yet.
+
+Freshness / stale-state hardening:
+  editing a saved field clears the saved/test state until the user saves again.
+
+Coverage after Phase 6C:
+  connection tests: 9/15 live config gates
+  conditional setup-status checks: 1/15 live config gates
+  save-only config UX: 5 full gates plus non-Twilio voice-call providers
+  release gate: unchanged at 13/13
+  Android ready floor: unchanged at 30/51
+
+Device proof after Phase 6C install:
+  releaseGatePass: true
+  ready_required: 13/13
+  classified default manifest: 61
+  installed Native workspace skills: 65
+  unexpected_missing_dependency: 0
+  eightctl requiredEnv: EIGHTCTL_PASSWORD
+  eightctl requiredConfig: none
+  voice-call requiredConfig:
+    VOICE_CALL_PROVIDER
+    VOICE_CALL_ACCOUNT
+    plugins.entries.voice-call.enabled
+  twilio-voice get_status:
+    HTTP 200, configured:false, connected:false, status: CONFIG_REQUIRED
+  UI/service interpretation:
+    failed setup-status check, not ready, no readiness inflation
 ```
 
 ## Success Definition

@@ -256,8 +256,7 @@ void main() {
           'androidSupport': 'needs_pack',
           'runtimeStatus': 'needs_config',
           'provisioningStatus': 'needs_user_config',
-          'requiredEnv': ['EIGHT_SLEEP_EMAIL'],
-          'requiredConfig': ['eightctl.deviceId'],
+          'requiredEnv': ['EIGHTCTL_PASSWORD'],
           'ready': false,
         },
         {
@@ -281,8 +280,7 @@ void main() {
       model.topNeedsConfig.map((item) => item.skillId),
       ['eightctl', 'slack'],
     );
-    expect(model.topNeedsConfig.first.detail, contains('EIGHT_SLEEP_EMAIL'));
-    expect(model.topNeedsConfig.first.detail, contains('eightctl.deviceId'));
+    expect(model.topNeedsConfig.first.detail, contains('EIGHTCTL_PASSWORD'));
     expect(
       model.topNeedsPack.map((item) => item.skillId),
       ['openai-whisper'],
@@ -305,8 +303,7 @@ void main() {
           'androidSupport': 'needs_pack',
           'runtimeStatus': 'needs_config',
           'provisioningStatus': 'needs_user_config',
-          'requiredEnv': ['EIGHT_SLEEP_EMAIL'],
-          'requiredConfig': ['eightctl.deviceId'],
+          'requiredEnv': ['EIGHTCTL_PASSWORD'],
           'ready': false,
         },
         {

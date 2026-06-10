@@ -48,9 +48,12 @@ class AndroidSkillConfigTestService {
           )
           .timeout(const Duration(seconds: 25));
       final decoded = _jsonMap(response.body);
-      final ok = response.statusCode >= 200 &&
-          response.statusCode < 300 &&
-          (decoded['success'] == true || decoded['ok'] == true);
+      final statusOk = response.statusCode >= 200 && response.statusCode < 300;
+      final explicitOk = decoded['success'] == true || decoded['ok'] == true;
+      final setupStatusOk =
+          plan.acceptsSetupStatusPayload && _setupStatusOk(decoded);
+      final semanticFailure = _semanticFailure(decoded);
+      final ok = statusOk && (explicitOk || setupStatusOk) && !semanticFailure;
       return AndroidSkillConfigTestResult(
         ok: ok,
         message:
@@ -78,8 +81,7 @@ String _safeSummary(Map<String, dynamic> decoded) {
   final error = decoded['error'];
   if (error != null) return _redact(_errorMessage(error));
 
-  final payload = decoded['payload'];
-  final source = payload is Map ? Map<String, dynamic>.from(payload) : decoded;
+  final source = _publicSource(decoded);
   final selected = <String, dynamic>{};
   for (final entry in source.entries) {
     final key = entry.key.toString();
@@ -91,6 +93,64 @@ String _safeSummary(Map<String, dynamic> decoded) {
   }
   if (selected.isEmpty) selected['result'] = 'No public fields returned.';
   return _redact(jsonEncode(selected));
+}
+
+bool _setupStatusOk(Map<String, dynamic> decoded) {
+  for (final source in _statusSources(decoded)) {
+    if (source['configured'] == true || source['connected'] == true) {
+      return true;
+    }
+    final status = source['status']?.toString().trim().toUpperCase();
+    if (status == 'READY' ||
+        status == 'OK' ||
+        status == 'CONNECTED' ||
+        status == 'CONFIGURED') {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _semanticFailure(Map<String, dynamic> decoded) {
+  for (final source in _statusSources(decoded)) {
+    if (source['configured'] == false ||
+        source['connected'] == false ||
+        source['ready'] == false) {
+      return true;
+    }
+    final status = source['status']?.toString().trim().toUpperCase();
+    if (status == null || status.isEmpty) continue;
+    if (status.contains('CONFIG_REQUIRED') ||
+        status.contains('MISSING') ||
+        status.contains('ERROR') ||
+        status.contains('FAILED') ||
+        status.contains('DISCONNECTED')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+Map<String, dynamic> _publicSource(Map<String, dynamic> decoded) {
+  for (final key in const ['payload', 'data', 'result']) {
+    final value = decoded[key];
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+  }
+  return decoded;
+}
+
+List<Map<String, dynamic>> _statusSources(Map<String, dynamic> decoded) {
+  final sources = <Map<String, dynamic>>[decoded];
+  for (final key in const ['payload', 'data', 'result']) {
+    final value = decoded[key];
+    if (value is Map<String, dynamic>) {
+      sources.add(value);
+    } else if (value is Map) {
+      sources.add(Map<String, dynamic>.from(value));
+    }
+  }
+  return sources;
 }
 
 String _errorMessage(dynamic error) {
@@ -120,5 +180,6 @@ bool _sensitiveKey(String key) {
 String _redact(String value) {
   return value
       .replaceAll(RegExp(r'xox[baprs]-[A-Za-z0-9-]+'), '[secret]')
-      .replaceAll(RegExp(r'Bearer\s+[A-Za-z0-9._-]+'), 'Bearer [secret]');
+      .replaceAll(RegExp(r'Bearer\s+[A-Za-z0-9._-]+'), 'Bearer [secret]')
+      .replaceAll(RegExp(r'\b(?:AC|SK)[0-9a-fA-F]{32}\b'), '[twilio-id]');
 }

@@ -7,6 +7,7 @@ enum AndroidSkillConfigInputKind {
   channelId,
   accountId,
   provider,
+  toggle,
 }
 
 class AndroidSkillConfigFieldModel {
@@ -212,6 +213,36 @@ AndroidSkillConfigFieldModel _fieldFor(String skillId, String key) {
         label: 'Account token',
         inputHint: 'Paste the GOG account token',
       );
+    case 'EIGHTCTL_PASSWORD':
+      return _envSecret(
+        key,
+        label: 'Eight Sleep password',
+        inputHint: 'Paste the Eight Sleep account password',
+      );
+    case 'EIGHT_SLEEP_EMAIL':
+      return _envField(
+        key,
+        label: 'Eight Sleep email',
+        group: 'Account',
+        inputKind: AndroidSkillConfigInputKind.text,
+        inputHint: 'you@example.com',
+      );
+    case 'eightctl.deviceId':
+      return _configField(
+        key,
+        label: 'Eight Sleep device ID',
+        group: 'Device',
+        inputKind: AndroidSkillConfigInputKind.accountId,
+        inputHint: 'Eight Sleep device ID',
+      );
+    case 'plugins.entries.voice-call.enabled':
+      return _configField(
+        key,
+        label: 'Enable voice-call skill',
+        group: 'Skill',
+        inputKind: AndroidSkillConfigInputKind.toggle,
+        inputHint: 'Enable this configured provider',
+      );
     case 'GOOGLE_PLACES_API_KEY':
       return _envSecret(
         key,
@@ -398,6 +429,7 @@ String _titleForSkill(String skillId) {
   const titles = {
     '1password': '1Password',
     'discord': 'Discord',
+    'eightctl': 'Eight Sleep',
     'github': 'GitHub',
     'gh-issues': 'GitHub Issues',
     'gog': 'GOG',

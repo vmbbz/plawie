@@ -13,6 +13,7 @@ class AndroidSkillConfigTestPlan {
   final AndroidSkillConfigTestRisk risk;
   final String successActionLabel;
   final String buttonLabel;
+  final bool acceptsSetupStatusPayload;
 
   const AndroidSkillConfigTestPlan({
     required this.skillId,
@@ -21,6 +22,7 @@ class AndroidSkillConfigTestPlan {
     required this.risk,
     required this.successActionLabel,
     this.buttonLabel = 'Test Connection',
+    this.acceptsSetupStatusPayload = false,
   });
 
   String get riskLabel {
@@ -53,11 +55,16 @@ class AndroidSkillConfigTestPlan {
       'notion' => 'Query: ${input['query']}, limit: ${input['limit']}',
       'openai-whisper-api' =>
         'Fixture: ${input['filename']}, model: ${input['model']}',
+      'voice-call' => 'Provider: Twilio, method: ${input['method']}',
       _ => '',
     };
   }
 
-  static AndroidSkillConfigTestPlan? forSkill(String skillId) {
+  static AndroidSkillConfigTestPlan? forSkill(
+    String skillId, {
+    Map<String, String> envValues = const <String, String>{},
+    Map<String, dynamic> configValues = const <String, dynamic>{},
+  }) {
     final normalized = _normalizeSkillId(skillId);
     const source = 'android-skill-config-test';
     switch (normalized) {
@@ -144,6 +151,22 @@ class AndroidSkillConfigTestPlan {
           risk: AndroidSkillConfigTestRisk.safeRead,
           successActionLabel: 'Trello boards',
         );
+      case 'voice-call':
+        final provider = _configValue(
+          'VOICE_CALL_PROVIDER',
+          envValues: envValues,
+          configValues: configValues,
+        ).toLowerCase();
+        if (provider != 'twilio') return null;
+        return const AndroidSkillConfigTestPlan(
+          skillId: 'voice-call',
+          toolName: 'twilio-voice',
+          input: {'source': source, 'method': 'get_status'},
+          risk: AndroidSkillConfigTestRisk.safeRead,
+          successActionLabel: 'Twilio Voice setup status',
+          buttonLabel: 'Check Setup Status',
+          acceptsSetupStatusPayload: true,
+        );
     }
     return null;
   }
@@ -151,6 +174,14 @@ class AndroidSkillConfigTestPlan {
 
 String _normalizeSkillId(String value) =>
     value.trim().toLowerCase().replaceAll('_', '-');
+
+String _configValue(
+  String key, {
+  required Map<String, String> envValues,
+  required Map<String, dynamic> configValues,
+}) {
+  return envValues[key]?.trim() ?? configValues[key]?.toString().trim() ?? '';
+}
 
 final String _tinySilentWavBase64 = base64Encode(_tinySilentWavBytes);
 

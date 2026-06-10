@@ -129,7 +129,11 @@ void main() {
         {
           'skillId': 'voice-call',
           'androidSupport': 'needs_config',
-          'requiredConfig': ['VOICE_CALL_PROVIDER', 'VOICE_CALL_ACCOUNT'],
+          'requiredConfig': [
+            'VOICE_CALL_PROVIDER',
+            'VOICE_CALL_ACCOUNT',
+            'plugins.entries.voice-call.enabled',
+          ],
           'primaryGate': 'missing_native_config',
         },
       ],
@@ -145,11 +149,18 @@ void main() {
     final account = form.fields.firstWhere(
       (field) => field.key == 'VOICE_CALL_ACCOUNT',
     );
+    final enabled = form.fields.firstWhere(
+      (field) => field.key == 'plugins.entries.voice-call.enabled',
+    );
 
     expect(provider.inputKind, AndroidSkillConfigInputKind.provider);
     expect(provider.enumOptions, ['twilio', 'telnyx', 'custom']);
     expect(account.inputKind, AndroidSkillConfigInputKind.accountId);
     expect(account.secret, isFalse);
+    expect(enabled.label, 'Enable voice-call skill');
+    expect(enabled.group, 'Skill');
+    expect(enabled.inputKind, AndroidSkillConfigInputKind.toggle);
+    expect(enabled.secret, isFalse);
   });
 
   test('unknown required config keys get safe fallback metadata', () {
@@ -217,8 +228,7 @@ void main() {
           'androidSupport': 'needs_pack',
           'runtimeStatus': 'needs_config',
           'provisioningStatus': 'needs_user_config',
-          'requiredEnv': ['EIGHT_SLEEP_EMAIL'],
-          'requiredConfig': ['eightctl.deviceId'],
+          'requiredEnv': ['EIGHTCTL_PASSWORD'],
           'ready': false,
         },
         {
@@ -235,10 +245,19 @@ void main() {
     expect(forms.map((form) => form.skillId), ['eightctl']);
 
     final eightctl = forms.single;
-    expect(eightctl.envKeys, ['EIGHT_SLEEP_EMAIL']);
-    expect(eightctl.configKeys, ['eightctl.deviceId']);
+    expect(eightctl.title, 'Eight Sleep');
+    expect(eightctl.envKeys, ['EIGHTCTL_PASSWORD']);
+    expect(eightctl.configKeys, isEmpty);
     expect(eightctl.runtimeGate, 'needs_config');
     expect(eightctl.configOnlyCanSatisfy, isTrue);
+
+    final password = eightctl.fields.firstWhere(
+      (field) => field.key == 'EIGHTCTL_PASSWORD',
+    );
+    expect(password.label, 'Eight Sleep password');
+    expect(password.group, 'Credentials');
+    expect(password.inputKind, AndroidSkillConfigInputKind.secret);
+    expect(password.secret, isTrue);
   });
 
   test('mixed pack and config gates stay out of config unlock list', () {
@@ -249,8 +268,7 @@ void main() {
           'androidSupport': 'needs_pack',
           'runtimeStatus': 'needs_config',
           'provisioningStatus': 'needs_user_config',
-          'requiredEnv': ['EIGHT_SLEEP_EMAIL'],
-          'requiredConfig': ['eightctl.deviceId'],
+          'requiredEnv': ['EIGHTCTL_PASSWORD'],
           'ready': false,
         },
         {
