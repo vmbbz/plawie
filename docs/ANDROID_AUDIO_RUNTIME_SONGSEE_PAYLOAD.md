@@ -52,9 +52,11 @@ handle" path still requires an `ffmpeg` binary on `PATH` or an explicit
 `android-vision-media-runtime` lane, but this phase only advertises `songsee`.
 It does not claim `spotify-player`, `spogo`, or any other audio-runtime binary.
 
-Device proof target for this phase:
+Device proof on 2026-06-10 with `RZCX30KA9AW` / Samsung `SM-A556E`:
 
 ```text
+adb install -r -d build/app/outputs/flutter-apk/app-debug.apk: Success
+
 /device/health songsee:
 runtimeStatus: ready
 provisioningStatus: ready
@@ -64,6 +66,24 @@ ready: true
 ready: false
 provisioningStatus: missing_binary
 dependencyGateMessage: No Native dependency pack advertises binary "spogo" for arm64-v8a.
+
+managed .openclaw/bin/songsee --version:
+v0.1.1-10-g41d27ea
+
+managed .openclaw/bin/songsee --help:
+Usage: songsee <input> [flags]
+
+managed .openclaw/bin/songsee sha256:
+98ba6bbd89e69f515192300e0fbbecb607e3e1aba7697e138431ccfd86cf2cab
+
+provisioning/audio-runtime/bin/songsee sha256:
+98ba6bbd89e69f515192300e0fbbecb607e3e1aba7697e138431ccfd86cf2cab
+
+tiny WAV-to-PNG smoke:
+input: 1 second 440 Hz mono WAV, 88244 bytes
+command: songsee songsee-tiny.wav --format png --output songsee-smoke.png --width 320 --height 180 --quiet
+output: songsee-smoke.png, 35894 bytes
+PNG header: 89 50 4e 47 0d 0a 1a 0a
 ```
 
 ## License Posture
@@ -74,7 +94,7 @@ third-party notices or source/provenance materials.
 
 ## Required Release Smokes
 
-Before moving release counts, prove on an installed APK:
+Before final release, repeat on the signed release APK:
 
 ```text
 .openclaw/bin/songsee --version
@@ -83,5 +103,3 @@ Before moving release counts, prove on an installed APK:
 /device/health: songsee ready
 /device/health: spotify-player still blocked
 ```
-
-Repeat these checks for the signed release APK before store submission.

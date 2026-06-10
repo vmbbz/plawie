@@ -334,12 +334,12 @@ provenance: docs/ANDROID_AUDIO_RUNTIME_SONGSEE_PAYLOAD.md
 notice: docs/THIRD_PARTY_NOTICES_SONGSEE.md
 ```
 
-The `android-audio-runtime` asset lane and resolver now have a real host-proven
-Songsee payload. It remains an installed-device proof item until the APK copies
-`songsee` into provisioning, provisions it into managed `.openclaw/bin`, runs
-`songsee --version` plus a tiny WAV-to-image smoke, and reports `songsee` ready
-through `/device/health`. `spotify-player` remains blocked; it is not satisfied
-by `songsee`.
+The `android-audio-runtime` asset lane and resolver now have a real
+device-proven Songsee payload. On the 2026-06-10 debug APK smoke, the app
+copied `songsee` into provisioning, provisioned it into managed `.openclaw/bin`,
+ran `songsee --version`, rendered a tiny WAV into a PNG image, and reported
+`songsee` ready through `/device/health`. `spotify-player` remains blocked; it
+is not satisfied by `songsee`.
 
 Current APK-local Python debug payloads:
 
@@ -406,15 +406,14 @@ such as `claude`, `codex`, `opencode`, or `pi`, plus auth/config truth. The
 embedded `libnode.so` Native Gateway lane is architecturally valuable, but it
 is not a managed shell `node` binary and does not satisfy those pack gates.
 
-The next pack lane is `android-audio-runtime` for `songsee` only. Phase 5I
-audited the remaining blockers and chose `songsee` because it can be proven
-offline with a tiny local audio fixture and does not require user account
-auth, provider API keys, a large ML model, or standalone Node. The audio
-runtime resolver must advertise only bins that exist in the APK-copied
-provisioning roots. A future `songsee` payload must not satisfy
-`spotify-player`; Spotify remains blocked until either `spogo` cookies or
-`spotify_player` auth/config are represented truthfully in the UI and runtime
-audit.
+The `android-audio-runtime` lane is APK-local and currently `songsee` only.
+Phase 5I audited the remaining blockers and chose `songsee` because it can be
+proven offline with a tiny local audio fixture and does not require user
+account auth, provider API keys, a large ML model, or standalone Node. The audio
+runtime resolver advertises only bins that exist in the APK-copied provisioning
+roots. The landed `songsee` payload must not satisfy `spotify-player`; Spotify
+remains blocked until either `spogo` cookies or `spotify_player` auth/config are
+represented truthfully in the UI and runtime audit.
 
 The first `android-audio-runtime` plumbing slice is APK-local and songsee-only:
 

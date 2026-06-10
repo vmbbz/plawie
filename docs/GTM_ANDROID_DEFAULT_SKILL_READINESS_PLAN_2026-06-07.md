@@ -127,15 +127,16 @@ provenance: docs/ANDROID_TERMINAL_TMUX_PAYLOAD.md
 ```
 
 Clean host/APK fresh-user floor after APK install/provisioning:
-Android ready floor: 27/51
+Android ready floor: 28/51
   = 13 ready_required
   + 7 ready_optional
-  + 7 bundled pack skills that need no extra config today
-    (blucli, himalaya, openhue, python-debugpy, tmux, video-frames, wacli)
+  + 8 bundled pack skills that need no extra config today
+    (blucli, himalaya, openhue, python-debugpy, songsee, tmux,
+     video-frames, wacli)
 
-Installed-device Android-relevant ready now: 27/51
-Raw ready rows in /device/health: 28
-  = Android-relevant ready 27
+Installed-device Android-relevant ready now: 28/51
+Raw ready rows in /device/health: 29
+  = Android-relevant ready 28
   + node-connect manual_proot_compat, which is not part of the Android
     release denominator
 
@@ -147,13 +148,19 @@ by the APK-local android-python-debug-runtime pack and installed as a real
 wheel, not a fake marker. Installed-device headline count did not move because
 this phone already had debugpy ready before the APK-local proof; the clean APK
 floor is what moved.
+songsee is now clean fresh-user ready because the APK-local
+android-audio-runtime pack supplies a real Android arm64 `songsee` executable,
+provisions it into managed `.openclaw/bin`, and passes version plus tiny
+WAV-to-PNG device smoke. spotify-player remains blocked because the pack
+advertises only `songsee`, not `spogo` or `spotify_player`.
 
 Unresolved config blockers: 14
-Unresolved pack blockers floor: 8
+Unresolved pack blockers floor: 7
   = 17 needs_pack taxonomy entries - 6 bundled CLI-core payloads
     - 1 bundled vision-media payload
     - 1 bundled python-debug payload
     - 1 bundled terminal payload
+    - 1 bundled audio-runtime payload
 
 Pack-satisfied but still needs user/device config:
 eightctl, sonoscli
@@ -171,8 +178,9 @@ Device proof caveat: APK extraction, provisioning, `/device/health`,
 no-secret version execution, tiny media extraction, and Python debug import are now
 installed-device-proven for all six CLI-core payloads plus the FFmpeg
 vision-media payload plus the debugpy Python payload plus the tmux terminal
-payload. Account, LAN, and real-service workflow smokes are still pending where
-a skill requires credentials, devices, local network discovery, or a real
+payload plus the Songsee audio-runtime payload. Account, LAN, and real-service
+workflow smokes are still pending where a skill requires credentials, devices,
+local network discovery, or a real
 external service.
 
 ## Latest Installed Device Truth
@@ -188,8 +196,8 @@ ready_required: 13/13
 classified default manifest: 61
 installed Native workspace skills: 65
 
-Android-relevant ready: 27/51
-Raw ready rows: 28
+Android-relevant ready: 28/51
+Raw ready rows: 29
 manual ready row excluded from Android denominator: node-connect
 
 Parser/audit truth:
@@ -202,6 +210,10 @@ python-debugpy: runtimeStatus ready, provisioningStatus ready,
                 android-python-debug-runtime receipt exists,
                 debugpy 1.8.21 import smoke passed through
                 /api/python/exec / chaquopy-python-bridge
+songsee: runtimeStatus ready, provisioningStatus ready,
+         android-audio-runtime receipt advertises only songsee,
+         managed .openclaw/bin/songsee sha256 matches APK payload,
+         tiny WAV-to-PNG smoke produced a PNG image
 tmux: runtimeStatus ready, provisioningStatus ready,
       android-terminal-pack receipt version termux-tmux-3.6b-apk-v1,
       managed .openclaw/bin/tmux -V -> tmux 3.6a
@@ -259,6 +271,7 @@ app-native/required/optional/CLI-core readiness, the FFmpeg-backed
 `video-frames` movement, and the APK-local `python-debugpy` package state.
 Phase 5E moved the fresh-user floor to `26/51`, not the already-warm
 installed-device headline. Phase 5G later moved the current floor to `27/51`.
+Phase 5J moved it to `28/51` with the APK-local Songsee audio-runtime payload.
 
 ## Last Installed Device Truth
 
@@ -801,6 +814,13 @@ assets/openclaw/audio-runtime/bin/songsee. This can satisfy songsee after APK
 install, Native provisioning copy, `songsee --version`, and tiny WAV-to-image
 device proof. It must not satisfy spotify-player, which remains blocked until
 `spogo` or `spotify_player` plus real account/auth behavior exists.
+
+Installed-device proof on 2026-06-10:
+songsee is ready through `/device/health`; managed `.openclaw/bin/songsee`
+reports `v0.1.1-10-g41d27ea`; both provisioning and managed binaries match
+sha256 `98ba6bbd89e69f515192300e0fbbecb607e3e1aba7697e138431ccfd86cf2cab`;
+tiny WAV-to-PNG smoke produced a 35894-byte PNG with header
+`89 50 4e 47 0d 0a 1a 0a`; spotify-player remains blocked on missing `spogo`.
 ```
 
 Class C acceptance:
@@ -2013,11 +2033,30 @@ debug APK entry:
   assets/flutter_assets/assets/openclaw/audio-runtime/bin/songsee
 ```
 
-This host proof still does not raise the Android-ready floor by itself. The
-count moves only after installed-device proof shows `songsee` copied from APK
-assets, provisioned into managed `.openclaw/bin`, executable on Android, ready
-in `/device/health`, and `spotify-player` still blocked on `spogo` or
-`spotify_player`.
+Installed-device proof landed on 2026-06-10:
+
+```text
+device: RZCX30KA9AW / Samsung SM-A556E
+install: adb install -r -d build/app/outputs/flutter-apk/app-debug.apk -> Success
+/device/health releaseGatePass: true
+/device/health ready_required: 13/13
+/device/health Android-relevant ready: 28/51
+/device/health raw ready rows: 29
+songsee: runtimeStatus ready, provisioningStatus ready, ready true
+spotify-player: ready false, missing spogo, dependencyGateStatus missing_pack
+managed songsee --version: v0.1.1-10-g41d27ea
+managed songsee --help: Usage: songsee <input> [flags]
+managed/provisioning songsee sha256:
+  98ba6bbd89e69f515192300e0fbbecb607e3e1aba7697e138431ccfd86cf2cab
+tiny WAV-to-PNG smoke:
+  output bytes: 35894
+  PNG header: 89 50 4e 47 0d 0a 1a 0a
+```
+
+This raises the Android-ready floor from `27/51` to `28/51` and drops the
+unresolved pack blocker floor from `8` to `7`. It still does not move
+`spotify-player`, whose real gates are `spogo` or `spotify_player` plus account
+and auth setup.
 
 Phase 5C Android vision-media runtime lane landed as plumbing:
 
@@ -2782,7 +2821,10 @@ real Android arm64 songsee ELF is bundled in assets/openclaw/audio-runtime/bin
 rebuild script verifies Go archive, source commit, Android target, and ELF
 payload provenance and MIT notice are documented
 packaging tests prove the payload and provenance
-Ready count stays 27/51 until installed-device proof lands.
+installed-device proof shows songsee ready and spotify-player still blocked
+tiny WAV-to-PNG smoke passes on RZCX30KA9AW
+Ready count moves 27/51 -> 28/51.
+Commit made.
 ```
 
 ## Success Definition
