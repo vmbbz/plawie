@@ -4064,6 +4064,189 @@ Decision:
   RC rehearsal against the release checklist, not a new binary lane.
 ```
 
+Phase 6N full RC rehearsal landed:
+
+```text
+Date:
+  2026-06-11
+
+Scope:
+  Run the post-sync RC rehearsal against the actual release checklist. This was
+  not a new capability chase. It verified the current app, readiness taxonomy,
+  config UX, Gateway tool loop, Gateway Talk voice lane, and release rehearsal
+  harness.
+
+Branch state at start:
+  native-node-gateway-research was synced with origin/native-node-gateway-research
+  before this phase began.
+
+Data policy:
+  No app data was cleared.
+  No uninstall/reset was performed.
+  Debug APK was installed over current user state.
+  No fake service credentials were saved.
+
+Code verification:
+  flutter analyze: PASS
+
+  flutter test:
+    test/android_skill_support_manifest_test.dart
+    test/android_skill_readiness_view_model_test.dart
+    test/android_skill_readiness_service_test.dart
+    test/android_skill_provisioning_badge_classifier_test.dart
+    test/android_skill_config_form_model_test.dart
+    test/android_skill_config_test_plan_test.dart
+    test/android_skill_config_test_service_test.dart
+    test/android_skill_config_sheet_test.dart
+    test/skill_provisioning_service_test.dart
+    test/android_cli_core_payload_packaging_test.dart
+    test/gateway_required_mobile_route_test.dart
+    test/openai_whisper_api_app_native_adapter_test.dart
+    test/native_skill_execution_registry_test.dart
+    result: PASS, 131/131
+
+Full device RC runner:
+  script: scripts/android/run_phase_6d_release_rehearsal.ps1
+  phase: 6N
+  output: .tmp/phase-6n-rc-rehearsal.json
+
+  flutter build apk --debug: PASS
+  flutter install -d RZCX30KA9AW --debug: PASS
+  Gateway launch: PASS
+  /device/health: PASS
+  /api/tools: PASS
+
+  releaseGatePass: true
+  ready_required: 13/13
+  classified default manifest: 61
+  installed Native package/workspace skills: 60
+  unexpected_missing_dependency: 0
+  /api/tools catalog count: 25
+  required AgentSkillServer tool smokes: 9/9
+
+  countsByClass:
+    ready_required: 13
+    ready_optional: 7
+    needs_config: 14
+    needs_pack: 17
+    unsupported_on_android: 6
+    manual_proot_compat: 2
+    hidden_desktop_only: 2
+
+Required headless tool smokes through AgentSkillServer:
+  device-health: PASS
+  device-status: PASS
+  battery: PASS
+  sensors: PASS
+  weather: PASS
+  clawhub: PASS
+  meme-maker: PASS
+  vibrate: PASS
+  avatar-status: PASS
+
+Installed UI proof:
+  Dashboard shows Gateway LIVE.
+  Management -> Skills shows:
+    ANDROID DEFAULT READINESS: PASS
+    launch gate: 13/13
+    Android now: 30/51
+    ready optional: 7
+    unexpected: 0
+    config blockers: 15
+    config class: 14
+    live tests: 9
+    setup checks: 1
+    save only: 1
+    mixed gates: 4
+    pack blockers: 6
+    pack class: 17
+    outside GTM: 10
+
+Representative config sheets:
+  discord LIVE:
+    opens as Discord
+    Runtime gate: needs config
+    Credentials section visible
+    primary action: Save & Check
+
+  eightctl SAVE:
+    opens as Eight Sleep
+    Runtime gate: needs config
+    Credentials section visible
+    primary action: Save & Check
+
+  voice-call SETUP:
+    opens as Voice Call
+    Runtime gate: needs config
+    Provider defaults to twilio
+    Enable voice-call skill toggle visible
+    primary action: Save & Check
+
+Gateway Talk voice proof:
+  POST /api/tts/control {"action":"get_status"}:
+    engine: gateway_talk
+    fallback: android_system_tts
+    voice: provider_default
+    offlinePacksInstalled: false
+
+  POST /api/tools/execute tts-voice/get_status:
+    engine: gateway_talk
+    fallback: android_system_tts
+    voice: provider_default
+    offlinePacksInstalled: false
+
+Gateway tool loop proof:
+  POST /api/tools/execute summarize:
+    success: true
+    runtime: app-native-extractive-summary
+    summary: Phase 6N proves Gateway tool execution remains available.
+
+Chat-smoke reality check:
+  The first full build/install runner strict gate passed, but its optional chat
+  smokes timed out under the old 35-second harness cap immediately after
+  install. A direct 90-second probe then passed in 18.5s with TOOL_USE and
+  TOOL_RESULT observed and visible text:
+    Yes, the Android release gate passes.
+
+  The release rehearsal runner now exposes ChatSmokeTimeoutSec and defaults to
+  60 seconds so post-install model/tool warmup is not misclassified as a product
+  failure.
+
+  Patched harness verification:
+    phase: 6N-HARNESS
+    output: .tmp/phase-6n-rc-rehearsal-harness.json
+    build/install skipped against the already installed APK
+    strictPass: true
+    required tool smokes: 9/9
+    chatSmokeTimeoutSec: 60
+    device-health chat smoke:
+      ok: true
+      toolUseSeen: true
+      toolResultSeen: true
+      timedOut: false
+    vibrate chat smoke:
+      ok: true
+      toolUseSeen: true
+      toolResultSeen: true
+      timedOut: false
+
+Readiness impact:
+  No readiness inflation.
+  release gate remains PASS.
+  Android-relevant ready remains 30/51.
+
+Remaining RC boundary:
+  This is a non-destructive/user-state-preserving RC rehearsal. The final
+  destructive clean-data proof still requires explicit approval because it
+  destroys local app state and requires first-run provider setup again.
+
+Next logical phase:
+  Phase 6O should be one of:
+    1. destructive clean-data RC proof with explicit approval, or
+    2. release/PR wrap-up if we accept the current user-state-preserving RC
+       proof for this branch checkpoint.
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android

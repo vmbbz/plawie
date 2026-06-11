@@ -9,7 +9,8 @@ param(
   [string]$Phase = "6D-A",
   [string]$Mode = "non-destructive release rehearsal",
   [string]$DataStateNote = "No app data was cleared.",
-  [int]$MinimumInstalledNativeSkills = 60
+  [int]$MinimumInstalledNativeSkills = 60,
+  [int]$ChatSmokeTimeoutSec = 60
 )
 
 $ErrorActionPreference = "Stop"
@@ -239,8 +240,12 @@ if ($failedRequired.Count -gt 0) {
 $chatSmokes = @()
 if (-not $SkipChatSmokes) {
   $chatSmokes = @(
-    Invoke-ChatSmoke -Prompt "Check device health and summarize the Android release gate."
-    Invoke-ChatSmoke -Prompt "Vibrate once and tell me whether the haptic action succeeded."
+    Invoke-ChatSmoke `
+      -Prompt "Check device health and summarize the Android release gate." `
+      -TimeoutSec $ChatSmokeTimeoutSec
+    Invoke-ChatSmoke `
+      -Prompt "Vibrate once and tell me whether the haptic action succeeded." `
+      -TimeoutSec $ChatSmokeTimeoutSec
   )
 }
 
@@ -263,6 +268,7 @@ $result = [pscustomobject]@{
   toolCatalogCount = if ($toolsCatalog.tools) { @($toolsCatalog.tools).Count } else { 0 }
   requiredToolSmokes = $toolSmokes
   chatSmokes = $chatSmokes
+  chatSmokeTimeoutSec = $ChatSmokeTimeoutSec
   strictPass = ($failedRequired.Count -eq 0)
   notes = @(
     $DataStateNote,
