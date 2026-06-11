@@ -72,6 +72,35 @@ void main() {
     expect(result.safeSummary, isNot(contains('xoxb-secret')));
   });
 
+  test('redacts common provider token formats from scalar summaries', () async {
+    final service = AndroidSkillConfigTestService(
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'message':
+                'OpenAI sk-proj-abcdefghijklmnopqrstuvwxyz123456 GitHub ghp_abcdefghijklmnopqrstuvwxyz123456 Notion secret_abcdefghijklmnopqrstuvwxyz',
+            'actionRequired':
+                'GitHub fine-grained github_pat_abcdefghijklmnopqrstuvwxyz1234567890 Discord mfa.abcdefghijklmnopqrstuvwxyz1234567890',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final result = await service.run(
+      AndroidSkillConfigTestPlan.forSkill('slack')!,
+    );
+
+    expect(result.ok, isTrue);
+    expect(result.safeSummary, isNot(contains('sk-proj-')));
+    expect(result.safeSummary, isNot(contains('ghp_')));
+    expect(result.safeSummary, isNot(contains('github_pat_')));
+    expect(result.safeSummary, isNot(contains('secret_')));
+    expect(result.safeSummary, isNot(contains('mfa.')));
+  });
+
   test('treats setup-status payloads with missing config as failed', () async {
     final service = AndroidSkillConfigTestService(
       client: MockClient((request) async {

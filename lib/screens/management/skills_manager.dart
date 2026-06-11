@@ -2523,6 +2523,12 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
                 value: '${model.saveOnlyConfigCount}',
                 color: AppColors.statusAmber.withValues(alpha: 0.9),
               ),
+              if (model.mixedConfigRuntimeGateCount > 0)
+                _ReadinessMetric(
+                  label: 'MIXED GATES',
+                  value: '${model.mixedConfigRuntimeGateCount}',
+                  color: AppColors.statusAmber.withValues(alpha: 0.72),
+                ),
               _ReadinessMetric(
                 label: 'PACK BLOCKERS',
                 value: '${model.blockedNeedsPackCount}',
@@ -2668,7 +2674,9 @@ class _ConfigCoverageNote extends StatelessWidget {
               'Config coverage: ${model.configTestCoverageLabel}. '
               '${model.saveOnlyConfigLabel} gates can save user config but '
               'need a real Android production adapter before the app offers a '
-              'live check. Taxonomy: ${model.configPackTaxonomyLabel}. '
+              'live check. '
+              '${model.mixedConfigRuntimeGateCount > 0 ? '${model.mixedConfigRuntimeGateCount} mixed gates also still need native runtime/artifact work after config. ' : ''}'
+              'Taxonomy: ${model.configPackTaxonomyLabel}. '
               'Current blocker cards can differ when a pack-class skill is '
               'now only waiting on user config.',
               style: TextStyle(

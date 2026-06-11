@@ -65,7 +65,16 @@ class AndroidSkillReadinessViewModel {
   int get saveOnlyConfigCount => topNeedsConfig
       .where(
         (item) =>
-            item.configTestSupport == AndroidSkillConfigTestSupport.saveOnly,
+            item.configTestSupport == AndroidSkillConfigTestSupport.saveOnly &&
+            !item.hasNativeRuntimeGate,
+      )
+      .length;
+
+  int get mixedConfigRuntimeGateCount => topNeedsConfig
+      .where(
+        (item) =>
+            item.configTestSupport == AndroidSkillConfigTestSupport.saveOnly &&
+            item.hasNativeRuntimeGate,
       )
       .length;
 
@@ -73,7 +82,13 @@ class AndroidSkillReadinessViewModel {
       '$liveConnectionTestCount live + $conditionalSetupStatusCount setup / '
       '$blockedNeedsConfigCount';
 
-  String get saveOnlyConfigLabel => '$saveOnlyConfigCount save-only';
+  String get saveOnlyConfigLabel {
+    if (mixedConfigRuntimeGateCount == 0) {
+      return '$saveOnlyConfigCount save-only';
+    }
+    return '$saveOnlyConfigCount save-only + '
+        '$mixedConfigRuntimeGateCount mixed runtime';
+  }
 
   factory AndroidSkillReadinessViewModel.fromReadiness(
     Map<String, dynamic> readiness,
@@ -184,6 +199,7 @@ class AndroidSkillGateSummary {
   final List<String> missingBins;
   final List<String> missingPacks;
   final String? dependencyGateMessage;
+  final bool hasNativeRuntimeGate;
 
   const AndroidSkillGateSummary({
     required this.skillId,
@@ -192,6 +208,7 @@ class AndroidSkillGateSummary {
     this.missingBins = const <String>[],
     this.missingPacks = const <String>[],
     this.dependencyGateMessage,
+    this.hasNativeRuntimeGate = false,
   });
 
   factory AndroidSkillGateSummary.fromSkill(Map<String, dynamic> skill) {
@@ -229,6 +246,8 @@ class AndroidSkillGateSummary {
           dependencyGateMessage == null || dependencyGateMessage.isEmpty
               ? null
               : dependencyGateMessage,
+      hasNativeRuntimeGate:
+          AndroidSkillReadinessViewModel._skillNeedsMoreThanConfig(skill),
     );
   }
 }

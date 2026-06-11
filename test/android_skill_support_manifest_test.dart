@@ -99,6 +99,14 @@ void main() {
       ['android-node-executable-pack'],
     );
     expect(
+      manifest.entryFor('voice-call')!.requiredConfig,
+      [
+        'VOICE_CALL_PROVIDER',
+        'VOICE_CALL_ACCOUNT',
+        'plugins.entries.voice-call.enabled',
+      ],
+    );
+    expect(
       manifest.entryFor('gemini')!.requiredPacks,
       ['android-gemini-cli-pack'],
     );

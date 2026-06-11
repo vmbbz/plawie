@@ -180,6 +180,32 @@ bool _sensitiveKey(String key) {
 String _redact(String value) {
   return value
       .replaceAll(RegExp(r'xox[baprs]-[A-Za-z0-9-]+'), '[secret]')
-      .replaceAll(RegExp(r'Bearer\s+[A-Za-z0-9._-]+'), 'Bearer [secret]')
+      .replaceAll(
+        RegExp(r'Bearer\s+[A-Za-z0-9._-]+', caseSensitive: false),
+        'Bearer [secret]',
+      )
+      .replaceAll(
+        RegExp(r'\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b'),
+        '[secret]',
+      )
+      .replaceAll(RegExp(r'\bghp_[A-Za-z0-9_]{20,}\b'), '[secret]')
+      .replaceAll(
+        RegExp(r'\bgithub_pat_[A-Za-z0-9_]{20,}\b'),
+        '[secret]',
+      )
+      .replaceAll(RegExp(r'\bsecret_[A-Za-z0-9]{16,}\b'), '[secret]')
+      .replaceAll(RegExp(r'\bmfa\.[A-Za-z0-9_-]{20,}\b'), '[secret]')
+      .replaceAll(
+        RegExp(
+            r'\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{20,}\b'),
+        '[secret]',
+      )
+      .replaceAll(
+        RegExp(
+          r'\b(api[_ -]?key|auth[_ -]?token|token|secret)\s*[:=]\s*[A-Za-z0-9._-]{12,}',
+          caseSensitive: false,
+        ),
+        r'$1=[secret]',
+      )
       .replaceAll(RegExp(r'\b(?:AC|SK)[0-9a-fA-F]{32}\b'), '[twilio-id]');
 }

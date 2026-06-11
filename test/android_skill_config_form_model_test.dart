@@ -1,4 +1,5 @@
 import 'package:clawa/services/android_skill_config_form_model.dart';
+import 'package:clawa/services/android_skill_support_manifest.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -161,6 +162,43 @@ void main() {
     expect(enabled.group, 'Skill');
     expect(enabled.inputKind, AndroidSkillConfigInputKind.toggle);
     expect(enabled.secret, isFalse);
+  });
+
+  test('all static needs-config manifest keys have user-facing form metadata',
+      () {
+    final manifestSkills = AndroidSkillSupportManifest.instance
+        .entriesForStatus(AndroidSkillSupportStatus.needsConfig);
+    final readiness = {
+      'skills': [
+        for (final entry in manifestSkills)
+          {
+            'skillId': entry.skillId,
+            'androidSupport': entry.status.wireName,
+            'requiredConfig': entry.requiredConfig,
+            'primaryGate': 'missing_native_config',
+            'ready': false,
+          },
+      ],
+    };
+
+    final forms = AndroidSkillConfigFormModel.allFromReadiness(readiness);
+    expect(forms.map((form) => form.skillId).toSet(), {
+      for (final entry in manifestSkills) entry.skillId,
+    });
+
+    for (final form in forms) {
+      for (final field in form.fields) {
+        expect(field.label.trim(), isNotEmpty, reason: field.key);
+        expect(field.inputHint.trim(), isNotEmpty, reason: field.key);
+        expect(field.group.trim(), isNotEmpty, reason: field.key);
+        expect(
+          field.label,
+          isNot(field.key),
+          reason:
+              '${form.skillId}/${field.key} should not expose raw config keys.',
+        );
+      }
+    }
   });
 
   test('unknown required config keys get safe fallback metadata', () {

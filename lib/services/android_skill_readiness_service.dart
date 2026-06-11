@@ -47,7 +47,7 @@ class AndroidSkillReadinessService {
       final dependencyGateDetails = appNativeOwned
           ? const <String, dynamic>{}
           : _dependencyGateDetails(provisioningResult);
-      final liveRequiredEnv = _requiredEnv(matrixEntry);
+      final liveRequiredEnv = _requiredEnv(entry, matrixEntry);
       final liveRequiredConfig = _requiredConfig(entry, matrixEntry);
       if (releaseRelevant) {
         readyRequiredTotal += 1;
@@ -107,7 +107,13 @@ class AndroidSkillReadinessService {
     SkillProvisioningSkillResult? provisioningResult,
   ) {
     if (_isAppNativeConfigGated(manifestEntry)) {
-      if (_appNativeConfigSatisfied(manifestEntry, snapshot)) return true;
+      if (_appNativeConfigSatisfied(
+        manifestEntry,
+        snapshot,
+        provisioningResult,
+      )) {
+        return true;
+      }
       if (matrixEntry?.status == SkillExecutionStatus.ready) return true;
       return switch (provisioningResult?.status) {
         SkillProvisioningStatus.ready ||
@@ -133,7 +139,11 @@ class AndroidSkillReadinessService {
     SkillProvisioningSkillResult? provisioningResult,
   ) {
     if (_isAppNativeConfigGated(manifestEntry)) {
-      if (_appNativeConfigSatisfied(manifestEntry, snapshot)) {
+      if (_appNativeConfigSatisfied(
+        manifestEntry,
+        snapshot,
+        provisioningResult,
+      )) {
         return 'app_native_ready';
       }
       return 'needs_config';
@@ -154,7 +164,11 @@ class AndroidSkillReadinessService {
       return 'app_native_not_required';
     }
     if (appNativeConfigGated &&
-        _appNativeConfigSatisfied(manifestEntry, snapshot)) {
+        _appNativeConfigSatisfied(
+          manifestEntry,
+          snapshot,
+          provisioningResult,
+        )) {
       return 'app_native_config_ready';
     }
     if (appNativeConfigGated) return 'needs_user_config';
@@ -212,7 +226,11 @@ class AndroidSkillReadinessService {
     };
   }
 
-  static List<String> _requiredEnv(SkillExecutionMatrixEntry? matrixEntry) {
+  static List<String> _requiredEnv(
+    AndroidSkillSupportEntry manifestEntry,
+    SkillExecutionMatrixEntry? matrixEntry,
+  ) {
+    if (_isAppNativeConfigGated(manifestEntry)) return const <String>[];
     if (matrixEntry == null) return const <String>[];
     return _uniqueStrings(matrixEntry.requiredEnv);
   }
@@ -221,6 +239,9 @@ class AndroidSkillReadinessService {
     AndroidSkillSupportEntry manifestEntry,
     SkillExecutionMatrixEntry? matrixEntry,
   ) {
+    if (_isAppNativeConfigGated(manifestEntry)) {
+      return _uniqueStrings(manifestEntry.requiredConfig);
+    }
     return _uniqueStrings([
       ...manifestEntry.requiredConfig,
       ...?matrixEntry?.requiredConfig,
@@ -257,8 +278,10 @@ class AndroidSkillReadinessService {
   static bool _appNativeConfigSatisfied(
     AndroidSkillSupportEntry manifestEntry,
     SkillParitySnapshot snapshot,
+    SkillProvisioningSkillResult? provisioningResult,
   ) {
     if (!_isAppNativeConfigGated(manifestEntry)) return true;
+    if (_provisioningSatisfied(provisioningResult)) return true;
     final nativeEnvKeys = snapshot.nativeEnvKeys
         .map((key) => key.trim().toUpperCase())
         .where((key) => key.isNotEmpty)
@@ -273,6 +296,13 @@ class AndroidSkillReadinessService {
       return false;
     }
     return true;
+  }
+
+  static bool _provisioningSatisfied(
+    SkillProvisioningSkillResult? provisioningResult,
+  ) {
+    return provisioningResult?.status == SkillProvisioningStatus.ready ||
+        provisioningResult?.status == SkillProvisioningStatus.satisfied;
   }
 
   static bool _looksLikeEnvKey(String key) {

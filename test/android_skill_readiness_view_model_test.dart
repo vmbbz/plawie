@@ -206,6 +206,61 @@ void main() {
       summaries['eightctl']!.configTestSupport,
       AndroidSkillConfigTestSupport.saveOnly,
     );
+    expect(model.mixedConfigRuntimeGateCount, 0);
+  });
+
+  test('separates pure save-only config from mixed runtime gates', () {
+    final model = AndroidSkillReadinessViewModel.fromReadiness({
+      'totalManifestSkills': 4,
+      'readyRequired': {'ready': 0, 'total': 0},
+      'releaseGatePass': true,
+      'unexpectedMissingDependency': 0,
+      'countsByClass': {
+        'needs_config': 3,
+        'needs_pack': 1,
+      },
+      'skills': [
+        {
+          'skillId': '1password',
+          'androidSupport': 'needs_config',
+          'runtimeStatus': 'missing_dependency',
+          'primaryGate': 'missing_native_bin',
+          'missingBins': ['op'],
+          'requiredConfig': ['OP_SERVICE_ACCOUNT_TOKEN'],
+          'ready': false,
+        },
+        {
+          'skillId': 'ordercli',
+          'androidSupport': 'needs_config',
+          'runtimeStatus': 'missing_dependency',
+          'primaryGate': 'missing_native_bin',
+          'missingBins': ['ordercli'],
+          'requiredConfig': ['ORDERCLI_API_KEY'],
+          'ready': false,
+        },
+        {
+          'skillId': 'eightctl',
+          'androidSupport': 'needs_pack',
+          'runtimeStatus': 'needs_config',
+          'provisioningStatus': 'needs_user_config',
+          'requiredEnv': ['EIGHTCTL_PASSWORD'],
+          'ready': false,
+        },
+        {
+          'skillId': 'slack',
+          'androidSupport': 'needs_config',
+          'runtimeStatus': 'needs_config',
+          'requiredConfig': ['SLACK_BOT_TOKEN', 'channels.slack'],
+          'ready': false,
+        },
+      ],
+    });
+
+    expect(model.blockedNeedsConfigCount, 4);
+    expect(model.liveConnectionTestCount, 1);
+    expect(model.saveOnlyConfigCount, 1);
+    expect(model.mixedConfigRuntimeGateCount, 2);
+    expect(model.saveOnlyConfigLabel, '1 save-only + 2 mixed runtime');
   });
 
   test('pack gate detail prefers concrete missing payload data', () {

@@ -470,7 +470,11 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _needsConfig(
     'voice-call',
-    config: ['VOICE_CALL_PROVIDER', 'VOICE_CALL_ACCOUNT'],
+    config: [
+      'VOICE_CALL_PROVIDER',
+      'VOICE_CALL_ACCOUNT',
+      'plugins.entries.voice-call.enabled',
+    ],
     smoke: 'Read configured voice-call provider status.',
   ),
   _needsPack(

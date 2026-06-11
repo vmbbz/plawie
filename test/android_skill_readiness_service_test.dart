@@ -208,6 +208,63 @@ void main() {
     expect(github['ready'], isTrue);
   });
 
+  test(
+      'app-native mixed env and config gates use satisfied provisioning status',
+      () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([
+        missingEntry('slack', 'missing_native_config'),
+      ]),
+      provisioning: provisioningWith([
+        provisioningResult('slack', SkillProvisioningStatus.satisfied),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        appNativeConfigManifestEntry(
+          'slack',
+          ['SLACK_BOT_TOKEN', 'channels.slack'],
+        ),
+      ]),
+    );
+
+    final slack = summary.skills.single;
+    expect(slack['ready'], isTrue);
+    expect(slack['runtimeStatus'], 'app_native_ready');
+    expect(slack['provisioningStatus'], 'app_native_config_ready');
+    expect(slack['requiredConfig'], ['SLACK_BOT_TOKEN', 'channels.slack']);
+    expect(slack.containsKey('primaryGate'), isFalse);
+    expect(slack.containsKey('gates'), isFalse);
+  });
+
+  test('app-native config gates ignore stale matrix-only required keys', () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([
+        matrixEntry(
+          'goplaces',
+          status: SkillExecutionStatus.needsConfig,
+          primaryGate: 'missing_native_config',
+          gates: const ['missing_native_config'],
+          requiredEnv: const ['NEXT_PAGE_TOKEN'],
+          requiredConfig: const [
+            'GOOGLE_PLACES_API_KEY',
+            'GOOGLE_PLACES_NEXT_PAGE_TOKEN',
+          ],
+        ),
+      ]),
+      provisioning: provisioningWith([
+        needsConfigResult('goplaces'),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        appNativeConfigManifestEntry('goplaces', ['GOOGLE_PLACES_API_KEY']),
+      ]),
+    );
+
+    final goplaces = summary.skills.single;
+    expect(goplaces['requiredEnv'], isNull);
+    expect(goplaces['requiredConfig'], ['GOOGLE_PLACES_API_KEY']);
+    expect(goplaces['runtimeStatus'], 'needs_config');
+    expect(goplaces['provisioningStatus'], 'needs_user_config');
+  });
+
   test('clawhub owner layer is app-native ready despite npm gates', () {
     final summary = AndroidSkillReadinessService.instance.summarize(
       snapshot: snapshotWith([

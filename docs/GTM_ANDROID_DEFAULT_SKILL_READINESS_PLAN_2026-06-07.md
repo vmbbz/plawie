@@ -3611,6 +3611,71 @@ Verification:
     required tool smokes: 9/9
 ```
 
+Phase 6G config coverage closeout landed:
+
+```text
+Scope:
+  Fresh-user config coverage truth for Android default skills.
+
+Fixes:
+  App-native config gates now treat the static Android manifest as the
+  canonical config contract. Stale/internal OpenClaw matrix keys such as
+  NEXT_PAGE_TOKEN or alternate provider token names no longer pollute
+  /device/health requiredEnv/requiredConfig for app-native service adapters.
+
+  Mixed env+config app-native services such as Slack now project satisfied
+  provisioning consistently:
+    ready: true
+    runtimeStatus: app_native_ready
+    provisioningStatus: app_native_config_ready
+  This keeps the Skills page, config sheet, and health JSON aligned after a
+  user saves real config.
+
+  voice-call static manifest now includes the enabled toggle alongside provider
+  and account:
+    VOICE_CALL_PROVIDER
+    VOICE_CALL_ACCOUNT
+    plugins.entries.voice-call.enabled
+
+  Connection-test summaries redact broader provider token formats, including
+  OpenAI sk/sk-proj, GitHub ghp/github_pat, Notion secret_, Discord mfa/JWT-ish
+  token shapes, Bearer tokens, labelled token/api-key strings, Slack xox, and
+  Twilio IDs.
+
+  Skills page config metrics now split pure SAVE ONLY config gates from MIXED
+  GATES that can save user config but still need native runtime/artifact work.
+  This prevents 1Password/GOG/ordercli/SAG-style lanes from being presented as
+  simple save-only adapters when they still have runtime blockers.
+
+Regression tests:
+  app-native mixed env/config gates use satisfied provisioning status
+  app-native config gates ignore stale matrix-only required keys
+  all static needs-config manifest keys have user-facing form metadata
+  voice-call manifest includes full config contract
+  redacts common provider token formats from scalar summaries
+  separates pure save-only config from mixed runtime gates
+
+Verification:
+  flutter test test/android_skill_readiness_service_test.dart
+    test/android_skill_readiness_view_model_test.dart
+    test/android_skill_support_manifest_test.dart
+    test/android_skill_config_form_model_test.dart
+    test/android_skill_config_test_plan_test.dart
+    test/android_skill_config_test_service_test.dart
+    test/android_skill_config_sheet_test.dart
+    test/skill_provisioning_service_test.dart: PASS
+  flutter analyze: PASS
+  flutter build apk --debug: PASS
+  flutter install -d RZCX30KA9AW --debug: PASS
+  non-destructive Phase 6D release rehearsal after install:
+    releaseGatePass: true
+    ready_required: 13/13
+    classified default manifest: 61
+    installed Native package/workspace skills: 60
+    unexpected_missing_dependency: 0
+    required tool smokes: 9/9
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android
