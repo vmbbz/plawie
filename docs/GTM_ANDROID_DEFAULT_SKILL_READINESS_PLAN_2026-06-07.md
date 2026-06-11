@@ -28,9 +28,8 @@ Hide or demote skills that are not Android-release safe.
 
 ## Current Scorecard
 
-Current host/APK and installed-device truth on 2026-06-10 after the Phase 5K
-Gifgrep vision-media payload device proof, plus the Phase 5L installed-device
-config-unlock UI/readiness bridge proof:
+Current host/APK and installed-device truth on 2026-06-11 after the Phase 6G
+config coverage closeout and Phase 6H live installed-APK truth check:
 
 ```text
 Classified default manifest: 61
@@ -171,7 +170,7 @@ CLI-core `sonos` payload satisfies its binary gate. eightctl remains
 pack-satisfied but config-gated.
 
 Static needs_config taxonomy entries: 14
-Current config-gated rows users can unlock in UI after Phase 5L device proof: 15
+Current config-gated rows users can act on in UI after Phase 6H device proof: 15
   = 14 static needs_config entries
   + eightctl, whose APK-local binary pack is satisfied but whose live runtime
     gate remains needs_config until EIGHTCTL_PASSWORD account config exists
@@ -221,9 +220,88 @@ external service.
 
 ## Latest Installed Device Truth
 
-Live device health on 2026-06-10 after the Phase 5K Gifgrep vision-media
-runtime install/provisioning smoke and the Phase 5L config-unlock bridge
-reinstall reported:
+Live device health on 2026-06-11 after Phase 6H refreshed the already-installed
+APK without rebuilding or reinstalling:
+
+```text
+Runner:
+  scripts/android/run_phase_6d_release_rehearsal.ps1
+
+Mode:
+  -SkipBuild -SkipInstall -SkipChatSmokes
+
+Artifact:
+  .tmp/phase-6h-live-ui-truth.json
+
+Target device:
+  RZCX30KA9AW / Samsung SM-A556E
+
+Strict release proof:
+  releaseGatePass: true
+  ready_required: 13/13
+  classified default manifest: 61
+  installed Native package/workspace skills: 60
+  unexpected_missing_dependency: 0
+  required tool smokes: 9/9
+
+Live Skills page model:
+  Android-relevant ready: 30/51
+  raw ready rows: 31
+  excluded ready row: node-connect manual_proot_compat
+
+Current actionable config gates: 15
+  live connection checks: 9
+  setup-status checks: 1
+  pure save-only gates: 1
+    eightctl
+  mixed runtime gates: 4
+    1password, gog, ordercli, sag
+
+Static taxonomy:
+  needs_config: 14
+  needs_pack: 17
+
+Current pack-gate truth:
+  unready needs_pack taxonomy rows: 7
+  true missing artifact lanes shown in PACK GATES: 6
+    coding-agent, gemini, node-inspect-debugger, openai-whisper,
+    sherpa-onnx-tts, spotify-player
+  pack-class row moved to CONFIG GATES: eightctl
+    reason: android-cli-core pack is satisfied; remaining gate is
+    EIGHTCTL_PASSWORD user/device config, with no missing bin/pack evidence
+
+Repo asset audit:
+  present APK-local payload lanes:
+    android-cli-core-pack
+    android-vision-media-runtime
+    android-python-debug-runtime
+    android-terminal-pack
+    android-audio-runtime for songsee only
+  absent payload lanes:
+    android-agent-cli-pack
+    android-gemini-cli-pack
+    android-node-executable-pack
+    android-whisper-runtime
+    android-tts-runtime
+    spotify spogo/spotify_player binary lane
+
+Phase 6H decision:
+  no production code change is justified by this proof. The app and docs agree
+  on release gate, Android-relevant ready count, config/mixed gate split, and
+  true pack blockers. Do not inflate readiness with placeholder binaries or
+  schema-only payloads.
+
+Next smart phase:
+  Phase 6I should choose the next ceiling move only if a real Android artifact
+  path is credible enough to ship with provenance, hash, license, APK install,
+  managed provisioning, and device smoke. Standalone Node remains a high-effort
+  +1 unless it is deliberately promoted as a platform investment. Whisper and
+  Sherpa are credible but require runtime/model policy and size decisions.
+```
+
+Previous live device health on 2026-06-10 after the Phase 5K Gifgrep
+vision-media runtime install/provisioning smoke and the Phase 5L config-unlock
+bridge reinstall reported:
 
 ```text
 Target device: RZCX30KA9AW / Samsung SM-A556E
@@ -997,7 +1075,8 @@ Launch gate: 13/13 pass
 Ready optional taxonomy: 7
 Config blockers: 15 = 14 needs_config + eightctl live config gate
 Config checks: 9 live connection + 1 provider setup status / 15
-Save-only config: 5 full gates plus non-Twilio voice-call providers
+Pure save-only config: 1 = eightctl
+Mixed runtime config gates: 4 = 1password, gog, ordercli, sag
 Pack blockers: 6 true binary/runtime lanes after moving eightctl to config
 Needs config taxonomy: 14
 Needs pack taxonomy: 17
@@ -3309,7 +3388,9 @@ Freshness / stale-state hardening:
 Coverage after Phase 6C:
   connection tests: 9/15 live config gates
   conditional setup-status checks: 1/15 live config gates
-  save-only config UX: 5 full gates plus non-Twilio voice-call providers
+  save-only/mixed config UX: 5 gates plus non-Twilio voice-call providers
+    pure save-only: eightctl
+    mixed runtime: 1Password, GOG, ordercli, SAG
   release gate: unchanged at 13/13
   Android ready floor: unchanged at 30/51
 
@@ -3378,7 +3459,8 @@ Device proof after Phase 6C expansion install:
   UI coverage model:
     live connection checks: 9
     conditional setup-status checks: 1
-    save-only config gates: 5
+    pure save-only config gates: 1
+    mixed runtime config gates: 4
 ```
 
 Phase 6D-A non-destructive release rehearsal landed:
@@ -3543,7 +3625,8 @@ Expected readiness truth remains:
   current config blockers: 15
   current pack blockers: 6
   config coverage: 9 live + 1 setup / 15
-  save-only config gates: 5
+  pure save-only config gates: 1
+  mixed runtime config gates: 4
   /api/tools catalog count: 25
 
 Fixes:
