@@ -103,6 +103,65 @@ void main() {
     expect(capturedConfig, {'channels.slack': 'C123'});
   });
 
+  testWidgets('successful save shows sanitized Gateway refresh status',
+      (tester) async {
+    await _pumpSheet(
+      tester,
+      _slackModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async =>
+          _satisfiedReport(
+        skillId,
+        changed: true,
+        reloadRecommended: true,
+      ),
+    );
+
+    await tester.enterText(_textFieldByLabel('Bot token'), 'xoxb-test-secret');
+    await tester.enterText(_textFieldByLabel('Default Slack channel'), 'C123');
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+
+    expect(
+      find.text('Config saved. Gateway refresh requested.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('editing saved values clears provisioning status',
+      (tester) async {
+    await _pumpSheet(
+      tester,
+      _slackModel(),
+      applyConfig: ({
+        required skillId,
+        envValues = const <String, String>{},
+        configValues = const <String, dynamic>{},
+      }) async =>
+          _satisfiedReport(
+        skillId,
+        changed: true,
+        reloadRecommended: true,
+      ),
+    );
+
+    await tester.enterText(_textFieldByLabel('Bot token'), 'xoxb-test-secret');
+    await tester.enterText(_textFieldByLabel('Default Slack channel'), 'C123');
+    await tester.tap(find.text('Save & Check'));
+    await tester.pump();
+
+    expect(find.textContaining('Gateway refresh requested'), findsOneWidget);
+
+    await tester.enterText(_textFieldByLabel('Default Slack channel'), 'C456');
+    await tester.pump();
+
+    expect(find.textContaining('Gateway refresh requested'), findsNothing);
+    expect(find.text('Test Connection'), findsNothing);
+  });
+
   testWidgets(
       'successful save reveals test connection action for supported skill',
       (tester) async {
@@ -365,6 +424,17 @@ void main() {
       findsOneWidget,
     );
 
+    await tester.pump(const Duration(seconds: 4));
+    ScaffoldMessenger.of(tester.element(find.byType(Scaffold)))
+        .clearSnackBars();
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Check Setup Status'),
+      160,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.text('Check Setup Status'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Check Setup Status'));
     await tester.pumpAndSettle();
 
@@ -373,6 +443,9 @@ void main() {
       'source': 'android-skill-config-test',
       'method': 'get_status',
     });
+    ScaffoldMessenger.of(tester.element(find.byType(Scaffold)))
+        .clearSnackBars();
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.text('Twilio Voice setup status check failed.'),
       80,
@@ -381,6 +454,11 @@ void main() {
     expect(
       find.text('Twilio Voice setup status check failed.'),
       findsOneWidget,
+    );
+    await tester.scrollUntilVisible(
+      find.textContaining('CONFIG_REQUIRED'),
+      80,
+      scrollable: find.byType(Scrollable).first,
     );
     expect(find.textContaining('CONFIG_REQUIRED'), findsOneWidget);
   });
@@ -565,7 +643,13 @@ SkillProvisioningReport _emptyReport(String skillId) {
   );
 }
 
-SkillProvisioningReport _satisfiedReport(String skillId) {
+SkillProvisioningReport _satisfiedReport(
+  String skillId, {
+  bool changed = true,
+  bool reloadRecommended = false,
+  SkillProvisioningStatus status = SkillProvisioningStatus.satisfied,
+  String? primaryGate,
+}) {
   return SkillProvisioningReport(
     filesDir: '',
     skillId: skillId,
@@ -575,15 +659,15 @@ SkillProvisioningReport _satisfiedReport(String skillId) {
       SkillProvisioningSkillResult(
         skillId: skillId,
         readiness: 'needs_config',
-        status: SkillProvisioningStatus.satisfied,
-        primaryGate: null,
+        status: status,
+        primaryGate: primaryGate,
         actions: const <SkillProvisioningAction>[],
-        changed: true,
-        reloadRecommended: false,
+        changed: changed,
+        reloadRecommended: reloadRecommended,
       ),
     ],
-    changed: true,
-    reloadRecommended: false,
+    changed: changed,
+    reloadRecommended: reloadRecommended,
   );
 }
 

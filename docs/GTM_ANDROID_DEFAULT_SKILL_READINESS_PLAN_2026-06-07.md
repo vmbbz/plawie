@@ -3566,6 +3566,51 @@ Regression tests:
   Android readiness badge override classification
 ```
 
+Phase 6F config round-trip UX hardening landed:
+
+```text
+Scope:
+  Skills config sheets after Save & Check
+
+Product fix:
+  The sheet now keeps the last provisioning result in durable UI state instead
+  of relying only on a transient snackbar. Users can see whether config was
+  saved, whether Gateway refresh was requested, and whether a native/runtime
+  gate remains.
+
+Safety:
+  The persistent status uses provisioning status, gate, changed, and reload
+  flags only. It does not render typed secret values.
+  Editing any saved field clears the saved/provisioning/test state so users
+  are not shown stale readiness.
+
+GTM interpretation:
+  This does not inflate readiness counts. It makes the existing Gateway-backed
+  configure -> provision -> refresh -> optional test flow visible enough for a
+  fresh user to trust what happened.
+
+Regression tests:
+  successful save shows sanitized Gateway refresh status
+  editing saved values clears provisioning status
+  full config-sheet suite: PASS
+
+Verification:
+  flutter test test/android_skill_config_sheet_test.dart
+    test/android_skill_config_form_model_test.dart
+    test/android_skill_config_test_plan_test.dart
+    test/skill_provisioning_service_test.dart: PASS
+  flutter analyze: PASS
+  flutter build apk --debug: PASS
+  flutter install -d RZCX30KA9AW --debug: PASS
+  non-destructive Phase 6D release rehearsal after install:
+    releaseGatePass: true
+    ready_required: 13/13
+    classified default manifest: 61
+    installed Native package/workspace skills: 60
+    unexpected_missing_dependency: 0
+    required tool smokes: 9/9
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android

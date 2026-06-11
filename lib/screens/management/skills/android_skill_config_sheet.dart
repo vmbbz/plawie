@@ -44,6 +44,9 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
   bool _configSaved = false;
   String? _error;
   AndroidSkillConfigTestResult? _lastTestResult;
+  SkillProvisioningSkillResult? _lastProvisioningResult;
+  bool _lastProvisioningChanged = false;
+  bool _lastProvisioningReloadRecommended = false;
 
   @override
   void initState() {
@@ -80,6 +83,7 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
         () {
           _configSaved = false;
           _lastTestResult = null;
+          _clearProvisioningStatus();
           _error =
               'Missing values: ${missing.map((field) => field.label).join(', ')}';
         },
@@ -100,6 +104,7 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
         () {
           _configSaved = false;
           _lastTestResult = null;
+          _clearProvisioningStatus();
           _error =
               'Invalid URL: ${invalidUrls.map((field) => field.label).join(', ')}';
         },
@@ -127,18 +132,16 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
           () {
             _configSaved = false;
             _lastTestResult = null;
+            _clearProvisioningStatus();
             _error =
                 'No provisioning result returned for ${widget.model.title}.';
           },
         );
         return;
       }
-      final result = report.results.isEmpty ? null : report.results.first;
-      final ready = result?.status == SkillProvisioningStatus.ready ||
-          result?.status == SkillProvisioningStatus.satisfied;
-      final gate = result?.primaryGate ??
-          result?.status.wireName ??
-          widget.model.runtimeGateLabel;
+      final result = report.results.first;
+      final ready = _isProvisioningSatisfied(result);
+      final gate = result.primaryGate ?? result.status.wireName;
       final testPlan = _buildTestPlan(
         envValues: envValues,
         configValues: configValues,
@@ -146,6 +149,10 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
       setState(() {
         _configSaved = true;
         _lastTestResult = null;
+        _lastProvisioningResult = result;
+        _lastProvisioningChanged = report.changed || result.changed;
+        _lastProvisioningReloadRecommended =
+            report.reloadRecommended || result.reloadRecommended;
         _testPlan = testPlan;
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -165,6 +172,7 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
         () {
           _configSaved = false;
           _lastTestResult = null;
+          _clearProvisioningStatus();
           _error = 'Save failed. Check skill configuration and try again.';
         },
       );
@@ -306,13 +314,61 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
   }
 
   void _invalidateSavedConfig() {
-    if (!_configSaved && _lastTestResult == null && _error == null) return;
+    if (!_configSaved &&
+        _lastTestResult == null &&
+        _lastProvisioningResult == null &&
+        _error == null) {
+      return;
+    }
     setState(() {
       _configSaved = false;
       _lastTestResult = null;
+      _clearProvisioningStatus();
       _error = null;
       _testPlan = _buildTestPlan();
     });
+  }
+
+  void _clearProvisioningStatus() {
+    _lastProvisioningResult = null;
+    _lastProvisioningChanged = false;
+    _lastProvisioningReloadRecommended = false;
+  }
+
+  bool _isProvisioningSatisfied(SkillProvisioningSkillResult result) {
+    return result.status == SkillProvisioningStatus.ready ||
+        result.status == SkillProvisioningStatus.satisfied;
+  }
+
+  String _provisioningNoticeText(SkillProvisioningSkillResult result) {
+    final refresh = _lastProvisioningReloadRecommended
+        ? 'Gateway refresh requested.'
+        : _lastProvisioningChanged
+            ? 'Config changed; Gateway reload was not required.'
+            : 'Config already saved; no Gateway reload was needed.';
+    if (_isProvisioningSatisfied(result)) {
+      return 'Config saved. $refresh';
+    }
+    final gate = _formatGateLabel(
+      result.primaryGate ?? result.status.wireName,
+    );
+    return 'Config saved; remaining gate: $gate. $refresh';
+  }
+
+  Color _provisioningNoticeColor(SkillProvisioningSkillResult result) {
+    return _isProvisioningSatisfied(result)
+        ? AppColors.statusGreen
+        : AppColors.statusAmber;
+  }
+
+  IconData _provisioningNoticeIcon(SkillProvisioningSkillResult result) {
+    return _isProvisioningSatisfied(result)
+        ? Icons.verified_rounded
+        : Icons.report_problem_rounded;
+  }
+
+  String _formatGateLabel(String gate) {
+    return gate.trim().replaceAll('_', ' ');
   }
 
   String _saveOnlyNoticeText() {
@@ -449,6 +505,14 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
                   label: Text(_isSaving ? 'Checking' : 'Save & Check'),
                 ),
               ),
+              if (_configSaved && _lastProvisioningResult != null) ...[
+                const SizedBox(height: 10),
+                _Notice(
+                  color: _provisioningNoticeColor(_lastProvisioningResult!),
+                  icon: _provisioningNoticeIcon(_lastProvisioningResult!),
+                  text: _provisioningNoticeText(_lastProvisioningResult!),
+                ),
+              ],
               if (_configSaved && testPlan != null) ...[
                 const SizedBox(height: 10),
                 _ConnectionTestRiskNotice(plan: testPlan),
