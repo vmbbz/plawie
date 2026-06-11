@@ -3867,6 +3867,73 @@ Release count impact:
   solved.
 ```
 
+Phase 6K non-destructive voice/UI proof landed:
+
+```text
+Date:
+  2026-06-11
+
+Scope:
+  Prove the Phase 6J Gateway Talk correction compiles, installs, launches, and
+  exposes the corrected app-native agent control surface on the connected phone.
+
+Target device:
+  RZCX30KA9AW / Samsung SM-A556E / Android 14 API 34
+
+Verification:
+  flutter analyze: PASS
+  flutter test:
+    test/android_skill_support_manifest_test.dart
+    test/android_skill_readiness_view_model_test.dart
+    test/android_skill_config_form_model_test.dart
+    test/openai_whisper_api_app_native_adapter_test.dart
+    result: PASS, 26/26
+
+  flutter build apk --debug: PASS
+  flutter install -d RZCX30KA9AW --debug: PASS
+  adb launch: PASS, app pid 25298
+
+Live AgentSkillServer proof:
+  GET /api/tools:
+    tts-voice description now says Gateway Talk handles speech and Android
+    system TTS is a narrow fallback when talk.speak is unavailable.
+
+  POST /api/tts/control {"action":"get_status"}:
+    engine: gateway_talk
+    fallback: android_system_tts
+    voice: provider_default
+    offlinePacksInstalled: false
+
+  POST /api/tts/control {"action":"set_engine","engine":"offline"}:
+    success: true
+    engine: gateway_talk
+    message: Gateway Talk is the Android voice engine. Offline packs are not
+             installed in this build.
+
+  POST /api/tools/execute {"name":"tts-voice","input":{"action":"get_status"}}:
+    engine: gateway_talk
+    fallback: android_system_tts
+    voice: provider_default
+    offlinePacksInstalled: false
+
+Non-goals:
+  No data clear, no reinstall reset, no billed/provider TTS speak call, and no
+  readiness count inflation.
+
+Readiness impact:
+  release gate remains PASS
+  Android-relevant ready remains 30/51
+
+Next logical phase:
+  Phase 6L should be an RC hardening pass, not a new binary chase:
+    - verify Skills page current counts/cards after the installed Phase 6J UI
+    - smoke one representative LIVE config check, one SETUP check, and one SAVE
+      ONLY sheet without fake credentials
+    - run one chat/tool route proof that confirms tool execution remains in the
+      Gateway/agent loop
+    - then sync the branch when the repo is ready to push
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android
