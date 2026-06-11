@@ -14,6 +14,7 @@ import '../../widgets/glass_card.dart';
 import '../../services/clawhub_service.dart';
 import '../../services/android_skill_config_form_model.dart';
 import '../../services/android_skill_config_test_plan.dart';
+import '../../services/android_skill_provisioning_badge_classifier.dart';
 import '../../services/android_skill_readiness_view_model.dart';
 import '../../services/gateway_service.dart';
 import '../../services/gateway_tool_catalog.dart';
@@ -760,14 +761,14 @@ class _MySkillsTabState extends State<_MySkillsTab> {
         .where((s) => s.id.isNotEmpty && s.id != 'local-llm')
         .toList();
 
-    // 2. Uninstalled premium catalogue — appended below so the grid always
-    //    shows all 6 premium skill tiles even when none are installed yet.
+    // 2. Uninstalled partner catalogue — appended below so partner skill tiles
+    //    remain visible even when none are installed yet.
     final availableCatalog = widget.premiumSkills
         .where((p) => p.id != 'local-llm')
         .where((p) => !dynamicInstalled.any((d) => d.id == p.id))
         .toList();
 
-    // 3. Merged: installed first (with active border), uninstalled catalog below.
+    // 3. Merged: installed/default skills first, uninstalled catalog below.
     final mergedSkills = [...dynamicInstalled, ...availableCatalog];
 
     return CustomScrollView(
@@ -798,7 +799,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
               ),
             ),
           ),
-        // ── Premium skills grid — always shows all cards ─────────────────
+        // ── Default/service skills grid — always shows all cards ──────────
         // Uses SliverToBoxAdapter + LayoutBuilder-based grid to avoid the
         // SliverGrid zero-height bug inside NestedScrollView bodies.
         SliverToBoxAdapter(
@@ -810,7 +811,7 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _sectionLabel('PREMIUM AGENT SERVICES'),
+                    _sectionLabel('DEFAULT & SERVICE SKILLS'),
                     if (gatewayState.status == GatewayStatus.running)
                       GestureDetector(
                         onTap: () {
@@ -2892,15 +2893,13 @@ void _applyAndroidReadinessBadgeOverrides(
   for (final raw in skills) {
     if (raw is! Map) continue;
     final skill = Map<String, dynamic>.from(raw);
-    if (skill['ready'] != true ||
-        skill['runtimeStatus']?.toString() != 'app_native_ready') {
-      continue;
-    }
     final skillId = _normalizeProvisioningSkillId(
       skill['skillId']?.toString() ?? '',
     );
     if (skillId.isEmpty) continue;
-    badges[skillId] = _SkillProvisioningBadgeData.appNativeReady();
+    final override = classifyAndroidSkillProvisioningBadge(skill);
+    if (override == null) continue;
+    badges[skillId] = _SkillProvisioningBadgeData.fromAndroidOverride(override);
   }
 }
 
@@ -3023,13 +3022,28 @@ class _SkillProvisioningBadgeData {
     };
   }
 
-  factory _SkillProvisioningBadgeData.appNativeReady() {
+  factory _SkillProvisioningBadgeData.fromAndroidOverride(
+    AndroidSkillProvisioningBadgeOverride override,
+  ) {
     return _SkillProvisioningBadgeData(
-      status: 'app_native_ready',
-      label: 'READY',
-      detail: 'Android app-native path ready',
-      color: AppColors.statusGreen,
-      icon: Icons.check_circle_rounded,
+      status: override.status,
+      label: override.label,
+      detail: override.detail,
+      color: switch (override.status) {
+        'app_native_ready' => AppColors.statusGreen,
+        'unsupported_on_android' ||
+        'manual_proot_compat' ||
+        'hidden_desktop_only' =>
+          Colors.white54,
+        _ => Colors.white54,
+      },
+      icon: switch (override.status) {
+        'app_native_ready' => Icons.check_circle_rounded,
+        'unsupported_on_android' => Icons.remove_circle_outline_rounded,
+        'manual_proot_compat' => Icons.alt_route_rounded,
+        'hidden_desktop_only' => Icons.desktop_windows_rounded,
+        _ => Icons.info_outline_rounded,
+      },
     );
   }
 

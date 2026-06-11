@@ -5,6 +5,7 @@ import '../app.dart';
 import '../constants.dart';
 import '../models/gateway_state.dart';
 import '../providers/gateway_provider.dart';
+import '../services/gateway_url_display.dart';
 import '../screens/logs_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -19,6 +20,8 @@ class GatewayControls extends StatelessWidget {
         final isBooting = state.status == GatewayStatus.starting;
         final accent = _statusColor(state.status);
         final fill = _statusFill(state.status);
+        final dashboardUrl = state.dashboardUrl ?? AppConstants.gatewayUrl;
+        final displayDashboardUrl = gatewayDisplayUrl(dashboardUrl);
 
         return Container(
           padding: const EdgeInsets.all(18),
@@ -75,7 +78,7 @@ class GatewayControls extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: SelectableText(
-                        state.dashboardUrl ?? AppConstants.gatewayUrl,
+                        displayDashboardUrl,
                         style: GoogleFonts.firaCode(
                           color: Colors.white.withValues(alpha: 0.64),
                           fontSize: 11,
@@ -89,9 +92,7 @@ class GatewayControls extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                       onTap: () {
                         HapticFeedback.selectionClick();
-                        final url =
-                            state.dashboardUrl ?? AppConstants.gatewayUrl;
-                        Clipboard.setData(ClipboardData(text: url));
+                        Clipboard.setData(ClipboardData(text: dashboardUrl));
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('URL copied to clipboard'),

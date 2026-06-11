@@ -119,7 +119,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           _BlobDashCard(
                             title: 'Terminal',
-                            subtitle: 'PRoot rollback shell',
+                            subtitle: 'Manual rollback shell',
                             icon: Icons.terminal_rounded,
                             iconColor: Colors.cyanAccent,
                             widthFactor: 0.48,

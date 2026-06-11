@@ -3522,6 +3522,50 @@ Interpretation:
   dependencies.
 ```
 
+Phase 6E UI truth audit landed:
+
+```text
+Scope:
+  device UI audit against live /device/health and /api/tools after the Phase
+  6D-B clean-install path
+
+Pages checked:
+  Dashboard
+  Management dashboard
+  Skills readiness panel
+  Skills config sheets for Slack, voice-call, and 1Password
+  Skills Tools tab
+
+Expected readiness truth remains:
+  releaseGatePass: true
+  ready_required: 13/13
+  Android ready ceiling: 30/51
+  current config blockers: 15
+  current pack blockers: 6
+  config coverage: 9 live + 1 setup / 15
+  save-only config gates: 5
+  /api/tools catalog count: 25
+
+Fixes:
+  Dashboard now displays the gateway URL without exposing the auth token, while
+  copy/open actions still use the authenticated URL.
+  Management dashboard TOOLS now reads the app-native AgentSkillServer catalog
+  from SkillsService instead of a stale hardcoded 19 count.
+  Skills grid label now says DEFAULT & SERVICE SKILLS because it contains
+  installed/default workspace skills plus service catalog cards, not only
+  premium partner tiles.
+  Android readiness badge overrides now classify unsupported/manual
+  PRoot/desktop-only rows as OUTSIDE GTM, MANUAL PROOT, or DESKTOP ONLY instead
+  of letting provisioning status present them as Android missing dependency
+  failures.
+  Dashboard Terminal card now says Manual rollback shell so PRoot remains
+  framed as a fallback lane, not the primary Android runtime.
+
+Regression tests:
+  gateway URL display sanitization
+  Android readiness badge override classification
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android

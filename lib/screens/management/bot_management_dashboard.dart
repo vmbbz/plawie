@@ -6,12 +6,14 @@ import 'package:provider/provider.dart';
 import '../../providers/gateway_provider.dart';
 import '../../models/gateway_state.dart';
 import '../../app.dart';
+import '../../services/skills_service.dart';
 import 'bot_method_explorer.dart';
 import 'status_dashboard.dart';
 import 'agent_manager.dart';
 import 'config_editor.dart';
 import 'skills_manager.dart';
 import '../../widgets/glass_card.dart';
+
 class BotManagementDashboard extends StatelessWidget {
   const BotManagementDashboard({super.key});
 
@@ -24,86 +26,85 @@ class BotManagementDashboard extends StatelessWidget {
           const NebulaBg(),
           CustomScrollView(
             slivers: [
-          _buildAppBar(context),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                   _buildSectionHeader(context, 'Real-time Metrics'),
-                   const SizedBox(height: 12),
-                   const StatusSummaryCard(),
-                   const SizedBox(height: 32),
-                   _buildSectionHeader(context, 'Management Domains'),
-                   const SizedBox(height: 16),
-                ],
+              _buildAppBar(context),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionHeader(context, 'Real-time Metrics'),
+                      const SizedBox(height: 12),
+                      const StatusSummaryCard(),
+                      const SizedBox(height: 32),
+                      _buildSectionHeader(context, 'Management Domains'),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                childAspectRatio: 1.1,
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                    childAspectRatio: 1.1,
+                  ),
+                  delegate: SliverChildListDelegate([
+                    _CategoryCard(
+                      title: 'System',
+                      subtitle: 'Health & Core',
+                      icon: Icons.settings_input_component,
+                      color: AppColors.statusAmber,
+                      onTap: () => _navigateToExplorer(context, 'system'),
+                    ),
+                    _CategoryCard(
+                      title: 'Config',
+                      subtitle: 'openclaw.json',
+                      icon: Icons.tune_rounded,
+                      color: AppColors.statusGreen,
+                      onTap: () => _navigateToExplorer(context, 'config'),
+                    ),
+                    _CategoryCard(
+                      title: 'Agents',
+                      subtitle: 'Fleet Control',
+                      icon: Icons.smart_toy_rounded,
+                      color: AppColors.statusGreen,
+                      onTap: () => _navigateToExplorer(context, 'agents'),
+                    ),
+                    _CategoryCard(
+                      title: 'Skills',
+                      subtitle: 'Capabilities',
+                      icon: Icons.extension_rounded,
+                      color: Colors.purpleAccent,
+                      onTap: () => _navigateToExplorer(context, 'skills'),
+                    ),
+                    _CategoryCard(
+                      title: 'Node',
+                      subtitle: 'P2P & Devices',
+                      icon: Icons.device_hub_rounded,
+                      color: Colors.orangeAccent,
+                      onTap: () => _navigateToExplorer(context, 'node'),
+                    ),
+                    _CategoryCard(
+                      title: 'All Methods',
+                      subtitle: 'Flat RPC Map',
+                      icon: Icons.data_array_rounded,
+                      color: AppColors.statusGrey,
+                      onTap: () => _navigateToExplorer(context, ''),
+                    ),
+                  ]),
+                ),
               ),
-              delegate: SliverChildListDelegate([
-                _CategoryCard(
-                  title: 'System',
-                  subtitle: 'Health & Core',
-                  icon: Icons.settings_input_component,
-                  color: AppColors.statusAmber,
-                  onTap: () => _navigateToExplorer(context, 'system'),
-                ),
-                _CategoryCard(
-                  title: 'Config',
-                  subtitle: 'openclaw.json',
-                  icon: Icons.tune_rounded,
-                   color: AppColors.statusGreen,
-                  onTap: () => _navigateToExplorer(context, 'config'),
-                ),
-                _CategoryCard(
-                  title: 'Agents',
-                  subtitle: 'Fleet Control',
-                  icon: Icons.smart_toy_rounded,
-                  color: AppColors.statusGreen,
-                  onTap: () => _navigateToExplorer(context, 'agents'),
-                ),
-                _CategoryCard(
-                  title: 'Skills',
-                  subtitle: 'Capabilities',
-                  icon: Icons.extension_rounded,
-                  color: Colors.purpleAccent,
-                  onTap: () => _navigateToExplorer(context, 'skills'),
-                ),
-                _CategoryCard(
-                  title: 'Node',
-                  subtitle: 'P2P & Devices',
-                  icon: Icons.device_hub_rounded,
-                  color: Colors.orangeAccent,
-                  onTap: () => _navigateToExplorer(context, 'node'),
-                ),
-                _CategoryCard(
-                  title: 'All Methods',
-                  subtitle: 'Flat RPC Map',
-                  icon: Icons.data_array_rounded,
-                  color: AppColors.statusGrey,
-                  onTap: () => _navigateToExplorer(context, ''),
-                ),
-              ]),
-            ),
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            ],
           ),
-            const SliverToBoxAdapter(child: SizedBox(height: 32)),
-          ],
-        ),
-      ],
-    ),
+        ],
+      ),
     );
   }
-
 
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
@@ -151,10 +152,10 @@ class BotManagementDashboard extends StatelessWidget {
     return Text(
       title.toUpperCase(),
       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        fontWeight: FontWeight.w800,
-        letterSpacing: 1.2,
-        color: AppColors.statusGrey.withValues(alpha: 0.8),
-      ),
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.2,
+            color: AppColors.statusGrey.withValues(alpha: 0.8),
+          ),
     );
   }
 
@@ -189,9 +190,15 @@ class StatusSummaryCard extends StatelessWidget {
   String _formatUptime(int? ms) {
     if (ms == null) return '--';
     final duration = Duration(milliseconds: ms);
-    if (duration.inDays > 0) return '${duration.inDays}d ${duration.inHours % 24}h';
-    if (duration.inHours > 0) return '${duration.inHours}h ${duration.inMinutes % 60}m';
-    if (duration.inMinutes > 0) return '${duration.inMinutes}m ${duration.inSeconds % 60}s';
+    if (duration.inDays > 0) {
+      return '${duration.inDays}d ${duration.inHours % 24}h';
+    }
+    if (duration.inHours > 0) {
+      return '${duration.inHours}h ${duration.inMinutes % 60}m';
+    }
+    if (duration.inMinutes > 0) {
+      return '${duration.inMinutes}m ${duration.inSeconds % 60}s';
+    }
     return '${duration.inSeconds}s';
   }
 
@@ -199,7 +206,7 @@ class StatusSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<GatewayProvider>(
       builder: (context, provider, _) {
-        final health    = provider.detailedHealth;
+        final health = provider.detailedHealth;
         final isHealthy = provider.state.status == GatewayStatus.running;
         final agentsCount = (health?['agents'] as List?)?.length ?? 0;
         final latency = health?['durationMs'] ?? health?['latency_ms'];
@@ -207,19 +214,16 @@ class StatusSummaryCard extends StatelessWidget {
         // Uptime: prefer remote field, fall back to local startedAt delta.
         int? uptimeMs = health?['uptimeMs'] as int?;
         if (uptimeMs == null && provider.state.startedAt != null && isHealthy) {
-          uptimeMs = DateTime.now().difference(provider.state.startedAt!).inMilliseconds;
+          uptimeMs = DateTime.now()
+              .difference(provider.state.startedAt!)
+              .inMilliseconds;
         }
 
         // Skills count — gateway-confirmed active skills list.
         final skillsCount = (provider.state.activeSkills ?? []).length;
 
-        // Tools count — number of entries in tools.allow[] parsed from config.
-        // We read from the last known config snapshot stored in detailedHealth
-        // or fall back to the _toolCatalog size (always accurate offline).
-        final toolsConfig = health?['config']?['tools']?['allow'];
-        final toolsCount  = toolsConfig is List
-            ? toolsConfig.length
-            : _ToolCountHelper.catalogSize;
+        // Tools count — app-native AgentSkillServer catalog exposed at /api/tools.
+        final toolsCount = SkillsService().getToolsCatalog().length;
 
         return GlassCard(
           padding: const EdgeInsets.all(24),
@@ -227,7 +231,7 @@ class StatusSummaryCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                   _buildMetric(
+                  _buildMetric(
                     context,
                     'UPTIME',
                     _formatUptime(uptimeMs),
@@ -247,12 +251,12 @@ class StatusSummaryCard extends StatelessWidget {
               const Divider(height: 32),
               Row(
                 children: [
-                   _buildMetric(
+                  _buildMetric(
                     context,
                     'AGENTS',
                     agentsCount.toString(),
                     Icons.smart_toy_outlined,
-                     AppColors.statusGreen,
+                    AppColors.statusGreen,
                   ),
                   const Spacer(),
                   _buildMetric(
@@ -268,7 +272,7 @@ class StatusSummaryCard extends StatelessWidget {
               Row(
                 children: [
                   // SKILLS — live count of gateway-active skills
-                   _buildMetric(
+                  _buildMetric(
                     context,
                     'SKILLS',
                     isHealthy ? skillsCount.toString() : '--',
@@ -276,7 +280,7 @@ class StatusSummaryCard extends StatelessWidget {
                     Colors.purpleAccent,
                   ),
                   const Spacer(),
-                  // TOOLS — tools.allow[] count from openclaw.json
+                  // TOOLS — app-native AgentSkillServer catalog count.
                   _buildMetric(
                     context,
                     'TOOLS',
@@ -293,7 +297,8 @@ class StatusSummaryCard extends StatelessWidget {
     );
   }
 
-  Widget _buildMetric(BuildContext context, String label, String value, IconData icon, Color color) {
+  Widget _buildMetric(BuildContext context, String label, String value,
+      IconData icon, Color color) {
     return Row(
       children: [
         Container(
@@ -311,10 +316,10 @@ class StatusSummaryCard extends StatelessWidget {
             Text(
               label,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: AppColors.statusGrey,
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-              ),
+                    color: AppColors.statusGrey,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
             Text(
               value,
@@ -380,9 +385,9 @@ class _CategoryCard extends StatelessWidget {
                   Text(
                     subtitle,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: 11,
-                      color: AppColors.statusGrey,
-                    ),
+                          fontSize: 11,
+                          color: AppColors.statusGrey,
+                        ),
                   ),
                 ],
               ),
@@ -392,13 +397,4 @@ class _CategoryCard extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Provides the catalog size of gateway primitive tools so the TOOLS metric
-/// has a sensible offline value before config.get returns.
-/// Must stay in sync with the _toolCatalog list in skills_manager.dart.
-class _ToolCountHelper {
-  /// Number of entries in the _toolCatalog map in skills_manager.
-  /// Update this if you add/remove tools from that map.
-  static const int catalogSize = 19;
 }
