@@ -3759,6 +3759,60 @@ Verification:
     required tool smokes: 9/9
 ```
 
+Phase 6I pack-blocker decision refresh landed:
+
+```text
+Scope:
+  Refresh the remaining six PACK GATES against Phase 6H installed-APK truth,
+  repo assets, and current primary project sources.
+
+Current truth:
+  releaseGatePass: true
+  ready_required: 13/13
+  Android-relevant ready floor: 30/51
+  unready needs_pack taxonomy rows: 7
+  true missing-artifact PACK GATES: 6
+
+True PACK GATES:
+  coding-agent
+  gemini
+  node-inspect-debugger
+  openai-whisper
+  sherpa-onnx-tts
+  spotify-player
+
+Source/asset refresh:
+  The repo has APK-local payloads for CLI-core, vision-media, python-debug,
+  terminal, and songsee audio. It does not contain payloads for standalone
+  Node, Gemini CLI, Whisper runtime/model, Sherpa runtime/model, agent CLI,
+  or Spotify spogo/spotify_player.
+
+  Node's own BUILDING.md still says Android is not a supported platform and
+  has no Android CI, so standalone Node is a platform investment, not a quick
+  +1.
+
+  @google/gemini-cli currently requires Node >=20, so Gemini remains blocked
+  behind standalone Node plus auth/config truth.
+
+  whisper.cpp and Sherpa-ONNX both have credible Android paths, but they need
+  runtime/model size, license, hash, APK, provisioning, and device latency or
+  synthesis proof before any readiness move.
+
+  spotify_player requires a Spotify Premium account and audio/system
+  dependencies; this remains an auth/product lane before binary packaging.
+
+Decision:
+  No payload implementation starts from Phase 6I. The next code phase should
+  be a bounded provenance/design spike for either local Whisper, Sherpa TTS,
+  or standalone Node. Readiness stays 30/51 until a real Android artifact path
+  clears the full GTM proof bar.
+
+Doc hygiene:
+  docs/ANDROID_PACK_BLOCKER_PHASE_5I_AUDIT_2026-06-10.md now marks the
+  original 27/51 eight-blocker framing as historical and superseded by Phase
+  6I's current six-blocker truth.
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android

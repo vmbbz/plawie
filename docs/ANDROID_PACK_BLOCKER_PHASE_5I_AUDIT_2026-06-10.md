@@ -2,11 +2,110 @@
 
 Date: 2026-06-10
 
-Status: decision record for the next Android GTM ceiling move.
+Status: historical decision record for the next Android GTM ceiling move.
+Current truth is superseded by the Phase 6I addendum below.
 
-## Current Truth
+## Phase 6I Supersession
 
-The current Android default readiness state remains:
+Date: 2026-06-11
+
+Phase 6H refreshed the installed APK truth without rebuilding or reinstalling:
+
+```text
+release gate: 13/13, PASS
+Android-relevant ready floor: 30/51
+unready needs_pack taxonomy rows: 7
+true missing-artifact PACK GATES: 6
+```
+
+The current six true pack blockers are:
+
+```text
+coding-agent: android-agent-cli-pack
+gemini: android-gemini-cli-pack
+node-inspect-debugger: android-node-executable-pack
+openai-whisper: android-whisper-runtime
+sherpa-onnx-tts: android-tts-runtime + android-node-executable-pack
+spotify-player: android-audio-runtime, but not satisfied by the songsee payload
+```
+
+Rows removed from the original eight-blocker list:
+
+```text
+songsee: ready through the APK-local android-audio-runtime songsee payload
+gifgrep: ready through the APK-local android-vision-media-runtime gifgrep
+        payload
+```
+
+Pack-class row moved out of PACK GATES:
+
+```text
+eightctl: remains unready, but only because EIGHTCTL_PASSWORD/user-device
+          configuration is missing. The android-cli-core binary lane is
+          satisfied, so the row belongs in CONFIG GATES, not PACK GATES.
+```
+
+Phase 6I source refresh:
+
+```text
+standalone Node:
+  Node's own BUILDING.md still says Android is not a supported platform and
+  has no Android CI. A standalone Node pack is therefore a deliberate platform
+  investment, not a quick GTM payload.
+
+gemini:
+  @google/gemini-cli package metadata currently requires Node >=20, so it
+  remains blocked behind standalone Node plus auth/config truth.
+
+openai-whisper:
+  whisper.cpp has an Android sample app, and that makes the lane credible.
+  It still needs a specific runtime/model pack decision, model size policy,
+  license/hash provenance, APK install proof, and device latency smoke.
+
+sherpa-onnx-tts:
+  Sherpa-ONNX has Android docs and prebuilt Android shared libraries, so it is
+  credible. In OpenClaw's current skill shape it still also needs standalone
+  Node or an app-native/JNI replacement path, plus TTS model/espeak assets and
+  synthesis smoke.
+
+spotify-player:
+  spotify_player requires a Spotify Premium account and Linux audio/system
+  dependencies; spogo/spotify_player also need an explicit auth path. Songsee
+  must not satisfy this row just because both live under android-audio-runtime.
+
+coding-agent:
+  This is a product/security lane. Do not ship a generic agent-cli pack until
+  exactly one Android-safe CLI, auth model, sandbox model, workspace policy,
+  provenance chain, and smoke contract are chosen.
+```
+
+Phase 6I decision:
+
+```text
+Do not start a payload implementation from the remaining six blockers until
+one lane clears the GTM proof bar:
+  source/provenance
+  license
+  exact Android arm64 artifact
+  APK asset location
+  managed provisioning receipt
+  no-secret version/import smoke
+  real device workflow smoke
+  honest Skills page gate movement
+
+Next code phase should be a bounded design/provenance spike, not a fake count
+move. The most credible technical spikes are:
+  1. openai-whisper local runtime/model lane
+  2. sherpa-onnx app-native/JNI or standalone-node lane
+  3. standalone Node platform investment
+
+The most GTM-conservative choice is to keep all six blocked until one of those
+spikes proves a production artifact path.
+```
+
+## Historical Current Truth
+
+The Android default readiness state at the start of Phase 5I was:
 
 ```text
 release gate: 13/13, PASS
