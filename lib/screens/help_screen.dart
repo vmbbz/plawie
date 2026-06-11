@@ -132,11 +132,9 @@ class HelpScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       _buildHelpCard(
                         context,
-                        title: 'Natural Voice (Cloud & Offline)',
+                        title: 'Natural Voice',
                         description:
-                            'Plawie features a hybrid voice engine:\n\n'
-                            '• Cloud (Default) — High-fidelity voices streamed from the OpenClaw Gateway. Best for performance and variety.\n\n'
-                            '• Offline (Piper) — Professional-grade private voices running entirely on your phone. To enable, go to Settings → TTS Engine & Models and download a model (e.g. Lessac-High). Once downloaded, toggle the engine to "Offline" for 100% private speech generation.',
+                            'Plawie streams speech through OpenClaw Gateway Talk using the configured voice provider. Android system TTS is used only as a fallback when Gateway speech is unavailable. Offline voice packs are optional future packs and are not part of this Android release build.',
                         icon: Icons.record_voice_over_rounded,
                         color: Colors.tealAccent,
                       ),

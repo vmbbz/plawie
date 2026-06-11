@@ -267,7 +267,8 @@ class PreferencesService {
 
   // ── TTS Engine & Offline Models ──────────────────────────────────────────────
 
-  /// Selected TTS Engine: 'gateway' (Cloud) | 'offline' (Sherpa-ONNX)
+  /// Selected TTS engine. Android GTM normalizes this to 'gateway'; 'offline'
+  /// is retained only for old preferences and future local voice packs.
   String get ttsEngine => _p.getString('tts_engine') ?? 'gateway';
   set ttsEngine(String value) => _p.setString('tts_engine', value);
 

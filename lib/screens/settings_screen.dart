@@ -24,7 +24,6 @@ import 'node_screen.dart';
 import 'setup_wizard_screen.dart';
 import 'vrm_store_screen.dart';
 import 'management/local_llm_screen.dart';
-import '../services/voice_model_service.dart';
 import '../services/voice_persona_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -57,11 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   int _silenceTimeout = 5;
 
-  // TTS Models
-  final _voiceModelService = VoiceModelService();
   final _voicePersonaService = VoicePersonaService();
-  final Map<String, double> _downloadProgress = {};
-  final Map<String, bool> _modelStatus = {};
 
   // Wake Word
   String _wakeWordMode = 'off'; // off | foreground | always
@@ -114,17 +109,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       continuousMode = _prefs.continuousMode;
       silenceTimeout = _prefs.silenceTimeoutSeconds;
       final storedEngine = _prefs.ttsEngine;
-      ttsEngine = ['gateway', 'offline'].contains(storedEngine)
-          ? storedEngine
-          : 'gateway';
+      ttsEngine = 'gateway';
+      if (storedEngine != 'gateway') {
+        _prefs.ttsEngine = 'gateway';
+      }
       wakeWordMode = _prefs.wakeWordMode;
 
       hotwordRunning = await _safeCall(NativeBridge.isHotwordRunning(), false);
       hasFullStorageAccess =
           await _safeCall(_storageService.updateStatus(), false);
-      for (var m in _voiceModelService.availableModels) {
-        _modelStatus.putIfAbsent(m.id, () => false);
-      }
 
       arch = await _safeCall(NativeBridge.getArch(), '');
       prootPath = await _safeCall(NativeBridge.getProotPath(), '');
@@ -163,21 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _hotwordRunning = hotwordRunning;
           _loading = false;
         });
-        unawaited(_refreshVoiceModelStatusInBackground());
       }
-    }
-  }
-
-  Future<void> _refreshVoiceModelStatusInBackground() async {
-    for (final model in _voiceModelService.availableModels) {
-      final downloaded = await _safeCall(
-        _voiceModelService.isModelDownloaded(model.id),
-        false,
-      );
-      if (!mounted) return;
-      setState(() {
-        _modelStatus[model.id] = downloaded;
-      });
     }
   }
 
@@ -411,128 +390,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onTap: () => _changeAvatar(context),
                       ),
                       const Divider(),
-                      _sectionHeader(theme, 'TTS ENGINE & MODELS'),
+                      _sectionHeader(theme, 'GATEWAY VOICE'),
                       ListTile(
-                        title: const Text('TTS Engine'),
-                        subtitle: Text(_ttsEngine == 'offline'
-                            ? 'Offline (Sherpa-ONNX)'
-                            : 'Cloud (Gateway Default)'),
-                        leading: Icon(
+                        title: const Text('Voice engine'),
+                        subtitle: const Text(
+                            'Gateway Talk streams speech from configured providers'),
+                        leading: const Icon(
                           Icons.settings_voice,
-                          color: _ttsEngine == 'offline'
-                              ? AppColors.statusGreen
-                              : Colors.white38,
+                          color: AppColors.statusGreen,
                         ),
-                        trailing: DropdownButton<String>(
-                          value: _ttsEngine,
-                          dropdownColor: Colors.grey[900],
-                          underline: const SizedBox(),
-                          items: const [
-                            DropdownMenuItem(
-                                value: 'gateway', child: Text('Cloud')),
-                            DropdownMenuItem(
-                                value: 'offline', child: Text('Offline')),
-                          ],
-                          onChanged: (v) async {
-                            if (v == null) return;
-                            setState(() => _ttsEngine = v);
-                            await _voicePersonaService.setTtsEngine(v);
-                          },
+                        trailing: const Chip(
+                          visualDensity: VisualDensity.compact,
+                          label: Text('Gateway'),
                         ),
-                      ),
-                      if (_ttsEngine == 'offline') ...[
-                        const Padding(
-                          padding:
-                              EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: Text(
-                            'Manage Offline Voices',
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white54),
-                          ),
-                        ),
-                        ..._voiceModelService.availableModels.map((model) {
-                          final isDownloaded = _modelStatus[model.id] ?? false;
-                          final progress = _downloadProgress[model.id];
-                          final isActive = _prefs.offlineVoiceModel == model.id;
-
-                          return ListTile(
-                            title: Text(model.name),
-                            subtitle: Text(model.description,
-                                style: const TextStyle(fontSize: 12)),
-                            leading: Icon(
-                              isActive
-                                  ? Icons.check_circle
-                                  : Icons.record_voice_over,
-                              color: isActive
-                                  ? AppColors.statusGreen
-                                  : Colors.white24,
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (progress != null && progress < 1.0)
-                                  SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                        value: progress, strokeWidth: 2),
-                                  )
-                                else if (isDownloaded)
-                                  IconButton(
-                                    icon: Icon(
-                                        isActive
-                                            ? Icons.star
-                                            : Icons.star_border,
-                                        color: isActive
-                                            ? AppColors.statusAmber
-                                            : Colors.white38),
-                                    onPressed: () async {
-                                      await _voicePersonaService
-                                          .applyOfflineModel(model.id);
-                                      setState(() {});
-                                    },
-                                  )
-                                else
-                                  IconButton(
-                                    icon: const Icon(Icons.download),
-                                    onPressed: () async {
-                                      setState(() =>
-                                          _downloadProgress[model.id] = 0.1);
-                                      await _voiceModelService
-                                          .downloadModel(model, (p) {
-                                        setState(() =>
-                                            _downloadProgress[model.id] = p);
-                                      });
-                                      final downloaded =
-                                          await _voiceModelService
-                                              .isModelDownloaded(model.id);
-                                      setState(() {
-                                        _modelStatus[model.id] = downloaded;
-                                        _downloadProgress.remove(model.id);
-                                      });
-                                    },
-                                  ),
-                                if (isDownloaded && !isActive)
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline,
-                                        color: AppColors.statusRed, size: 18),
-                                    onPressed: () async {
-                                      await _voiceModelService
-                                          .deleteModel(model.id);
-                                      final downloaded =
-                                          await _voiceModelService
-                                              .isModelDownloaded(model.id);
-                                      setState(() =>
-                                          _modelStatus[model.id] = downloaded);
-                                    },
-                                  ),
-                              ],
+                        onTap: () async {
+                          await _voicePersonaService.setTtsEngine('gateway');
+                          setState(() => _ttsEngine = 'gateway');
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  'Gateway Talk is the active voice engine.'),
                             ),
                           );
-                        }),
-                      ],
+                        },
+                      ),
+                      const ListTile(
+                        title: Text('Offline voice packs'),
+                        subtitle: Text(
+                            'Optional local voice runtime is not installed in this Android build'),
+                        leading: Icon(
+                          Icons.lock_outline_rounded,
+                          color: Colors.white38,
+                        ),
+                        enabled: false,
+                      ),
                       const Divider(),
                       _sectionHeader(theme, 'VOICE & SPEECH'),
                       ListTile(

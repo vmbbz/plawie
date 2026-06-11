@@ -3,7 +3,51 @@
 Date: 2026-06-10
 
 Status: historical decision record for the next Android GTM ceiling move.
-Current truth is superseded by the Phase 6I addendum below.
+Current truth is superseded by the Phase 6I and Phase 6J addenda below.
+
+## Phase 6J Supersession
+
+Date: 2026-06-11
+
+Phase 6J corrected the next-move strategy after reading the actual Android
+voice code paths. Plawie/OpenClaw Android already has a production voice lane:
+
+```text
+Speech output:
+  Gateway Talk/TTS -> talk.speak -> MP3 bytes/URLs -> TtsService playback
+
+Speech input:
+  realtime talk.session capture first
+  /talk/stt multipart transcription fallback
+  openai-whisper-api config-gated adapter for supplied audio bytes
+```
+
+This changes the pack-blocker priority:
+
+```text
+sherpa-onnx-tts:
+  Park for post-GTM optional offline/private/high-quality local TTS. It remains
+  a valid default-manifest pack gate, but it is not a core Android app blocker
+  because Gateway Talk/TTS already owns live voice output.
+
+openai-whisper:
+  Park for post-GTM optional offline/private STT unless offline dictation
+  becomes a product requirement. Gateway Talk capture, /talk/stt, and
+  openai-whisper-api already cover GTM voice input.
+
+tts-voice:
+  Keep as an app-native agent control surface over Gateway Talk. It should
+  speak, stop, report status, and save voice preferences without pretending
+  Sherpa/Piper is installed.
+```
+
+Readiness count impact:
+
+```text
+Android-relevant ready floor remains 30/51.
+No pack gate is moved ready by this correction.
+The gain is release truth, UX honesty, and architecture alignment.
+```
 
 ## Phase 6I Supersession
 

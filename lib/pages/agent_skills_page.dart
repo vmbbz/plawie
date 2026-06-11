@@ -34,7 +34,7 @@ class _AgentSkillsPageState extends State<AgentSkillsPage>
     {
       'id': 'voice',
       'name': 'Voice & TTS',
-      'desc': 'Switch voices and engines (Piper, ElevenLabs, OpenAI).',
+      'desc': 'Control Gateway Talk voices, personas, and speech playback.',
       'installed': true,
       'icon': Icons.record_voice_over_rounded,
       'color': Colors.purpleAccent,

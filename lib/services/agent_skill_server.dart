@@ -2804,14 +2804,29 @@ class AgentSkillServer {
 
     switch (action) {
       case 'set_engine':
-        // No-op: Local engines removed. App strictly uses Gateway TTS.
-        _sendJson(request, {'success': true, 'engine': 'gateway'});
-
-      case 'set_voice':
-        // No-op: Voice selection is now handled on the Gateway side.
+        // No-op for legacy callers: Android GTM voice is Gateway Talk first.
+        prefs.ttsEngine = 'gateway';
         _sendJson(request, {
           'success': true,
-          'message': 'Voice changes should be handled in the Gateway config.'
+          'engine': 'gateway_talk',
+          'message':
+              'Gateway Talk is the Android voice engine. Offline packs are not installed in this build.',
+        });
+
+      case 'set_voice':
+        final voice = data['voice']?.toString().trim() ??
+            data['voiceId']?.toString().trim() ??
+            '';
+        if (voice.isNotEmpty) {
+          prefs.gatewayVoiceId = voice;
+        }
+        _sendJson(request, {
+          'success': true,
+          'engine': 'gateway_talk',
+          'voice': prefs.gatewayVoiceId,
+          'message': voice.isEmpty
+              ? 'Voice selection is handled by the Gateway Talk catalog.'
+              : 'Gateway voice preference saved.'
         });
 
       case 'speak':
@@ -2819,9 +2834,36 @@ class AgentSkillServer {
         if (text == null || text.isEmpty) {
           return _sendError(request, 'Missing text');
         }
-        final tts = TtsService();
-        unawaited(tts.speak(text));
-        _sendJson(request, {'success': true, 'speaking': text});
+        final playback = await GatewayService().speakTextViaTalk(text);
+        if (playback.played) {
+          _sendJson(request, {
+            'success': true,
+            'engine': 'gateway_talk',
+            'status': playback.status,
+            'speaking': text,
+          });
+          return;
+        }
+        if (playback.allowNativeFallback) {
+          final tts = TtsService();
+          unawaited(tts.speak(text));
+          _sendJson(request, {
+            'success': true,
+            'engine': 'android_system_tts',
+            'status': playback.status,
+            'message': playback.displayMessage,
+            'speaking': text,
+          });
+          return;
+        }
+        _sendJson(request, {
+          'success': false,
+          'engine': 'gateway_talk',
+          'status': playback.status,
+          'message':
+              playback.displayMessage ?? 'Gateway Talk did not return audio.',
+          'error': playback.errorMessage,
+        });
 
       case 'stop':
         final tts = TtsService();
@@ -2830,8 +2872,12 @@ class AgentSkillServer {
 
       case 'get_status':
         _sendJson(request, {
-          'engine': 'gateway',
-          'voice': 'default',
+          'engine': 'gateway_talk',
+          'fallback': 'android_system_tts',
+          'voice': prefs.gatewayVoiceId.isEmpty
+              ? 'provider_default'
+              : prefs.gatewayVoiceId,
+          'offlinePacksInstalled': false,
         });
 
       default:

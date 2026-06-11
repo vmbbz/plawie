@@ -3,7 +3,7 @@ import 'dart:io';
 import 'native_bridge.dart';
 import 'openclaw_service.dart';
 
-/// Represents a downloadable voice model for Sherpa-ONNX.
+/// Represents a downloadable voice model for a future local voice runtime.
 class VoiceModel {
   final String id;
   final String name;
@@ -22,6 +22,10 @@ class VoiceModel {
 
 /// Service to manage on-demand download of TTS voice models into the active
 /// OpenClaw runtime home.
+///
+/// This is parked for post-GTM offline voice packs. The Android release voice
+/// lane is Gateway Talk; downloading these model files alone does not make
+/// Sherpa/Piper playback available.
 class VoiceModelService {
   static final VoiceModelService _instance = VoiceModelService._internal();
   factory VoiceModelService() => _instance;

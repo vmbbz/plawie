@@ -1229,7 +1229,7 @@ class SkillsService {
   Skill _createTtsVoiceSkill() => Skill(
       id: 'tts-voice',
       name: 'Voice Control',
-      description: 'Switch TTS voices.',
+      description: 'Control Gateway Talk voice output.',
       version: '1.0.0',
       author: 'OpenClaw',
       category: 'tts',
@@ -1591,7 +1591,7 @@ class SkillsService {
         return {
           'name': skill.id,
           'description':
-              'Speak text aloud or inspect voice status. Gateway talk mode handles cloud speech; native TTS handles local speech.',
+              'Speak text aloud or inspect voice status. Gateway Talk handles speech; Android system TTS is a narrow fallback when talk.speak is unavailable.',
           'input_schema': {
             'type': 'object',
             'properties': {

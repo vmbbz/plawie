@@ -3801,7 +3801,7 @@ Source/asset refresh:
   spotify_player requires a Spotify Premium account and audio/system
   dependencies; this remains an auth/product lane before binary packaging.
 
-Decision:
+Decision at Phase 6I time, superseded by Phase 6J voice reconciliation:
   No payload implementation starts from Phase 6I. The next code phase should
   be a bounded provenance/design spike for either local Whisper, Sherpa TTS,
   or standalone Node. Readiness stays 30/51 until a real Android artifact path
@@ -3811,6 +3811,60 @@ Doc hygiene:
   docs/ANDROID_PACK_BLOCKER_PHASE_5I_AUDIT_2026-06-10.md now marks the
   original 27/51 eight-blocker framing as historical and superseded by Phase
   6I's current six-blocker truth.
+```
+
+Phase 6J voice capability reconciliation landed as the corrected next move:
+
+```text
+Why Phase 6I changed:
+  Code review showed that Plawie/OpenClaw Android already has a production
+  voice lane. The app does not need to chase Sherpa TTS or local Whisper as the
+  next GTM ceiling move just because both remain default-manifest pack gates.
+
+Production voice truth:
+  - Gateway Talk/TTS is the core speech-output lane.
+  - Chat already streams assistant output sentence-by-sentence through
+    talk.speak and plays returned MP3 bytes through TtsService.
+  - Gateway media TTS tool results are intercepted and played as audio URLs.
+  - The TTS menu reads Gateway Talk/provider/persona catalogs and can test
+    Gateway voice directly.
+  - Voice input already uses realtime talk.session capture first and falls
+    back to /talk/stt multipart transcription.
+  - openai-whisper-api is the config-gated cloud transcription adapter.
+
+Corrected GTM decision:
+  sherpa-onnx-tts:
+    Park for post-GTM optional offline/private/high-quality local TTS.
+    It is not a core app blocker because Gateway Talk/TTS already owns live
+    speech output. It also remains a mixed runtime/model/standalone-node lane
+    in the current OpenClaw skill shape.
+
+  openai-whisper:
+    Park for post-GTM optional offline/private STT unless offline dictation
+    becomes a product requirement. Gateway Talk realtime capture, /talk/stt,
+    and openai-whisper-api already cover GTM voice input.
+
+  tts-voice:
+    Keep as an agent control surface, not as a separate speech engine. It is
+    useful for explicit agent actions such as speak, stop, voice status, voice
+    provider/persona selection, and Gateway voice tests. It should prefer the
+    same Gateway Talk path as chat, with Android system TTS only as the narrow
+    fallback when talk.speak is unavailable.
+
+Phase 6J implementation scope:
+  1. Document this voice/TTS/STT correction in the GTM plan.
+  2. Remove stale user-facing copy that presents Piper/Sherpa/offline voices as
+     installed Android release capability.
+  3. Normalize legacy Settings engine control to Gateway-first production
+     truth.
+  4. Align agent-triggered tts-voice speak with Gateway Talk before local
+     Android fallback.
+
+Release count impact:
+  No readiness inflation. Android-relevant ready remains 30/51 until a real
+  missing-artifact lane clears the GTM proof bar. This phase improves truth,
+  UX, and architecture alignment instead of pretending a binary blocker is
+  solved.
 ```
 
 ## Success Definition
