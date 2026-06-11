@@ -3436,6 +3436,92 @@ Next gate:
   uninstall/reinstall because it destroys local app state.
 ```
 
+Phase 6D-B clean-install proof landed:
+
+```text
+Date:
+  2026-06-11
+
+Mode:
+  destructive uninstall/reinstall was explicitly approved for this phase
+  user manually completed first-run provider setup with OpenRouter
+  patched APK was installed over that clean setup state without clearing data
+  again
+
+Fresh-run blocker found:
+  Setup reached Gateway verification, then timed out with:
+  ws=true, interactive=false, health=false, skills=0
+
+Root cause:
+  The fresh install had the default OpenClaw package skills inside the bundled
+  package roots, but the Android release gate only scanned mutable .openclaw
+  workspace skill roots. Warm prior installs hid this because older workspace
+  copies already existed.
+
+Missing launch-required skill IDs before the fix:
+  skill-creator
+  spike
+  taskflow
+  taskflow-inbox-triage
+
+Fix:
+  Skill parity, OpenClaw skill listing, skill markdown lookup, and Native smoke
+  scanning now include the bundled OpenClaw package roots:
+    native-node-embedded/full-openclaw/lib/node_modules/openclaw/skills
+    rootfs/ubuntu/usr/local/lib/node_modules/openclaw/skills
+  Splash routing now resumes SetupWizard when credentials were already saved
+  but bootstrap did not complete.
+  Gateway startup can accept a bounded Android release-gate pass while RPC
+  discovery warms, instead of failing a valid fresh setup.
+
+Regression proof:
+  flutter test test/skill_parity_audit_service_test.dart: PASS
+  flutter test test/android_skill_readiness_service_test.dart: PASS
+  flutter test test/skill_provisioning_service_test.dart: PASS
+  flutter test test/skill_parity_audit_service_test.dart
+    test/android_skill_readiness_service_test.dart: PASS
+  flutter analyze: PASS
+  flutter build apk --debug: PASS
+
+Device result after patched retry:
+  setup completed
+  dashboard opened
+  Gateway LIVE
+
+Runner:
+  scripts/android/run_phase_6d_release_rehearsal.ps1
+  .tmp/phase-6d-b-clean-install-rehearsal.json
+
+Strict release proof:
+  releaseGatePass: true
+  ready_required: 13/13
+  classified default manifest: 61
+  installed Native package/workspace skills: 60
+  unexpected_missing_dependency: 0
+  /api/tools catalog count: 25
+
+Required headless tool smokes through AgentSkillServer:
+  device-health: PASS
+  device-status: PASS
+  battery: PASS
+  sensors: PASS
+  weather: PASS
+  clawhub: PASS
+  meme-maker: PASS
+  vibrate: PASS
+  avatar-status: PASS
+  total: 9/9
+
+Interpretation:
+  Phase 6D-B is the first real clean-install GTM proof. The correct clean
+  installedNativeSkills number is 60 because that field counts file-backed
+  OpenClaw package/workspace skill directories. It must not be inflated to 61:
+  app-native manifest capabilities are real release capabilities, but they are
+  not all file-backed skill directories. The release gate remains the hard
+  launch promise, and it is green at 13/13 with zero unexpected missing
+  dependencies.
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android

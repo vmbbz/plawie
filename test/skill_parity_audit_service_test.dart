@@ -7,6 +7,52 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
+  test('audit counts OpenClaw package skills on fresh native installs',
+      () async {
+    final temp =
+        await Directory.systemTemp.createTemp('skill_package_root_test_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final packageSkills = Directory(path.join(
+      temp.path,
+      'native-node-embedded',
+      'full-openclaw',
+      'lib',
+      'node_modules',
+      'openclaw',
+      'skills',
+    ));
+    await packageSkills.create(recursive: true);
+
+    for (final id in [
+      'skill-creator',
+      'spike',
+      'taskflow',
+      'taskflow-inbox-triage',
+    ]) {
+      await File(path.join(packageSkills.path, id, 'SKILL.md'))
+          .create(recursive: true)
+          .then((file) => file.writeAsString('# $id'));
+    }
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+
+    expect(
+      snapshot.nativeSkillNames,
+      containsAll([
+        'skill-creator',
+        'spike',
+        'taskflow',
+        'taskflow-inbox-triage',
+      ]),
+    );
+    expect(snapshot.nativeSkillCount, 4);
+  });
+
   test(
       'audit repairs missing PRoot skills into Native without overwriting conflicts',
       () async {
@@ -610,7 +656,8 @@ Providers
     expect(entry.status, SkillExecutionStatus.ready);
   });
 
-  test('python debugpy commands create a package gate beyond python3', () async {
+  test('python debugpy commands create a package gate beyond python3',
+      () async {
     final temp =
         await Directory.systemTemp.createTemp('skill_debugpy_package_test_');
     addTearDown(() => temp.delete(recursive: true));
@@ -666,8 +713,7 @@ python3 -m debugpy --listen 127.0.0.1:5678 path/to/script.py
 
   test('structured anyBins alternatives are enforced without body overreach',
       () async {
-    final temp =
-        await Directory.systemTemp.createTemp('skill_any_bins_test_');
+    final temp = await Directory.systemTemp.createTemp('skill_any_bins_test_');
     addTearDown(() => temp.delete(recursive: true));
 
     final nativeRoot = path.join(

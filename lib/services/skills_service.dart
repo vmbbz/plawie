@@ -543,10 +543,12 @@ class SkillsService {
     final prootPaths = <String>[
       '$filesDir/rootfs/ubuntu/root/.openclaw/skills/$id/SKILL.md',
       '$filesDir/rootfs/ubuntu/root/.openclaw/workspace/skills/$id/SKILL.md',
+      '$filesDir/rootfs/ubuntu/usr/local/lib/node_modules/openclaw/skills/$id/SKILL.md',
     ];
     final nativePaths = <String>[
       '$filesDir/native-node-embedded/native-home/.openclaw/skills/$id/SKILL.md',
       '$filesDir/native-node-embedded/native-home/.openclaw/workspace/skills/$id/SKILL.md',
+      '$filesDir/native-node-embedded/full-openclaw/lib/node_modules/openclaw/skills/$id/SKILL.md',
     ];
     final ordered = nativeOwner
         ? <String>[...nativePaths, ...prootPaths]

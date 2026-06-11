@@ -7,6 +7,7 @@ import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
 import 'dashboard_screen.dart';
 import 'setup_flow_screen.dart';
+import 'setup_wizard_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -29,7 +30,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
-    
+
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -100,16 +101,18 @@ class _SplashScreenState extends State<SplashScreen>
       if (!mounted) return;
 
       final dashboardUrl = prefs.dashboardUrl;
-      final isFullyConfigured = bootstrapOk && (
-        (dashboardUrl != null && dashboardUrl.isNotEmpty) || prefs.apiKeyConfigured
-      );
+      final isFullyConfigured = bootstrapOk &&
+          ((dashboardUrl != null && dashboardUrl.isNotEmpty) ||
+              prefs.apiKeyConfigured);
 
       if (isFullyConfigured) {
         prefs.setupComplete = true;
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => const DashboardScreen(),
-            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                const DashboardScreen(),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
               return SlideTransition(
                 position: Tween<Offset>(
                   begin: const Offset(1.0, 0.0),
@@ -125,14 +128,22 @@ class _SplashScreenState extends State<SplashScreen>
           ),
         );
       } else {
-        // Not fully configured — show SetupFlowScreen to collect provider/key/name
-        // before installation begins. SetupFlowScreen navigates to SetupWizardScreen
-        // after saving prefs, so credentials are baked into the gateway before first start.
+        // If setup already collected and baked credentials but timed out before
+        // marking bootstrap complete, resume the installer instead of asking
+        // users to enter their provider key again.
+        final setupPage = prefs.apiKeyConfigured ||
+                ((prefs.apiProvider ?? '').isNotEmpty &&
+                    (prefs.configuredModel ?? '').isNotEmpty)
+            ? const SetupWizardScreen()
+            : const SetupFlowScreen();
+
+        // Not fully configured — either collect provider/key/name first or
+        // resume the installer when credentials are already stored.
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                const SetupFlowScreen(),
-            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            pageBuilder: (context, animation, secondaryAnimation) => setupPage,
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
               return SlideTransition(
                 position: Tween<Offset>(
                   begin: const Offset(1.0, 0.0),
@@ -166,27 +177,28 @@ class _SplashScreenState extends State<SplashScreen>
     await storage.remove('last_approved_request_id');
     await storage.setString(_appStateVersionKey, AppConstants.version);
   }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: isDark 
-              ? [
-                  const Color(0xFF0F0F0F),
-                  const Color(0xFF1A1A1A),
-                  const Color(0xFF252525),
-                ]
-              : [
-                  const Color(0xFFF8F9FA),
-                  const Color(0xFFF1F3F4),
-                  const Color(0xFFE9ECEF),
-                ],
+            colors: isDark
+                ? [
+                    const Color(0xFF0F0F0F),
+                    const Color(0xFF1A1A1A),
+                    const Color(0xFF252525),
+                  ]
+                : [
+                    const Color(0xFFF8F9FA),
+                    const Color(0xFFF1F3F4),
+                    const Color(0xFFE9ECEF),
+                  ],
           ),
         ),
         child: Stack(
@@ -203,20 +215,20 @@ class _SplashScreenState extends State<SplashScreen>
                     Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(24),
-                        color: isDark 
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : Colors.black.withValues(alpha: 0.05),
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.08)
+                            : Colors.black.withValues(alpha: 0.05),
                         border: Border.all(
-                          color: isDark 
-                            ? AppColors.statusGreen.withValues(alpha: 0.3)
-                            : Colors.black.withValues(alpha: 0.1),
+                          color: isDark
+                              ? AppColors.statusGreen.withValues(alpha: 0.3)
+                              : Colors.black.withValues(alpha: 0.1),
                           width: 1,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: isDark 
-                              ? Colors.black.withValues(alpha: 0.3)
-                              : Colors.black.withValues(alpha: 0.1),
+                            color: isDark
+                                ? Colors.black.withValues(alpha: 0.3)
+                                : Colors.black.withValues(alpha: 0.1),
                             blurRadius: 30,
                             offset: const Offset(0, 15),
                             spreadRadius: 0,
@@ -235,10 +247,11 @@ class _SplashScreenState extends State<SplashScreen>
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(24),
                           child: Transform.scale(
-                            scale: 1.5, // Zoom into the icon to crop internal 'safe zone' padding
+                            scale:
+                                1.5, // Zoom into the icon to crop internal 'safe zone' padding
                             child: Image.asset(
                               'assets/ic_launcher.png',
-                              width: 140, 
+                              width: 140,
                               height: 140,
                               fit: BoxFit.cover,
                               filterQuality: FilterQuality.high,
@@ -249,24 +262,28 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                     const SizedBox(height: 40),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 16),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(20),
-                        color: isDark 
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : Colors.black.withValues(alpha: 0.05),
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.08)
+                            : Colors.black.withValues(alpha: 0.05),
                         border: Border.all(
-                          color: isDark 
-                            ? Colors.white.withValues(alpha: 0.15)
-                            : Colors.black.withValues(alpha: 0.1),
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.15)
+                              : Colors.black.withValues(alpha: 0.1),
                           width: 1,
                         ),
                       ),
                       child: ShaderMask(
                         shaderCallback: (bounds) => LinearGradient(
                           colors: isDark
-                            ? [Colors.white, AppColors.statusGreen.withValues(alpha: 0.8)]
-                            : [Colors.black, const Color(0xFF333333)],
+                              ? [
+                                  Colors.white,
+                                  AppColors.statusGreen.withValues(alpha: 0.8)
+                                ]
+                              : [Colors.black, const Color(0xFF333333)],
                         ).createShader(bounds),
                         child: Text(
                           'Plawie',
@@ -283,16 +300,17 @@ class _SplashScreenState extends State<SplashScreen>
                     SlideTransition(
                       position: _slideAnimation,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 12),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(16),
-                          color: isDark 
-                            ? Colors.white.withValues(alpha: 0.06)
-                            : Colors.black.withValues(alpha: 0.03),
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.06)
+                              : Colors.black.withValues(alpha: 0.03),
                           border: Border.all(
-                            color: isDark 
-                              ? Colors.white.withValues(alpha: 0.12)
-                              : Colors.black.withValues(alpha: 0.08),
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.12)
+                                : Colors.black.withValues(alpha: 0.08),
                             width: 1,
                           ),
                         ),
@@ -302,9 +320,9 @@ class _SplashScreenState extends State<SplashScreen>
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.5,
-                            color: isDark 
-                              ? const Color(0xFFE0E0E0)
-                              : const Color(0xFF666666),
+                            color: isDark
+                                ? const Color(0xFFE0E0E0)
+                                : const Color(0xFF666666),
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -315,13 +333,13 @@ class _SplashScreenState extends State<SplashScreen>
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(20),
-                        color: isDark 
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : Colors.black.withValues(alpha: 0.05),
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.08)
+                            : Colors.black.withValues(alpha: 0.05),
                         border: Border.all(
-                          color: isDark 
-                            ? Colors.white.withValues(alpha: 0.15)
-                            : Colors.black.withValues(alpha: 0.1),
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.15)
+                              : Colors.black.withValues(alpha: 0.1),
                           width: 1,
                         ),
                       ),
@@ -340,16 +358,17 @@ class _SplashScreenState extends State<SplashScreen>
                     FadeTransition(
                       opacity: _fadeAnimation,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 12),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
-                          color: isDark 
-                            ? Colors.white.withValues(alpha: 0.06)
-                            : Colors.black.withValues(alpha: 0.03),
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.06)
+                              : Colors.black.withValues(alpha: 0.03),
                           border: Border.all(
-                            color: isDark 
-                              ? Colors.white.withValues(alpha: 0.12)
-                              : Colors.black.withValues(alpha: 0.08),
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.12)
+                                : Colors.black.withValues(alpha: 0.08),
                             width: 1,
                           ),
                         ),
@@ -358,9 +377,9 @@ class _SplashScreenState extends State<SplashScreen>
                           style: GoogleFonts.outfit(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: isDark 
-                              ? const Color(0xFFE0E0E0)
-                              : const Color(0xFF666666),
+                            color: isDark
+                                ? const Color(0xFFE0E0E0)
+                                : const Color(0xFF666666),
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -409,22 +428,22 @@ class _SplashScreenState extends State<SplashScreen>
             shape: BoxShape.circle,
             gradient: RadialGradient(
               colors: isDark
-                ? [
-                    AppColors.statusGreen.withValues(alpha: opacity * 0.4),
-                    AppColors.statusGreen.withValues(alpha: opacity * 0.1),
-                    Colors.transparent,
-                  ]
-                : [
-                    Colors.black.withValues(alpha: opacity * 0.2),
-                    Colors.black.withValues(alpha: opacity * 0.05),
-                    Colors.transparent,
-                  ],
+                  ? [
+                      AppColors.statusGreen.withValues(alpha: opacity * 0.4),
+                      AppColors.statusGreen.withValues(alpha: opacity * 0.1),
+                      Colors.transparent,
+                    ]
+                  : [
+                      Colors.black.withValues(alpha: opacity * 0.2),
+                      Colors.black.withValues(alpha: opacity * 0.05),
+                      Colors.transparent,
+                    ],
             ),
             boxShadow: [
               BoxShadow(
-                color: isDark 
-                  ? AppColors.statusGreen.withValues(alpha: opacity * 0.3)
-                  : Colors.black.withValues(alpha: opacity * 0.1),
+                color: isDark
+                    ? AppColors.statusGreen.withValues(alpha: opacity * 0.3)
+                    : Colors.black.withValues(alpha: opacity * 0.1),
                 blurRadius: 20,
                 spreadRadius: 5,
               ),
@@ -435,4 +454,3 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 }
-

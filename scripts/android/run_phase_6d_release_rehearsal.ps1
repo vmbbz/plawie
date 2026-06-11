@@ -5,7 +5,11 @@ param(
   [switch]$SkipBuild,
   [switch]$SkipInstall,
   [switch]$SkipChatSmokes,
-  [string]$OutputPath = ".tmp/phase-6d-a-release-rehearsal.json"
+  [string]$OutputPath = ".tmp/phase-6d-a-release-rehearsal.json",
+  [string]$Phase = "6D-A",
+  [string]$Mode = "non-destructive release rehearsal",
+  [string]$DataStateNote = "No app data was cleared.",
+  [int]$MinimumInstalledNativeSkills = 60
 )
 
 $ErrorActionPreference = "Stop"
@@ -194,8 +198,8 @@ Assert-True -Condition ($readiness.readyRequired.ready -eq 13 -and $readiness.re
   -Message "Launch-required readiness was not 13/13."
 Assert-True -Condition ($readiness.totalManifestSkills -eq 61) `
   -Message "Classified default manifest was not 61."
-Assert-True -Condition ($readiness.installedNativeSkills -ge 61) `
-  -Message "Installed Native workspace skill count was below 61."
+Assert-True -Condition ($readiness.installedNativeSkills -ge $MinimumInstalledNativeSkills) `
+  -Message "Installed Native package/workspace skill count was below $MinimumInstalledNativeSkills."
 Assert-True -Condition ($readiness.unexpectedMissingDependency -eq 0) `
   -Message "Unexpected missing dependency count was not zero."
 
@@ -241,8 +245,8 @@ if (-not $SkipChatSmokes) {
 }
 
 $result = [pscustomobject]@{
-  phase = "6D-A"
-  mode = "non-destructive release rehearsal"
+  phase = $Phase
+  mode = $Mode
   startedAt = $startedAt.ToString("o")
   completedAt = (Get-Date).ToString("o")
   deviceId = $resolvedDevice
@@ -261,7 +265,8 @@ $result = [pscustomobject]@{
   chatSmokes = $chatSmokes
   strictPass = ($failedRequired.Count -eq 0)
   notes = @(
-    "No app data was cleared.",
+    $DataStateNote,
+    "installedNativeSkills counts file-backed OpenClaw package/workspace skill roots; app-native manifest capabilities are not all file-backed directories.",
     "Instruction-only Class A skills and UI-stateful canvas remain interactive chat/UI pass items.",
     "Chat smoke results are recorded but not part of the strict local release gate."
   )
@@ -274,9 +279,9 @@ New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 $result | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $outputFullPath -Encoding UTF8
 
 Write-Host ""
-Write-Host "Phase 6D-A release rehearsal strict pass: $($result.strictPass)"
+Write-Host "Phase $Phase release rehearsal strict pass: $($result.strictPass)"
 Write-Host "Device: $resolvedDevice"
 Write-Host "Release gate: $($result.releaseGatePass), ready_required: $($result.readyRequired)"
-Write-Host "Manifest: $($result.totalManifestSkills), Native workspace: $($result.installedNativeSkills), unexpected: $($result.unexpectedMissingDependency)"
+Write-Host "Manifest: $($result.totalManifestSkills), Native package/workspace: $($result.installedNativeSkills), unexpected: $($result.unexpectedMissingDependency)"
 Write-Host "Required tool smokes: $(@($toolSmokes | Where-Object { $_.ok }).Count)/$(@($toolSmokes).Count)"
 Write-Host "Artifact: $outputFullPath"

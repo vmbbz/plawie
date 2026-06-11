@@ -2463,15 +2463,35 @@ class _SkillParityLayout {
       Directory(path.join(nativeStateRoot, 'skills'));
   Directory get nativeWorkspaceSkillsRoot =>
       Directory(path.join(nativeStateRoot, 'workspace', 'skills'));
+  Directory get nativePackageSkillsRoot => Directory(path.join(
+        filesDir,
+        'native-node-embedded',
+        'full-openclaw',
+        'lib',
+        'node_modules',
+        'openclaw',
+        'skills',
+      ));
   Directory get prootSkillsRoot =>
       Directory(path.join(prootStateRoot, 'skills'));
   Directory get prootWorkspaceSkillsRoot =>
       Directory(path.join(prootStateRoot, 'workspace', 'skills'));
+  Directory get prootPackageSkillsRoot => Directory(path.join(
+        filesDir,
+        'rootfs',
+        'ubuntu',
+        'usr',
+        'local',
+        'lib',
+        'node_modules',
+        'openclaw',
+        'skills',
+      ));
 
   List<Directory> get nativeSkillRoots =>
-      [nativeSkillsRoot, nativeWorkspaceSkillsRoot];
+      [nativeSkillsRoot, nativeWorkspaceSkillsRoot, nativePackageSkillsRoot];
   List<Directory> get prootSkillRoots =>
-      [prootSkillsRoot, prootWorkspaceSkillsRoot];
+      [prootSkillsRoot, prootWorkspaceSkillsRoot, prootPackageSkillsRoot];
 
   List<Directory> get nativePluginRoots => [
         nativePluginsRoot,

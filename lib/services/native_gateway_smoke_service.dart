@@ -17613,17 +17613,31 @@ class NativeGatewaySmokeService {
 
   static Future<Set<String>> _scanProductionSkillIds() async {
     final filesDir = await NativeBridge.getFilesDir();
-    final skillsDir =
-        Directory('$filesDir/rootfs/ubuntu/root/.openclaw/skills');
-    if (!await skillsDir.exists()) return <String>{};
-
     final ids = <String>{};
-    await for (final entry in skillsDir.list(followLinks: false)) {
-      if (entry is! Directory) continue;
-      final id = entry.uri.pathSegments.isNotEmpty
-          ? entry.uri.pathSegments.where((segment) => segment.isNotEmpty).last
-          : '';
-      if (id.isNotEmpty && !id.startsWith('.')) ids.add(id);
+    final roots = [
+      Directory('$filesDir/rootfs/ubuntu/root/.openclaw/skills'),
+      Directory('$filesDir/rootfs/ubuntu/root/.openclaw/workspace/skills'),
+      Directory(
+        '$filesDir/rootfs/ubuntu/usr/local/lib/node_modules/openclaw/skills',
+      ),
+      Directory('$filesDir/native-node-embedded/native-home/.openclaw/skills'),
+      Directory(
+        '$filesDir/native-node-embedded/native-home/.openclaw/workspace/skills',
+      ),
+      Directory(
+        '$filesDir/native-node-embedded/full-openclaw/lib/node_modules/openclaw/skills',
+      ),
+    ];
+
+    for (final root in roots) {
+      if (!await root.exists()) continue;
+      await for (final entry in root.list(followLinks: false)) {
+        if (entry is! Directory) continue;
+        final id = entry.uri.pathSegments.isNotEmpty
+            ? entry.uri.pathSegments.where((segment) => segment.isNotEmpty).last
+            : '';
+        if (id.isNotEmpty && !id.startsWith('.')) ids.add(id);
+      }
     }
     return ids;
   }

@@ -83,11 +83,17 @@ class OpenClawCommandService {
     final prootRoots = <Directory>[
       Directory('$filesDir/rootfs/ubuntu/root/.openclaw/skills'),
       Directory('$filesDir/rootfs/ubuntu/root/.openclaw/workspace/skills'),
+      Directory(
+        '$filesDir/rootfs/ubuntu/usr/local/lib/node_modules/openclaw/skills',
+      ),
     ];
     final nativeRoots = <Directory>[
       Directory('$filesDir/native-node-embedded/native-home/.openclaw/skills'),
       Directory(
         '$filesDir/native-node-embedded/native-home/.openclaw/workspace/skills',
+      ),
+      Directory(
+        '$filesDir/native-node-embedded/full-openclaw/lib/node_modules/openclaw/skills',
       ),
     ];
 

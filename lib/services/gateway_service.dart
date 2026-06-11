@@ -1888,6 +1888,7 @@ class GatewayService {
     final operationalDeadline = DateTime.now().add(const Duration(seconds: 90));
     Object? lastOperationalError;
     var minimalReadinessStreak = 0;
+    DateTime? lastAndroidReleaseGateStartupProbeAt;
     while (DateTime.now().isBefore(operationalDeadline)) {
       if (DateTime.now().difference(startTime) > timeout) {
         break;
@@ -1909,6 +1910,29 @@ class GatewayService {
 
         final wsReady = _state.isWebsocketConnected ||
             _connection?.state == GatewayConnectionState.connected;
+        final shouldProbeAndroidReleaseGate =
+            lastAndroidReleaseGateStartupProbeAt == null ||
+                DateTime.now()
+                        .difference(lastAndroidReleaseGateStartupProbeAt) >
+                    const Duration(seconds: 12);
+        if (_state.isReady &&
+            wsReady &&
+            shouldProbeAndroidReleaseGate &&
+            await _androidReleaseGateReadyForStartup(
+              reason: 'startup-operational-fallback',
+            )) {
+          unawaited(_ensureNodeConnectedAfterGatewayReady(
+            reason: 'startup-android-release-gate-ready',
+            allowDuringWarmup: true,
+          ));
+          debugPrint(
+              '✅ Gateway Android release gate ready; RPC discovery still warming.');
+          return;
+        }
+        if (shouldProbeAndroidReleaseGate) {
+          lastAndroidReleaseGateStartupProbeAt = DateTime.now();
+        }
+
         final healthReady = _state.detailedHealth != null;
         if (_state.isReady && wsReady && healthReady) {
           minimalReadinessStreak++;
@@ -1938,6 +1962,51 @@ class GatewayService {
       'skills=${_state.activeSkills?.length ?? 0}, '
       'last=$lastOperationalError)',
     );
+  }
+
+  Future<bool> _androidReleaseGateReadyForStartup({
+    required String reason,
+  }) async {
+    if (_runtime.id !=
+        GatewayRuntimeRegistry.nativeNodeFullGatewayProduction.id) {
+      return false;
+    }
+    try {
+      final snapshot = await SkillParityAuditService.instance
+          .audit(
+            repairNativeFromProot: false,
+            cacheTtl: Duration.zero,
+          )
+          .timeout(const Duration(seconds: 12));
+      final provisioning = await SkillProvisioningService.instance
+          .planSnapshot(snapshot)
+          .timeout(const Duration(seconds: 20));
+      final androidReadiness = AndroidSkillReadinessService.instance.summarize(
+        snapshot: snapshot,
+        provisioning: provisioning,
+      );
+      _lastSkillParitySnapshot = snapshot;
+      _lastSkillProvisioningReport = provisioning;
+      _updateState(_state.copyWith(
+        skillProvisioning: provisioning.toJson(),
+        androidDefaultReadiness: androidReadiness.toHealthJson(),
+      ));
+      if (!androidReadiness.releaseGatePass) return false;
+      _lastSkillParityPromptBlock = [
+        snapshot.toPromptBlock(maxGates: 0),
+        provisioning.toPromptBlock(maxSkills: 0),
+      ].where((block) => block.trim().isNotEmpty).join('\n');
+      _addActivity(
+        '[SETUP] Android release gate ready during $reason: '
+        '${androidReadiness.readyRequiredReady}/'
+        '${androidReadiness.readyRequiredTotal}, '
+        'nativeSkills=${snapshot.nativeSkillCount}.',
+      );
+      return true;
+    } catch (e) {
+      _addActivity('[SETUP] Android release gate probe failed: $e');
+      return false;
+    }
   }
 
   void _subscribeLogs() {
