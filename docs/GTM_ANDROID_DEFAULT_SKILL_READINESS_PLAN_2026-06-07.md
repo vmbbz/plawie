@@ -4020,6 +4020,50 @@ Next logical phase:
     - after sync, run the next full RC rehearsal against the release checklist
 ```
 
+Phase 6M branch sync preflight started:
+
+```text
+Date:
+  2026-06-11
+
+Current branch:
+  native-node-gateway-research
+
+Upstream:
+  origin/native-node-gateway-research
+
+Sync state before this Phase 6M doc commit:
+  ahead: 34 commits
+  behind: 0 observed from local tracking state
+
+Expected sync state after this Phase 6M doc commit:
+  ahead: 35 commits
+  behind: 0 observed from local tracking state
+
+Newest local commits awaiting sync:
+  07aac92 Polish Android skill config gate labels
+  1ff7463 Document Phase 6K voice proof
+  85a64d9 Align Android voice lane with Gateway Talk
+  a9a6a21 Refresh Android pack blocker decision
+  a364c07 Document Phase 6H Android skill truth
+  134b1be Close Android skill config coverage gaps
+
+Dirty files intentionally not staged:
+  android/build/reports/problems/problems-report.html
+    generated Gradle report; do not commit unless deliberately requested
+
+  -y
+  docs/REFRESH_YOUR_MEMORY_ASSHOLE.MD
+  gateway_logs.md
+    pre-existing/untracked scratch or local docs; not part of Phase 6L/6M
+
+Decision:
+  The branch is ready for an explicit push/sync command after a final user
+  greenlight. Do not push APKs, generated reports, or unrelated scratch files.
+  If we do not push immediately, the next engineering phase should be the full
+  RC rehearsal against the release checklist, not a new binary lane.
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android
