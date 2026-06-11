@@ -34,6 +34,8 @@ void main() {
     expect(discord, isNotNull);
     expect(discord!.envKeys, ['DISCORD_BOT_TOKEN']);
     expect(discord.configKeys, isEmpty);
+    expect(discord.runtimeGate, 'missing_native_config');
+    expect(discord.runtimeGateLabel, 'needs config');
     expect(discord.configOnlyCanSatisfy, isTrue);
 
     final slack = AndroidSkillConfigFormModel.fromReadiness(
@@ -43,6 +45,7 @@ void main() {
     expect(slack, isNotNull);
     expect(slack!.envKeys, ['SLACK_BOT_TOKEN']);
     expect(slack.configKeys, ['channels.slack']);
+    expect(slack.runtimeGateLabel, 'needs config');
     expect(slack.configOnlyCanSatisfy, isTrue);
 
     final voiceCall = AndroidSkillConfigFormModel.fromReadiness(
@@ -52,6 +55,7 @@ void main() {
     expect(voiceCall, isNotNull);
     expect(voiceCall!.envKeys, ['TWILIO_ACCOUNT_SID']);
     expect(voiceCall.runtimeGate, 'missing_native_bin');
+    expect(voiceCall.runtimeGateLabel, 'missing native bin');
     expect(voiceCall.configOnlyCanSatisfy, isFalse);
   });
 
@@ -287,6 +291,7 @@ void main() {
     expect(eightctl.envKeys, ['EIGHTCTL_PASSWORD']);
     expect(eightctl.configKeys, isEmpty);
     expect(eightctl.runtimeGate, 'needs_config');
+    expect(eightctl.runtimeGateLabel, 'needs config');
     expect(eightctl.configOnlyCanSatisfy, isTrue);
 
     final password = eightctl.fields.firstWhere(
@@ -331,6 +336,7 @@ void main() {
       readiness,
       'spotify-player',
     )!;
+    expect(spotify.runtimeGateLabel, 'needs config');
     expect(spotify.configOnlyCanSatisfy, isFalse);
   });
 }

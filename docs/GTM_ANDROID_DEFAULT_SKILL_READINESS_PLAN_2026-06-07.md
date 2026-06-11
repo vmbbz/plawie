@@ -3934,6 +3934,92 @@ Next logical phase:
     - then sync the branch when the repo is ready to push
 ```
 
+Phase 6L Skills UI RC smoke landed:
+
+```text
+Date:
+  2026-06-11
+
+Scope:
+  Re-probe the installed Skills UI after the Gateway Talk correction, preserve
+  user data, avoid screenshots, avoid fake credential saves, and verify that
+  the visible app copy matches the current readiness truth.
+
+Target device:
+  RZCX30KA9AW / Samsung SM-A556E / Android 14 API 34
+
+Installed UI proof:
+  Gateway status after reinstall: LIVE
+  Management route: Dashboard -> Bots -> Skills
+
+  Skills page:
+    ANDROID DEFAULT READINESS: PASS
+    Android now: 30/51
+    Config blockers: 15
+    Pack blockers: 6
+    Outside GTM: 10
+    CONFIG GATES visible with LIVE / SETUP / SAVE badges
+
+  Representative config sheets:
+    discord LIVE:
+      sheet opens as Discord
+      Runtime gate: needs config
+      Credentials section visible
+      primary action: Save & Check
+
+    eightctl SAVE:
+      sheet opens as Eight Sleep
+      Runtime gate: needs config
+      Credentials section visible
+      primary action: Save & Check
+      no fake Eight Sleep password saved
+
+    voice-call SETUP:
+      sheet opens as Voice Call
+      Runtime gate: needs config
+      Provider defaults to twilio
+      Enable voice-call skill toggle visible
+      primary action: Save & Check
+      no fake voice provider account saved
+
+UI correction found and fixed during smoke:
+  The sheets were exposing internal gate labels such as missing native env and
+  missing native config. The model now translates these user-actionable config
+  gates to needs config while preserving the raw gate values for logic.
+
+Gateway/agent loop proof:
+  GET /api/tools advertises 25 tools.
+  POST /api/tools/execute summarize:
+    success: true
+    runtime: app-native-extractive-summary
+    summary: OpenClaw Android keeps skill execution routed through Gateway
+             tools.
+
+Verification:
+  flutter test test/android_skill_config_form_model_test.dart
+    test/android_skill_config_sheet_test.dart: PASS, 26/26
+  flutter analyze: PASS
+  flutter build apk --debug: PASS
+  flutter install -d RZCX30KA9AW --debug: PASS
+
+Non-goals:
+  No app data clear, no onboarding reset, no screenshot capture, no fake
+  credential save, no billed/provider live config calls, and no readiness count
+  inflation.
+
+Readiness impact:
+  release gate remains PASS
+  Android-relevant ready remains 30/51
+
+Next logical phase:
+  Phase 6M is branch sync / RC preflight, not another capability chase:
+    - commit this UI-smoke correction and doc proof
+    - keep generated APKs/reports/temp files out of the commit
+    - inspect tracked/untracked repo state before any push
+    - push/sync only when explicitly greenlit for the branch
+    - after sync, run the next full RC rehearsal against the release checklist
+```
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android

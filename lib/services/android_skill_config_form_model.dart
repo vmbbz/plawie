@@ -75,6 +75,12 @@ class AndroidSkillConfigFormModel {
 
   String get runtimeGateLabel {
     if (runtimeGate == null || runtimeGate!.isEmpty) return 'config';
+    final normalized = runtimeGate!.trim().toLowerCase();
+    if (normalized == 'missing_native_config' ||
+        normalized == 'missing_native_env' ||
+        normalized == 'needs_user_config') {
+      return 'needs config';
+    }
     return runtimeGate!.replaceAll('_', ' ');
   }
 
