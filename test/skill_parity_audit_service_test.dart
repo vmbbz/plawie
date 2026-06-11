@@ -656,6 +656,56 @@ Providers
     expect(entry.status, SkillExecutionStatus.ready);
   });
 
+  test('account email env vars in high-confidence env lines become gates',
+      () async {
+    final temp = await Directory.systemTemp.createTemp('skill_email_env_test_');
+    addTearDown(() => temp.delete(recursive: true));
+
+    final nativeRoot = path.join(
+      temp.path,
+      'native-node-embedded',
+      'native-home',
+      '.openclaw',
+    );
+    final nativeSkills = Directory(path.join(nativeRoot, 'skills'));
+    final nativeBin = Directory(path.join(nativeRoot, 'bin'));
+    await nativeSkills.create(recursive: true);
+    await nativeBin.create(recursive: true);
+    await File(path.join(nativeBin.path, 'eightctl')).writeAsString(
+      '#!/system/bin/sh\nexit 0\n',
+      flush: true,
+    );
+
+    final eightctl = Directory(path.join(nativeSkills.path, 'eightctl'));
+    await eightctl.create(recursive: true);
+    await File(path.join(eightctl.path, 'SKILL.md')).writeAsString('''
+---
+metadata:
+  openclaw:
+    requires:
+      bins:
+        - eightctl
+---
+# eightctl
+
+Auth
+
+- Env: `EIGHTCTL_EMAIL`, `EIGHTCTL_PASSWORD`
+''');
+
+    final snapshot = await SkillParityAuditService.instance.audit(
+      filesDir: temp.path,
+      repairNativeFromProot: false,
+      cacheTtl: Duration.zero,
+    );
+    final entry = snapshot.executionMatrix.single;
+
+    expect(entry.requiredBins, ['eightctl']);
+    expect(entry.requiredEnv, ['EIGHTCTL_EMAIL', 'EIGHTCTL_PASSWORD']);
+    expect(entry.gates, contains('missing_native_env'));
+    expect(entry.status, SkillExecutionStatus.needsConfig);
+  });
+
   test('python debugpy commands create a package gate beyond python3',
       () async {
     final temp =

@@ -337,6 +337,10 @@ void main() {
     );
 
     await tester.enterText(
+      _textFieldByLabel('Eight Sleep email'),
+      'user@example.com',
+    );
+    await tester.enterText(
       _textFieldByLabel('Eight Sleep password'),
       'eight-password',
     );
@@ -608,7 +612,7 @@ AndroidSkillConfigFormModel _eightctlModel() {
     'androidSupport': 'needs_pack',
     'runtimeStatus': 'needs_config',
     'provisioningStatus': 'needs_user_config',
-    'requiredEnv': ['EIGHTCTL_PASSWORD'],
+    'requiredEnv': ['EIGHTCTL_EMAIL', 'EIGHTCTL_PASSWORD'],
     'ready': false,
   });
 }

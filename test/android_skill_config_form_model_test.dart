@@ -270,7 +270,7 @@ void main() {
           'androidSupport': 'needs_pack',
           'runtimeStatus': 'needs_config',
           'provisioningStatus': 'needs_user_config',
-          'requiredEnv': ['EIGHTCTL_PASSWORD'],
+          'requiredEnv': ['EIGHTCTL_EMAIL', 'EIGHTCTL_PASSWORD'],
           'ready': false,
         },
         {
@@ -288,11 +288,19 @@ void main() {
 
     final eightctl = forms.single;
     expect(eightctl.title, 'Eight Sleep');
-    expect(eightctl.envKeys, ['EIGHTCTL_PASSWORD']);
+    expect(eightctl.envKeys, ['EIGHTCTL_EMAIL', 'EIGHTCTL_PASSWORD']);
     expect(eightctl.configKeys, isEmpty);
     expect(eightctl.runtimeGate, 'needs_config');
     expect(eightctl.runtimeGateLabel, 'needs config');
     expect(eightctl.configOnlyCanSatisfy, isTrue);
+
+    final email = eightctl.fields.firstWhere(
+      (field) => field.key == 'EIGHTCTL_EMAIL',
+    );
+    expect(email.label, 'Eight Sleep email');
+    expect(email.group, 'Account');
+    expect(email.inputKind, AndroidSkillConfigInputKind.text);
+    expect(email.secret, isFalse);
 
     final password = eightctl.fields.firstWhere(
       (field) => field.key == 'EIGHTCTL_PASSWORD',
@@ -311,7 +319,7 @@ void main() {
           'androidSupport': 'needs_pack',
           'runtimeStatus': 'needs_config',
           'provisioningStatus': 'needs_user_config',
-          'requiredEnv': ['EIGHTCTL_PASSWORD'],
+          'requiredEnv': ['EIGHTCTL_EMAIL', 'EIGHTCTL_PASSWORD'],
           'ready': false,
         },
         {

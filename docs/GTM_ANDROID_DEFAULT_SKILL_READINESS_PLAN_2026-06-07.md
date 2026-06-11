@@ -173,7 +173,8 @@ Static needs_config taxonomy entries: 14
 Current config-gated rows users can act on in UI after Phase 6H device proof: 15
   = 14 static needs_config entries
   + eightctl, whose APK-local binary pack is satisfied but whose live runtime
-    gate remains needs_config until EIGHTCTL_PASSWORD account config exists
+    gate remains needs_config until EIGHTCTL_EMAIL and EIGHTCTL_PASSWORD
+    account config exists
 
 Unready needs_pack taxonomy entries: 7
   = 17 needs_pack taxonomy entries - 10 ready needs_pack skills
@@ -217,6 +218,91 @@ payload plus the Songsee audio-runtime payload plus the Gifgrep vision-media
 payload. Account, LAN, and real-service workflow smokes are still pending where
 a skill requires credentials, devices, local network discovery, or a real
 external service.
+
+## Phase 6O Blocker Burn-Down Audit
+
+Phase 6O-A re-audited the remaining Android-relevant unready rows against
+installed-device `/device/health`, `/api/tools`, the app manifest, the
+AgentSkillServer routing table, bundled APK artifacts, and the installed
+OpenClaw `SKILL.md` files.
+
+The finding is:
+
+```text
+Already product-correct user config:
+  discord, gh-issues, github, goplaces, mcporter, notion,
+  openai-whisper-api, slack, trello
+
+Provider/setup config:
+  voice-call
+
+Real code-changeable correction found:
+  eightctl
+    The installed SKILL.md requires EIGHTCTL_EMAIL and EIGHTCTL_PASSWORD.
+    Live readiness had only surfaced EIGHTCTL_PASSWORD because the parity
+    detector did not recognize required *_EMAIL env vars.
+
+Mixed config plus missing runtime/artifact:
+  1password, gog, ordercli, sag
+    These are not clearable by saving config alone. They need either a real
+    Android app-native adapter with a production contract or a real Android
+    binary/artifact lane.
+
+True remaining pack/artifact lanes:
+  coding-agent, gemini, node-inspect-debugger, openai-whisper,
+  sherpa-onnx-tts, spotify-player
+```
+
+Phase 6O-B fixed the code-changeable `eightctl` issue without readiness
+inflation:
+
+```text
+Parity detector:
+  required high-confidence *_EMAIL variables now become env gates.
+
+Config form:
+  EIGHTCTL_EMAIL is exposed as an Eight Sleep account email field.
+  EIGHTCTL_PASSWORD remains the secret password field.
+
+Tests:
+  skill parity audit now proves EIGHTCTL_EMAIL + EIGHTCTL_PASSWORD detection.
+  readiness service, readiness view model, config form, and config sheet
+  fixtures now encode the complete Eight Sleep setup contract.
+```
+
+This does not make `eightctl` ready for fresh users by itself. It makes the
+setup gate honest and complete. A later production live-check adapter can be
+added only if we decide `eightctl whoami` or `eightctl status` is acceptable as
+a safe account/device validation call after the user provides real credentials.
+
+Device proof after Phase 6O-B install-over-existing-data on `RZCX30KA9AW`:
+
+```text
+install mode:
+  adb install -r -d build/app/outputs/flutter-apk/app-debug.apk
+  no uninstall
+  no data clear
+
+/device/health:
+  releaseGatePass: true
+  readyRequired: 13/13
+  Android-relevant ready: 30/51
+  totalManifestSkills: 61
+  countsByClass:
+    ready_required: 13
+    ready_optional: 7
+    needs_config: 14
+    needs_pack: 17
+    unsupported_on_android: 6
+    manual_proot_compat: 2
+    hidden_desktop_only: 2
+
+eightctl:
+  runtimeStatus: needs_config
+  provisioningStatus: needs_user_config
+  requiredEnv: EIGHTCTL_EMAIL, EIGHTCTL_PASSWORD
+  ready: false
+```
 
 ## Latest Installed Device Truth
 
@@ -268,7 +354,8 @@ Current pack-gate truth:
     sherpa-onnx-tts, spotify-player
   pack-class row moved to CONFIG GATES: eightctl
     reason: android-cli-core pack is satisfied; remaining gate is
-    EIGHTCTL_PASSWORD user/device config, with no missing bin/pack evidence
+    EIGHTCTL_EMAIL plus EIGHTCTL_PASSWORD user/device config, with no missing
+    bin/pack evidence
 
 Repo asset audit:
   present APK-local payload lanes:
@@ -345,7 +432,8 @@ video-frames: runtimeStatus ready, provisioningStatus ready,
 sonoscli: runtimeStatus ready, provisioningStatus ready,
           APK-local sonos payload satisfies the binary gate
 eightctl: runtimeStatus needs_config, provisioningStatus needs_user_config,
-          APK-local eightctl payload exists, requiredEnv EIGHTCTL_PASSWORD,
+          APK-local eightctl payload exists, requiredEnv EIGHTCTL_EMAIL
+          plus EIGHTCTL_PASSWORD,
           no missing pack/bin evidence, belongs in CONFIG GATES
 spotify-player: runtimeStatus missing_dependency,
                 provisioningStatus missing_binary,
@@ -3433,7 +3521,7 @@ Device proof after Phase 6C install:
   classified default manifest: 61
   installed Native workspace skills: 65
   unexpected_missing_dependency: 0
-  eightctl requiredEnv: EIGHTCTL_PASSWORD
+  eightctl requiredEnv: EIGHTCTL_EMAIL, EIGHTCTL_PASSWORD
   eightctl requiredConfig: none
   voice-call requiredConfig:
     VOICE_CALL_PROVIDER

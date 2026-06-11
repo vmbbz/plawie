@@ -225,6 +225,14 @@ AndroidSkillConfigFieldModel _fieldFor(String skillId, String key) {
         label: 'Eight Sleep password',
         inputHint: 'Paste the Eight Sleep account password',
       );
+    case 'EIGHTCTL_EMAIL':
+      return _envField(
+        key,
+        label: 'Eight Sleep email',
+        group: 'Account',
+        inputKind: AndroidSkillConfigInputKind.text,
+        inputHint: 'you@example.com',
+      );
     case 'EIGHT_SLEEP_EMAIL':
       return _envField(
         key,

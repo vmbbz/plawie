@@ -177,7 +177,7 @@ void main() {
           'androidSupport': 'needs_pack',
           'runtimeStatus': 'needs_config',
           'provisioningStatus': 'needs_user_config',
-          'requiredEnv': ['EIGHTCTL_PASSWORD'],
+          'requiredEnv': ['EIGHTCTL_EMAIL', 'EIGHTCTL_PASSWORD'],
           'ready': false,
         },
       ],
@@ -243,7 +243,7 @@ void main() {
           'androidSupport': 'needs_pack',
           'runtimeStatus': 'needs_config',
           'provisioningStatus': 'needs_user_config',
-          'requiredEnv': ['EIGHTCTL_PASSWORD'],
+          'requiredEnv': ['EIGHTCTL_EMAIL', 'EIGHTCTL_PASSWORD'],
           'ready': false,
         },
         {
@@ -382,7 +382,7 @@ void main() {
           'androidSupport': 'needs_pack',
           'runtimeStatus': 'needs_config',
           'provisioningStatus': 'needs_user_config',
-          'requiredEnv': ['EIGHTCTL_PASSWORD'],
+          'requiredEnv': ['EIGHTCTL_EMAIL', 'EIGHTCTL_PASSWORD'],
           'ready': false,
         },
         {
@@ -406,6 +406,7 @@ void main() {
       model.topNeedsConfig.map((item) => item.skillId),
       ['eightctl', 'slack'],
     );
+    expect(model.topNeedsConfig.first.detail, contains('EIGHTCTL_EMAIL'));
     expect(model.topNeedsConfig.first.detail, contains('EIGHTCTL_PASSWORD'));
     expect(
       model.topNeedsPack.map((item) => item.skillId),
@@ -429,7 +430,7 @@ void main() {
           'androidSupport': 'needs_pack',
           'runtimeStatus': 'needs_config',
           'provisioningStatus': 'needs_user_config',
-          'requiredEnv': ['EIGHTCTL_PASSWORD'],
+          'requiredEnv': ['EIGHTCTL_EMAIL', 'EIGHTCTL_PASSWORD'],
           'ready': false,
         },
         {

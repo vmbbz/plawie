@@ -19,8 +19,8 @@ class SkillParityAuditService {
   static const _nativePythonRuntimeVersion = '3.13';
   static final _skillNamePattern = RegExp(r'^@?[a-zA-Z0-9][a-zA-Z0-9._@-]*$');
   static final _envPattern = RegExp(
-    r'\b[A-Z][A-Z0-9_]{2,}(?:API_KEY|TOKEN|SECRET|CLIENT_ID|CLIENT_SECRET|AUTH|KEY|URL|HOST|PASSWORD)\b'
-    r'|\b(?:[A-Z][A-Z0-9_]{2,}_(?:API_KEY|TOKEN|SECRET|CLIENT_ID|CLIENT_SECRET|AUTH|KEY|URL|HOST|PASSWORD))\b',
+    r'\b[A-Z][A-Z0-9_]{2,}(?:API_KEY|TOKEN|SECRET|CLIENT_ID|CLIENT_SECRET|AUTH|KEY|URL|HOST|PASSWORD|EMAIL)\b'
+    r'|\b(?:[A-Z][A-Z0-9_]{2,}_(?:API_KEY|TOKEN|SECRET|CLIENT_ID|CLIENT_SECRET|AUTH|KEY|URL|HOST|PASSWORD|EMAIL))\b',
   );
   static const _knownBins = <String>{
     'bash',
