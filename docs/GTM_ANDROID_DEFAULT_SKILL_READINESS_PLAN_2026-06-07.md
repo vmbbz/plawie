@@ -4335,6 +4335,189 @@ Next logical phase:
        proof for this branch checkpoint.
 ```
 
+## Phase 6P - Replace Four Standby Gates With Real Android REST Adapters
+
+Date: 2026-06-12
+
+User directive:
+  Do not solve Android readiness by adding more save-only wording. If a usable
+  Android path exists, wire it. Only local Whisper and Sherpa ONNX TTS are
+  accepted as luxury lanes for now.
+
+Primary-source research decisions:
+  1Password:
+    Source: https://www.1password.dev/connect/api-reference
+    Decision: service-account tokens are for the official `op` CLI path, but
+    the production-safe Android REST path is 1Password Connect Server. Android
+    now supports `OP_CONNECT_HOST` + `OP_CONNECT_TOKEN` and validates with a
+    safe vault metadata read.
+
+  Gemini:
+    Source: https://ai.google.dev/api/models
+    Decision: do not wait for a standalone Android Gemini CLI pack when the
+    official Gemini API exposes model discovery and generation over REST.
+    Android now supports `GEMINI_API_KEY` and validates by listing models.
+
+  SAG:
+    Sources:
+      https://elevenlabs.io/docs/api-reference/voices/search
+      https://elevenlabs.io/docs/api-reference/text-to-speech/convert
+    Decision: no reliable standalone SAG CLI source was found in the local
+    repo or primary public search. Treat the GTM-ready Android path as the
+    ElevenLabs REST API surface. Android now supports `ELEVENLABS_API_KEY`
+    and validates by listing voices; speech synthesis is wired as an explicit
+    `sag.speak` call, not as the setup smoke.
+
+  Spotify:
+    Source:
+      https://developer.spotify.com/documentation/web-api/reference/get-current-users-profile
+    Decision: do not block basic Spotify usability on the Rust `spotify-player`
+    CLI or an Android audio runtime when the official Web API can prove account
+    access. Android now supports `SPOTIFY_ACCESS_TOKEN` and validates with a
+    safe profile read. Playback metadata is wired as a read-only follow-up call.
+
+Implementation:
+  Added app-native capabilities:
+    lib/services/capabilities/one_password_capability.dart
+    lib/services/capabilities/gemini_capability.dart
+    lib/services/capabilities/sag_capability.dart
+    lib/services/capabilities/spotify_capability.dart
+    lib/services/capabilities/native_env.dart
+
+  Gateway/agent routing:
+    AgentSkillServer now routes:
+      1password.vaults
+      gemini.models
+      gemini.generate
+      sag.voices
+      sag.speak
+      spotify-player.profile
+      spotify-player.currently-playing
+
+    GatewayToolCatalog mobile allowlist includes the same commands so configured
+    users can call them immediately through Android node/tool dispatch.
+
+  Skills catalog:
+    SkillsService now bundles:
+      1password
+      gemini
+      sag
+      spotify-player
+
+    Each exposes a concrete input schema and executes through the existing
+    app-native HTTP adapter path.
+
+  Config/test UX:
+    AndroidSkillConfigTestPlan now provides LIVE connection checks for:
+      1password
+      gemini
+      sag
+      spotify-player
+
+    AndroidSkillConfigFormModel now exposes production credential fields:
+      OP_CONNECT_HOST
+      OP_CONNECT_TOKEN
+      GEMINI_API_KEY
+      ELEVENLABS_API_KEY
+      SPOTIFY_ACCESS_TOKEN
+
+Manifest taxonomy impact:
+  1password:
+    remains needs_config, now appNativeCapability/httpAdapter.
+
+  gemini:
+    moves from needs_pack/android-gemini-cli-pack to
+    needs_config/appNativeCapability/httpAdapter.
+
+  sag:
+    remains needs_config, now appNativeCapability/httpAdapter and
+    ELEVENLABS_API_KEY-backed.
+
+  spotify-player:
+    moves from needs_pack/android-audio-runtime to
+    needs_config/appNativeCapability/httpAdapter for REST-backed account and
+    playback metadata.
+
+  Static class count movement:
+    needs_config: 14 -> 16
+    needs_pack: 17 -> 15
+
+Verification:
+  TDD red check:
+    The first focused run failed for the intended reasons: missing adapter files,
+    missing config-test plans, and stale manifest classifications.
+
+  Analyzer:
+    flutter analyze
+      lib/services/capabilities/native_env.dart
+      lib/services/capabilities/gemini_capability.dart
+      lib/services/capabilities/one_password_capability.dart
+      lib/services/capabilities/sag_capability.dart
+      lib/services/capabilities/spotify_capability.dart
+      lib/services/agent_skill_server.dart
+      lib/services/gateway_tool_catalog.dart
+      lib/services/skills_service.dart
+      lib/services/android_skill_support_manifest.dart
+      lib/services/android_skill_config_test_plan.dart
+      lib/services/android_skill_config_form_model.dart
+    Result: No issues found.
+
+  Focused tests:
+    flutter test
+      test/gemini_app_native_adapter_test.dart
+      test/one_password_app_native_adapter_test.dart
+      test/sag_app_native_adapter_test.dart
+      test/spotify_player_app_native_adapter_test.dart
+      test/android_skill_config_test_plan_test.dart
+      test/android_skill_config_form_model_test.dart
+      test/android_skill_config_sheet_test.dart
+      test/android_skill_support_manifest_test.dart
+      test/android_skill_readiness_view_model_test.dart
+      test/android_skill_readiness_service_test.dart
+    Result: All tests passed, 77/77.
+
+Remaining non-luxury blockers after Phase 6P:
+  ordercli:
+    Still requires a production-safe Android account/session strategy. The
+    available public CLI path includes private service APIs and browser-heavy
+    auth flows; next work is to isolate read-only order/status operations behind
+    a non-destructive adapter or mark exact incompatibility with primary proof.
+
+  gog:
+    Still ambiguous. The current manifest says GOG account token, but earlier
+    audit notes suggest the installed skill identity may be Google Workspace
+    `gog`, not GOG Galaxy. Next work is to resolve the skill identity from the
+    actual ClawHub/default skill source before wiring an adapter.
+
+  eightctl:
+    Android CLI pack exists, but live account/device validation is still not
+    app-native. Next work is to wire a safe account/device status check instead
+    of stopping at `eightctl version`.
+
+  voice-call:
+    Twilio setup status exists, but true provider parity still needs safe
+    account-status adapters for Telnyx/custom providers before they should be
+    presented as fully testable.
+
+  coding-agent and node-inspect-debugger:
+    Still blocked by standalone Node/execution-host work. This is not a label
+    problem; it is the remaining runtime packaging/compatibility problem.
+
+  openai-whisper and sherpa-onnx-tts:
+    Explicitly kept as luxury lanes per user directive because Gateway Talk and
+    OpenAI Whisper API cover the GTM voice path.
+
+Next implementation order:
+  1. Resolve `gog` identity from actual skill source and either wire the correct
+     official API adapter or document exact incompatibility.
+  2. Turn `eightctl` from binary-version-only into live safe account/device
+     validation.
+  3. Replace Twilio placeholder status with safe provider REST account checks,
+     then add Telnyx/custom health checks.
+  4. Re-audit ordercli for a read-only, non-browser Android path.
+  5. Continue standalone Node/runtime packaging for coding-agent and
+     node-inspect-debugger.
+
 ## Success Definition
 
 The release is not "13 skills." The release is a truthful, expanding Android

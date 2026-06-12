@@ -120,6 +120,38 @@ class SkillsService {
     'slack_post': 'slack',
     'slack post': 'slack',
     'slack.post': 'slack',
+    '1password_vaults': '1password',
+    '1password.vaults': '1password',
+    'onepassword': '1password',
+    'onepassword_vaults': '1password',
+    'onepassword.vaults': '1password',
+    'op': '1password',
+    'op_vaults': '1password',
+    'op.vaults': '1password',
+    'gemini_models': 'gemini',
+    'gemini.models': 'gemini',
+    'gemini_status': 'gemini',
+    'gemini.status': 'gemini',
+    'gemini_generate': 'gemini',
+    'gemini.generate': 'gemini',
+    'sag_voices': 'sag',
+    'sag.voices': 'sag',
+    'sag_status': 'sag',
+    'sag.status': 'sag',
+    'sag_speak': 'sag',
+    'sag.speak': 'sag',
+    'sag_tts': 'sag',
+    'sag.tts': 'sag',
+    'spotify': 'spotify-player',
+    'spotify_player': 'spotify-player',
+    'spotify profile': 'spotify-player',
+    'spotify_profile': 'spotify-player',
+    'spotify.profile': 'spotify-player',
+    'spotify-player.profile': 'spotify-player',
+    'spotify currently playing': 'spotify-player',
+    'spotify_currently_playing': 'spotify-player',
+    'spotify.currently-playing': 'spotify-player',
+    'spotify-player.currently-playing': 'spotify-player',
   };
 
   Stream<SkillsEvent> get events => _eventController.stream;
@@ -202,6 +234,8 @@ class SkillsService {
       _createBlogWatcherSkill(),
       _createDiscordSkill(),
       _createSlackSkill(),
+      _createOnePasswordSkill(),
+      _createGeminiSkill(),
       _createSessionLogsSkill(),
       _createNanoPdfSkill(),
       _createCamsnapSkill(),
@@ -210,6 +244,8 @@ class SkillsService {
       _createGoPlacesSkill(),
       _createMcPorterSkill(),
       _createNotionSkill(),
+      _createSagSkill(),
+      _createSpotifySkill(),
       _createOpenAiWhisperApiSkill(),
       _createAvatarOverlaySkill(),
       _createBaseChainSkill(),
@@ -1285,6 +1321,30 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createOnePasswordSkill() => Skill(
+      id: '1password',
+      name: '1password',
+      description:
+          'Read 1Password Connect vault metadata with an app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'http',
+      tags: ['1password', 'connect', 'vaults', 'rest'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
+  Skill _createGeminiSkill() => Skill(
+      id: 'gemini',
+      name: 'gemini',
+      description:
+          'List Gemini models or generate bounded text with the app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'http',
+      tags: ['gemini', 'google', 'models', 'rest'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createMcPorterSkill() => Skill(
       id: 'mcporter',
       name: 'mcporter',
@@ -1306,6 +1366,30 @@ class SkillsService {
       author: 'OpenClaw',
       category: 'openai',
       tags: ['openai', 'whisper', 'transcription', 'audio'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
+  Skill _createSagSkill() => Skill(
+      id: 'sag',
+      name: 'sag',
+      description:
+          'List ElevenLabs voices or synthesize bounded speech with the app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'http',
+      tags: ['sag', 'elevenlabs', 'speech', 'tts', 'rest'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
+  Skill _createSpotifySkill() => Skill(
+      id: 'spotify-player',
+      name: 'spotify-player',
+      description:
+          'Read Spotify profile and playback metadata with the app-native REST adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'http',
+      tags: ['spotify', 'music', 'profile', 'rest'],
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
@@ -1736,6 +1820,62 @@ class SkillsService {
             'required': ['action'],
           },
         };
+      case '1password':
+        return {
+          'name': skill.id,
+          'description':
+              'Read 1Password Connect vault metadata through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['vaults', 'status'],
+                'description':
+                    'Use vaults or status to list configured vault metadata.',
+              },
+              'limit': {
+                'type': 'integer',
+                'minimum': 1,
+                'maximum': 50,
+                'description': 'Maximum vaults to return.',
+              },
+            },
+            'required': ['action'],
+          },
+        };
+      case 'gemini':
+        return {
+          'name': skill.id,
+          'description':
+              'List Gemini models or generate bounded text through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['models', 'status', 'generate'],
+                'description':
+                    'Use models/status for a safe read, or generate for a bounded generation call.',
+              },
+              'prompt': {
+                'type': 'string',
+                'description': 'Text prompt. Required when action is generate.',
+              },
+              'model': {
+                'type': 'string',
+                'description': 'Gemini model id. Defaults to gemini-2.0-flash.',
+              },
+              'limit': {
+                'type': 'integer',
+                'minimum': 1,
+                'maximum': 50,
+                'description': 'Maximum models to return for models/status.',
+              },
+            },
+            'required': ['action'],
+          },
+        };
       case 'mcporter':
         return {
           'name': skill.id,
@@ -1994,6 +2134,61 @@ class SkillsService {
               },
             },
             'required': ['query'],
+          },
+        };
+      case 'sag':
+        return {
+          'name': skill.id,
+          'description':
+              'List ElevenLabs voices or synthesize bounded speech through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['voices', 'status', 'speak'],
+                'description':
+                    'Use voices/status for a safe read, or speak to synthesize speech.',
+              },
+              'text': {
+                'type': 'string',
+                'description': 'Text to synthesize. Required for speak.',
+              },
+              'voiceId': {
+                'type': 'string',
+                'description': 'ElevenLabs voice id returned by sag.voices.',
+              },
+              'modelId': {
+                'type': 'string',
+                'description':
+                    'Optional ElevenLabs model id. Defaults to eleven_multilingual_v2.',
+              },
+              'limit': {
+                'type': 'integer',
+                'minimum': 1,
+                'maximum': 50,
+                'description': 'Maximum voices to return.',
+              },
+            },
+            'required': ['action'],
+          },
+        };
+      case 'spotify-player':
+        return {
+          'name': skill.id,
+          'description':
+              'Read Spotify profile or currently playing metadata through the app-native REST adapter.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['profile', 'status', 'currently-playing'],
+                'description':
+                    'Use profile/status for account metadata, or currently-playing for playback metadata.',
+              },
+            },
+            'required': ['action'],
           },
         };
       case 'base-chain':

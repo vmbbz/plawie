@@ -184,11 +184,11 @@ void main() {
     });
 
     expect(model.blockedNeedsConfigCount, 15);
-    expect(model.liveConnectionTestCount, 9);
+    expect(model.liveConnectionTestCount, 11);
     expect(model.conditionalSetupStatusCount, 1);
-    expect(model.saveOnlyConfigCount, 5);
-    expect(model.configTestCoverageLabel, '9 live + 1 setup / 15');
-    expect(model.saveOnlyConfigLabel, '5 save-only');
+    expect(model.saveOnlyConfigCount, 3);
+    expect(model.configTestCoverageLabel, '11 live + 1 setup / 15');
+    expect(model.saveOnlyConfigLabel, '3 save-only');
     expect(model.configPackTaxonomyLabel, '14 config class / 1 pack class');
 
     final summaries = {
@@ -221,12 +221,11 @@ void main() {
       },
       'skills': [
         {
-          'skillId': '1password',
+          'skillId': 'gog',
           'androidSupport': 'needs_config',
-          'runtimeStatus': 'missing_dependency',
-          'primaryGate': 'missing_native_bin',
-          'missingBins': ['op'],
-          'requiredConfig': ['OP_SERVICE_ACCOUNT_TOKEN'],
+          'runtimeStatus': 'needs_config',
+          'primaryGate': 'missing_native_config',
+          'requiredConfig': ['GOG_ACCOUNT_TOKEN'],
           'ready': false,
         },
         {
@@ -258,9 +257,9 @@ void main() {
 
     expect(model.blockedNeedsConfigCount, 4);
     expect(model.liveConnectionTestCount, 1);
-    expect(model.saveOnlyConfigCount, 1);
-    expect(model.mixedConfigRuntimeGateCount, 2);
-    expect(model.saveOnlyConfigLabel, '1 save-only + 2 mixed runtime');
+    expect(model.saveOnlyConfigCount, 2);
+    expect(model.mixedConfigRuntimeGateCount, 1);
+    expect(model.saveOnlyConfigLabel, '2 save-only + 1 mixed runtime');
   });
 
   test('pack gate detail prefers concrete missing payload data', () {

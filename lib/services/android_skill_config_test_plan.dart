@@ -82,6 +82,22 @@ class AndroidSkillConfigTestPlan {
           risk: AndroidSkillConfigTestRisk.safeRead,
           successActionLabel: 'Discord bot',
         );
+      case '1password':
+        return const AndroidSkillConfigTestPlan(
+          skillId: '1password',
+          toolName: '1password',
+          input: {'source': source, 'action': 'vaults', 'limit': 10},
+          risk: AndroidSkillConfigTestRisk.safeRead,
+          successActionLabel: '1Password vaults',
+        );
+      case 'gemini':
+        return const AndroidSkillConfigTestPlan(
+          skillId: 'gemini',
+          toolName: 'gemini',
+          input: {'source': source, 'action': 'models', 'limit': 10},
+          risk: AndroidSkillConfigTestRisk.safeRead,
+          successActionLabel: 'Gemini models',
+        );
       case 'github':
         return AndroidSkillConfigTestPlan(
           skillId: normalized,
@@ -141,6 +157,14 @@ class AndroidSkillConfigTestPlan {
           risk: AndroidSkillConfigTestRisk.billableRead,
           successActionLabel: 'OpenAI transcription',
         );
+      case 'sag':
+        return const AndroidSkillConfigTestPlan(
+          skillId: 'sag',
+          toolName: 'sag',
+          input: {'source': source, 'action': 'voices', 'limit': 10},
+          risk: AndroidSkillConfigTestRisk.safeRead,
+          successActionLabel: 'ElevenLabs voices',
+        );
       case 'slack':
         return const AndroidSkillConfigTestPlan(
           skillId: 'slack',
@@ -148,6 +172,14 @@ class AndroidSkillConfigTestPlan {
           input: {'source': source, 'action': 'me'},
           risk: AndroidSkillConfigTestRisk.safeRead,
           successActionLabel: 'Slack auth',
+        );
+      case 'spotify-player':
+        return const AndroidSkillConfigTestPlan(
+          skillId: 'spotify-player',
+          toolName: 'spotify-player',
+          input: {'source': source, 'action': 'profile'},
+          risk: AndroidSkillConfigTestRisk.safeRead,
+          successActionLabel: 'Spotify profile',
         );
       case 'trello':
         return const AndroidSkillConfigTestPlan(
@@ -180,14 +212,18 @@ class AndroidSkillConfigTestPlan {
   static AndroidSkillConfigTestSupport supportForSkill(String skillId) {
     final normalized = _normalizeSkillId(skillId);
     switch (normalized) {
+      case '1password':
       case 'discord':
+      case 'gemini':
       case 'github':
       case 'gh-issues':
       case 'goplaces':
       case 'mcporter':
       case 'notion':
       case 'openai-whisper-api':
+      case 'sag':
       case 'slack':
+      case 'spotify-player':
       case 'trello':
         return AndroidSkillConfigTestSupport.liveConnection;
       case 'voice-call':

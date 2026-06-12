@@ -354,11 +354,12 @@ void main() {
     );
   });
 
-  testWidgets('full save-only gates explain missing Android adapter boundary',
+  testWidgets(
+      'unresolved save-only gates explain missing Android adapter boundary',
       (tester) async {
     await _pumpSheet(
       tester,
-      _onePasswordModel(),
+      _gogModel(),
       applyConfig: ({
         required skillId,
         envValues = const <String, String>{},
@@ -368,14 +369,14 @@ void main() {
     );
 
     await tester.enterText(
-      _textFieldByLabel('Service account token'),
-      'op-secret-token',
+      _textFieldByLabel('Account token'),
+      'gog-secret-token',
     );
     await tester.tap(find.text('Save & Check'));
     await tester.pump();
 
     expect(find.text('Test Connection'), findsNothing);
-    expect(find.textContaining('1Password config saved'), findsOneWidget);
+    expect(find.textContaining('GOG config saved'), findsOneWidget);
     expect(
       find.textContaining('Gateway/AgentSkillServer adapter'),
       findsOneWidget,
@@ -575,11 +576,11 @@ AndroidSkillConfigFormModel _slackModel() {
   });
 }
 
-AndroidSkillConfigFormModel _onePasswordModel() {
+AndroidSkillConfigFormModel _gogModel() {
   return AndroidSkillConfigFormModel.fromSkill({
-    'skillId': '1password',
+    'skillId': 'gog',
     'androidSupport': 'needs_config',
-    'requiredConfig': ['OP_SERVICE_ACCOUNT_TOKEN'],
+    'requiredConfig': ['GOG_ACCOUNT_TOKEN'],
     'primaryGate': 'missing_native_config',
   });
 }

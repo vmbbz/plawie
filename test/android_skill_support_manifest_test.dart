@@ -107,8 +107,24 @@ void main() {
       ],
     );
     expect(
-      manifest.entryFor('gemini')!.requiredPacks,
-      ['android-gemini-cli-pack'],
+      manifest.entryFor('gemini')!.requiredConfig,
+      ['GEMINI_API_KEY'],
+    );
+    expect(
+      manifest.entryFor('gemini')!.ownerLayer,
+      AndroidSkillOwnerLayer.appNativeCapability,
+    );
+    expect(
+      manifest.entryFor('spotify-player')!.requiredConfig,
+      ['SPOTIFY_ACCESS_TOKEN'],
+    );
+    expect(
+      manifest.entryFor('sag')!.requiredConfig,
+      ['ELEVENLABS_API_KEY'],
+    );
+    expect(
+      manifest.entryFor('1password')!.requiredConfig,
+      ['OP_CONNECT_HOST', 'OP_CONNECT_TOKEN'],
     );
     expect(
       manifest.entryFor('coding-agent')!.requiredPacks,

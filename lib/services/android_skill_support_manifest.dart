@@ -146,8 +146,11 @@ final List<AndroidSkillSupportEntry> _entries =
     List.unmodifiable(<AndroidSkillSupportEntry>[
   _needsConfig(
     '1password',
-    config: ['OP_SERVICE_ACCOUNT_TOKEN'],
-    smoke: 'List available 1Password vault metadata after account config.',
+    config: ['OP_CONNECT_HOST', 'OP_CONNECT_TOKEN'],
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke:
+        'List 1Password Connect vault metadata through the app-native REST adapter.',
   ),
   _unsupported(
     'apple-notes',
@@ -227,10 +230,12 @@ final List<AndroidSkillSupportEntry> _entries =
     packs: ['android-cli-core-pack'],
     smoke: 'Run eightctl version from the verified Android CLI pack.',
   ),
-  _needsPack(
+  _needsConfig(
     'gemini',
-    packs: ['android-gemini-cli-pack'],
-    smoke: 'Run Gemini CLI smoke through a verified Android Gemini CLI pack.',
+    config: ['GEMINI_API_KEY'],
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke: 'List Gemini models through the app-native REST adapter.',
   ),
   _needsConfig(
     'gh-issues',
@@ -365,8 +370,10 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _needsConfig(
     'sag',
-    config: ['SAG_API_KEY'],
-    smoke: 'Run a configured SAG API smoke request.',
+    config: ['ELEVENLABS_API_KEY'],
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke: 'List ElevenLabs voices through the app-native REST adapter.',
   ),
   _ready(
     'sensors',
@@ -416,10 +423,12 @@ final List<AndroidSkillSupportEntry> _entries =
     mode: AndroidSkillExecutionMode.instructionOnly,
     smoke: 'Create a small Spike planning artifact.',
   ),
-  _needsPack(
+  _needsConfig(
     'spotify-player',
-    packs: ['android-audio-runtime'],
-    smoke: 'Run Spotify player status through the verified audio pack.',
+    config: ['SPOTIFY_ACCESS_TOKEN'],
+    owner: AndroidSkillOwnerLayer.appNativeCapability,
+    mode: AndroidSkillExecutionMode.httpAdapter,
+    smoke: 'Read Spotify profile metadata through the app-native REST adapter.',
   ),
   _readyOptional(
     'summarize',

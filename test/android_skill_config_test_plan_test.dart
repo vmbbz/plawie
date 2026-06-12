@@ -75,6 +75,45 @@ void main() {
       'action': 'boards',
       'limit': 1,
     });
+
+    final onePassword = AndroidSkillConfigTestPlan.forSkill('1password')!;
+    expect(onePassword.toolName, '1password');
+    expect(onePassword.input, {
+      'source': 'android-skill-config-test',
+      'action': 'vaults',
+      'limit': 10,
+    });
+    expect(onePassword.risk, AndroidSkillConfigTestRisk.safeRead);
+    expect(onePassword.successActionLabel, '1Password vaults');
+
+    final gemini = AndroidSkillConfigTestPlan.forSkill('gemini')!;
+    expect(gemini.toolName, 'gemini');
+    expect(gemini.input, {
+      'source': 'android-skill-config-test',
+      'action': 'models',
+      'limit': 10,
+    });
+    expect(gemini.risk, AndroidSkillConfigTestRisk.safeRead);
+    expect(gemini.successActionLabel, 'Gemini models');
+
+    final sag = AndroidSkillConfigTestPlan.forSkill('sag')!;
+    expect(sag.toolName, 'sag');
+    expect(sag.input, {
+      'source': 'android-skill-config-test',
+      'action': 'voices',
+      'limit': 10,
+    });
+    expect(sag.risk, AndroidSkillConfigTestRisk.safeRead);
+    expect(sag.successActionLabel, 'ElevenLabs voices');
+
+    final spotify = AndroidSkillConfigTestPlan.forSkill('spotify-player')!;
+    expect(spotify.toolName, 'spotify-player');
+    expect(spotify.input, {
+      'source': 'android-skill-config-test',
+      'action': 'profile',
+    });
+    expect(spotify.risk, AndroidSkillConfigTestRisk.safeRead);
+    expect(spotify.successActionLabel, 'Spotify profile');
   });
 
   test('offers Twilio-only setup status for voice-call config', () {
@@ -114,12 +153,10 @@ void main() {
     );
   });
 
-  test('does not offer connection checks for config-only placeholders yet', () {
-    expect(AndroidSkillConfigTestPlan.forSkill('1password'), isNull);
+  test('keeps only unresolved config lanes in save-only mode', () {
     expect(AndroidSkillConfigTestPlan.forSkill('eightctl'), isNull);
     expect(AndroidSkillConfigTestPlan.forSkill('gog'), isNull);
     expect(AndroidSkillConfigTestPlan.forSkill('ordercli'), isNull);
-    expect(AndroidSkillConfigTestPlan.forSkill('sag'), isNull);
   });
 
   test('classifies config support across all Phase 6C gates', () {
@@ -128,10 +165,14 @@ void main() {
       'gh-issues',
       'github',
       'goplaces',
+      'gemini',
       'mcporter',
       'notion',
       'openai-whisper-api',
+      '1password',
+      'sag',
       'slack',
+      'spotify-player',
       'trello',
     ]) {
       expect(
@@ -146,13 +187,7 @@ void main() {
       AndroidSkillConfigTestSupport.conditionalSetupStatus,
     );
 
-    for (final skillId in const [
-      '1password',
-      'eightctl',
-      'gog',
-      'ordercli',
-      'sag',
-    ]) {
+    for (final skillId in const ['eightctl', 'gog', 'ordercli']) {
       expect(
         AndroidSkillConfigTestPlan.supportForSkill(skillId),
         AndroidSkillConfigTestSupport.saveOnly,
@@ -172,14 +207,18 @@ void main() {
         .toSet();
 
     expect(appNativeConfigSkills, {
+      '1password',
       'discord',
+      'gemini',
       'gh-issues',
       'github',
       'goplaces',
       'mcporter',
       'notion',
       'openai-whisper-api',
+      'sag',
       'slack',
+      'spotify-player',
       'trello',
     });
 

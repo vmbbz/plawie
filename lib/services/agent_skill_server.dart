@@ -17,6 +17,7 @@ import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
 import 'capabilities/discord_capability.dart';
 import 'capabilities/flash_capability.dart';
+import 'capabilities/gemini_capability.dart';
 import 'capabilities/github_capability.dart';
 import 'capabilities/goplaces_capability.dart';
 import 'capabilities/location_capability.dart';
@@ -24,10 +25,13 @@ import 'capabilities/meme_maker_capability.dart';
 import 'capabilities/mcporter_capability.dart';
 import 'capabilities/nano_pdf_capability.dart';
 import 'capabilities/notion_capability.dart';
+import 'capabilities/one_password_capability.dart';
 import 'capabilities/openai_whisper_api_capability.dart';
+import 'capabilities/sag_capability.dart';
 import 'capabilities/sensor_capability.dart';
 import 'capabilities/session_logs_capability.dart';
 import 'capabilities/slack_capability.dart';
+import 'capabilities/spotify_capability.dart';
 import 'capabilities/summarize_capability.dart';
 import 'capabilities/trello_capability.dart';
 import 'capabilities/vibration_capability.dart';
@@ -85,6 +89,7 @@ class AgentSkillServer {
   final DeviceCapability _deviceCapability = DeviceCapability();
   final DiscordCapability _discordCapability = DiscordCapability();
   final FlashCapability _flashCapability = FlashCapability();
+  final GeminiCapability _geminiCapability = GeminiCapability();
   final GitHubCapability _githubCapability = GitHubCapability();
   final GoPlacesCapability _goPlacesCapability = GoPlacesCapability();
   final LocationCapability _locationCapability = LocationCapability();
@@ -92,11 +97,14 @@ class AgentSkillServer {
   final MemeMakerCapability _memeMakerCapability = MemeMakerCapability();
   final NanoPdfCapability _nanoPdfCapability = NanoPdfCapability();
   final NotionCapability _notionCapability = NotionCapability();
+  final OnePasswordCapability _onePasswordCapability = OnePasswordCapability();
   final OpenAiWhisperApiCapability _openAiWhisperApiCapability =
       OpenAiWhisperApiCapability();
+  final SagCapability _sagCapability = SagCapability();
   final SensorCapability _sensorCapability = SensorCapability();
   final SessionLogsCapability _sessionLogsCapability = SessionLogsCapability();
   final SlackCapability _slackCapability = SlackCapability();
+  final SpotifyCapability _spotifyCapability = SpotifyCapability();
   final SummarizeCapability _summarizeCapability = SummarizeCapability();
   final TrelloCapability _trelloCapability = TrelloCapability();
   final VibrationCapability _vibrationCapability = VibrationCapability();
@@ -1989,6 +1997,22 @@ class AgentSkillServer {
       'slack.status': 'slack.me',
       'slack_post': 'slack.post',
       'slack.post': 'slack.post',
+      '1password': '1password.vaults',
+      'onepassword': '1password.vaults',
+      'op': '1password.vaults',
+      '1password_vaults': '1password.vaults',
+      '1password.vaults': '1password.vaults',
+      'onepassword_vaults': '1password.vaults',
+      'onepassword.vaults': '1password.vaults',
+      'op_vaults': '1password.vaults',
+      'op.vaults': '1password.vaults',
+      'gemini': 'gemini.models',
+      'gemini_models': 'gemini.models',
+      'gemini.models': 'gemini.models',
+      'gemini_status': 'gemini.models',
+      'gemini.status': 'gemini.models',
+      'gemini_generate': 'gemini.generate',
+      'gemini.generate': 'gemini.generate',
       'github': 'github.user',
       'github_user': 'github.user',
       'github.user': 'github.user',
@@ -2011,6 +2035,28 @@ class AgentSkillServer {
       'notion': 'notion.search',
       'notion_search': 'notion.search',
       'notion.search': 'notion.search',
+      'sag': 'sag.voices',
+      'sag_voices': 'sag.voices',
+      'sag.voices': 'sag.voices',
+      'sag_status': 'sag.voices',
+      'sag.status': 'sag.voices',
+      'sag_speak': 'sag.speak',
+      'sag.speak': 'sag.speak',
+      'sag_tts': 'sag.speak',
+      'sag.tts': 'sag.speak',
+      'spotify': 'spotify-player.profile',
+      'spotify-player': 'spotify-player.profile',
+      'spotify_player': 'spotify-player.profile',
+      'spotify_profile': 'spotify-player.profile',
+      'spotify.profile': 'spotify-player.profile',
+      'spotify-player.profile': 'spotify-player.profile',
+      'spotify_player_profile': 'spotify-player.profile',
+      'spotify_now_playing': 'spotify-player.currently-playing',
+      'spotify.now-playing': 'spotify-player.currently-playing',
+      'spotify_currently_playing': 'spotify-player.currently-playing',
+      'spotify.currently-playing': 'spotify-player.currently-playing',
+      'spotify-player.currently-playing': 'spotify-player.currently-playing',
+      'spotify_player_currently_playing': 'spotify-player.currently-playing',
       'openai-whisper-api': 'openai-whisper-api.transcribe',
       'openai_whisper_api': 'openai-whisper-api.transcribe',
       'openai-whisper-api.transcribe': 'openai-whisper-api.transcribe',
@@ -2210,6 +2256,28 @@ class AgentSkillServer {
               ? 'slack.post arguments are dispatchable'
               : 'slack.post requires text',
         );
+      case '1password.vaults':
+        return const _NativeGatewayDryRunArgumentValidation(
+          ok: true,
+          code: 'ok',
+          message: '1password.vaults arguments are dispatchable',
+        );
+      case 'gemini.models':
+        return const _NativeGatewayDryRunArgumentValidation(
+          ok: true,
+          code: 'ok',
+          message: 'gemini.models arguments are dispatchable',
+        );
+      case 'gemini.generate':
+        final prompt = (input['prompt'] ?? input['text'])?.toString().trim();
+        final ok = prompt != null && prompt.isNotEmpty;
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: ok,
+          code: ok ? 'ok' : 'missing_prompt',
+          message: ok
+              ? 'gemini.generate arguments are dispatchable'
+              : 'gemini.generate requires prompt or text',
+        );
       case 'github.user':
         return const _NativeGatewayDryRunArgumentValidation(
           ok: true,
@@ -2255,6 +2323,34 @@ class AgentSkillServer {
           message: ok
               ? 'notion.search arguments are dispatchable'
               : 'notion.search requires a query',
+        );
+      case 'sag.voices':
+        return const _NativeGatewayDryRunArgumentValidation(
+          ok: true,
+          code: 'ok',
+          message: 'sag.voices arguments are dispatchable',
+        );
+      case 'sag.speak':
+        final text = (input['text'] ?? input['prompt'])?.toString().trim();
+        final voiceId =
+            (input['voiceId'] ?? input['voice_id'])?.toString().trim();
+        final ok = text != null &&
+            text.isNotEmpty &&
+            voiceId != null &&
+            voiceId.isNotEmpty;
+        return _NativeGatewayDryRunArgumentValidation(
+          ok: ok,
+          code: ok ? 'ok' : 'missing_text_or_voice',
+          message: ok
+              ? 'sag.speak arguments are dispatchable'
+              : 'sag.speak requires text and voiceId',
+        );
+      case 'spotify-player.profile':
+      case 'spotify-player.currently-playing':
+        return const _NativeGatewayDryRunArgumentValidation(
+          ok: true,
+          code: 'ok',
+          message: 'spotify-player arguments are dispatchable',
         );
       case 'openai-whisper-api.transcribe':
         final audioBase64 =
@@ -2337,6 +2433,10 @@ class AgentSkillServer {
         return 'AvatarCapability';
       case 'blogwatcher':
         return 'BlogWatcherCapability';
+      case '1password':
+        return 'OnePasswordCapability';
+      case 'gemini':
+        return 'GeminiCapability';
       case 'session-logs':
         return 'SessionLogsCapability';
       case 'slack':
@@ -2361,6 +2461,10 @@ class AgentSkillServer {
         return 'NanoPdfCapability';
       case 'openai-whisper-api':
         return 'OpenAiWhisperApiCapability';
+      case 'sag':
+        return 'SagCapability';
+      case 'spotify-player':
+        return 'SpotifyCapability';
       case 'device':
         return 'DeviceCapability';
       case 'screen':
@@ -2490,6 +2594,37 @@ class AgentSkillServer {
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);
+        case '1password':
+        case 'onepassword':
+        case 'op':
+        case '1password_vaults':
+        case '1password.vaults':
+        case 'onepassword_vaults':
+        case 'onepassword.vaults':
+        case 'op_vaults':
+        case 'op.vaults':
+          final frame = await _onePasswordCapability.handle(
+            '1password.vaults',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'gemini':
+        case 'gemini_models':
+        case 'gemini.models':
+        case 'gemini_status':
+        case 'gemini.status':
+          final frame = await _geminiCapability.handle(
+            'gemini.models',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'gemini_generate':
+        case 'gemini.generate':
+          final frame = await _geminiCapability.handle(
+            'gemini.generate',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
         case 'github':
         case 'github_user':
         case 'github.user':
@@ -2534,6 +2669,48 @@ class AgentSkillServer {
         case 'notion.search':
           final frame = await _notionCapability.handle(
             'notion.search',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'sag':
+        case 'sag_voices':
+        case 'sag.voices':
+        case 'sag_status':
+        case 'sag.status':
+          final frame = await _sagCapability.handle(
+            'sag.voices',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'sag_speak':
+        case 'sag.speak':
+        case 'sag_tts':
+        case 'sag.tts':
+          final frame = await _sagCapability.handle(
+            'sag.speak',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'spotify':
+        case 'spotify-player':
+        case 'spotify_player':
+        case 'spotify_profile':
+        case 'spotify.profile':
+        case 'spotify-player.profile':
+        case 'spotify_player_profile':
+          final frame = await _spotifyCapability.handle(
+            'spotify-player.profile',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'spotify_now_playing':
+        case 'spotify.now-playing':
+        case 'spotify_currently_playing':
+        case 'spotify.currently-playing':
+        case 'spotify-player.currently-playing':
+        case 'spotify_player_currently_playing':
+          final frame = await _spotifyCapability.handle(
+            'spotify-player.currently-playing',
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);

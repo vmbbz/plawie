@@ -201,6 +201,20 @@ AndroidSkillConfigFieldModel _fieldFor(String skillId, String key) {
         label: 'Service account token',
         inputHint: 'Paste the 1Password service account token',
       );
+    case 'OP_CONNECT_HOST':
+      return _envField(
+        key,
+        label: 'Connect host',
+        group: 'Connection',
+        inputKind: AndroidSkillConfigInputKind.url,
+        inputHint: 'https://connect.example.com',
+      );
+    case 'OP_CONNECT_TOKEN':
+      return _envSecret(
+        key,
+        label: 'Connect token',
+        inputHint: 'Paste the 1Password Connect bearer token',
+      );
     case 'DISCORD_BOT_TOKEN':
       return _envSecret(
         key,
@@ -263,6 +277,12 @@ AndroidSkillConfigFieldModel _fieldFor(String skillId, String key) {
         label: 'Google Places API key',
         inputHint: 'Paste the Google Places API key',
       );
+    case 'GEMINI_API_KEY':
+      return _envSecret(
+        key,
+        label: 'Gemini API key',
+        inputHint: 'Paste the Gemini API key',
+      );
     case 'MCPORTER_ENDPOINT':
       return _envField(
         key,
@@ -301,11 +321,23 @@ AndroidSkillConfigFieldModel _fieldFor(String skillId, String key) {
         label: 'SAG API key',
         inputHint: 'Paste the SAG API key',
       );
+    case 'ELEVENLABS_API_KEY':
+      return _envSecret(
+        key,
+        label: 'ElevenLabs API key',
+        inputHint: 'Paste the ElevenLabs API key',
+      );
     case 'SLACK_BOT_TOKEN':
       return _envSecret(
         key,
         label: 'Bot token',
         inputHint: 'Paste the Slack bot token',
+      );
+    case 'SPOTIFY_ACCESS_TOKEN':
+      return _envSecret(
+        key,
+        label: 'Access token',
+        inputHint: 'Paste the Spotify OAuth access token',
       );
     case 'channels.slack':
       return _configField(
@@ -444,6 +476,7 @@ String _titleForSkill(String skillId) {
     '1password': '1Password',
     'discord': 'Discord',
     'eightctl': 'Eight Sleep',
+    'gemini': 'Gemini',
     'github': 'GitHub',
     'gh-issues': 'GitHub Issues',
     'gog': 'GOG',
@@ -454,6 +487,7 @@ String _titleForSkill(String skillId) {
     'ordercli': 'Order CLI',
     'sag': 'SAG',
     'slack': 'Slack',
+    'spotify-player': 'Spotify',
     'trello': 'Trello',
     'voice-call': 'Voice Call',
   };
