@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../../models/node_frame.dart';
+import '../canvas_screenshot_channel.dart';
 import '../tool_media_event_bus.dart';
 import 'capability_handler.dart';
 
-/// Canvas capability — backs `canvas.navigate`, `canvas.eval`, `canvas.snapshot`
-/// using a WebViewController provided by the chat screen.
+/// Canvas capability — backs `canvas.navigate`, `canvas.eval`, `canvas.snapshot`,
+/// `canvas.present`, and `canvas.hide` using a WebViewController provided by the chat screen.
 ///
 /// The chat screen creates the controller, shows it as an overlay panel,
 /// and calls [setController] so that incoming gateway commands can drive it.
@@ -21,19 +24,63 @@ class CanvasCapability extends CapabilityHandler {
 
   WebViewController? _controller;
   Completer<void>? _pageLoadCompleter;
+  int? _viewId;
+  String? _pluginSurfaceUrl;
+
+  static const _canvasHostPath = '/__openclaw__/canvas';
+  static const _pluginCapabilityPath = '/__openclaw__/cap/';
+  static const _fallbackGatewayOrigin = 'http://127.0.0.1:18789';
 
   /// Called by the chat screen once its canvas WebView controller is ready.
   void setController(WebViewController controller) {
     _controller = controller;
-    // Listen for page load events so canvas.navigate can await navigation
     _controller!.setNavigationDelegate(NavigationDelegate(
-      onPageFinished: (_) => _pageLoadCompleter?.complete(),
+      onPageFinished: (_) {
+        _pageLoadCompleter?.complete();
+        _blockExternalApiCalls();
+      },
       onWebResourceError: (err) =>
           _pageLoadCompleter?.completeError(err.description),
     ));
   }
 
   void clearController() => _controller = null;
+
+  /// Node-scoped Gateway URL for protected plugin surfaces, supplied by the
+  /// OpenClaw node connect handshake as `pluginSurfaceUrls.canvas`.
+  void setPluginSurfaceUrl(String? url) {
+    final trimmed = url?.trim() ?? '';
+    _pluginSurfaceUrl = trimmed.isEmpty ? null : trimmed;
+  }
+
+  /// Block external API calls from canvas HTML content.
+  Future<void> _blockExternalApiCalls() async {
+    try {
+      await _controller!.runJavaScript('''
+        (function(){
+          var origFetch = window.fetch;
+          window.fetch = function(url, opts) {
+            var u = (typeof url==='string')?url:(url&&url.toString())||'';
+            if(u&&!u.startsWith('http://localhost')&&!u.startsWith('http://127.0.0.1')&&!u.startsWith('data:')&&!u.startsWith('blob:')&&!u.startsWith('file:')){
+              throw new Error('Blocked: '+u);
+            }
+            return origFetch.call(this,url,opts);
+          };
+          var origOpen=XMLHttpRequest.prototype.open;
+          XMLHttpRequest.prototype.open=function(m,u){
+            var us=(typeof u==='string')?u:(u&&u.toString())||'';
+            if(us&&!us.startsWith('http://localhost')&&!us.startsWith('http://127.0.0.1')&&!us.startsWith('data:')&&!us.startsWith('blob:')&&!us.startsWith('file:')){
+              throw new Error('Blocked: '+us);
+            }
+            return origOpen.apply(this,arguments);
+          };
+        })();
+      ''');
+    } catch (_) {}
+  }
+
+  /// Set the platform view ID for PixelCopy screenshot capture.
+  void setViewId(int? id) => _viewId = id;
 
   /// Fired whenever the canvas becomes visible/hidden. Chat screen can listen.
   static Function(bool visible)? onVisibilityChanged;
@@ -43,11 +90,15 @@ class CanvasCapability extends CapabilityHandler {
   /// do not hold an extra Android WebView/GL context all day.
   static Future<WebViewController> Function()? onActivationRequested;
 
+  /// Optional widget capture hook registered by the chat screen (RepaintBoundary).
+  static Future<Uint8List?> Function()? onCaptureScreenshot;
+
   @override
   String get name => 'canvas';
 
   @override
-  List<String> get commands => ['navigate', 'eval', 'snapshot'];
+  List<String> get commands =>
+      ['present', 'hide', 'navigate', 'eval', 'snapshot'];
 
   @override
   Future<bool> checkPermission() async => true;
@@ -66,6 +117,10 @@ class CanvasCapability extends CapabilityHandler {
     }
 
     switch (command) {
+      case 'canvas.present':
+        return _present(params);
+      case 'canvas.hide':
+        return _hide(params);
       case 'canvas.navigate':
         return _navigate(params);
       case 'canvas.eval':
@@ -92,6 +147,36 @@ class CanvasCapability extends CapabilityHandler {
     }
   }
 
+  Future<NodeFrame> _present(Map<String, dynamic> params) async {
+    final url = (params['url'] as String?) ?? (params['target'] as String?);
+    try {
+      onVisibilityChanged?.call(true);
+      if (url != null && url.isNotEmpty) {
+        final uri = resolveCanvasUrl(url);
+        _pageLoadCompleter = Completer<void>();
+        await _controller!.loadRequest(uri);
+        await _pageLoadCompleter!.future.timeout(const Duration(seconds: 15));
+      }
+      return NodeFrame.response('', payload: {
+        'ok': true,
+        'status': 'presented',
+      });
+    } catch (e) {
+      return NodeFrame.response('', error: {
+        'code': 'PRESENT_ERROR',
+        'message': '$e',
+      });
+    }
+  }
+
+  Future<NodeFrame> _hide(Map<String, dynamic> params) async {
+    onVisibilityChanged?.call(false);
+    return NodeFrame.response('', payload: {
+      'ok': true,
+      'status': 'hidden',
+    });
+  }
+
   Future<NodeFrame> _navigate(Map<String, dynamic> params) async {
     final url = params['url'] as String?;
     if (url == null || url.isEmpty) {
@@ -105,8 +190,7 @@ class CanvasCapability extends CapabilityHandler {
       onVisibilityChanged?.call(true);
 
       _pageLoadCompleter = Completer<void>();
-      final uri = Uri.tryParse(url);
-      if (uri == null) throw Exception('Invalid URL: $url');
+      final uri = resolveCanvasUrl(url);
       await _controller!.loadRequest(uri);
 
       // Wait for page to finish loading (max 15 s)
@@ -152,9 +236,45 @@ class CanvasCapability extends CapabilityHandler {
     }
   }
 
+  Future<Uint8List?> _captureNativeWebViewScreenshot() async {
+    // Try platform channel first (PixelCopy — real WebView capture)
+    if (_viewId != null) {
+      final bytes = await CanvasScreenshotChannel.captureScreenshot(_viewId!);
+      if (bytes != null && bytes.isNotEmpty) return bytes;
+    }
+    // Fallback: existing RepaintBoundary hook
+    final capture = onCaptureScreenshot;
+    if (capture == null) return null;
+    try {
+      return await capture();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<NodeFrame> _snapshot(Map<String, dynamic> params) async {
     try {
-      // Use JS canvas API to capture the page as a PNG data URL
+      final nativeBytes = await _captureNativeWebViewScreenshot();
+      if (nativeBytes != null && nativeBytes.isNotEmpty) {
+        final base64 = base64Encode(nativeBytes);
+        ToolMediaEventBus.instance.publish(ToolMediaEvent(
+          source: 'canvas.snapshot',
+          base64: base64,
+          mimeType: 'image/png',
+        ));
+        return NodeFrame.response('', payload: {
+          'base64': base64,
+          'mimeType': 'image/png',
+          'width': await _controller!
+              .runJavaScriptReturningResult('window.innerWidth'),
+          'height': await _controller!
+              .runJavaScriptReturningResult('window.innerHeight'),
+          'attachedImage': true,
+          'timestamp': DateTime.now().toIso8601String(),
+          'capture': 'native-webview',
+        });
+      }
+
       const captureJs = '''
         (function() {
           try {
@@ -162,7 +282,6 @@ class CanvasCapability extends CapabilityHandler {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
             var ctx = canvas.getContext('2d');
-            // For simple pages: draw background color
             ctx.fillStyle = getComputedStyle(document.body).backgroundColor || '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             return canvas.toDataURL('image/png').replace('data:image/png;base64,','');
@@ -179,6 +298,7 @@ class CanvasCapability extends CapabilityHandler {
           'message': resultStr.replaceFirst('ERROR:', '').trim(),
         });
       }
+
       ToolMediaEventBus.instance.publish(ToolMediaEvent(
         source: 'canvas.snapshot',
         base64: resultStr,
@@ -193,6 +313,7 @@ class CanvasCapability extends CapabilityHandler {
             .runJavaScriptReturningResult('window.innerHeight'),
         'attachedImage': true,
         'timestamp': DateTime.now().toIso8601String(),
+        'note': 'JS_FALLBACK - native WebView capture unavailable',
       });
     } catch (e) {
       return NodeFrame.response('', error: {
@@ -200,5 +321,73 @@ class CanvasCapability extends CapabilityHandler {
         'message': '$e',
       });
     }
+  }
+
+  Uri resolveCanvasUrl(String url) {
+    final raw = url.trim();
+    if (raw.isEmpty) {
+      throw FormatException('canvas URL cannot be empty');
+    }
+
+    final parsed = Uri.tryParse(raw);
+    if (parsed == null) {
+      throw FormatException('Invalid URL: $url');
+    }
+
+    if (_isPluginScopedPath(parsed.path)) {
+      return _absoluteUri(parsed);
+    }
+
+    final isCanvasPath = _isCanvasPath(parsed.path);
+    final isLocalGateway =
+        !parsed.hasScheme || _isLoopbackGatewayHost(parsed.host);
+    if (!isCanvasPath || !isLocalGateway) {
+      return _absoluteUri(parsed);
+    }
+
+    final surfaceUri = _pluginSurfaceUri;
+    if (surfaceUri == null) {
+      return _absoluteUri(parsed);
+    }
+
+    final surfacePath = surfaceUri.path.replaceFirst(RegExp(r'/+$'), '');
+    return surfaceUri.replace(
+      path: '$surfacePath${parsed.path}',
+      query: parsed.hasQuery ? parsed.query : null,
+      fragment: parsed.hasFragment ? parsed.fragment : null,
+    );
+  }
+
+  Uri? get _pluginSurfaceUri {
+    final raw = _pluginSurfaceUrl;
+    if (raw == null || raw.isEmpty) return null;
+    final parsed = Uri.tryParse(raw);
+    if (parsed == null || !parsed.hasScheme || parsed.host.isEmpty) {
+      return null;
+    }
+    if (!_isPluginScopedPath(parsed.path)) return null;
+    return parsed.replace(query: null, fragment: null);
+  }
+
+  Uri _absoluteUri(Uri uri) {
+    if (uri.hasScheme) return uri;
+    if (uri.path.startsWith('/')) {
+      return Uri.parse('$_fallbackGatewayOrigin${uri.toString()}');
+    }
+    return uri;
+  }
+
+  bool _isCanvasPath(String path) =>
+      path == _canvasHostPath || path.startsWith('$_canvasHostPath/');
+
+  bool _isPluginScopedPath(String path) =>
+      path == _pluginCapabilityPath.replaceFirst(RegExp(r'/$'), '') ||
+      path.startsWith(_pluginCapabilityPath);
+
+  bool _isLoopbackGatewayHost(String host) {
+    final normalized = host.toLowerCase();
+    return normalized == '127.0.0.1' ||
+        normalized == 'localhost' ||
+        normalized == '::1';
   }
 }

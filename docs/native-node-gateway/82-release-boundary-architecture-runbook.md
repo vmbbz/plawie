@@ -227,6 +227,13 @@ Current Android node commands cover avatar, camera, canvas, flashlight/torch,
 location, screen recording, sensor, and haptic actions. They do not currently
 prove a generic third-party app launcher or a safe WhatsApp send command.
 
+Protected canvas content is served by the Gateway canvas plugin. Android must
+load canvas files through the node-scoped `pluginSurfaceUrls.canvas` URL
+advertised by the node connect handshake, then append the
+`/__openclaw__/canvas/...` file path. Do not construct ad hoc token query
+strings for canvas WebView navigation; those can drift from the Gateway's
+plugin auth boundary and surface as WebView `Unauthorized` responses.
+
 Release rule:
 
 - Do not say "phone-control can send WhatsApp messages" until a concrete

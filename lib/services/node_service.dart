@@ -6,6 +6,7 @@ import '../constants.dart';
 import '../constants/openclaw_paths.dart';
 import '../models/node_frame.dart';
 import '../models/node_state.dart';
+import 'capabilities/canvas_capability.dart';
 import 'native_bridge.dart';
 import 'device_identity.dart';
 import 'node_ws_service.dart';
@@ -638,14 +639,23 @@ class NodeService {
       return;
     }
     final needsSnapshotRepair = await _pairedNodeSnapshotNeedsCommandRepair();
-    if (_state.status == NodeStatus.paired && _ws.isConnected) {
-      if (!needsSnapshotRepair && !_ws.isStale) {
-        return;
+    if (_state.status == NodeStatus.paired) {
+      if (!needsSnapshotRepair) {
+        if (_ws.isConnected && !_ws.isStale) {
+          log('[NODE] Already paired and connected with correct command snapshot');
+          return;
+        }
+        if (!_ws.isConnected) {
+          log('[NODE] Already paired with correct command snapshot; skipping WebSocket (embedded mode)');
+          return;
+        }
       }
-      log(needsSnapshotRepair
-          ? '[NODE] Connected gateway node snapshot is missing commands; reconnecting to refresh pairing'
-          : '[NODE] Existing WebSocket is stale; reconnecting to refresh node commands');
-      await _ws.disconnect();
+      if (_ws.isConnected) {
+        log(needsSnapshotRepair
+            ? '[NODE] Connected gateway node snapshot is missing commands; reconnecting to refresh pairing'
+            : '[NODE] Existing WebSocket is stale; reconnecting to refresh node commands');
+        await _ws.disconnect();
+      }
     }
     if (_connectInFlight) {
       log('[NODE] Connect already in progress — skipping duplicate request');
@@ -1033,14 +1043,15 @@ class NodeService {
         prefs.nodeDeviceToken = deviceToken;
       }
       _onConnected(response);
+      // Repair BEFORE storing hash — _pairedNodeSnapshotNeedsCommandRepair
+      // inspects _liveNativeCommandContractHash which must be the old value.
+      if (await _pairedNodeSnapshotNeedsCommandRepair()) {
+        await _approvePendingNodePairingSnapshot(prefs);
+      }
       if (await _nativeOwnerSelected()) {
         final signature = _declaredCommandContractSignature();
         _liveNativeCommandContractHash = signature;
         prefs.nodeCommandContractHash = signature;
-        return;
-      }
-      if (await _pairedNodeSnapshotNeedsCommandRepair()) {
-        await _approvePendingNodePairingSnapshot(prefs);
       }
     } else if (response.isError) {
       final errPayload = response.payload ?? response.error ?? {};
@@ -1210,6 +1221,10 @@ class NodeService {
   }
 
   void _onConnected(NodeFrame frame) {
+    final pluginSurfaceUrls = frame.payload?['pluginSurfaceUrls'];
+    CanvasCapability().setPluginSurfaceUrl(
+      pluginSurfaceUrls is Map ? pluginSurfaceUrls['canvas']?.toString() : null,
+    );
     _pairingRetryNotBefore = null;
     _pairingApprovalFailureCount = 0;
     _cachedChallengeNonce = null;
