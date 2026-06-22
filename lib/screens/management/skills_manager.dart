@@ -2996,6 +2996,7 @@ class _SkillProvisioningBadgeData {
       detail: override.detail,
       color: switch (override.status) {
         'app_native_ready' => AppColors.statusGreen,
+        'needs_user_config' => AppColors.statusAmber,
         'unsupported_on_android' ||
         'manual_proot_compat' ||
         'hidden_desktop_only' =>
@@ -3004,6 +3005,7 @@ class _SkillProvisioningBadgeData {
       },
       icon: switch (override.status) {
         'app_native_ready' => Icons.check_circle_rounded,
+        'needs_user_config' => Icons.tune_rounded,
         'unsupported_on_android' => Icons.remove_circle_outline_rounded,
         'manual_proot_compat' => Icons.alt_route_rounded,
         'hidden_desktop_only' => Icons.desktop_windows_rounded,

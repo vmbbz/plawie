@@ -45,6 +45,18 @@ AndroidSkillProvisioningBadgeOverride? classifyAndroidSkillProvisioningBadge(
     );
   }
 
+  final isConfigGate = androidSupport == 'needs_config' ||
+      (androidSupport == 'needs_pack' &&
+          (runtimeStatus == 'needs_config' ||
+              provisioningStatus == 'needs_user_config'));
+  if (isConfigGate && !_skillNeedsMoreThanConfig(skill)) {
+    return AndroidSkillProvisioningBadgeOverride(
+      status: 'needs_user_config',
+      label: 'NEEDS CONFIG',
+      detail: _configGateDetail(skill),
+    );
+  }
+
   return switch (androidSupport) {
     'unsupported_on_android' => AndroidSkillProvisioningBadgeOverride(
         status: androidSupport,
@@ -75,4 +87,56 @@ bool _isExcludedAndroidSupport(String support) {
   return support == 'unsupported_on_android' ||
       support == 'manual_proot_compat' ||
       support == 'hidden_desktop_only';
+}
+
+bool _skillNeedsMoreThanConfig(Map<String, dynamic> skill) {
+  if (_stringList(skill['missingBins']).isNotEmpty ||
+      _stringList(skill['missingPacks']).isNotEmpty) {
+    return true;
+  }
+  if (_gateNeedsMoreThanConfig(skill['dependencyGateStatus']?.toString())) {
+    return true;
+  }
+  if (_gateNeedsMoreThanConfig(skill['primaryGate']?.toString())) {
+    return true;
+  }
+  return _stringList(skill['gates']).any(_gateNeedsMoreThanConfig);
+}
+
+bool _gateNeedsMoreThanConfig(String? gate) {
+  final normalized = gate?.trim().toLowerCase();
+  if (normalized == null || normalized.isEmpty) return false;
+  return normalized == 'missing_native_bin' ||
+      normalized == 'missing_native_runtime' ||
+      normalized == 'missing_native_python_package' ||
+      normalized == 'missing_native_node_package' ||
+      normalized == 'missing_native_plugin' ||
+      normalized == 'missing_native_skill' ||
+      normalized == 'missing_binary' ||
+      normalized == 'missing_dependency' ||
+      normalized == 'missing_plugin' ||
+      normalized == 'missing_pack' ||
+      normalized == 'missing_manifest' ||
+      normalized == 'dependency_pack' ||
+      normalized == 'manual_proot_required' ||
+      normalized == 'unsupported_native' ||
+      normalized == 'unsupported_on_android';
+}
+
+String _configGateDetail(Map<String, dynamic> skill) {
+  final env = _stringList(skill['requiredEnv']);
+  final config = _stringList(skill['requiredConfig']);
+  if (env.isNotEmpty) return 'Configure ${env.join(', ')}';
+  if (config.isNotEmpty) return 'Configure ${config.join(', ')}';
+  return 'User configuration required';
+}
+
+List<String> _stringList(dynamic value) {
+  if (value is List) {
+    return value
+        .map((item) => item?.toString().trim() ?? '')
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+  return const <String>[];
 }

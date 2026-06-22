@@ -68,6 +68,59 @@ void main() {
     expect(override, isNull);
   });
 
+  test('config-only rows are shown as config gates, not missing deps', () {
+    for (final skillId in const [
+      'sag',
+      'slack',
+      'discord',
+      'eightctl',
+      'gemini',
+      'gh-issues',
+      'spotify-player',
+      'trello',
+      'github',
+      'goplaces',
+      'mcporter',
+      'notion',
+      'openai-whisper-api',
+      '1password',
+    ]) {
+      final override = classifyAndroidSkillProvisioningBadge({
+        'skillId': skillId,
+        'androidSupport': skillId == 'eightctl' ? 'needs_pack' : 'needs_config',
+        'runtimeStatus': 'missing_dependency',
+        'provisioningStatus': 'needs_user_config',
+        'requiredEnv': ['CONFIG_FOR_$skillId'],
+        'ready': false,
+      });
+
+      expect(override, isNotNull, reason: skillId);
+      expect(override!.status, 'needs_user_config', reason: skillId);
+      expect(override.label, 'NEEDS CONFIG', reason: skillId);
+    }
+  });
+
+  test('true runtime pack rows still fall through as missing deps', () {
+    for (final skillId in const [
+      'sherpa-onnx-tts',
+      'coding-agent',
+      'node-inspect-debugger',
+      'openai-whisper',
+    ]) {
+      final override = classifyAndroidSkillProvisioningBadge({
+        'skillId': skillId,
+        'androidSupport': 'needs_pack',
+        'runtimeStatus': 'missing_dependency',
+        'provisioningStatus': 'missing_dependency',
+        'requiredPacks': ['runtime-pack-for-$skillId'],
+        'missingPacks': ['runtime-pack-for-$skillId'],
+        'ready': false,
+      });
+
+      expect(override, isNull, reason: skillId);
+    }
+  });
+
   // --- NEW live readiness oracle tests (Workstream D / GTM plan fidelity) ---
 
   test('live ready status overrides static taxonomy for needs_pack skills', () {
