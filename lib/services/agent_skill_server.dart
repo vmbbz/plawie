@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'preferences_service.dart';
 import 'skills_service.dart';
+import 'skill_workspace.dart';
 import 'tts_service.dart';
 import 'gateway_service.dart';
 import 'gateway_tool_catalog.dart';
@@ -16,6 +17,7 @@ import 'capabilities/camera_capability.dart';
 import 'capabilities/clawhub_capability.dart';
 import 'capabilities/device_capability.dart';
 import 'capabilities/discord_capability.dart';
+import 'capabilities/eightctl_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/gemini_capability.dart';
 import 'capabilities/github_capability.dart';
@@ -88,6 +90,7 @@ class AgentSkillServer {
   final ClawHubCapability _clawHubCapability = ClawHubCapability();
   final DeviceCapability _deviceCapability = DeviceCapability();
   final DiscordCapability _discordCapability = DiscordCapability();
+  final EightCtlCapability _eightCtlCapability = EightCtlCapability();
   final FlashCapability _flashCapability = FlashCapability();
   final GeminiCapability _geminiCapability = GeminiCapability();
   final GitHubCapability _githubCapability = GitHubCapability();
@@ -1536,10 +1539,34 @@ class AgentSkillServer {
     }, request);
   }
 
+  /// Extract the skill ID from a dotted tool name.
+  /// '1password.vaults' → '1password', 'nano-pdf.extract' → 'nano-pdf',
+  /// 'canvas.snapshot' → 'canvas', 'canvas' → 'canvas'.
+  static String _skillIdFromToolName(String toolName) {
+    final dot = toolName.indexOf('.');
+    return dot > 0 ? toolName.substring(0, dot) : toolName;
+  }
+
   void _handleToolsCatalog(HttpRequest request) {
     final catalog = SkillsService().getToolsCatalog();
     _sendJson(request, {
-      'tools': catalog,
+      'tools': catalog.map((tool) {
+        final name = tool['name']?.toString() ?? '';
+        if (name.isEmpty) {
+          return {
+            ...tool,
+            'docPath': SkillWorkspace.relativeDoc('unknown'),
+            'workspaceDoc': SkillWorkspace.relativeDoc('unknown'),
+          };
+        }
+        final skillId = _skillIdFromToolName(name);
+        final docPath = SkillWorkspace.relativeDoc(skillId);
+        return {
+          ...tool,
+          'docPath': docPath,
+          'workspaceDoc': docPath,
+        };
+      }).toList(),
       'callbackUrl': 'http://127.0.0.1:8765',
       'executeUrl': 'http://127.0.0.1:8765/api/tools/execute',
       'executionEnabled': true,
@@ -1552,7 +1579,16 @@ class AgentSkillServer {
 
   void _handleSkillsList(HttpRequest request) {
     final skills = SkillsService().getSkillsList();
-    _sendJson(request, {'skills': skills.map((s) => s.toJson()).toList()});
+    _sendJson(request, {
+      'skills': skills.map((s) {
+        final docPath = SkillWorkspace.relativeDoc(s.id);
+        return {
+          ...s.toJson(),
+          'docPath': docPath,
+          'workspaceDoc': docPath,
+        };
+      }).toList(),
+    });
   }
 
   // ── Native Gateway Bridge Dry Run ─────────────────────────────────────────
@@ -1990,6 +2026,13 @@ class AgentSkillServer {
       'discord.me': 'discord.me',
       'discord_status': 'discord.me',
       'discord.status': 'discord.me',
+      'eightctl': 'eightctl.status',
+      'eightctl_status': 'eightctl.status',
+      'eightctl.status': 'eightctl.status',
+      'eightctl_whoami': 'eightctl.whoami',
+      'eightctl.whoami': 'eightctl.whoami',
+      'eightctl_device_info': 'eightctl.device-info',
+      'eightctl.device-info': 'eightctl.device-info',
       'slack': 'slack.me',
       'slack_me': 'slack.me',
       'slack.me': 'slack.me',
@@ -2071,6 +2114,8 @@ class AgentSkillServer {
       'canvas_navigate': 'canvas.navigate',
       'canvas_eval': 'canvas.eval',
       'canvas_snapshot': 'canvas.snapshot',
+      'canvas_present': 'canvas.present',
+      'canvas_hide': 'canvas.hide',
       'flash_on': 'flash.on',
       'flash_off': 'flash.off',
       'flash_toggle': 'flash.toggle',
@@ -2387,6 +2432,9 @@ class AgentSkillServer {
       case 'camera.list':
       case 'clawhub.search':
       case 'clawhub.info':
+      case 'eightctl.status':
+      case 'eightctl.whoami':
+      case 'eightctl.device-info':
       case 'meme-maker.create':
       case 'canvas.navigate':
       case 'canvas.eval':
@@ -2441,6 +2489,8 @@ class AgentSkillServer {
         return 'SessionLogsCapability';
       case 'slack':
         return 'SlackCapability';
+      case 'eightctl':
+        return 'EightCtlCapability';
       case 'camera':
         return 'CameraCapability';
       case 'canvas':
@@ -2574,6 +2624,28 @@ class AgentSkillServer {
         case 'discord.status':
           final frame = await _discordCapability.handle(
             'discord.me',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'eightctl':
+        case 'eightctl_status':
+        case 'eightctl.status':
+          final frame = await _eightCtlCapability.handle(
+            'eightctl.status',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'eightctl_whoami':
+        case 'eightctl.whoami':
+          final frame = await _eightCtlCapability.handle(
+            'eightctl.whoami',
+            input,
+          );
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'eightctl_device_info':
+        case 'eightctl.device-info':
+          final frame = await _eightCtlCapability.handle(
+            'eightctl.device-info',
             input,
           );
           _sendNodeFrame(request, frame, fallback: input);

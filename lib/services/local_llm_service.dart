@@ -777,6 +777,18 @@ class LocalLlmService {
       description: 'Captures a snapshot of the in-app canvas panel.',
     ),
     Tool(
+      name: 'canvas_present',
+      jsonSchema:
+          '{"type":"object","properties":{"url":{"type":"string","description":"URL, data URI, or target to display in the canvas"}},"required":[]}',
+      description:
+          'Shows content (URL, data URI, or generated media) in the in-app canvas panel.',
+    ),
+    Tool(
+      name: 'canvas_hide',
+      jsonSchema: '{"type":"object","properties":{},"required":[]}',
+      description: 'Hides the in-app canvas panel.',
+    ),
+    Tool(
       name: 'avatar_gesture',
       jsonSchema: AvatarGestureCatalog.toolJsonSchema,
       description:
@@ -843,6 +855,9 @@ class LocalLlmService {
     }
     if (hasAny(['open url', 'open website', 'web canvas', 'navigate to'])) {
       selected.addAll(['canvas_navigate', 'canvas_snapshot']);
+    }
+    if (hasAny(['show', 'present', 'display', 'render', 'preview'])) {
+      selected.addAll(['canvas_present', 'canvas_hide']);
     }
     if (hasAny([
       'avatar',
@@ -991,6 +1006,10 @@ class LocalLlmService {
         return _dispatchCapability(_canvasCapability, 'canvas.navigate', args);
       case 'canvas_snapshot':
         return _dispatchCapability(_canvasCapability, 'canvas.snapshot', args);
+      case 'canvas_present':
+        return _dispatchCapability(_canvasCapability, 'canvas.present', args);
+      case 'canvas_hide':
+        return _dispatchCapability(_canvasCapability, 'canvas.hide', args);
       case 'avatar_gesture':
         return _postAgentSkill('/api/avatar/control', {
           'action': 'play_gesture',

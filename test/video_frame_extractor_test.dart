@@ -38,7 +38,13 @@ void main() {
 
   test('extractFrames uses Native ffmpeg with app-owned temp paths', () async {
     final temp = await Directory.systemTemp.createTemp('video_frames_native_');
-    addTearDown(() => temp.delete(recursive: true));
+    addTearDown(() async {
+      try {
+        if (await temp.exists()) {
+          await temp.delete(recursive: true);
+        }
+      } catch (_) {}
+    });
 
     final captured = <List<String>>[];
     final frames = await VideoFrameExtractor.extractFrames(
@@ -96,7 +102,13 @@ void main() {
       () async {
     final temp =
         await Directory.systemTemp.createTemp('video_frames_missing_ffmpeg_');
-    addTearDown(() => temp.delete(recursive: true));
+    addTearDown(() async {
+      try {
+        if (await temp.exists()) {
+          await temp.delete(recursive: true);
+        }
+      } catch (_) {}
+    });
 
     final frames = await VideoFrameExtractor.extractFrames(
       Uint8List.fromList(<int>[1, 2, 3]),

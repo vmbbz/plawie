@@ -1546,19 +1546,33 @@ os.networkInterfaces = () => ({});
             // (Recommended core skills moved to Dart layer for better timeout management)
 
             // 2. Sync skills from assets/openclaw/skills if they exist
-            val assetPath = "openclaw/skills"
-            val assets = context.assets.list(assetPath) ?: emptyArray()
-            for (assetName in assets) {
-                val destFile = File(skillsDir, assetName)
-                context.assets.open("$assetPath/$assetName").use { input ->
-                    FileOutputStream(destFile).use { output ->
-                        input.copyTo(output)
+            // Uses recursive copy to handle nested skill directories (e.g. canvas/SKILL.md)
+            fun copyAssetToSkills(assetPath: String, destDir: File) {
+                val entries = context.assets.list(assetPath) ?: return
+                for (entry in entries) {
+                    val childAssetPath = "$assetPath/$entry"
+                    val childDest = File(destDir, entry)
+                    try {
+                        val children = context.assets.list(childAssetPath)
+                        if (children != null && children.isNotEmpty()) {
+                            // It's a directory — recurse
+                            childDest.mkdirs()
+                            copyAssetToSkills(childAssetPath, childDest)
+                        }
+                    } catch (_: Exception) {
+                        // It's a file — copy it
+                        context.assets.open(childAssetPath).use { input ->
+                            FileOutputStream(childDest).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        childDest.setReadable(true, false)
+                        childDest.setWritable(true, false)
+                        Log.i("BootstrapManager", "[SYNC] asset skill: $entry")
                     }
                 }
-                destFile.setReadable(true, false)
-                destFile.setWritable(true, false)
-                Log.i("BootstrapManager", "[SYNC] asset skill: $assetName")
             }
+            copyAssetToSkills("openclaw/skills", skillsDir)
 
             // 3. Sync limb VRMAs to workspace for additive layering (Project Airi style)
             val vrmaLimbsDir = File("$rootfsDir/root/.openclaw/assets/vrm/animations/limbs")
@@ -1688,6 +1702,27 @@ os.networkInterfaces = () => ({});
                 Log.i("BootstrapManager", "Synchronized extension: android_bridge_tools.js")
             } catch (e: Exception) {
                 Log.w("BootstrapManager", "Extension asset not found, assuming pre-installed.")
+            }
+
+            // 5. Sync bundled skills from gateway package to workspace.
+            // Uses the gateway's own skills as source of truth, so it survives version updates.
+            val pkgSkillsDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw/skills")
+            if (pkgSkillsDir.exists()) {
+                var syncedCount = 0
+                pkgSkillsDir.listFiles()?.forEach { skillDir ->
+                    if (skillDir.isDirectory()) {
+                        val sourceFile = File(skillDir, "SKILL.md")
+                        if (sourceFile.exists()) {
+                            val destDir = File(skillsDir, skillDir.name)
+                            destDir.mkdirs()
+                            sourceFile.copyTo(File(destDir, "SKILL.md"), overwrite = true)
+                            syncedCount++
+                        }
+                    }
+                }
+                Log.i("BootstrapManager", "[SYNC] bundled gateway skills synced: $syncedCount")
+            } else {
+                Log.w("BootstrapManager", "[SYNC] bundled gateway skills dir not found: ${pkgSkillsDir.absolutePath}")
             }
 
         } catch (e: Exception) {

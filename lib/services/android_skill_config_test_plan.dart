@@ -61,6 +61,7 @@ class AndroidSkillConfigTestPlan {
       'notion' => 'Query: ${input['query']}, limit: ${input['limit']}',
       'openai-whisper-api' =>
         'Fixture: ${input['filename']}, model: ${input['model']}',
+      'eightctl' => 'Command: eightctl status --output json',
       'voice-call' => 'Provider: Twilio, method: ${input['method']}',
       _ => '',
     };
@@ -81,6 +82,14 @@ class AndroidSkillConfigTestPlan {
           input: {'source': source, 'action': 'me'},
           risk: AndroidSkillConfigTestRisk.safeRead,
           successActionLabel: 'Discord bot',
+        );
+      case 'eightctl':
+        return const AndroidSkillConfigTestPlan(
+          skillId: 'eightctl',
+          toolName: 'eightctl',
+          input: {'source': source, 'action': 'status'},
+          risk: AndroidSkillConfigTestRisk.safeRead,
+          successActionLabel: 'Eight Sleep status',
         );
       case '1password':
         return const AndroidSkillConfigTestPlan(
@@ -214,6 +223,7 @@ class AndroidSkillConfigTestPlan {
     switch (normalized) {
       case '1password':
       case 'discord':
+      case 'eightctl':
       case 'gemini':
       case 'github':
       case 'gh-issues':

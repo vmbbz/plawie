@@ -2462,7 +2462,7 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Native Android ceiling: ${model.androidRelevantLabel} ready now from ${model.androidRelevantTotal} Android-relevant defaults. Optional-ready skills are usable now but not launch-critical. $excludedCount desktop, PRoot, or unsupported skills stay outside the release promise.',
+            'Native Android ceiling: ${model.androidRelevantReady}/${model.androidRelevantTotal} ready now. Critical launch-gate is ${model.readyRequiredLabel}. Optional skills may require user config or downloading runtimes. $excludedCount desktop, PRoot, or unsupported skills remain outside GTM scope.',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.58),
               fontSize: 10.5,
@@ -2482,62 +2482,19 @@ class _AndroidDefaultReadinessPanel extends StatelessWidget {
                     : accent,
               ),
               _ReadinessMetric(
-                label: 'ANDROID NOW',
-                value: model.androidRelevantLabel,
+                label: 'READY NOW',
+                value: '${model.androidRelevantReady}',
                 color: AppColors.statusGreen,
               ),
               _ReadinessMetric(
-                label: 'READY OPTIONAL',
-                value: model.readyOptionalLabel,
-                color: AppColors.statusGreen.withValues(alpha: 0.86),
-              ),
-              _ReadinessMetric(
-                label: 'UNEXPECTED',
-                value: '${model.unexpectedMissingDependency}',
-                color: model.unexpectedMissingDependency == 0
-                    ? AppColors.statusGreen
-                    : accent,
-              ),
-              _ReadinessMetric(
-                label: 'CONFIG BLOCKERS',
+                label: 'NEEDS CONFIG',
                 value: '${model.blockedNeedsConfigCount}',
                 color: AppColors.statusAmber,
               ),
               _ReadinessMetric(
-                label: 'CONFIG CLASS',
-                value: '${model.needsConfigTaxonomyCount}',
-                color: AppColors.statusAmber.withValues(alpha: 0.72),
-              ),
-              _ReadinessMetric(
-                label: 'LIVE TESTS',
-                value: '${model.liveConnectionTestCount}',
-                color: AppColors.statusGreen,
-              ),
-              _ReadinessMetric(
-                label: 'SETUP CHECKS',
-                value: '${model.conditionalSetupStatusCount}',
-                color: Colors.lightBlueAccent,
-              ),
-              _ReadinessMetric(
-                label: 'SAVE ONLY',
-                value: '${model.saveOnlyConfigCount}',
-                color: AppColors.statusAmber.withValues(alpha: 0.9),
-              ),
-              if (model.mixedConfigRuntimeGateCount > 0)
-                _ReadinessMetric(
-                  label: 'MIXED GATES',
-                  value: '${model.mixedConfigRuntimeGateCount}',
-                  color: AppColors.statusAmber.withValues(alpha: 0.72),
-                ),
-              _ReadinessMetric(
-                label: 'PACK BLOCKERS',
+                label: 'NEEDS DOWNLOAD',
                 value: '${model.blockedNeedsPackCount}',
                 color: Colors.cyanAccent,
-              ),
-              _ReadinessMetric(
-                label: 'PACK CLASS',
-                value: '${model.needsPackTaxonomyCount}',
-                color: Colors.cyanAccent.withValues(alpha: 0.72),
               ),
               _ReadinessMetric(
                 label: 'OUTSIDE GTM',

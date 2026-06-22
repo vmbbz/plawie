@@ -93,8 +93,27 @@ android {
 
 chaquopy {
     defaultConfig {
-        version = "3.13"
+        version = "3.11"
         buildPython("python")
+        pip {
+            // Install C-extension packages at build time so the wheels are
+            // compiled against the correct Chaquopy 17.0 CPython ABI.
+            // Runtime wheel provisioning (from pypi-13.1) produces ABI-
+            // incompatible .so files that crash with _pandas_datetime_CAPI.
+            // Pin pandas to <2.2 because pandas >=2.2 C extensions are
+            // incompatible with the Chaquopy 17.0 ABI on Android.
+            install("numpy")
+            install("pandas<2.2")
+            install("yfinance")
+            install("python-dateutil")
+            install("requests")
+            install("six")
+            install("pydantic")
+            install("beautifulsoup4")
+            install("frozendict")
+            install("peewee")
+            install("websockets")
+        }
     }
 }
 

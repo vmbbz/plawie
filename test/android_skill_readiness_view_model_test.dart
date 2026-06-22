@@ -184,11 +184,11 @@ void main() {
     });
 
     expect(model.blockedNeedsConfigCount, 15);
-    expect(model.liveConnectionTestCount, 11);
+    expect(model.liveConnectionTestCount, 12);
     expect(model.conditionalSetupStatusCount, 1);
-    expect(model.saveOnlyConfigCount, 3);
-    expect(model.configTestCoverageLabel, '11 live + 1 setup / 15');
-    expect(model.saveOnlyConfigLabel, '3 save-only');
+    expect(model.saveOnlyConfigCount, 2);
+    expect(model.configTestCoverageLabel, '12 live + 1 setup / 15');
+    expect(model.saveOnlyConfigLabel, '2 save-only');
     expect(model.configPackTaxonomyLabel, '14 config class / 1 pack class');
 
     final summaries = {
@@ -204,7 +204,7 @@ void main() {
     );
     expect(
       summaries['eightctl']!.configTestSupport,
-      AndroidSkillConfigTestSupport.saveOnly,
+      AndroidSkillConfigTestSupport.liveConnection,
     );
     expect(model.mixedConfigRuntimeGateCount, 0);
   });
@@ -256,10 +256,10 @@ void main() {
     });
 
     expect(model.blockedNeedsConfigCount, 4);
-    expect(model.liveConnectionTestCount, 1);
-    expect(model.saveOnlyConfigCount, 2);
+    expect(model.liveConnectionTestCount, 2);
+    expect(model.saveOnlyConfigCount, 1);
     expect(model.mixedConfigRuntimeGateCount, 1);
-    expect(model.saveOnlyConfigLabel, '2 save-only + 1 mixed runtime');
+    expect(model.saveOnlyConfigLabel, '1 save-only + 1 mixed runtime');
   });
 
   test('pack gate detail prefers concrete missing payload data', () {

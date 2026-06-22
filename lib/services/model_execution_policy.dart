@@ -32,6 +32,7 @@ class ModelExecutionPolicy {
   static const int openRouterFreeContextWindow = 200000;
   static const int openRouterKimiK26ContextWindow = 262144;
   static const int groqLlamaContextWindow = 131072;
+  static const int zenmuxGlm52ContextWindow = 131072;
 
   static const int ndkBridgeContextWindow = 4096;
   static const int ndkBridgeMaxTokens = 768;

@@ -16,7 +16,7 @@ class SkillParityAuditService {
   static final SkillParityAuditService instance = SkillParityAuditService._();
 
   static const _mirrorMarkerName = '.plawie-native-mirror.json';
-  static const _nativePythonRuntimeVersion = '3.13';
+  static const _nativePythonRuntimeVersion = '3.11';
   static final _skillNamePattern = RegExp(r'^@?[a-zA-Z0-9][a-zA-Z0-9._@-]*$');
   static final _envPattern = RegExp(
     r'\b[A-Z][A-Z0-9_]{2,}(?:API_KEY|TOKEN|SECRET|CLIENT_ID|CLIENT_SECRET|AUTH|KEY|URL|HOST|PASSWORD|EMAIL)\b'
@@ -531,12 +531,34 @@ class SkillParityAuditService {
       }
     }
 
+    await _patchChaquopyUnsafePythonImports(layout);
+
     return SkillMirrorRepairResult(
       copied: copied,
       updated: updated,
       skippedConflicts: skippedConflicts,
       errors: errors,
     );
+  }
+
+  static Future<void> _patchChaquopyUnsafePythonImports(
+    _SkillParityLayout layout,
+  ) async {
+    final script = File(
+      path.join(
+        layout.nativeWorkspaceSkillsRoot.path,
+        'stocks',
+        'scripts',
+        'yfinance_ai.py',
+      ),
+    );
+    if (!await script.exists()) return;
+    var content = await script.readAsString();
+    const badImport = 'from dateutil import parser as dateutil_parser';
+    const goodImport = 'import dateutil.parser as dateutil_parser';
+    if (!content.contains(badImport)) return;
+    content = content.replaceAll(badImport, goodImport);
+    await script.writeAsString(content);
   }
 
   static bool _isSafeSkillName(String value) {

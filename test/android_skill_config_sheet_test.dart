@@ -323,8 +323,10 @@ void main() {
     expect(find.text('OpenAI transcription check passed.'), findsOneWidget);
   });
 
-  testWidgets('eightctl save-only gate explains account validation boundary',
+  testWidgets('eightctl config save reveals live connection test',
       (tester) async {
+    AndroidSkillConfigTestPlan? capturedPlan;
+
     await _pumpSheet(
       tester,
       _eightctlModel(),
@@ -334,6 +336,14 @@ void main() {
         configValues = const <String, dynamic>{},
       }) async =>
           _satisfiedReport(skillId),
+      testConnection: (plan) async {
+        capturedPlan = plan;
+        return const AndroidSkillConfigTestResult(
+          ok: true,
+          message: 'Eight Sleep status check passed.',
+          safeSummary: '{"status":"READY"}',
+        );
+      },
     );
 
     await tester.enterText(
@@ -347,11 +357,12 @@ void main() {
     await tester.tap(find.text('Save & Check'));
     await tester.pump();
 
-    expect(find.text('Test Connection'), findsNothing);
-    expect(
-      find.textContaining('live Eight Sleep account/device validation'),
-      findsOneWidget,
-    );
+    expect(find.text('Test Connection'), findsOneWidget);
+    await tester.tap(find.text('Test Connection'));
+    await tester.pump();
+
+    expect(capturedPlan?.toolName, 'eightctl');
+    expect(find.text('Eight Sleep status check passed.'), findsOneWidget);
   });
 
   testWidgets(

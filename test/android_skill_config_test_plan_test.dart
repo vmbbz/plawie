@@ -154,7 +154,6 @@ void main() {
   });
 
   test('keeps only unresolved config lanes in save-only mode', () {
-    expect(AndroidSkillConfigTestPlan.forSkill('eightctl'), isNull);
     expect(AndroidSkillConfigTestPlan.forSkill('gog'), isNull);
     expect(AndroidSkillConfigTestPlan.forSkill('ordercli'), isNull);
   });
@@ -162,6 +161,7 @@ void main() {
   test('classifies config support across all Phase 6C gates', () {
     for (final skillId in const [
       'discord',
+      'eightctl',
       'gh-issues',
       'github',
       'goplaces',
@@ -187,7 +187,7 @@ void main() {
       AndroidSkillConfigTestSupport.conditionalSetupStatus,
     );
 
-    for (final skillId in const ['eightctl', 'gog', 'ordercli']) {
+    for (final skillId in const ['gog', 'ordercli']) {
       expect(
         AndroidSkillConfigTestPlan.supportForSkill(skillId),
         AndroidSkillConfigTestSupport.saveOnly,

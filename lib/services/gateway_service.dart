@@ -231,6 +231,8 @@ class GatewayService {
   bool _processValidationInFlight = false;
   bool _nodeAutoConnectInFlight = false;
   bool _hungGatewayRestartInFlight = false;
+  bool _heavyInitInProgress = false;
+  DateTime? _heavyInitStartedAt;
   bool _modelAliasRepairInFlight = false;
   bool _nativeFullSelectorSoakInFlight = false;
   bool _nativeFullSelectorPressureSoakInFlight = false;
@@ -1677,6 +1679,7 @@ class GatewayService {
 
     // Attempting a fresh start
     _isStarting = true;
+    _setHeavyInit(true, reason: 'fresh-start');
     _rpcDiscoveryDone = false; // ensure discovery runs on this new session
     _gatewayInteractiveReadyAt = null;
     _lastPostReadySkillParityAuditAt = null;
@@ -1716,6 +1719,11 @@ class GatewayService {
       } else {
         await _configureGateway();
       }
+
+      // Always ensure node allowCommands is present in config, even for
+      // native production owner (where _configureGateway is skipped) and
+      // when config was regenerated from proot (which omits allowCommands).
+      await _ensureNodeAllowCommands();
 
       await Future.delayed(const Duration(milliseconds: 300));
       final success = await _runtime.start(
@@ -2376,6 +2384,11 @@ HEARTBEAT_OK.
           await _writeConfigFileIfChanged(nativeFile, nativeConfig);
         }
       }
+
+      // Sync the .last-good file so the gateway never restores stale config
+      // (e.g. old model selection) from a previous last-good snapshot.
+      final nativeFileLastGood = File('${nativeFile.path}.last-good');
+      await _writeConfigFileIfChanged(nativeFileLastGood, nativeConfig);
     } catch (e) {
       debugPrint('[GatewayService] Config write error: $e');
     }
@@ -2474,6 +2487,21 @@ HEARTBEAT_OK.
     } catch (e) {
       debugPrint('[GatewayService] .env write error: $e');
     }
+  }
+
+  /// Ensure gateway.nodes.allowCommands is present in config.
+  /// This must always run on every startup so that new commands added to
+  /// GatewayToolCatalog.mobileNodeAllowCommands are available without
+  /// requiring a factory reset or config wipe.
+  Future<void> _ensureNodeAllowCommands() async {
+    final config = await _readConfig();
+    if (config.isEmpty) return;
+    config['gateway'] ??= <String, dynamic>{};
+    config['gateway']['nodes'] ??= <String, dynamic>{};
+    config['gateway']['nodes']['denyCommands'] ??= <String>[];
+    config['gateway']['nodes']['allowCommands'] =
+        GatewayToolCatalog.mobileNodeAllowCommands.toList(growable: false);
+    await _writeConfig(config);
   }
 
   /// Direct I/O: configure gateway binding and node settings.
@@ -2729,6 +2757,15 @@ HEARTBEAT_OK.
       }
     } catch (_) {}
     await _writeConfig(config);
+
+    // Also explicitly sync .last-good so the model selection survives a
+    // gateway restart that restores from last-good.
+    try {
+      final nativeFile = File(await _nativeOpenClawConfigPath());
+      final nativeFileLastGood = File('${nativeFile.path}.last-good');
+      final nativeConfig = await _nativeGatewayConfigFrom(config);
+      await _writeConfigFileIfChanged(nativeFileLastGood, nativeConfig);
+    } catch (_) {}
   }
 
   Future<bool> hasProviderCredential(String provider) async {
@@ -4052,6 +4089,16 @@ HEARTBEAT_OK.
         ));
         _consecutiveFailures = 0; // Success — reset failure counter
 
+        if (_heavyInitInProgress) {
+          final started = _heavyInitStartedAt;
+          if (_state.isInteractiveReady ||
+              (started != null &&
+                  DateTime.now().difference(started) >
+                      _nativeFullGatewayStartupGrace)) {
+            _setHeavyInit(false, reason: 'bootstrap-ready');
+          }
+        }
+
         // ── 2. Single token retrieval (with timeout) ─────────────────────
         if (token == null || token.isEmpty) {
           try {
@@ -4346,6 +4393,12 @@ HEARTBEAT_OK.
             !listenerAlive &&
             elapsed >= 10 &&
             !nativeStartupGraceActive) {
+          if (_heavyInitInProgress) {
+            _consecutiveFailures = 0;
+            _addActivity(
+                '[HEALTH] Suppressing startup restart during heavy init.');
+            return;
+          }
           _rpcDiscoveryDone = false;
           _gatewayInteractiveReadyAt = null;
           _addActivity(
@@ -4391,6 +4444,12 @@ HEARTBEAT_OK.
             '[HEALTH] Probe failed ($_consecutiveFailures/$_healthFailureRestartThreshold): ${e.toString().split('\n').first}');
         if (_consecutiveFailures >= _healthFailureRestartThreshold &&
             !_isAutoHealingInProgress) {
+          if (_heavyInitInProgress) {
+            _consecutiveFailures = 0;
+            _addActivity(
+                '[HEALTH] Suppressing hung restart during heavy init.');
+            return;
+          }
           if (processAlive || listenerAlive) {
             unawaited(_restartHungGatewayAfterHealthFailures(
               reason: 'health-timeout',
@@ -4515,11 +4574,25 @@ HEARTBEAT_OK.
     }
   }
 
+  void _setHeavyInit(bool value, {String? reason}) {
+    if (_heavyInitInProgress == value) return;
+    _heavyInitInProgress = value;
+    if (value) {
+      _heavyInitStartedAt = DateTime.now();
+    } else {
+      _heavyInitStartedAt = null;
+    }
+    if (reason != null && reason.isNotEmpty) {
+      _addActivity('[GATEWAY] heavy-init=${value ? 'on' : 'off'} ($reason)');
+    }
+  }
+
   Future<void> _restartHungGatewayAfterHealthFailures({
     required String reason,
     required int failureCount,
   }) async {
     if (_hungGatewayRestartInFlight || _isStarting || _isStopping) return;
+    if (_heavyInitInProgress) return;
     final now = DateTime.now();
     final lastRestart = _lastHungGatewayRestartAt;
     if (lastRestart != null) {
@@ -4857,12 +4930,13 @@ For weather requests with a city or coordinates, use action="invoke" with invoke
 For ClawHub registry metadata requests, use action="invoke" with invokeCommand="clawhub.search" or "clawhub.info" and invokeParamsJson like {"query":"weather"} or {"slug":"weather"}. Do not use npm, npx, or PRoot for read-only ClawHub metadata on Android.
 For simple meme image requests, use action="invoke" with invokeCommand="meme-maker.create" and invokeParamsJson like {"topText":"Native Android","bottomText":"No PRoot needed"}. This produces a PNG through the Android app-native renderer; do not use Node canvas, sharp, npm, or PRoot for this Android path.
 For healthcheck requests, call device_health or action="invoke" with invokeCommand="device.health" and summarize the result.
-For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.sequence, avatar.mode, avatar.model, avatar.status, device.health, device.status, device.permissions, canvas.navigate, canvas.eval, canvas.snapshot, weather.current, weather.forecast, clawhub.search, clawhub.info, meme-maker.create, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list.
+For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.sequence, avatar.mode, avatar.model, avatar.status, device.health, device.status, device.permissions, canvas.navigate, canvas.eval, canvas.snapshot, canvas.present, canvas.hide, weather.current, weather.forecast, clawhub.search, clawhub.info, meme-maker.create, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list. For canvas.present, put HTML content under ~/.openclaw/canvas/ and construct the URL as http://<gateway-host>:18789/__openclaw__/canvas/<file>.html. For generated content like SVG or HTML, write it to a file in ~/.openclaw/canvas/ first then present that file URL. IMPORTANT: Do NOT pass a "target" parameter to canvas.present or canvas.navigate — the gateway auto-routes to the connected device. Passing target="node" causes a URI parse error. Just pass the "url" parameter. CRITICAL RULE for canvas HTML: You MUST generate pure inline SVG (from a .html file) for any visualization request like "draw a flower", "illustrate X", "show me a diagram", etc. Do NOT write JavaScript that calls any external API — not OpenRouter, not OpenAI, not any API — because the WebView has no network API keys. Pure SVG embedded directly in the HTML is self-contained, works perfectly, and never needs API calls. If you MUST use JavaScript, use ONLY browser-native APIs (Canvas2D, WebGL, Web Audio) — never fetch() or XMLHttpRequest to external URLs.
 Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
 Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.sequence","invokeParamsJson":"{\\"interruptCurrent\\":true,\\"steps\\":[{\\"gesture\\":\\"cross leg sit\\",\\"durationMs\\":30000},{\\"gesture\\":\\"bowing 2\\"}]}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
 If a tool plan would use node=auto, replace it with node="$nodeHandle" before calling the tool.
 If the user asks what tools or phone abilities are available, include these Android node tools as available when the node is connected.
 Do not print hidden planning markers such as "(gesture: ...)" or "(image: ...)" in the visible answer. Use tools instead.
+RULES about output style: Never output internal reasoning, chain-of-thought, or analysis of the user's request. Never rephrase or restate the user's question before answering. Jump straight to the answer or action. Output like "The user asks: ... they want ..." or "I should ... because ..." is forbidden — it wastes tokens and confuses the user.
 </plawie_mobile_tool_context>
 
 $requiredNodeBlock
@@ -5017,6 +5091,10 @@ Do not confuse these categories. If the user asks what skills are available, ans
 Do not claim an active skill is unavailable just because its name is not also a primitive tool function name. Use the Gateway agent loop. If a default skill is gated, report the exact gate for repair; do not silently substitute another primitive.
 Only report a skill as blocked when there is a real gate: disabled/ineligible from skills.status, missing dependency/bin/env/config from parity audit, unsupported platform, or tool policy denial.
 If the app-native bridge is not registered, do not call app-native names such as avatar-control, tts-voice, or device-node directly. For phone/avatar/haptic/flash/sensor/camera actions, use the Android node/Gateway tool path when available. Local app-native debug execution is only for explicit /local-tool or /app-native requests.
+
+Skill documentation paths:
+- To read a skill SKILL.md, always use workspace-relative paths only: skills/<skill-id>/SKILL.md
+- Never use paths containing node_modules, full-openclaw, or absolute /data/data/... prefixes; those will fail with ENOENT against the workspace root.
 
 Active skills (${activeSkills.length}):
 ${skillLines.isEmpty ? '- none reported by Gateway yet' : skillLines}$skillCountSuffix
@@ -15061,9 +15139,23 @@ ${lines.join('\n')}
         return delta;
       }
 
-      // Some gateway/model transports stream true deltas instead of snapshots.
-      // Preserve those while still de-duping the cumulative OpenClaw stream.
-      assistantSnapshot += text;
+      // If the new text is a true delta (the gateway appended new content onto
+      // what it previously sent), treat it as a delta and keep the snapshot
+      // growing.
+      if (text.length < assistantSnapshot.length &&
+          !assistantSnapshot.endsWith(text)) {
+        assistantSnapshot += text;
+        return text;
+      }
+
+      // --- New segment heuristic ---
+      // The text doesn't overlap with the snapshot at all. This happens when:
+      //   1. The model emits text after a tool call but the gateway didn't send
+      //      a tool_use/tool_result event (stream=item not handled).
+      //   2. The model emits non-<think> reasoning that's unrelated to the
+      //      previous text.
+      // In these cases, the text is a fresh segment — reset the snapshot.
+      assistantSnapshot = text;
       return text;
     }
 
@@ -15322,6 +15414,57 @@ ${lines.join('\n')}
                 markVisibleChatOutput();
                 chunkController.add(
                     '\x00TOOL_RESULT:$name:${jsonEncode(result ?? {})}\x00');
+              }
+            } else if (stream == 'item') {
+              // Gateway v2026.5.28+ sends tool events as stream=item with
+              // the tool info in innerData.type (tool_use or tool_result).
+              if (!isActiveRunFrame(agentRun)) {
+                return;
+              }
+              final itemType =
+                  (innerData?['type'] ?? payload?['type'] ?? '') as String?;
+              if (itemType == 'tool_use') {
+                markRelevantGatewayActivity();
+                assistantSnapshot = '';
+                final name = (innerData?['name'] ??
+                        payload?['name'] ??
+                        frame['name']) as String? ??
+                    '';
+                final input = innerData?['input'] ?? payload?['input'];
+                if (name.isNotEmpty && !chunkController.isClosed) {
+                  markVisibleChatOutput();
+                  chunkController
+                      .add('\x00TOOL_USE:$name:${jsonEncode(input ?? {})}\x00');
+                }
+              } else if (itemType == 'tool_result') {
+                markRelevantGatewayActivity();
+                assistantSnapshot = '';
+                final name = (innerData?['name'] ??
+                        payload?['name'] ??
+                        frame['name']) as String? ??
+                    'tool';
+                final result = innerData?['result'] ??
+                    payload?['result'] ??
+                    innerData?['output'] ??
+                    payload?['output'];
+                if (name == 'tts') {
+                  final mediaStr =
+                      result is String ? result : result?.toString() ?? '';
+                  if (mediaStr.startsWith('MEDIA:')) {
+                    final relativePath =
+                        mediaStr.substring('MEDIA:/tmp/openclaw/'.length);
+                    final audioUrl =
+                        'http://${AppConstants.gatewayHost}:${AppConstants.gatewayPort}/__openclaw__/media/$relativePath';
+                    TtsService().speakUrl(audioUrl);
+                    onGatewayTtsAudio?.call(audioUrl);
+                    return;
+                  }
+                }
+                if (!chunkController.isClosed) {
+                  markVisibleChatOutput();
+                  chunkController.add(
+                      '\x00TOOL_RESULT:$name:${jsonEncode(result ?? {})}\x00');
+                }
               }
             } else if (stream == 'lifecycle') {
               final phase = (innerData?['phase'] ??

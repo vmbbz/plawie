@@ -159,6 +159,14 @@ void main() {
       manifest.entryFor('node-connect')!.status,
       AndroidSkillSupportStatus.manualProotCompat,
     );
+    expect(
+      manifest.entryFor('gog')!.status,
+      AndroidSkillSupportStatus.hiddenDesktopOnly,
+    );
+    expect(
+      manifest.entryFor('ordercli')!.status,
+      AndroidSkillSupportStatus.hiddenDesktopOnly,
+    );
   });
 
   test('manifest emits stable health JSON for launch diagnostics', () {

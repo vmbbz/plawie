@@ -1,9 +1,14 @@
 package com.nxg.openclawproot
 
 import android.app.Application
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
 import android.os.Process
 import android.os.SystemClock
@@ -20,6 +25,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.security.MessageDigest
 import java.util.zip.GZIPInputStream
 
 class NativeNodeEmbeddedService : Service() {
@@ -64,6 +70,8 @@ class NativeNodeEmbeddedService : Service() {
             "flutter_assets/assets/openclaw/terminal/bin"
         private const val TERMINAL_LIB_ASSET_DIR =
             "flutter_assets/assets/openclaw/terminal/lib"
+        private const val NOTIFICATION_CHANNEL_ID = "native_node_smoke"
+        private const val NOTIFICATION_ID = 5
         private const val ACTION_START = "com.nxg.openclawproot.native_node.START"
         private const val ACTION_STOP = "com.nxg.openclawproot.native_node.STOP"
         private const val EXTRA_PORT = "port"
@@ -78,11 +86,16 @@ class NativeNodeEmbeddedService : Service() {
             port: Int = PORT,
             canaryMode: String = "embedded-smoke"
         ) {
-            context.startService(Intent(context, NativeNodeEmbeddedService::class.java).apply {
+            val intent = Intent(context, NativeNodeEmbeddedService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_PORT, port)
                 putExtra(EXTRA_CANARY_MODE, canaryMode)
-            })
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
         }
 
         fun stop(context: Context) {
@@ -100,17 +113,58 @@ class NativeNodeEmbeddedService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForeground(NOTIFICATION_ID, buildNotification("Starting..."))
         when (intent?.action) {
             ACTION_STOP -> stopEmbeddedRuntime(startId)
             else -> startEmbeddedRuntime(intent)
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onDestroy() {
         appendLog("service destroyed")
         super.onDestroy()
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "Native Node Gateway",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Keeps the native Node.js gateway process alive"
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun buildNotification(text: String): Notification {
+        val intent = Intent(this, Class.forName("com.nxg.openclawproot.MainActivity"))
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+        return builder
+            .setContentTitle("Native Node Gateway")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .build()
     }
 
     private fun startEmbeddedRuntime(intent: Intent?) {
@@ -580,6 +634,17 @@ class NativeNodeEmbeddedService : Service() {
     }
 
     private fun copyBundledWheelAssets(assetDir: String, targetDir: File, label: String): Int {
+        if (isAssetLaneSatisfied(assetDir, targetDir, label, ::isSafeBundledWheelAssetName)) {
+            val count = targetDir.list()?.size ?: 0
+            appendLog("$label wheel assets satisfied by receipt (skipped copy) count=$count")
+            return count
+        }
+        return copyBundledWheelAssetsUnchecked(assetDir, targetDir, label).also {
+            writeAssetLaneReceipt(assetDir, label, ::isSafeBundledWheelAssetName)
+        }
+    }
+
+    private fun copyBundledWheelAssetsUnchecked(assetDir: String, targetDir: File, label: String): Int {
         targetDir.mkdirs()
         val names = try {
             assets.list(assetDir) ?: emptyArray()
@@ -609,6 +674,17 @@ class NativeNodeEmbeddedService : Service() {
     }
 
     private fun copyBundledLibraryAssets(assetDir: String, targetDir: File, label: String): Int {
+        if (isAssetLaneSatisfied(assetDir, targetDir, label, ::isSafeBundledLibraryAssetName)) {
+            val count = targetDir.list()?.size ?: 0
+            appendLog("$label library assets satisfied by receipt (skipped copy) count=$count")
+            return count
+        }
+        return copyBundledLibraryAssetsUnchecked(assetDir, targetDir, label).also {
+            writeAssetLaneReceipt(assetDir, label, ::isSafeBundledLibraryAssetName)
+        }
+    }
+
+    private fun copyBundledLibraryAssetsUnchecked(assetDir: String, targetDir: File, label: String): Int {
         targetDir.mkdirs()
         val names = try {
             assets.list(assetDir) ?: emptyArray()
@@ -637,7 +713,79 @@ class NativeNodeEmbeddedService : Service() {
         return copied
     }
 
+    private fun assetLaneReceiptFile(label: String): File {
+        val receipts = File(workDir(applicationContext), "asset-receipts")
+        receipts.mkdirs()
+        return File(receipts, "$label.sha256")
+    }
+
+    private fun computeBundledAssetLaneDigest(assetDir: String, fileFilter: (String) -> Boolean): String {
+        val names = try {
+            assets.list(assetDir)?.filter(fileFilter)?.sorted() ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val digest = MessageDigest.getInstance("SHA-256")
+        for (name in names) {
+            digest.update(name.toByteArray(Charsets.UTF_8))
+            try {
+                assets.open("$assetDir/$name").use { input ->
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        digest.update(buffer, 0, read)
+                    }
+                }
+            } catch (_: Exception) {
+                digest.update("missing".toByteArray(Charsets.UTF_8))
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun isAssetLaneSatisfied(
+        assetDir: String,
+        targetDir: File,
+        label: String,
+        fileFilter: (String) -> Boolean,
+    ): Boolean {
+        if (!targetDir.exists() || !targetDir.isDirectory) return false
+        val expectedNames = try {
+            assets.list(assetDir)?.filter(fileFilter)?.sorted() ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (expectedNames.isEmpty()) return false
+        val existing = targetDir.list()?.toSet() ?: emptySet()
+        if (!existing.containsAll(expectedNames)) return false
+        val receipt = assetLaneReceiptFile(label)
+        if (!receipt.exists()) return false
+        val digest = computeBundledAssetLaneDigest(assetDir, fileFilter)
+        return receipt.readText().trim() == digest
+    }
+
+    private fun writeAssetLaneReceipt(
+        assetDir: String,
+        label: String,
+        fileFilter: (String) -> Boolean,
+    ) {
+        val digest = computeBundledAssetLaneDigest(assetDir, fileFilter)
+        assetLaneReceiptFile(label).writeText(digest)
+    }
+
     private fun copyBundledBinAssets(assetDir: String, targetDir: File, label: String): Int {
+        if (isAssetLaneSatisfied(assetDir, targetDir, label, ::isSafeBundledBinAssetName)) {
+            val count = targetDir.list()?.size ?: 0
+            appendLog("$label assets satisfied by receipt (skipped copy) count=$count")
+            return count
+        }
+        return copyBundledBinAssetsUnchecked(assetDir, targetDir, label).also {
+            writeAssetLaneReceipt(assetDir, label, ::isSafeBundledBinAssetName)
+        }
+    }
+
+    private fun copyBundledBinAssetsUnchecked(assetDir: String, targetDir: File, label: String): Int {
         targetDir.mkdirs()
         val names = try {
             assets.list(assetDir) ?: emptyArray()
@@ -956,6 +1104,23 @@ class NativeNodeEmbeddedService : Service() {
               nativeCache
             ]) {
               fs.mkdirSync(writableDir, { recursive: true });
+            }
+
+            const workspaceSkillsDir = path.join(nativeStateDir, "workspace", "skills");
+            fs.mkdirSync(workspaceSkillsDir, { recursive: true });
+            const bundledSkillsDir = path.join(packageDir, "skills");
+            if (fs.existsSync(bundledSkillsDir)) {
+              for (const entry of fs.readdirSync(bundledSkillsDir)) {
+                const skillDir = path.join(bundledSkillsDir, entry);
+                if (fs.statSync(skillDir).isDirectory()) {
+                  const sourceFile = path.join(skillDir, "SKILL.md");
+                  if (fs.existsSync(sourceFile)) {
+                    const destDir = path.join(workspaceSkillsDir, entry);
+                    fs.mkdirSync(destDir, { recursive: true });
+                    fs.copyFileSync(sourceFile, path.join(destDir, "SKILL.md"));
+                  }
+                }
+              }
             }
 
             const readJsonFile = (filePath) => {

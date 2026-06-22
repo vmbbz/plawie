@@ -228,7 +228,8 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsPack(
     'eightctl',
     packs: ['android-cli-core-pack'],
-    smoke: 'Run eightctl version from the verified Android CLI pack.',
+    smoke:
+        'Run eightctl status from the verified Android CLI pack after EIGHTCTL_EMAIL and EIGHTCTL_PASSWORD are configured.',
   ),
   _needsConfig(
     'gemini',
@@ -245,10 +246,12 @@ final List<AndroidSkillSupportEntry> _entries =
     smoke:
         'List GitHub issues for a configured repository through the app-native REST adapter.',
   ),
-  _needsPack(
+  _unsupported(
     'gifgrep',
-    packs: ['android-vision-media-runtime'],
-    smoke: 'Run gifgrep against a bundled tiny media fixture.',
+    reason:
+        'Gifgrep requires @lydell/node-pty which has no android-arm64 build. '
+        'A native Dart bridge execution path (Process.run) is needed before '
+        'this skill can run on Android.',
   ),
   _needsConfig(
     'github',
@@ -258,10 +261,10 @@ final List<AndroidSkillSupportEntry> _entries =
     smoke:
         'Read authenticated GitHub user metadata through the app-native REST adapter.',
   ),
-  _needsConfig(
+  _hiddenDesktop(
     'gog',
-    config: ['GOG_ACCOUNT_TOKEN'],
-    smoke: 'Read configured GOG library metadata.',
+    reason:
+        'Google Workspace gog CLI requires a desktop browser for OAuth authentication, and GOG gaming library automation is desktop-only.',
   ),
   _needsConfig(
     'goplaces',
@@ -354,10 +357,10 @@ final List<AndroidSkillSupportEntry> _entries =
     'oracle',
     reason: 'Oracle workflow is shell-heavy and belongs in compatibility mode.',
   ),
-  _needsConfig(
+  _hiddenDesktop(
     'ordercli',
-    config: ['ORDERCLI_API_KEY'],
-    smoke: 'Read a configured order status fixture.',
+    reason:
+        'Food delivery CLI relies on scraping private service APIs with browser-heavy login sessions, which is not feasible for native Android execution.',
   ),
   _unsupported(
     'peekaboo',

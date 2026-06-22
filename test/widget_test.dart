@@ -14,5 +14,6 @@ void main() {
     // Build the app and ensure it renders without throwing.
     await tester.pumpWidget(const PlawieApp());
     expect(find.byType(PlawieApp), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
   });
 }

@@ -374,9 +374,8 @@ class _AndroidSkillConfigSheetState extends State<AndroidSkillConfigSheet> {
   String _saveOnlyNoticeText() {
     final skillId = widget.model.skillId.trim().toLowerCase();
     if (skillId == 'eightctl') {
-      return 'Config saved. Local eightctl binary readiness is tracked by '
-          'device health; live Eight Sleep account/device validation is not '
-          'available yet.';
+      return 'Config saved. Use Test Connection to run a live Eight Sleep '
+          'status check through the managed eightctl adapter.';
     }
     if (skillId == 'voice-call') {
       return 'Config saved. Live setup checks are currently available only '

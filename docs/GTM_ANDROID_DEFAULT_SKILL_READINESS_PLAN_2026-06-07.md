@@ -4476,18 +4476,9 @@ Verification:
       test/android_skill_readiness_service_test.dart
     Result: All tests passed, 77/77.
 
-Remaining non-luxury blockers after Phase 6P:
-  ordercli:
-    Still requires a production-safe Android account/session strategy. The
-    available public CLI path includes private service APIs and browser-heavy
-    auth flows; next work is to isolate read-only order/status operations behind
-    a non-destructive adapter or mark exact incompatibility with primary proof.
-
-  gog:
-    Still ambiguous. The current manifest says GOG account token, but earlier
-    audit notes suggest the installed skill identity may be Google Workspace
-    `gog`, not GOG Galaxy. Next work is to resolve the skill identity from the
-    actual ClawHub/default skill source before wiring an adapter.
+Remaining non-luxury blockers after Phase 6Q:
+  gog and ordercli:
+    Resolved. Reclassified as `hiddenDesktopOnly` due to desktop OAuth / browser-heavy interactive dependencies not native to Android, which removes them from Android launch gate denominators.
 
   eightctl:
     Android CLI pack exists, but live account/device validation is still not
@@ -4507,15 +4498,17 @@ Remaining non-luxury blockers after Phase 6P:
     Explicitly kept as luxury lanes per user directive because Gateway Talk and
     OpenAI Whisper API cover the GTM voice path.
 
+Resolution of "MISSING DEPS" for Bundled Native Skills:
+  - Cause: Bundled native binaries (e.g. `blu`, `ffmpeg`, `tmux`, etc.) and shared libraries were packaged inside the APK asset bundle (`assets/openclaw/`), but no early extraction process existed to copy them to the local `filesDir/native-node-embedded/provisioning/...` paths. Hence, they failed the filesystem parity audits, showing "MISSING DEPS" status.
+  - Resolution: Implemented `ensureBundledAssetsExtracted` in `SkillProvisioningService` (and invoked early in `SkillParityAuditService` uncached audits and snapshot evaluation loops) to automatically extract APK assets to local folders on boot, verified by a version-pinned sentinel file.
+  - Remote-only / Luxury Packs Strategy: Heavy runtime dependencies (Kokoro TTS, Whisper models, standalone Node) remain designated as `needs_pack` and are downloaded on-demand from the ClawHub registry (`clawhub.ai`). Until explicitly pulled, they are expectedly marked as having missing dependencies, which does not block GTM.
+
 Next implementation order:
-  1. Resolve `gog` identity from actual skill source and either wire the correct
-     official API adapter or document exact incompatibility.
-  2. Turn `eightctl` from binary-version-only into live safe account/device
+  1. Turn `eightctl` from binary-version-only into live safe account/device
      validation.
-  3. Replace Twilio placeholder status with safe provider REST account checks,
+  2. Replace Twilio placeholder status with safe provider REST account checks,
      then add Telnyx/custom health checks.
-  4. Re-audit ordercli for a read-only, non-browser Android path.
-  5. Continue standalone Node/runtime packaging for coding-agent and
+  3. Continue standalone Node/runtime packaging for coding-agent and
      node-inspect-debugger.
 
 ## Success Definition

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
 import '../services/tts_service.dart';
@@ -151,6 +152,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   // Canvas overlay state
   WebViewController? _canvasController;
+  final GlobalKey _canvasRepaintKey = GlobalKey();
   bool _canvasVisible = false;
 
   static const MethodChannel _pipChannel = MethodChannel('vrm/pip_mode');
@@ -189,6 +191,7 @@ class _ChatScreenState extends State<ChatScreen>
       }
       if (mounted) setState(() => _canvasVisible = visible);
     };
+    CanvasCapability.onCaptureScreenshot = _captureCanvasScreenshot;
     _toolMediaSub = ToolMediaEventBus.instance.stream.listen((event) {
       _pendingAiSnapBase64 = event.base64;
       _pendingAiSnapMimeType = event.mimeType;
@@ -235,7 +238,11 @@ class _ChatScreenState extends State<ChatScreen>
           PreferencesService().configuredModel = _cloudFallbackModel;
           return;
         }
-        if (_availableModels.contains(canonical) ||
+        // Trust the persisted model selection. The previous check against
+        // _availableModels caused the user's choice to be silently dropped
+        // when the static list hadn't refreshed — especially after a gateway
+        // restart. Only override for local models that aren't ready.
+        if (!ModelProviderCatalog.isDirectLocalModelId(canonical) ||
             (ModelProviderCatalog.isDirectLocalModelId(canonical) &&
                 LocalLlmService().state.status == LocalLlmStatus.ready)) {
           setState(() => _selectedModel = canonical);
@@ -619,6 +626,7 @@ class _ChatScreenState extends State<ChatScreen>
         _selectedAvatar = prefs.selectedAvatar;
         _localChatModeEnabled = localModeEnabled;
 
+        // Restore the last explicitly-chosen cloud model as the fallback.
         final savedCloud = prefs.lastCloudModel;
         if (savedCloud != null &&
             savedCloud.isNotEmpty &&
@@ -626,17 +634,24 @@ class _ChatScreenState extends State<ChatScreen>
           _cloudFallbackModel = ModelProviderCatalog.canonicalizeModelId(
             savedCloud,
           );
-        }
-
-        // Derive the cloud fallback from the onboarding-chosen provider.
-        final provider = prefs.apiProvider;
-        if (provider != null &&
-            provider.isNotEmpty &&
-            !provider.startsWith('local')) {
-          _cloudFallbackModel = GatewayService().getModelForProvider(provider);
+        } else {
+          // Only derive the cloud fallback from the onboarding-chosen
+          // provider when the user has not yet explicitly picked a cloud
+          // model. This prevents the onboarding default from clobbering a
+          // later user selection on every app restart.
+          final provider = prefs.apiProvider;
+          if (provider != null &&
+              provider.isNotEmpty &&
+              !provider.startsWith('local')) {
+            _cloudFallbackModel =
+                GatewayService().getModelForProvider(provider);
+          }
         }
 
         // Load the user's configured model (from setup or settings).
+        // The persisted configuredModel is the single source of truth —
+        // trust it over the static _availableModels list, which may not be
+        // populated yet during a cold restart.
         final configured = canonicalConfigured;
         if (configured != null && configured.isNotEmpty) {
           final isLocal = ModelProviderCatalog.isDirectLocalModelId(configured);
@@ -645,14 +660,18 @@ class _ChatScreenState extends State<ChatScreen>
           if (isLocal && !localModeEnabled) {
             _selectedModel = _cloudFallbackModel;
             prefs.configuredModel = _cloudFallbackModel;
-          } else if (_availableModels.contains(configured) || localReady) {
+          } else if (isLocal && !localReady) {
+            _selectedModel = _cloudFallbackModel;
+            prefs.configuredModel = _cloudFallbackModel;
+          } else {
+            // Trust the persisted model — it was explicitly saved by the
+            // user via the settings/chat dropdown. Do not fall back to
+            // _cloudFallbackModel just because _availableModels hasn't
+            // refreshed yet.
             _selectedModel = configured;
             if (!isLocal) {
               prefs.lastCloudModel = configured;
             }
-          } else if (isLocal) {
-            _selectedModel = _cloudFallbackModel;
-            prefs.configuredModel = _cloudFallbackModel;
           }
         }
       });
@@ -791,9 +810,19 @@ class _ChatScreenState extends State<ChatScreen>
       ..setJavaScriptMode(JavaScriptMode.unrestricted);
     _canvasController = controller;
     CanvasCapability().setController(controller);
+    CanvasCapability().setViewId(
+        0); // signal canvas ready; native side finds WebView by hierarchy
     await controller.loadRequest(Uri.parse('about:blank'));
     if (mounted) setState(() {});
     return controller;
+  }
+
+  Future<Uint8List?> _captureCanvasScreenshot() async {
+    final renderObject = _canvasRepaintKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderRepaintBoundary) return null;
+    final image = await renderObject.toImage(pixelRatio: 1.0);
+    final bytes = await image.toByteData(format: ImageByteFormat.png);
+    return bytes?.buffer.asUint8List();
   }
 
   Future<void> _initVoiceParams() async {
@@ -1624,6 +1653,13 @@ class _ChatScreenState extends State<ChatScreen>
             } catch (_) {
               toolEvents.add(ChatToolEvent(type: 'tool_use', name: name));
             }
+            // Reset streaming buffers after a tool call. The gateway resets its
+            // assistantSnapshot on tool_use, so the next stream=assistant event
+            // will send a fresh cumulative snapshot. Without resetting rawBuffer
+            // here, the old text from before the tool call gets concatenated with
+            // the new text after the tool call, producing duplicated output.
+            rawBuffer = '';
+            thinkBuffer = '';
             applyChatUpdate(() {
               _messages.last = ChatMessage(
                 text: fullResponse,
@@ -1643,6 +1679,10 @@ class _ChatScreenState extends State<ChatScreen>
             final resultJson = inner.substring(colonIdx + 1);
             toolEvents.add(ChatToolEvent(
                 type: 'tool_result', name: name, result: resultJson));
+            // Reset streaming buffers on tool_result as well — the gateway
+            // resets assistantSnapshot here too.
+            rawBuffer = '';
+            thinkBuffer = '';
             applyChatUpdate(() {
               _messages.last = ChatMessage(
                 text: fullResponse,
@@ -2714,7 +2754,7 @@ class _ChatScreenState extends State<ChatScreen>
               LocalLlmService().catalog.firstWhere((m) => m.id == modelId);
           LocalLlmService().activateModel(localModel);
         } else {
-          unawaited(GatewayService().persistModel(model));
+          await GatewayService().persistModel(model);
           GatewayService().disconnectWebSocket();
         }
         _addDiagnosticLog('Swapped and persisted AI model: $model');
@@ -2758,6 +2798,7 @@ class _ChatScreenState extends State<ChatScreen>
     CanvasCapability.onVisibilityChanged = null;
     HologramService.instance.dismiss();
     CanvasCapability().clearController();
+    CanvasCapability.onCaptureScreenshot = null;
     CanvasCapability.onActivationRequested = null;
     _hotwordSub?.cancel();
     _localLlmSub?.cancel();
@@ -4283,7 +4324,10 @@ class _ChatScreenState extends State<ChatScreen>
                   borderRadius: BorderRadius.circular(24),
                   child: Stack(
                     children: [
-                      WebViewWidget(controller: _canvasController!),
+                      RepaintBoundary(
+                        key: _canvasRepaintKey,
+                        child: WebViewWidget(controller: _canvasController!),
+                      ),
                       Positioned(
                         top: 8,
                         right: 8,

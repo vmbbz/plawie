@@ -94,6 +94,15 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       ],
       'defaultModel': 'llama-3.3-70b-versatile',
     },
+    {
+      'id': 'zenmux',
+      'name': 'Zenmux',
+      'icon': 'public',
+      'models': [
+        {'id': 'z-ai/glm-5.2-free', 'name': 'GLM-5.2 Free'},
+      ],
+      'defaultModel': 'z-ai/glm-5.2-free',
+    },
   ];
 
   final Map<String, TextEditingController> _apiKeyControllers = {};
@@ -256,6 +265,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           modelId = 'llama-3.1-405b';
           modelName = 'Llama 3.1 405B';
           break;
+        case 'zenmux':
+          modelId = 'z-ai/glm-5.2-free';
+          modelName = 'GLM-5.2 Free';
+          break;
         default:
           modelId = 'default';
           modelName = 'Default Model';
@@ -282,6 +295,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     if (p.contains('openai')) return 'openai';
     if (p.contains('gemini') || p.contains('google')) return 'google';
     if (p.contains('groq')) return 'groq';
+    if (p.contains('zenmux')) return 'zenmux';
     if (p.contains('ollama')) return 'google';
     return p;
   }
@@ -458,6 +472,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       case 'groq':
         text = 'ULTRA SPEED';
         color = const Color(0xFFF55036);
+        break;
+      case 'zenmux':
+        text = 'FREE COMMUNITY';
+        color = const Color(0xFF7C3AED);
         break;
     }
     return Container(

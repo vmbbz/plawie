@@ -18,6 +18,22 @@ class NativeFfmpegRunResult {
   bool get ok => exitCode == 0;
 }
 
+class NativeManagedCliRunResult {
+  final int exitCode;
+  final String stdout;
+  final String stderr;
+  final String binaryPath;
+
+  const NativeManagedCliRunResult({
+    required this.exitCode,
+    required this.stdout,
+    required this.stderr,
+    required this.binaryPath,
+  });
+
+  bool get ok => exitCode == 0;
+}
+
 class NativeBridge {
   static const _channel = MethodChannel('com.nxg.openclawproot/native');
   static const _eventChannel =
@@ -103,6 +119,30 @@ class NativeBridge {
       exitCode: (result['exitCode'] as num?)?.toInt() ?? 1,
       stdout: result['stdout']?.toString() ?? '',
       stderr: result['stderr']?.toString() ?? '',
+    );
+  }
+
+  static Future<NativeManagedCliRunResult> runManagedCli(
+    String binName,
+    List<String> args, {
+    Map<String, String> env = const <String, String>{},
+    required int timeoutSeconds,
+  }) async {
+    final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'runManagedCli',
+      {
+        'binName': binName,
+        'args': args,
+        'env': env,
+        'timeoutSeconds': timeoutSeconds,
+      },
+    );
+    final result = Map<String, dynamic>.from(raw ?? const <dynamic, dynamic>{});
+    return NativeManagedCliRunResult(
+      exitCode: (result['exitCode'] as num?)?.toInt() ?? 1,
+      stdout: result['stdout']?.toString() ?? '',
+      stderr: result['stderr']?.toString() ?? '',
+      binaryPath: result['binaryPath']?.toString() ?? '',
     );
   }
 

@@ -31,7 +31,8 @@
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true"
-        android:extractNativeLibs="true">
+        android:extractNativeLibs="true"
+        android:largeHeap="true">
 
         <activity
             android:name=".MainActivity"
@@ -76,7 +77,8 @@
         <service
             android:name=".NativeNodeEmbeddedService"
             android:exported="false"
-            android:process=":native_node_smoke" />
+            android:process=":native_node_smoke"
+            android:foregroundServiceType="specialUse" />
 
         <service
             android:name=".NativeNodeSkillRunnerService"

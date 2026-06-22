@@ -16,9 +16,9 @@ import 'skill_parity_audit_service.dart';
 class SkillProvisioningService {
   SkillProvisioningService._();
   static final SkillProvisioningService instance = SkillProvisioningService._();
-  static const _pythonRuntimeVersion = '3.13';
-  static const _pythonTag = 'cp313';
-  static const _pythonAbiTag = 'cp313';
+  static const _pythonRuntimeVersion = '3.11';
+  static const _pythonTag = 'cp311';
+  static const _pythonAbiTag = 'cp311';
   static const _androidWheelAbi = 'arm64_v8a';
   static const _androidCliCorePackId = 'android-cli-core-pack';
   static const _androidCliCorePackVersion = 'apk-bundled-v1';
@@ -897,19 +897,43 @@ class SkillProvisioningService {
     final remainingPythonPackages =
         requiredPackages.difference(satisfiedPythonPackages);
     if (remainingPythonPackages.isNotEmpty) {
-      final wheelResult = await _provisionPythonWheels(
-        entry,
-        layout,
-        requiredPythonRequirements: {
-          for (final package in remainingPythonPackages)
-            package: requiredPythonRequirements[package] ?? package,
-        },
-        apply: apply,
-      );
-      actions.addAll(wheelResult.actions);
-      changed = changed || wheelResult.changed;
-      reloadRecommended = reloadRecommended || wheelResult.reloadRecommended;
-      satisfiedPythonPackages.addAll(wheelResult.satisfiedPythonPackages);
+      // Pre-check: smoke-test each package against the full Python path
+      // (including Chaquopy's build-time site-packages) before attempting
+      // a runtime wheel download. Packages installed at build time via the
+      // chaquopy.pip block in build.gradle.kts live in Chaquopy's own
+      // site-packages, not the managed directory — a wheel download would
+      // produce an ABI-incompatible copy in the managed directory that
+      // shadows the working build-time copy.
+      final actuallyNeed = <String>{};
+      for (final package in remainingPythonPackages) {
+        final smoke = await _smokePythonImport(layout, package);
+        if (smoke.ok) {
+          satisfiedPythonPackages.add(package);
+          actions.add(SkillProvisioningAction(
+            type: SkillProvisioningActionType.pythonPackage,
+            key: package,
+            status: SkillProvisioningActionStatus.ready,
+            message: 'Python package $package already importable (build-time).',
+          ));
+        } else {
+          actuallyNeed.add(package);
+        }
+      }
+      if (actuallyNeed.isNotEmpty) {
+        final wheelResult = await _provisionPythonWheels(
+          entry,
+          layout,
+          requiredPythonRequirements: {
+            for (final package in actuallyNeed)
+              package: requiredPythonRequirements[package] ?? package,
+          },
+          apply: apply,
+        );
+        actions.addAll(wheelResult.actions);
+        changed = changed || wheelResult.changed;
+        reloadRecommended = reloadRecommended || wheelResult.reloadRecommended;
+        satisfiedPythonPackages.addAll(wheelResult.satisfiedPythonPackages);
+      }
     }
 
     final stillUnverified =
@@ -1724,7 +1748,7 @@ class SkillProvisioningService {
     final packs = <_DependencyPack>[
       _DependencyPack.apk(
         id: 'python-core',
-        version: '3.13-chaquopy-17.0.0',
+        version: '3.11-chaquopy-17.0.0',
         providesRuntimes: const {'python'},
         providesBins: const {'python', 'python3', 'pip'},
       ),
@@ -1855,6 +1879,24 @@ class SkillProvisioningService {
     }
   }
 
+  /// Apply Chaquopy-specific version constraints to certain packages.
+  /// pandas >=2.2 has C extensions that fail to load under Chaquopy 13.x
+  /// due to incompatible CPython ABI (circular-import-like AttributeError
+  /// on _pandas_datetime_CAPI). Always force <2.2 for compatibility,
+  /// regardless of what the skill specifies (e.g. pandas>=2.2.0 must be
+  /// replaced entirely, not appended to).
+  static String _applyChaquopyConstraint(
+      String packageName, String requirement) {
+    switch (packageName) {
+      case 'pandas':
+        // Always pin pandas<2.2 for Chaquopy 13.x compatibility
+        // Skills may request >=2.2 which is incompatible — force replacement
+        return 'pandas<2.2';
+      default:
+        return requirement;
+    }
+  }
+
   static Future<_DependencyProvisioningResult> _provisionPythonWheels(
     SkillExecutionMatrixEntry entry,
     _SkillProvisioningLayout layout, {
@@ -1872,14 +1914,14 @@ class SkillProvisioningService {
     final queue = <_PythonRequirementRequest>[
       for (final entry in requiredPythonRequirements.entries)
         _PythonRequirementRequest.fromRaw(
-              entry.value,
+              _applyChaquopyConstraint(entry.key, entry.value),
               fallbackName: entry.key,
               root: true,
               rootPackage: _normalizeDependencyName(entry.key),
             ) ??
             _PythonRequirementRequest(
               name: _normalizeDependencyName(entry.key),
-              raw: entry.value,
+              raw: _applyChaquopyConstraint(entry.key, entry.value),
               root: true,
               rootPackage: _normalizeDependencyName(entry.key),
             ),
@@ -2522,24 +2564,37 @@ class SkillProvisioningService {
     _SkillProvisioningLayout layout,
   ) async {
     final result = <String, String>{};
+    // Scan the managed site-packages directory (runtime wheel installs).
     final root = layout.nativePythonSitePackagesDir;
-    try {
-      if (!await root.exists()) return result;
-      await for (final entity in root.list(recursive: false)) {
-        final name = path.basename(entity.path);
-        final lower = name.toLowerCase();
-        if (entity is Directory &&
-            (lower.endsWith('.dist-info') || lower.endsWith('.egg-info'))) {
-          final metadata = await _readPythonPackageMetadata(entity);
-          final parsed = _parsePythonDistInfoName(lower);
-          final packageName = _normalizeDependencyName(
-            metadata['name'] ?? parsed?.name ?? lower.split('-').first,
-          );
-          final version = metadata['version'] ?? parsed?.version ?? '';
-          result[packageName] = version;
+    // Also scan Chaquopy's build-time site-packages (packages installed via
+    // the chaquopy.pip block in build.gradle.kts live here, not in the
+    // managed directory).
+    final chaquopyRoot = Directory(path.join(
+      root.parent.parent.parent.parent.parent.parent.path,
+      'chaquopy',
+      'AssetFinder',
+      'app',
+      'site-packages',
+    ));
+    for (final scanRoot in [root, chaquopyRoot]) {
+      try {
+        if (!await scanRoot.exists()) continue;
+        await for (final entity in scanRoot.list(recursive: false)) {
+          final name = path.basename(entity.path);
+          final lower = name.toLowerCase();
+          if (entity is Directory &&
+              (lower.endsWith('.dist-info') || lower.endsWith('.egg-info'))) {
+            final metadata = await _readPythonPackageMetadata(entity);
+            final parsed = _parsePythonDistInfoName(lower);
+            final packageName = _normalizeDependencyName(
+              metadata['name'] ?? parsed?.name ?? lower.split('-').first,
+            );
+            final version = metadata['version'] ?? parsed?.version ?? '';
+            result[packageName] = version;
+          }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
     return result;
   }
 
@@ -2785,22 +2840,54 @@ class SkillProvisioningService {
       return const _PythonSmokeResult(ok: true, stdout: '', stderr: '');
     }
     final module = packageName.replaceAll('-', '_');
-    final result = await NativeBridge.runNativePython({
-      'args': ['-c', 'import $module'],
-      'cwd': layout.nativeStateRoot,
-      'env': {
-        'HOME': layout.nativeStateRoot,
-        'OPENCLAW_NATIVE_PYTHON_HOME': layout.nativePythonRoot.path,
-        'OPENCLAW_NATIVE_PYTHON_SITE_PACKAGES':
-            layout.nativePythonSitePackagesDir.path,
-      },
-      'pythonPaths': [layout.nativePythonSitePackagesDir.path],
-    });
-    return _PythonSmokeResult(
-      ok: result['ok'] == true || result['exitCode'] == 0,
-      stdout: result['stdout']?.toString() ?? '',
-      stderr: result['stderr']?.toString() ?? '',
-    );
+
+    Future<_PythonSmokeResult> runImport(String importStatement) async {
+      final result = await NativeBridge.runNativePython({
+        'args': ['-c', importStatement],
+        'cwd': layout.nativeStateRoot,
+        'env': {
+          'HOME': layout.nativeStateRoot,
+          'OPENCLAW_NATIVE_PYTHON_HOME': layout.nativePythonRoot.path,
+          'OPENCLAW_NATIVE_PYTHON_SITE_PACKAGES':
+              layout.nativePythonSitePackagesDir.path,
+        },
+        'pythonPaths': [layout.nativePythonSitePackagesDir.path],
+      });
+      return _PythonSmokeResult(
+        ok: result['ok'] == true || result['exitCode'] == 0,
+        stdout: result['stdout']?.toString() ?? '',
+        stderr: result['stderr']?.toString() ?? '',
+      );
+    }
+
+    final topLevel = await runImport('import $module');
+    if (!topLevel.ok) return topLevel;
+
+    for (final submodule in _pythonSubmoduleSmokeImports(packageName)) {
+      final nested = await runImport('import $submodule');
+      if (!nested.ok) return nested;
+    }
+    return topLevel;
+  }
+
+  /// Chaquopy fails on PEP-562 lazy submodule loads (e.g. `from dateutil
+  /// import parser`). It also fails when pandas C extensions are compiled
+  /// against an incompatible CPython ABI (circular-import-like AttributeError
+  /// on _pandas_datetime_CAPI). Pin pandas to <2.2 for Chaquopy 13.x.
+  static List<String> _pythonSubmoduleSmokeImports(String packageName) {
+    switch (packageName) {
+      case 'python-dateutil':
+      case 'dateutil':
+        return const ['dateutil.parser'];
+      case 'pandas':
+        // Chaquopy loads pandas C extensions lazily; verify the core API
+        // (DataFrame, Series) resolves without circular-import crashes.
+        return const ['pandas'];
+      case 'yfinance':
+        return const ['yfinance'];
+      default:
+        return const [];
+    }
   }
 
   static bool _pythonRequirementSatisfied(

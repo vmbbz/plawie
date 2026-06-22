@@ -11,6 +11,7 @@ import 'openclaw_service.dart';
 import 'native_bridge.dart';
 import 'base_service.dart';
 import 'gateway_service.dart';
+import 'skill_workspace.dart';
 import 'avatar_gesture_catalog.dart';
 import 'clawhub_service.dart';
 import '../constants/openclaw_paths.dart';
@@ -67,6 +68,14 @@ class SkillsService {
     'discord_status': 'discord',
     'discord status': 'discord',
     'discord.status': 'discord',
+    'eightctl_status': 'eightctl',
+    'eightctl.status': 'eightctl',
+    'eightctl whoami': 'eightctl',
+    'eightctl_whoami': 'eightctl',
+    'eightctl.whoami': 'eightctl',
+    'eightctl device info': 'eightctl',
+    'eightctl_device_info': 'eightctl',
+    'eightctl.device-info': 'eightctl',
     'session_logs': 'session-logs',
     'session_logs_query': 'session-logs',
     'session-logs.query': 'session-logs',
@@ -187,6 +196,12 @@ class SkillsService {
   }
 
   /// One-source-of-truth awareness: updates PRoot workspace and refreshes agent session.
+  ///
+  /// Workstream A + C interconnection (One-Go plan):
+  /// - Paths given to the agent/gateway must use the result of workspaceRelativeSkillDoc(id)
+  ///   (never bundle package paths under full-openclaw or node_modules/openclaw/skills).
+  /// - On fullSync we also surface receipt-based provisioning state so the gateway knows
+  ///   many asset lanes can now be skipped on future restarts (directly mitigates Flaw 3 storms).
   Future<void> ensureAgentAwareness({bool fullSync = false}) async {
     _logger.i('Ensuring agent awareness of skills...');
     // Only run workspace-mutating commands when explicitly requested
@@ -233,6 +248,7 @@ class SkillsService {
       _createDeviceNodeSkill(),
       _createBlogWatcherSkill(),
       _createDiscordSkill(),
+      _createEightCtlSkill(),
       _createSlackSkill(),
       _createOnePasswordSkill(),
       _createGeminiSkill(),
@@ -304,6 +320,8 @@ class SkillsService {
         return await _executeBlogWatcherSkill(skill, params, ctx);
       case 'discord':
         return await _executeDiscordSkill(skill, params, ctx);
+      case 'eightctl':
+        return await _executeEightCtlSkill(skill, params, ctx);
       case 'slack':
         return await _executeSlackSkill(skill, params, ctx);
       case 'session':
@@ -504,7 +522,14 @@ class SkillsService {
   Future<Map<String, dynamic>> getSkillProfile(String id) async {
     // 1. Try local SKILL.md (Forensic sync guaranteed by BootstrapManager.kt)
     final profile = await _readLocalSkillProfile(id);
-    if (profile != null) return profile;
+    if (profile != null) {
+      // Workstream A safeguard: ensure any profile handed to agents/UI includes the
+      // canonical workspace-relative doc path (never a bundle absolute path).
+      final safeProfile = Map<String, dynamic>.from(profile);
+      safeProfile['docPath'] = workspaceRelativeSkillDoc(id);
+      safeProfile['workspaceDoc'] = workspaceRelativeSkillDoc(id);
+      return safeProfile;
+    }
 
     // 2. Fallback: ClawHub lookup. Native owner uses REST only; PRoot
     // rollback may use the OpenClaw CLI because the shell is intentionally
@@ -513,7 +538,7 @@ class SkillsService {
       if (await OpenClawCommandService.isNativeOwnerSelected()) {
         final detail = await ClawHubService.instance.infoFromApi(id);
         if (detail != null) {
-          return {
+          final base = {
             'id': detail.slug,
             'name': detail.name,
             'description': detail.description,
@@ -521,6 +546,12 @@ class SkillsService {
             'iconUrl': detail.ownerAvatarUrl,
             'tools': ['ClawHub Skill', 'Gateway Skill Package'],
             'examples': 'Try: "Hey Plawie, use ${detail.name}"',
+          };
+          // Workstream A: always include safe relative doc path for agent / usage context
+          return {
+            ...base,
+            'docPath': workspaceRelativeSkillDoc(id),
+            'workspaceDoc': workspaceRelativeSkillDoc(id),
           };
         }
         throw StateError('ClawHub profile unavailable for $id');
@@ -530,7 +561,7 @@ class SkillsService {
         '$kOpenClawCommand skills info $id --json',
       );
       final decoded = json.decode(result) as Map<String, dynamic>;
-      return {
+      final base = {
         ...decoded,
         'verified': decoded['source'] == 'official',
         'iconUrl': decoded['icon'] ?? decoded['image_url'],
@@ -538,6 +569,11 @@ class SkillsService {
             ['Autonomous Execution', 'Agent Logic Integration'],
         'examples': decoded['examples'] ??
             'Try: "Hey Plawie, use ${decoded['name'] ?? id}"',
+      };
+      return {
+        ...base,
+        'docPath': workspaceRelativeSkillDoc(id),
+        'workspaceDoc': workspaceRelativeSkillDoc(id),
       };
     } catch (_) {
       return {
@@ -584,6 +620,9 @@ class SkillsService {
     final nativePaths = <String>[
       '$filesDir/native-node-embedded/native-home/.openclaw/skills/$id/SKILL.md',
       '$filesDir/native-node-embedded/native-home/.openclaw/workspace/skills/$id/SKILL.md',
+      // NOTE: This bundle-absolute path MUST never be exposed to the agent
+      // context. It is used ONLY for internal existence checks.
+      // All agent-facing paths go through SkillWorkspace.relativeDoc().
       '$filesDir/native-node-embedded/full-openclaw/lib/node_modules/openclaw/skills/$id/SKILL.md',
     ];
     final ordered = nativeOwner
@@ -598,6 +637,17 @@ class SkillsService {
     }
 
     return '';
+  }
+
+  /// Returns the canonical, *agent-safe* relative doc path.
+  /// Always `skills/<id>/SKILL.md` — never a bundle absolute path.
+  String workspaceRelativeSkillDoc(String id) => SkillWorkspace.relativeDoc(id);
+
+  /// Absolute path under the mutable workspace for execution/cwd.
+  /// Agent context code MUST use the relative form from workspaceRelativeSkillDoc.
+  Future<String> nativeWorkspaceSkillDir(String id) async {
+    final filesDir = await NativeBridge.getFilesDir();
+    return '$filesDir/native-node-embedded/native-home/.openclaw/workspace/skills/$id';
   }
 
   // ── Mappings and Executors (Kept for runtime functionality) ───────────────
@@ -711,6 +761,23 @@ class SkillsService {
       return SkillResult.error('Discord skill fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Discord skill unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeEightCtlSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 35));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('eightctl skill fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('eightctl skill unreachable: $e');
     }
   }
 
@@ -1309,6 +1376,18 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createEightCtlSkill() => Skill(
+      id: 'eightctl',
+      name: 'eightctl',
+      description:
+          'Read Eight Sleep account and device status through the managed Android CLI adapter.',
+      version: '1.0.0',
+      author: 'OpenClaw',
+      category: 'eightctl',
+      tags: ['eight-sleep', 'eightctl', 'cli', 'status'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createSlackSkill() => Skill(
       id: 'slack',
       name: 'slack',
@@ -1839,6 +1918,24 @@ class SkillsService {
                 'minimum': 1,
                 'maximum': 50,
                 'description': 'Maximum vaults to return.',
+              },
+            },
+            'required': ['action'],
+          },
+        };
+      case 'eightctl':
+        return {
+          'name': skill.id,
+          'description':
+              'Read Eight Sleep status using the verified Android eightctl CLI pack.',
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['status', 'whoami', 'device-info'],
+                'description':
+                    'Use status for account/device readiness, whoami for account metadata, or device-info for device details.',
               },
             },
             'required': ['action'],

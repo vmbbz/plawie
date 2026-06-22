@@ -9,6 +9,7 @@ import 'gateway_connection.dart';
 import 'gateway_runtime.dart';
 import 'native_bridge.dart';
 import 'native_gateway_shadow_parity_service.dart';
+import 'preferences_service.dart';
 
 class NativeGatewaySmokeReport {
   final bool passed;
@@ -140,6 +141,12 @@ class NativeGatewaySmokeService {
     Map<String, dynamic>? productionHealth,
   }) async {
     if (!startupSidecarDiagnosticsEnabled) return;
+    final prefs = PreferencesService();
+    await prefs.init();
+    if (prefs.gatewayRuntimeOwner ==
+        PreferencesService.gatewayRuntimeOwnerNativeProduction) {
+      return;
+    }
     if (_startupSelfTestInFlight ||
         _canaryComparisonInFlight ||
         _canaryComparisonPassed) {

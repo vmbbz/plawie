@@ -161,6 +161,16 @@ class ModelProviderCatalog {
       defaultModel: 'groq/llama-3.3-70b-versatile',
       description: 'Very fast hosted inference for responsive chat.',
     ),
+    ProviderOption(
+      id: 'zenmux',
+      label: 'Zenmux',
+      subtitle: 'OpenAI-compatible gateway',
+      envKey: 'ZENMUX_API_KEY',
+      keyHint: 'zm-...',
+      keyPrefix: 'zm-',
+      defaultModel: 'zenmux/z-ai/glm-5.2-free',
+      description: 'OpenAI-compatible API gateway with free community models.',
+    ),
   ];
 
   static const List<ModelOption> cloudModels = [
@@ -323,6 +333,18 @@ class ModelProviderCatalog {
       maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),
     ModelOption(
+      id: 'zenmux/z-ai/glm-5.2-free',
+      label: 'GLM-5.2 Free via Zenmux',
+      providerId: 'zenmux',
+      route: ModelRouteKind.cloud,
+      description:
+          'Free community model via the Zenmux OpenAI-compatible gateway.',
+      category: 'Free',
+      recommended: true,
+      contextWindow: ModelExecutionPolicy.zenmuxGlm52ContextWindow,
+      maxTokens: ModelExecutionPolicy.standardOutputTokens,
+    ),
+    ModelOption(
       id: 'plawie_ndk/local-llm',
       label: 'Plawie NDK Bridge (Local Gateway)',
       providerId: 'plawie_ndk',
@@ -380,6 +402,7 @@ class ModelProviderCatalog {
     if (p.contains('xai') || p.contains('grok')) return 'xai';
     if (p.contains('gemini') || p.contains('google')) return 'google';
     if (p.contains('groq')) return 'groq';
+    if (p.contains('zenmux')) return 'zenmux';
     if (p.endsWith('_api_key')) return normalizeProvider(p.split('_').first);
     return p;
   }
@@ -499,6 +522,12 @@ class ModelProviderCatalog {
       case 'groq':
         return {
           'baseUrl': 'https://api.groq.com/openai/v1',
+          'models': models,
+        };
+      case 'zenmux':
+        return {
+          'api': 'openai-completions',
+          'baseUrl': 'https://zenmux.ai/api/v1',
           'models': models,
         };
       case 'openrouter':

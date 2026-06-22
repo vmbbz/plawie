@@ -78,6 +78,15 @@ class MainActivity : FlutterActivity() {
     private var nativeTtsReady: Boolean = false
     private var debugNativeFullGatewayBootstrapStarted: Boolean = false
     private var debugNativeFullGatewayProductionStarted: Boolean = false
+    private val managedCliAllowlist = setOf(
+        "eightctl",
+        "blu",
+        "himalaya",
+        "openhue",
+        "sonos",
+        "wacli",
+        "songsee"
+    )
 
     // Wake word EventChannel sink — receives "wake_word_detected" events from HotwordService
     private var hotwordEventSink: EventChannel.EventSink? = null
@@ -347,6 +356,28 @@ class MainActivity : FlutterActivity() {
                         } catch (e: Exception) {
                             runOnUiThread {
                                 result.error("MANAGED_FFMPEG_ERROR", e.message, null)
+                            }
+                        }
+                    }.start()
+                }
+                "runManagedCli" -> {
+                    val binName = call.argument<String>("binName") ?: ""
+                    val rawArgs = call.argument<List<*>>("args") ?: emptyList<Any>()
+                    val rawEnv = call.argument<Map<*, *>>("env") ?: emptyMap<Any, Any>()
+                    val timeoutSeconds = call.argument<Int>("timeoutSeconds")?.toLong() ?: 20L
+                    Thread {
+                        try {
+                            val output = runManagedCli(
+                                binName,
+                                rawArgs.map { it?.toString() ?: "" },
+                                rawEnv.mapKeys { it.key?.toString() ?: "" }
+                                    .mapValues { it.value?.toString() ?: "" },
+                                timeoutSeconds
+                            )
+                            runOnUiThread { result.success(output) }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.error("MANAGED_CLI_ERROR", e.message, null)
                             }
                         }
                     }.start()
@@ -900,7 +931,10 @@ class MainActivity : FlutterActivity() {
             }
         )
 
-        // ── Hotword (Wake Word "Plawie") ──────────────────────────────────────
+        // Canvas screenshot capture using PixelCopy on the embedded WebView.
+        CanvasScreenshotManager.register(this, flutterEngine.dartExecutor.binaryMessenger)
+        // The WebView is located by walking the activity content view hierarchy;
+        // no view-id lookup is required.
 
         // Register wake word broadcast receiver
         val wakeFilter = IntentFilter(HotwordService.ACTION_WAKE_WORD_DETECTED)
@@ -1113,6 +1147,93 @@ class MainActivity : FlutterActivity() {
             "stdout" to stdout.toString(),
             "stderr" to stderr.toString(),
             "binaryPath" to ffmpeg.absolutePath
+        )
+    }
+
+    private fun runManagedCli(
+        binName: String,
+        args: List<String>,
+        env: Map<String, String>,
+        timeoutSeconds: Long
+    ): Map<String, Any> {
+        val safeBin = binName.trim()
+        val binPattern = Regex("^[a-z0-9][a-z0-9._-]{0,63}$")
+        val envKeyPattern = Regex("^[A-Z_][A-Z0-9_]{0,127}$")
+        if (!binPattern.matches(safeBin) || !managedCliAllowlist.contains(safeBin)) {
+            throw IllegalArgumentException("Managed CLI is not allowlisted: $safeBin")
+        }
+        if (args.size > 64) {
+            throw IllegalArgumentException("Too many managed CLI arguments.")
+        }
+        if (args.any { it.isBlank() || it.contains('\u0000') }) {
+            throw IllegalArgumentException("Unsafe managed CLI argument.")
+        }
+        if (env.size > 64) {
+            throw IllegalArgumentException("Too many managed CLI environment values.")
+        }
+        if (env.any { (key, value) ->
+                !envKeyPattern.matches(key) || value.contains('\u0000') || value.length > 16 * 1024
+            }) {
+            throw IllegalArgumentException("Unsafe managed CLI environment value.")
+        }
+
+        val nativeHome = File(filesDir, "native-node-embedded/native-home").canonicalFile
+        val managedBin = File(nativeHome, ".openclaw/bin").canonicalFile
+        val binary = File(managedBin, safeBin).canonicalFile
+        if (!binary.path.startsWith(managedBin.path + File.separator)) {
+            throw IllegalStateException("Resolved managed CLI path escaped managed bin.")
+        }
+        if (!binary.exists()) {
+            throw IllegalStateException("$safeBin is missing from managed Android CLI packs.")
+        }
+        if (!binary.canExecute()) {
+            binary.setExecutable(true, false)
+        }
+        if (!binary.canExecute()) {
+            throw IllegalStateException("$safeBin is not executable.")
+        }
+
+        nativeHome.mkdirs()
+        cacheDir.mkdirs()
+        val command = listOf(binary.absolutePath) + args
+        val process = ProcessBuilder(command)
+            .directory(nativeHome)
+            .redirectErrorStream(false)
+            .apply {
+                environment()["PATH"] = managedBin.absolutePath
+                environment()["HOME"] = nativeHome.absolutePath
+                environment()["XDG_CONFIG_HOME"] = File(nativeHome, ".config").absolutePath
+                environment()["OPENCLAW_HOME"] = File(nativeHome, ".openclaw").absolutePath
+                environment()["OPENCLAW_NATIVE_MANAGED_BIN"] = managedBin.absolutePath
+                environment()["TMPDIR"] = cacheDir.absolutePath
+                env.forEach { (key, value) -> environment()[key] = value }
+            }
+            .start()
+
+        val stdout = StringBuilder()
+        val stderr = StringBuilder()
+        val stdoutThread = Thread {
+            stdout.append(readProcessStreamBounded(process.inputStream, 64 * 1024))
+        }
+        val stderrThread = Thread {
+            stderr.append(readProcessStreamBounded(process.errorStream, 64 * 1024))
+        }
+        stdoutThread.start()
+        stderrThread.start()
+
+        val boundedTimeout = timeoutSeconds.coerceIn(1L, 120L)
+        val finished = process.waitFor(boundedTimeout, TimeUnit.SECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+        }
+        stdoutThread.join(1000L)
+        stderrThread.join(1000L)
+
+        return mapOf(
+            "exitCode" to if (finished) process.exitValue() else 124,
+            "stdout" to stdout.toString(),
+            "stderr" to stderr.toString(),
+            "binaryPath" to binary.absolutePath
         )
     }
 
