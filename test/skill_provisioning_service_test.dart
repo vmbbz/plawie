@@ -478,7 +478,7 @@ requirements:
     expect(packAction.message, contains('signed dependency pack'));
   });
 
-  test('gifgrep remains blocked when only ffmpeg vision media payload exists',
+  test('gifgrep requires android-vision-media-runtime pack when binary not bundled',
       () async {
     final temp =
         await Directory.systemTemp.createTemp('skill_provision_gifgrep_');
@@ -533,7 +533,7 @@ requirements:
           .where((action) =>
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
-      isNot(contains('android-vision-media-runtime')),
+      contains('android-vision-media-runtime:gifgrep'),
     );
     expect(
         await File(path.join(nativeRoot, 'bin', 'gifgrep')).exists(), isFalse);

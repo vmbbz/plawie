@@ -246,12 +246,10 @@ final List<AndroidSkillSupportEntry> _entries =
     smoke:
         'List GitHub issues for a configured repository through the app-native REST adapter.',
   ),
-  _unsupported(
+  _needsPack(
     'gifgrep',
-    reason:
-        'Gifgrep requires @lydell/node-pty which has no android-arm64 build. '
-        'A native Dart bridge execution path (Process.run) is needed before '
-        'this skill can run on Android.',
+    packs: ['android-vision-media-runtime'],
+    smoke: 'Search for a GIF pattern in a small test fixture through the vision-media runtime.',
   ),
   _needsConfig(
     'github',

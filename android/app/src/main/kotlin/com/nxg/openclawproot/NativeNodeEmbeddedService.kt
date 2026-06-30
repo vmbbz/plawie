@@ -70,6 +70,16 @@ class NativeNodeEmbeddedService : Service() {
             "flutter_assets/assets/openclaw/terminal/bin"
         private const val TERMINAL_LIB_ASSET_DIR =
             "flutter_assets/assets/openclaw/terminal/lib"
+        private const val WHISPER_RUNTIME_BIN_ASSET_DIR =
+            "flutter_assets/assets/openclaw/whisper-runtime/bin"
+        private const val TTS_RUNTIME_BIN_ASSET_DIR =
+            "flutter_assets/assets/openclaw/tts-runtime/bin"
+        private const val TTS_RUNTIME_LIB_ASSET_DIR =
+            "flutter_assets/assets/openclaw/tts-runtime/lib"
+        private const val NODE_EXECUTABLE_BIN_ASSET_DIR =
+            "flutter_assets/assets/openclaw/node-executable-pack/bin"
+        private const val AGENT_CLI_BIN_ASSET_DIR =
+            "flutter_assets/assets/openclaw/agent-cli-pack/bin"
         private const val NOTIFICATION_CHANNEL_ID = "native_node_smoke"
         private const val NOTIFICATION_ID = 5
         private const val ACTION_START = "com.nxg.openclawproot.native_node.START"
@@ -84,7 +94,7 @@ class NativeNodeEmbeddedService : Service() {
         fun start(
             context: Context,
             port: Int = PORT,
-            canaryMode: String = "embedded-smoke"
+            canaryMode: String = FULL_GATEWAY_BOOTSTRAP_MODE
         ) {
             val intent = Intent(context, NativeNodeEmbeddedService::class.java).apply {
                 action = ACTION_START
@@ -451,6 +461,13 @@ class NativeNodeEmbeddedService : Service() {
         val terminalLibCount = copyTerminalLibAssets(
             File(workDir(applicationContext), "provisioning/terminal/lib")
         )
+        val whisperBinCount = copyWhisperRuntimeBinAssets(provisioningBin)
+        val ttsBinCount = copyTtsRuntimeBinAssets(provisioningBin)
+        val ttsLibCount = copyTtsRuntimeLibAssets(
+            File(workDir(applicationContext), "provisioning/tts-runtime/lib")
+        )
+        val nodeBinCount = copyNodeExecutableBinAssets(provisioningBin)
+        val agentBinCount = copyAgentCliBinAssets(provisioningBin)
 
         if (!launcher.exists()) {
             throw IllegalStateException("OpenClaw launcher missing after extraction: ${launcher.absolutePath}")
@@ -491,6 +508,16 @@ class NativeNodeEmbeddedService : Service() {
                 .put("terminalBinCount", terminalBinCount)
                 .put("terminalLibAssetDir", TERMINAL_LIB_ASSET_DIR)
                 .put("terminalLibCount", terminalLibCount)
+                .put("whisperRuntimeBinAssetDir", WHISPER_RUNTIME_BIN_ASSET_DIR)
+                .put("whisperRuntimeBinCount", whisperBinCount)
+                .put("ttsRuntimeBinAssetDir", TTS_RUNTIME_BIN_ASSET_DIR)
+                .put("ttsRuntimeBinCount", ttsBinCount)
+                .put("ttsRuntimeLibAssetDir", TTS_RUNTIME_LIB_ASSET_DIR)
+                .put("ttsRuntimeLibCount", ttsLibCount)
+                .put("nodeExecutableBinAssetDir", NODE_EXECUTABLE_BIN_ASSET_DIR)
+                .put("nodeExecutableBinCount", nodeBinCount)
+                .put("agentCliBinAssetDir", AGENT_CLI_BIN_ASSET_DIR)
+                .put("agentCliBinCount", agentBinCount)
                 .put("androidTmpPatchCount", androidTmpPatchCount)
                 .put("bindHost", HOST)
                 .put("bindPort", port)
@@ -631,6 +658,30 @@ class NativeNodeEmbeddedService : Service() {
             targetDir,
             "terminal"
         )
+    }
+
+    private fun copyWhisperRuntimeBinAssets(targetDir: File): Int {
+        return copyBundledBinAssets(WHISPER_RUNTIME_BIN_ASSET_DIR, targetDir, "whisper-runtime")
+    }
+
+    private fun copyTtsRuntimeBinAssets(targetDir: File): Int {
+        return copyBundledBinAssets(TTS_RUNTIME_BIN_ASSET_DIR, targetDir, "tts-runtime")
+    }
+
+    private fun copyTtsRuntimeLibAssets(targetDir: File): Int {
+        return copyBundledLibraryAssets(
+            TTS_RUNTIME_LIB_ASSET_DIR,
+            targetDir,
+            "tts-runtime"
+        )
+    }
+
+    private fun copyNodeExecutableBinAssets(targetDir: File): Int {
+        return copyBundledBinAssets(NODE_EXECUTABLE_BIN_ASSET_DIR, targetDir, "node-executable")
+    }
+
+    private fun copyAgentCliBinAssets(targetDir: File): Int {
+        return copyBundledBinAssets(AGENT_CLI_BIN_ASSET_DIR, targetDir, "agent-cli")
     }
 
     private fun copyBundledWheelAssets(assetDir: String, targetDir: File, label: String): Int {

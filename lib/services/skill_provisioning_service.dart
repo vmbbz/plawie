@@ -52,6 +52,33 @@ class SkillProvisioningService {
   static const _androidTerminalPackBins = <String>{
     'tmux',
   };
+  static const _androidWhisperRuntimePackId = 'android-whisper-runtime';
+  static const _androidWhisperRuntimePackVersion = 'whisper-cpp-v1-2026';
+  static const _androidWhisperRuntimePackBins = <String>{
+    'whisper',
+  };
+  static const _androidWhisperRuntimeModels = <String>{
+    'ggml-base.bin',
+  };
+  static const _androidTtsRuntimePackId = 'android-tts-runtime';
+  static const _androidTtsRuntimePackVersion = 'sherpa-onnx-v1-2026';
+  static const _androidTtsRuntimePackBins = <String>{
+    'sherpa-onnx',
+  };
+  static const _androidTtsRuntimeLibs = <String>{
+    'libonnxruntime.so',
+    'libsherpa-onnx-core.so',
+  };
+  static const _androidNodeExecutablePackId = 'android-node-executable-pack';
+  static const _androidNodeExecutablePackVersion = 'node-v20-apk-v1';
+  static const _androidNodeExecutablePackBins = <String>{
+    'node',
+  };
+  static const _androidAgentCliPackId = 'android-agent-cli-pack';
+  static const _androidAgentCliPackVersion = 'agent-cli-v1-apk-v1';
+  static const _androidAgentCliPackBins = <String>{
+    'coding-agent',
+  };
   static const _defaultPythonWheelIndexes = <String>[
     'https://chaquo.com/pypi-13.1/',
     'https://pypi.org/simple/',
@@ -1772,6 +1799,22 @@ class SkillProvisioningService {
     final terminalPack = await _apkProvidedTerminalPack(layout);
     if (terminalPack != null) {
       packs.add(terminalPack);
+    }
+    final whisperPack = await _apkProvidedWhisperRuntimePack(layout);
+    if (whisperPack != null) {
+      packs.add(whisperPack);
+    }
+    final ttsPack = await _apkProvidedTtsRuntimePack(layout);
+    if (ttsPack != null) {
+      packs.add(ttsPack);
+    }
+    final nodePack = await _apkProvidedNodeExecutablePack(layout);
+    if (nodePack != null) {
+      packs.add(nodePack);
+    }
+    final agentPack = await _apkProvidedAgentCliPack(layout);
+    if (agentPack != null) {
+      packs.add(agentPack);
     }
 
     Future<void> mergeManifest(Map<String, dynamic>? manifest) async {
@@ -3690,6 +3733,74 @@ class SkillProvisioningService {
     return _DependencyPack.apk(
       id: _androidTerminalPackId,
       version: _androidTerminalPackVersion,
+      providesBins: providedBins,
+    );
+  }
+
+  static Future<_DependencyPack?> _apkProvidedWhisperRuntimePack(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final providedBins = <String>{};
+    for (final bin in _androidWhisperRuntimePackBins) {
+      if (await _findBundledNativeBinary(layout, bin) != null) {
+        providedBins.add(bin);
+      }
+    }
+    if (providedBins.isEmpty) return null;
+    return _DependencyPack.apk(
+      id: _androidWhisperRuntimePackId,
+      version: _androidWhisperRuntimePackVersion,
+      providesBins: providedBins,
+    );
+  }
+
+  static Future<_DependencyPack?> _apkProvidedTtsRuntimePack(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final providedBins = <String>{};
+    for (final bin in _androidTtsRuntimePackBins) {
+      if (await _findBundledNativeBinary(layout, bin) != null) {
+        providedBins.add(bin);
+      }
+    }
+    if (providedBins.isEmpty) return null;
+    return _DependencyPack.apk(
+      id: _androidTtsRuntimePackId,
+      version: _androidTtsRuntimePackVersion,
+      providesBins: providedBins,
+    );
+  }
+
+  static Future<_DependencyPack?> _apkProvidedNodeExecutablePack(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final providedBins = <String>{};
+    for (final bin in _androidNodeExecutablePackBins) {
+      if (await _findBundledNativeBinary(layout, bin) != null) {
+        providedBins.add(bin);
+      }
+    }
+    if (providedBins.isEmpty) return null;
+    return _DependencyPack.apk(
+      id: _androidNodeExecutablePackId,
+      version: _androidNodeExecutablePackVersion,
+      providesBins: providedBins,
+    );
+  }
+
+  static Future<_DependencyPack?> _apkProvidedAgentCliPack(
+    _SkillProvisioningLayout layout,
+  ) async {
+    final providedBins = <String>{};
+    for (final bin in _androidAgentCliPackBins) {
+      if (await _findBundledNativeBinary(layout, bin) != null) {
+        providedBins.add(bin);
+      }
+    }
+    if (providedBins.isEmpty) return null;
+    return _DependencyPack.apk(
+      id: _androidAgentCliPackId,
+      version: _androidAgentCliPackVersion,
       providesBins: providedBins,
     );
   }
