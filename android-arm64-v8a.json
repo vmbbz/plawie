@@ -1,0 +1,96 @@
+{
+  "packs": [
+    {
+      "id": "android-whisper-runtime",
+      "version": "whisper-cpp-v1-2026",
+      "source": "remote",
+      "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v1/android-whisper-runtime-whisper-cpp-v1-2026.zip",
+      "abis": [
+        "arm64-v8a"
+      ],
+      "sizeBytes": 6325558,
+      "sha256": "7196047b8a0a26b9dcdf74e7d91979a74f762febdbe653d5beefbeb5e89af336",
+      "signature": {
+        "type": "ed25519",
+        "value": "EH2PljH7xMN+djMG2JbMHy+TYCTfIVEUfaWvtVCa5NOZ6LpIDo/rCb+yGRtaMQAwcI14yqAA1NQmyV76Kj+9Cg==",
+        "keyId": "838fff1844341501"
+      },
+      "archiveType": "zip",
+      "installPath": "dependencies/packs/android-whisper-runtime",
+      "files": [
+        {
+          "path": "bin/whisper",
+          "sha256": "c11375efe80632a3defb46b4d4400158b8121c26be92349cb80a67bc96f7a4ec",
+          "sizeBytes": 25348944,
+          "executable": true
+        }
+      ],
+      "smokeCommand": {
+        "command": "whisper",
+        "args": [
+          "--version"
+        ]
+      },
+      "rollback": {
+        "strategy": "remove_install_path"
+      },
+      "provides": {
+        "bins": [
+          "whisper"
+        ]
+      }
+    },
+    {
+      "id": "android-tts-runtime",
+      "version": "sherpa-onnx-v1-2026",
+      "source": "remote",
+      "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v1/android-tts-runtime-sherpa-onnx-v1-2026.zip",
+      "abis": [
+        "arm64-v8a"
+      ],
+      "sizeBytes": 24926042,
+      "sha256": "e22c8ed6a3e6910a093a12b9746f84cc897ca123732823f74cb8b344760e8dc0",
+      "signature": {
+        "type": "ed25519",
+        "value": "baiEBbJRH0Et5EN0cvraON0pdeTqjMr35wfC48lhg1t0RUFOoVVJRWS3H+6m5TJActxi0Wqphul07F+MZvQLAA==",
+        "keyId": "838fff1844341501"
+      },
+      "archiveType": "zip",
+      "installPath": "dependencies/packs/android-tts-runtime",
+      "files": [
+        {
+          "path": "bin/sherpa-onnx",
+          "sha256": "f4db14c6fefb62f53352c90d13cd9e01453a23d9d182fbe6ef5a03f4039f7f1b",
+          "sizeBytes": 46672824,
+          "executable": true
+        },
+        {
+          "path": "lib/libonnxruntime.so",
+          "sha256": "4d2318b3849abb8862133d3068fc7e807ed8b2671cc6d83657fff2fcb9e1caad",
+          "sizeBytes": 25831632,
+          "executable": false
+        },
+        {
+          "path": "lib/libsherpa-onnx-core.so",
+          "sha256": "aac6f369f1985c96c788e8e64883ecc3bc9915bbc158ec86eb998946f0449ddd",
+          "sizeBytes": 4406112,
+          "executable": false
+        }
+      ],
+      "smokeCommand": {
+        "command": "sherpa-onnx",
+        "args": [
+          "--help"
+        ]
+      },
+      "rollback": {
+        "strategy": "remove_install_path"
+      },
+      "provides": {
+        "bins": [
+          "sherpa-onnx"
+        ]
+      }
+    }
+  ]
+}

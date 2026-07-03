@@ -1845,8 +1845,8 @@ class SkillProvisioningService {
       final uri = Uri.parse(
         const String.fromEnvironment(
           'OPENCLAW_DEPENDENCY_PACK_MANIFEST',
-          defaultValue:
-              'https://clawhub.ai/api/v1/dependency-packs/android/arm64-v8a.json',
+              defaultValue:
+                  'https://raw.githubusercontent.com/vmbbz/plawie/main/android-arm64-v8a.json',
         ),
       );
       final response = await http.get(uri).timeout(const Duration(seconds: 8));
