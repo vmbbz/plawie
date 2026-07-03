@@ -1846,7 +1846,7 @@ class SkillProvisioningService {
         const String.fromEnvironment(
           'OPENCLAW_DEPENDENCY_PACK_MANIFEST',
               defaultValue:
-                  'https://raw.githubusercontent.com/vmbbz/plawie/main/android-arm64-v8a.json',
+                  'https://raw.githubusercontent.com/vmbbz/plawie/native-node-gateway-research/android-arm64-v8a.json',
         ),
       );
       final response = await http.get(uri).timeout(const Duration(seconds: 8));
