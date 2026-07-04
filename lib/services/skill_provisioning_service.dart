@@ -78,6 +78,7 @@ class SkillProvisioningService {
   static const _androidAgentCliPackVersion = 'agent-cli-v1-apk-v1';
   static const _androidAgentCliPackBins = <String>{
     'coding-agent',
+    'claude',
   };
   static const _defaultPythonWheelIndexes = <String>[
     'https://chaquo.com/pypi-13.1/',
@@ -933,7 +934,8 @@ class SkillProvisioningService {
       // shadows the working build-time copy.
       final actuallyNeed = <String>{};
       for (final package in remainingPythonPackages) {
-        final smoke = await _smokePythonImport(layout, package);
+        final smoke = await _smokePythonImport(layout, package,
+            skillId: entry.skillId);
         if (smoke.ok) {
           satisfiedPythonPackages.add(package);
           actions.add(SkillProvisioningAction(
@@ -966,7 +968,8 @@ class SkillProvisioningService {
     final stillUnverified =
         requiredPackages.difference(satisfiedPythonPackages);
     if (apply && stillUnverified.isNotEmpty) {
-      final installed = await _scanInstalledPythonPackageVersions(layout);
+      final installed =
+          await _scanInstalledPythonPackageVersions(layout, skillId: entry.skillId);
       for (final package in stillUnverified) {
         final requirement = _pythonRequirementForPackage(
           requiredPythonRequirements,
@@ -977,7 +980,8 @@ class SkillProvisioningService {
             !_pythonRequirementSatisfied(version, requirement)) {
           continue;
         }
-        final smoke = await _smokePythonImport(layout, package);
+        final smoke = await _smokePythonImport(layout, package,
+            skillId: entry.skillId);
         if (smoke.ok) {
           satisfiedPythonPackages.add(package);
           actions.add(SkillProvisioningAction(
@@ -1951,7 +1955,8 @@ class SkillProvisioningService {
     var changed = false;
     var reloadRecommended = false;
 
-    final installed = await _scanInstalledPythonPackageVersions(layout);
+    final installed =
+        await _scanInstalledPythonPackageVersions(layout, skillId: entry.skillId);
     final rootPackages =
         requiredPythonRequirements.keys.map(_normalizeDependencyName).toSet();
     final queue = <_PythonRequirementRequest>[
@@ -2032,7 +2037,8 @@ class SkillProvisioningService {
       final receipt = await _readPythonWheelReceipt(layout, request.name);
       if (receipt != null &&
           _pythonWheelReceiptSatisfiesRequest(receipt, request) &&
-          await _pythonPackageMarkerPresent(layout, request.name)) {
+          await _pythonPackageMarkerPresent(layout, request.name,
+              skillId: entry.skillId)) {
         installed[request.name] = receipt.version;
         if (rootPackages.contains(request.name)) {
           satisfiedPackages.add(request.name);
@@ -2143,7 +2149,8 @@ class SkillProvisioningService {
 
     if (apply && satisfiedPackages.isNotEmpty) {
       for (final package in satisfiedPackages.toList()) {
-        final smoke = await _smokePythonImport(layout, package);
+        final smoke = await _smokePythonImport(layout, package,
+            skillId: entry.skillId);
         if (!smoke.ok) {
           satisfiedPackages.remove(package);
           debugPrint(
@@ -2604,8 +2611,9 @@ class SkillProvisioningService {
   }
 
   static Future<Map<String, String>> _scanInstalledPythonPackageVersions(
-    _SkillProvisioningLayout layout,
-  ) async {
+    _SkillProvisioningLayout layout, {
+    String? skillId,
+  }) async {
     final result = <String, String>{};
     // Scan the managed site-packages directory (runtime wheel installs).
     final root = layout.nativePythonSitePackagesDir;
@@ -2619,7 +2627,20 @@ class SkillProvisioningService {
       'app',
       'site-packages',
     ));
-    for (final scanRoot in [root, chaquopyRoot]) {
+    final scanRoots = <Directory>[root, chaquopyRoot];
+    // Also scan skill-local site-packages so user-installed skills (e.g.
+    // stocks) that have packages in their own directory are detected.
+    if (skillId != null) {
+      for (final skillDir in layout.nativeSkillDirs(skillId)) {
+        scanRoots.add(Directory(path.join(skillDir.path, 'site-packages')));
+        scanRoots
+            .add(Directory(path.join(skillDir.path, '.python', 'site-packages')));
+      }
+    }
+    // Legacy location.
+    scanRoots.add(Directory(
+        path.join(layout.nativeStateRoot, 'python', 'site-packages')));
+    for (final scanRoot in scanRoots) {
       try {
         if (!await scanRoot.exists()) continue;
         await for (final entity in scanRoot.list(recursive: false)) {
@@ -2826,10 +2847,12 @@ class SkillProvisioningService {
 
   static Future<bool> _pythonPackageMarkerPresent(
     _SkillProvisioningLayout layout,
-    String packageName,
-  ) async {
+    String packageName, {
+    String? skillId,
+  }) async {
     final normalized = _normalizeDependencyName(packageName);
-    final installed = await _scanInstalledPythonPackageVersions(layout);
+    final installed =
+        await _scanInstalledPythonPackageVersions(layout, skillId: skillId);
     return installed.containsKey(normalized);
   }
 
@@ -2877,14 +2900,24 @@ class SkillProvisioningService {
 
   static Future<_PythonSmokeResult> _smokePythonImport(
     _SkillProvisioningLayout layout,
-    String packageName,
-  ) async {
+    String packageName, {
+    String? skillId,
+  }) async {
     if (!Platform.isAndroid) {
       return const _PythonSmokeResult(ok: true, stdout: '', stderr: '');
     }
     final module = packageName.replaceAll('-', '_');
 
     Future<_PythonSmokeResult> runImport(String importStatement) async {
+      final pythonPaths = <String>[layout.nativePythonSitePackagesDir.path];
+      // Also include skill-local site-packages so the smoke test can find
+      // packages installed in the skill's own directory.
+      if (skillId != null) {
+        for (final skillDir in layout.nativeSkillDirs(skillId)) {
+          pythonPaths.add(path.join(skillDir.path, 'site-packages'));
+          pythonPaths.add(path.join(skillDir.path, '.python', 'site-packages'));
+        }
+      }
       final result = await NativeBridge.runNativePython({
         'args': ['-c', importStatement],
         'cwd': layout.nativeStateRoot,
@@ -2894,7 +2927,7 @@ class SkillProvisioningService {
           'OPENCLAW_NATIVE_PYTHON_SITE_PACKAGES':
               layout.nativePythonSitePackagesDir.path,
         },
-        'pythonPaths': [layout.nativePythonSitePackagesDir.path],
+        'pythonPaths': pythonPaths,
       });
       return _PythonSmokeResult(
         ok: result['ok'] == true || result['exitCode'] == 0,
@@ -3235,6 +3268,7 @@ class SkillProvisioningService {
         await installDir.parent.create(recursive: true);
         await stage.rename(installDir.path);
       }
+      // Binary copying to managed bin is handled by _applyDependencyPackFileModes.
     } finally {
       if (await stage.exists()) {
         try {
@@ -3242,6 +3276,19 @@ class SkillProvisioningService {
         } catch (_) {}
       }
     }
+  }
+
+  /// Recursively search for a file with the given name in a directory.
+  static Future<File?> _findFileInDirectory(Directory dir, String name) async {
+    if (!await dir.exists()) return null;
+    try {
+      await for (final entity in dir.list(recursive: true)) {
+        if (entity is File && path.basename(entity.path) == name) {
+          return entity;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   static Future<List<int>> _readDependencyPackBytes(String url) async {
@@ -3313,6 +3360,25 @@ class SkillProvisioningService {
         );
       }
     }
+    // Also chmod and copy pack-provided binaries to managed bin.
+    if (pack.providesBins.isNotEmpty) {
+      final managedBinDir = layout.nativeManagedBinDir;
+      await managedBinDir.create(recursive: true);
+      for (final bin in pack.providesBins) {
+        final packBin = await _findFileInDirectory(installDir, bin);
+        if (packBin == null) continue;
+        final target = File(path.join(managedBinDir.path, bin));
+        try {
+          // Always copy to ensure fresh binary, then chmod.
+          await packBin.copy(target.path);
+          await Process.run('chmod', ['755', target.path]);
+        } catch (error) {
+          debugPrint(
+            '[DEPS] failed copy/chmod bin pack=${pack.id} bin=$bin: $error',
+          );
+        }
+      }
+    }
   }
 
   static Future<void> _rollbackDependencyPackInstall(
@@ -3330,6 +3396,15 @@ class SkillProvisioningService {
         !sharedInstallPath &&
         await installDir.exists()) {
       await installDir.delete(recursive: true);
+      // Also remove provided binaries from managed bin to ensure clean state.
+      for (final bin in pack.providesBins) {
+        final managedBin = File(path.join(layout.nativeManagedBinDir.path, bin));
+        try {
+          if (await managedBin.exists()) {
+            await managedBin.delete();
+          }
+        } catch (_) {}
+      }
       return;
     }
 
@@ -3345,6 +3420,15 @@ class SkillProvisioningService {
           '[DEPS] failed rollback pack=${pack.id} file=${target.path}: $error',
         );
       }
+    }
+    // Also remove provided binaries from managed bin.
+    for (final bin in pack.providesBins) {
+      final managedBin = File(path.join(layout.nativeManagedBinDir.path, bin));
+      try {
+        if (await managedBin.exists()) {
+          await managedBin.delete();
+        }
+      } catch (_) {}
     }
   }
 
@@ -3426,6 +3510,18 @@ class SkillProvisioningService {
         stderr: 'Dependency pack ${pack.id} smoke command "$normalizedCommand" '
             'is missing from managed Native bin.',
       );
+    }
+
+    // Ensure the binary is executable before running the smoke test.
+    if (!Platform.isWindows) {
+      try {
+        await Process.run('chmod', ['755', executable.path]);
+      } catch (error) {
+        debugPrint(
+          '[DEPS] failed chmod smoke binary pack=${pack.id} '
+          'bin=$normalizedCommand: $error',
+        );
+      }
     }
 
     await Directory(layout.nativeStateRoot).create(recursive: true);
