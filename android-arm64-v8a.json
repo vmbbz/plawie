@@ -104,7 +104,7 @@
       "sha256": "c9cced93949385ade08a77798d8c624aa0cbfd36cb930703b94609331f6ab17a",
       "signature": {
         "type": "ed25519",
-        "value": "PLACEHOLDER_SIGN_WITH_PRIVATE_KEY_AFTER_UPLOAD",
+        "value": "hYvJKQuJXtXrzeiuYDQhRhqjRR+6iVietwTJ8pKQ1lDQUTDoQBDpw9AcETN55nDNrB3DzteMwCv8HzesFsl4Cg==",
         "keyId": "838fff1844341501"
       },
       "archiveType": "zip",

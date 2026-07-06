@@ -7,6 +7,6 @@ const String kDependencyPackSigningKeyId = '838fff1844341501';
 
 /// The ed25519 public key (PEM) for verifying dependency pack signatures.
 /// Keep this in sync with signing-public.pem.
-const String kDependencyPackPublicKey = r'''-----BEGIN PUBLIC KEY-----
+const String kDependencyPackPublicKey = '-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEATMgPQFa95wsW0yRuLIIzO5fYThR73fv+UyR+Ofn5O1U=
------END PUBLIC KEY-----''';
+-----END PUBLIC KEY-----';
