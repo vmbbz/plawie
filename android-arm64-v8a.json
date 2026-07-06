@@ -91,6 +91,64 @@
           "sherpa-onnx"
         ]
       }
+    },
+    {
+      "id": "android-agent-cli-pack",
+      "version": "opencode-v1.17.9-2026",
+      "source": "remote",
+      "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v2/android-agent-cli-pack-opencode-v1.17.9-2026.zip",
+      "abis": [
+        "arm64-v8a"
+      ],
+      "sizeBytes": 52124730,
+      "sha256": "c9cced93949385ade08a77798d8c624aa0cbfd36cb930703b94609331f6ab17a",
+      "signature": {
+        "type": "ed25519",
+        "value": "PLACEHOLDER_SIGN_WITH_PRIVATE_KEY_AFTER_UPLOAD",
+        "keyId": "838fff1844341501"
+      },
+      "archiveType": "zip",
+      "installPath": "dependencies/packs/android-agent-cli-pack",
+      "files": [
+        {
+          "path": "bin/coding-agent",
+          "sha256": "5609e288519cac6ad6dc0eddb4bd99fb77564e82d878e9a54915c565c75f0402",
+          "sizeBytes": 141823216,
+          "executable": true
+        },
+        {
+          "path": "lib/libc++_shared.so",
+          "sha256": "ab4e6c71b96b851de45a8a9bd86369e7dbc2130a44b3b4520564be94847910f2",
+          "sizeBytes": 9236352,
+          "executable": false
+        },
+        {
+          "path": "lib/libopentui.so",
+          "sha256": "4f9c16e90496fa457321fb17a2bf64a0e67535077a7763d0feb836e95e9c0f44",
+          "sizeBytes": 9905129,
+          "executable": false
+        },
+        {
+          "path": "lib/libtagfix.so",
+          "sha256": "7899ec6bfce01f0393611e5c9a9a00a83aff218eea55362881ebf0bee3aaacc1",
+          "sizeBytes": 5272,
+          "executable": false
+        }
+      ],
+      "smokeCommand": {
+        "command": "coding-agent",
+        "args": [
+          "--version"
+        ]
+      },
+      "rollback": {
+        "strategy": "remove_install_path"
+      },
+      "provides": {
+        "bins": [
+          "coding-agent"
+        ]
+      }
     }
   ]
 }

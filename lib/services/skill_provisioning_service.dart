@@ -74,12 +74,7 @@ class SkillProvisioningService {
   static const _androidNodeExecutablePackBins = <String>{
     'node',
   };
-  static const _androidAgentCliPackId = 'android-agent-cli-pack';
-  static const _androidAgentCliPackVersion = 'agent-cli-v1-apk-v1';
-  static const _androidAgentCliPackBins = <String>{
-    'coding-agent',
-    'claude',
-  };
+  // android-agent-cli-pack (opencode) is fully remote — see android-arm64-v8a.json.
   static const _defaultPythonWheelIndexes = <String>[
     'https://chaquo.com/pypi-13.1/',
     'https://pypi.org/simple/',
@@ -1816,10 +1811,9 @@ class SkillProvisioningService {
     if (nodePack != null) {
       packs.add(nodePack);
     }
-    final agentPack = await _apkProvidedAgentCliPack(layout);
-    if (agentPack != null) {
-      packs.add(agentPack);
-    }
+    // android-agent-cli-pack (opencode ~50 MB) is remote-only — too large for
+    // the APK. It is fetched on demand via the remote manifest exactly like
+    // android-whisper-runtime and android-tts-runtime.
 
     Future<void> mergeManifest(Map<String, dynamic>? manifest) async {
       if (manifest == null) return;
@@ -3884,22 +3878,10 @@ class SkillProvisioningService {
     );
   }
 
-  static Future<_DependencyPack?> _apkProvidedAgentCliPack(
-    _SkillProvisioningLayout layout,
-  ) async {
-    final providedBins = <String>{};
-    for (final bin in _androidAgentCliPackBins) {
-      if (await _findBundledNativeBinary(layout, bin) != null) {
-        providedBins.add(bin);
-      }
-    }
-    if (providedBins.isEmpty) return null;
-    return _DependencyPack.apk(
-      id: _androidAgentCliPackId,
-      version: _androidAgentCliPackVersion,
-      providesBins: providedBins,
-    );
-  }
+  // _apkProvidedAgentCliPack removed: opencode (142 MB binary, ~50 MB zip)
+  // is too large to bundle in the APK. The pack is fetched remotely via
+  // android-arm64-v8a.json, the same way android-whisper-runtime and
+  // android-tts-runtime are delivered.
 
   static Future<_PythonWheelCandidate?> _findBundledPythonWheelCandidate(
     _SkillProvisioningLayout layout,
