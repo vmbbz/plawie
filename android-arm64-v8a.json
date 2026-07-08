@@ -2,14 +2,14 @@
   "packs": [
     {
       "id": "android-whisper-runtime",
-      "version": "whisper-cpp-v1-2026",
+      "version": "whisper-cpp-v2-2026",
       "source": "remote",
-      "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v1/android-whisper-runtime-whisper-cpp-v1-2026.zip",
+      "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v3/android-whisper-runtime-whisper-cpp-v2-2026.zip",
       "abis": [
         "arm64-v8a"
       ],
-      "sizeBytes": 6325558,
-      "sha256": "7196047b8a0a26b9dcdf74e7d91979a74f762febdbe653d5beefbeb5e89af336",
+      "sizeBytes": 6647593,
+      "sha256": "d68beb3f9ab2329e06fe643d38d2d1abb508dc5353cf034f694ecf82b8cae874",
       "signature": {
         "type": "ed25519",
         "value": "EH2PljH7xMN+djMG2JbMHy+TYCTfIVEUfaWvtVCa5NOZ6LpIDo/rCb+yGRtaMQAwcI14yqAA1NQmyV76Kj+9Cg==",
@@ -23,6 +23,12 @@
           "sha256": "c11375efe80632a3defb46b4d4400158b8121c26be92349cb80a67bc96f7a4ec",
           "sizeBytes": 25348944,
           "executable": true
+        },
+        {
+          "path": "lib/libomp.so",
+          "sha256": "b0b507bb9e89360304272ba335d5fb2f6661f88842c2b3c749474cb7b8acda76",
+          "sizeBytes": 1234864,
+          "executable": false
         }
       ],
       "smokeCommand": {

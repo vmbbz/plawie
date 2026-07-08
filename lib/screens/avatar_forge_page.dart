@@ -17,7 +17,6 @@ class _AvatarForgePageState extends State<AvatarForgePage>
     with SingleTickerProviderStateMixin {
   final List<String> _myAvatars = [
     'gemini.vrm',
-    'boruto.vrm',
   ];
   String _equippedAvatar = 'gemini.vrm';
   late AnimationController _glowController;

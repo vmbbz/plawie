@@ -72,6 +72,8 @@ class NativeNodeEmbeddedService : Service() {
             "flutter_assets/assets/openclaw/terminal/lib"
         private const val WHISPER_RUNTIME_BIN_ASSET_DIR =
             "flutter_assets/assets/openclaw/whisper-runtime/bin"
+        private const val WHISPER_RUNTIME_LIB_ASSET_DIR =
+            "flutter_assets/assets/openclaw/whisper-runtime/lib"
         private const val TTS_RUNTIME_BIN_ASSET_DIR =
             "flutter_assets/assets/openclaw/tts-runtime/bin"
         private const val TTS_RUNTIME_LIB_ASSET_DIR =
@@ -462,6 +464,9 @@ class NativeNodeEmbeddedService : Service() {
             File(workDir(applicationContext), "provisioning/terminal/lib")
         )
         val whisperBinCount = copyWhisperRuntimeBinAssets(provisioningBin)
+        val whisperLibCount = copyWhisperRuntimeLibAssets(
+            File(workDir(applicationContext), "provisioning/whisper-runtime/lib")
+        )
         val ttsBinCount = copyTtsRuntimeBinAssets(provisioningBin)
         val ttsLibCount = copyTtsRuntimeLibAssets(
             File(workDir(applicationContext), "provisioning/tts-runtime/lib")
@@ -510,6 +515,8 @@ class NativeNodeEmbeddedService : Service() {
                 .put("terminalLibCount", terminalLibCount)
                 .put("whisperRuntimeBinAssetDir", WHISPER_RUNTIME_BIN_ASSET_DIR)
                 .put("whisperRuntimeBinCount", whisperBinCount)
+                .put("whisperRuntimeLibAssetDir", WHISPER_RUNTIME_LIB_ASSET_DIR)
+                .put("whisperRuntimeLibCount", whisperLibCount)
                 .put("ttsRuntimeBinAssetDir", TTS_RUNTIME_BIN_ASSET_DIR)
                 .put("ttsRuntimeBinCount", ttsBinCount)
                 .put("ttsRuntimeLibAssetDir", TTS_RUNTIME_LIB_ASSET_DIR)
@@ -662,6 +669,14 @@ class NativeNodeEmbeddedService : Service() {
 
     private fun copyWhisperRuntimeBinAssets(targetDir: File): Int {
         return copyBundledBinAssets(WHISPER_RUNTIME_BIN_ASSET_DIR, targetDir, "whisper-runtime")
+    }
+
+    private fun copyWhisperRuntimeLibAssets(targetDir: File): Int {
+        return copyBundledLibraryAssets(
+            WHISPER_RUNTIME_LIB_ASSET_DIR,
+            targetDir,
+            "whisper-runtime"
+        )
     }
 
     private fun copyTtsRuntimeBinAssets(targetDir: File): Int {

@@ -129,7 +129,6 @@ class _ChatScreenState extends State<ChatScreen>
 
   final List<String> _availableAvatars = [
     'gemini.vrm',
-    'boruto.vrm',
   ];
 
   // Wake word subscription

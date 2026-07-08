@@ -80,7 +80,6 @@ flutter:
     - assets/app_icon_official.svg
     - assets/vrm/avatar_scene.html
     - assets/vrm/gemini.vrm
-    - assets/vrm/boruto.vrm
     - assets/vrm/animations/
     - assets/vrm/animations/limbs/
     - assets/vrm/lib/
@@ -94,6 +93,7 @@ flutter:
     - assets/openclaw/python-debug-runtime/wheels/
     - assets/openclaw/terminal/bin/
     - assets/openclaw/terminal/lib/
+    - assets/openclaw/whisper-runtime/lib/
     - assets/openclaw/agent-cli-pack/bin/
     - assets/openclaw/skills/battery.md
     - assets/openclaw/skills/vibrate.md

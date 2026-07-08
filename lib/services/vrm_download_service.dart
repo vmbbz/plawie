@@ -25,7 +25,7 @@ class CloudVrmEntry {
 }
 
 // Bundled VRMs that are always available (no download needed).
-const List<String> kBundledVrms = ['gemini.vrm', 'boruto.vrm'];
+const List<String> kBundledVrms = ['gemini.vrm'];
 
 // Base URL for GitHub Releases VRM pack (tag: vrm-pack-v on github.com/vmbbz/plawie).
 const String _kReleaseBase =

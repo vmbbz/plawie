@@ -951,8 +951,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _changeAvatar(BuildContext context) {
-    final avatars = ['gemini.vrm', 'boruto.vrm'];
-    final labels = ['Gemini (Default)', 'Boruto'];
+    final avatars = ['gemini.vrm'];
+    final labels = ['Gemini (Default)'];
 
     showDialog(
       context: context,

@@ -457,7 +457,10 @@ class SkillProvisioningService {
         await source.copy(target.path);
         if (!Platform.isWindows) {
           try {
-            await Process.run('chmod', ['755', target.path]);
+            final r = await Process.run('chmod', ['755', target.path]);
+            if (r.exitCode != 0) {
+              debugPrint('[DEPS] chmod failed exit=${r.exitCode} stderr=${r.stderr}');
+            }
           } catch (_) {}
         }
         actions.add(SkillProvisioningAction(
@@ -916,6 +919,11 @@ class SkillProvisioningService {
         );
       }
     }
+
+    // Copy APK-bundled whisper runtime shared libraries (e.g. libomp.so)
+    // to managed lib dir so they're available via LD_LIBRARY_PATH.
+    // This works regardless of whether the pack is APK-provided or remote.
+    await _copyBundledWhisperRuntimeLibraries(layout);
 
     final remainingPythonPackages =
         requiredPackages.difference(satisfiedPythonPackages);
@@ -3363,7 +3371,6 @@ class SkillProvisioningService {
         if (packBin == null) continue;
         final target = File(path.join(managedBinDir.path, bin));
         try {
-          // Always copy to ensure fresh binary, then chmod.
           await packBin.copy(target.path);
           await Process.run('chmod', ['755', target.path]);
         } catch (error) {
@@ -3371,6 +3378,24 @@ class SkillProvisioningService {
             '[DEPS] failed copy/chmod bin pack=${pack.id} bin=$bin: $error',
           );
         }
+      }
+    }
+    // Copy shared library files from pack lib to managed lib dir.
+    final managedLibDir = layout.nativeManagedLibDir;
+    await managedLibDir.create(recursive: true);
+    for (final file in pack.files.where(
+        (f) => !f.executable && f.pathValue.endsWith('.so'))) {
+      final packLib = _dependencyPackInstalledFile(layout, pack, file.pathValue);
+      if (packLib == null || !await packLib.exists()) continue;
+      final target = File(path.join(
+          managedLibDir.path, path.basename(file.pathValue)));
+      try {
+        await packLib.copy(target.path);
+      } catch (error) {
+        debugPrint(
+          '[DEPS] failed copy lib pack=${pack.id} '
+          'file=${path.basename(file.pathValue)}: $error',
+        );
       }
     }
   }
@@ -3539,7 +3564,7 @@ class SkillProvisioningService {
         command.args,
         workingDirectory: layout.nativeStateRoot,
         environment: env,
-        runInShell: false,
+        runInShell: true,
       );
       final stdoutFuture = _readBoundedProcessStream(process.stdout);
       final stderrFuture = _readBoundedProcessStream(process.stderr);
@@ -3986,6 +4011,31 @@ class SkillProvisioningService {
         }
       } catch (_) {}
     }
+    return copied;
+  }
+
+  static Future<int> _copyBundledWhisperRuntimeLibraries(
+    _SkillProvisioningLayout layout,
+  ) async {
+    await layout.nativeManagedLibDir.create(recursive: true);
+    var copied = 0;
+    final whisperLibDir = Directory(path.join(
+      layout.filesDir,
+      'native-node-embedded',
+      'provisioning',
+      'whisper-runtime',
+      'lib',
+    ));
+    try {
+      if (!await whisperLibDir.exists()) return 0;
+      await for (final entity in whisperLibDir.list(recursive: false)) {
+        if (entity is! File) continue;
+        final name = path.basename(entity.path);
+        if (!_terminalLibraryAssetNameLooksSafe(name)) continue;
+        await entity.copy(path.join(layout.nativeManagedLibDir.path, name));
+        copied++;
+      }
+    } catch (_) {}
     return copied;
   }
 
