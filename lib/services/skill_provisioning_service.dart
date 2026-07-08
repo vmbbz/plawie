@@ -21,7 +21,6 @@ class SkillProvisioningService {
   static const _pythonAbiTag = 'cp311';
   static const _androidWheelAbi = 'arm64_v8a';
   static const _androidCliCorePackId = 'android-cli-core-pack';
-  static const _androidCliCorePackVersion = 'apk-bundled-v1';
   static const _androidCliCorePackBins = <String>{
     'blu',
     'eightctl',
@@ -31,13 +30,11 @@ class SkillProvisioningService {
     'wacli',
   };
   static const _androidVisionMediaPackId = 'android-vision-media-runtime';
-  static const _androidVisionMediaPackVersion = 'apk-bundled-v1';
   static const _androidVisionMediaPackBins = <String>{
     'ffmpeg',
     'gifgrep',
   };
   static const _androidAudioRuntimePackId = 'android-audio-runtime';
-  static const _androidAudioRuntimePackVersion = 'apk-bundled-v1';
   static const _androidAudioRuntimePackBins = <String>{
     'songsee',
   };
@@ -48,7 +45,6 @@ class SkillProvisioningService {
     'debugpy',
   };
   static const _androidTerminalPackId = 'android-terminal-pack';
-  static const _androidTerminalPackVersion = 'termux-tmux-3.6b-apk-v1';
   static const _androidTerminalPackBins = <String>{
     'tmux',
   };
@@ -368,24 +364,8 @@ class SkillProvisioningService {
     final nonRuntimeMissingBins = missingBins
         .where((bin) => !_isPythonCommandBin(bin))
         .toList(growable: false);
-    final apkProvidedCliCorePack =
-        installDependencyPacks ? await _apkProvidedCliCorePack(layout) : null;
-    final apkProvidedCliCoreBins =
-        apkProvidedCliCorePack?.providesBins ?? const <String>{};
-    final apkProvidedVisionMediaPack = installDependencyPacks
-        ? await _apkProvidedVisionMediaPack(layout)
-        : null;
-    final apkProvidedVisionMediaBins =
-        apkProvidedVisionMediaPack?.providesBins ?? const <String>{};
-    final apkProvidedAudioRuntimePack = installDependencyPacks
-        ? await _apkProvidedAudioRuntimePack(layout)
-        : null;
-    final apkProvidedAudioRuntimeBins =
-        apkProvidedAudioRuntimePack?.providesBins ?? const <String>{};
-    final apkProvidedTerminalPack =
-        installDependencyPacks ? await _apkProvidedTerminalPack(layout) : null;
-    final apkProvidedTerminalBins =
-        apkProvidedTerminalPack?.providesBins ?? const <String>{};
+    // CLI packs (cli-core, vision-media, audio-runtime, terminal)
+    // are now remote — provided via GitHub release manifest.
     if (pythonCommandBins.isNotEmpty &&
         !missingRuntimes.map(_normalizeDependencyName).contains('python')) {
       missingRuntimes = [...missingRuntimes, 'python'];
@@ -442,13 +422,6 @@ class SkillProvisioningService {
     var unresolvedNonRuntimeMissingBins = <String>[];
     for (final bin in nonRuntimeMissingBins) {
       final normalizedBin = _normalizeBinRequirement(bin);
-      if (apkProvidedCliCoreBins.contains(normalizedBin) ||
-          apkProvidedVisionMediaBins.contains(normalizedBin) ||
-          apkProvidedAudioRuntimeBins.contains(normalizedBin) ||
-          apkProvidedTerminalBins.contains(normalizedBin)) {
-        unresolvedNonRuntimeMissingBins.add(bin);
-        continue;
-      }
       final target =
           File(path.join(layout.nativeManagedBinDir.path, normalizedBin));
       final source = await _findBundledNativeBinary(layout, bin);
@@ -1782,25 +1755,9 @@ class SkillProvisioningService {
         providesBins: const {'python', 'python3', 'pip'},
       ),
     ];
-    final cliCorePack = await _apkProvidedCliCorePack(layout);
-    if (cliCorePack != null) {
-      packs.add(cliCorePack);
-    }
-    final visionMediaPack = await _apkProvidedVisionMediaPack(layout);
-    if (visionMediaPack != null) {
-      packs.add(visionMediaPack);
-    }
-    final audioRuntimePack = await _apkProvidedAudioRuntimePack(layout);
-    if (audioRuntimePack != null) {
-      packs.add(audioRuntimePack);
-    }
     final pythonDebugPack = await _apkProvidedPythonDebugPack(layout);
     if (pythonDebugPack != null) {
       packs.add(pythonDebugPack);
-    }
-    final terminalPack = await _apkProvidedTerminalPack(layout);
-    if (terminalPack != null) {
-      packs.add(terminalPack);
     }
     final whisperPack = await _apkProvidedWhisperRuntimePack(layout);
     if (whisperPack != null) {
@@ -3086,9 +3043,6 @@ class SkillProvisioningService {
         );
       }
     }
-    if (pack.id == _androidTerminalPackId) {
-      await _copyBundledTerminalLibraries(layout);
-    }
     for (final package in pack.providesPythonPackages) {
       if (pack.id == _androidPythonDebugPackId) {
         final candidate = await _findBundledPythonWheelCandidate(
@@ -3757,57 +3711,6 @@ class SkillProvisioningService {
     ).hasMatch(version);
   }
 
-  static Future<_DependencyPack?> _apkProvidedCliCorePack(
-    _SkillProvisioningLayout layout,
-  ) async {
-    final providedBins = <String>{};
-    for (final bin in _androidCliCorePackBins) {
-      if (await _findBundledNativeBinary(layout, bin) != null) {
-        providedBins.add(bin);
-      }
-    }
-    if (providedBins.isEmpty) return null;
-    return _DependencyPack.apk(
-      id: _androidCliCorePackId,
-      version: _androidCliCorePackVersion,
-      providesBins: providedBins,
-    );
-  }
-
-  static Future<_DependencyPack?> _apkProvidedVisionMediaPack(
-    _SkillProvisioningLayout layout,
-  ) async {
-    final providedBins = <String>{};
-    for (final bin in _androidVisionMediaPackBins) {
-      if (await _findBundledNativeBinary(layout, bin) != null) {
-        providedBins.add(bin);
-      }
-    }
-    if (providedBins.isEmpty) return null;
-    return _DependencyPack.apk(
-      id: _androidVisionMediaPackId,
-      version: _androidVisionMediaPackVersion,
-      providesBins: providedBins,
-    );
-  }
-
-  static Future<_DependencyPack?> _apkProvidedAudioRuntimePack(
-    _SkillProvisioningLayout layout,
-  ) async {
-    final providedBins = <String>{};
-    for (final bin in _androidAudioRuntimePackBins) {
-      if (await _findBundledNativeBinary(layout, bin) != null) {
-        providedBins.add(bin);
-      }
-    }
-    if (providedBins.isEmpty) return null;
-    return _DependencyPack.apk(
-      id: _androidAudioRuntimePackId,
-      version: _androidAudioRuntimePackVersion,
-      providesBins: providedBins,
-    );
-  }
-
   static Future<_DependencyPack?> _apkProvidedPythonDebugPack(
     _SkillProvisioningLayout layout,
   ) async {
@@ -3828,23 +3731,6 @@ class SkillProvisioningService {
       version: _androidPythonDebugPackVersion,
       providesPythonPackages: providedPackages,
       smokeImports: const ['debugpy'],
-    );
-  }
-
-  static Future<_DependencyPack?> _apkProvidedTerminalPack(
-    _SkillProvisioningLayout layout,
-  ) async {
-    final providedBins = <String>{};
-    for (final bin in _androidTerminalPackBins) {
-      if (await _findBundledNativeBinary(layout, bin) != null) {
-        providedBins.add(bin);
-      }
-    }
-    if (providedBins.isEmpty) return null;
-    return _DependencyPack.apk(
-      id: _androidTerminalPackId,
-      version: _androidTerminalPackVersion,
-      providesBins: providedBins,
     );
   }
 
@@ -3988,26 +3874,6 @@ class SkillProvisioningService {
       } catch (_) {}
     }
     return true;
-  }
-
-  static Future<int> _copyBundledTerminalLibraries(
-    _SkillProvisioningLayout layout,
-  ) async {
-    await layout.nativeManagedLibDir.create(recursive: true);
-    var copied = 0;
-    for (final root in layout.bundledTerminalLibraryRoots) {
-      try {
-        if (!await root.exists()) continue;
-        await for (final entity in root.list(recursive: false)) {
-          if (entity is! File) continue;
-          final name = path.basename(entity.path);
-          if (!_terminalLibraryAssetNameLooksSafe(name)) continue;
-          await entity.copy(path.join(layout.nativeManagedLibDir.path, name));
-          copied++;
-        }
-      } catch (_) {}
-    }
-    return copied;
   }
 
   static Future<int> _copyBundledWhisperRuntimeLibraries(
@@ -4562,29 +4428,6 @@ class _SkillProvisioningLayout {
           'provisioning',
           'terminal',
           'bin',
-        )),
-      ];
-  List<Directory> get bundledTerminalLibraryRoots => [
-        Directory(path.join(
-          filesDir,
-          'native-node-embedded',
-          'provisioning',
-          'terminal',
-          'lib',
-        )),
-        Directory(path.join(
-          filesDir,
-          'native-node-embedded',
-          'bundled-terminal',
-          'lib',
-        )),
-        Directory(path.join(
-          filesDir,
-          'native-node-embedded',
-          'full-openclaw',
-          'provisioning',
-          'terminal',
-          'lib',
         )),
       ];
   List<Directory> get bundledPythonDebugWheelRoots => [

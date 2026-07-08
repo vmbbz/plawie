@@ -13,11 +13,8 @@ import android.os.IBinder
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -50,26 +47,14 @@ class NativeNodeEmbeddedService : Service() {
         val extractedNow: Boolean,
         val entryCount: Int,
         val fileCount: Int,
-        val cliCoreBinCount: Int,
         val androidTmpPatchCount: Int
     )
 
     companion object {
         private const val TAG = "NativeNodeEmbedded"
         private const val FULL_GATEWAY_BOOTSTRAP_MODE = "full-gateway-bootstrap"
-        private const val OPENCLAW_TARBALL_ASSET =
-            "flutter_assets/assets/openclaw-node-modules.tar.gz"
-        private const val CLI_CORE_BIN_ASSET_DIR = "flutter_assets/assets/openclaw/cli-core/bin"
-        private const val VISION_MEDIA_BIN_ASSET_DIR =
-            "flutter_assets/assets/openclaw/vision-media/bin"
-        private const val AUDIO_RUNTIME_BIN_ASSET_DIR =
-            "flutter_assets/assets/openclaw/audio-runtime/bin"
         private const val PYTHON_DEBUG_WHEEL_ASSET_DIR =
             "flutter_assets/assets/openclaw/python-debug-runtime/wheels"
-        private const val TERMINAL_BIN_ASSET_DIR =
-            "flutter_assets/assets/openclaw/terminal/bin"
-        private const val TERMINAL_LIB_ASSET_DIR =
-            "flutter_assets/assets/openclaw/terminal/lib"
         private const val WHISPER_RUNTIME_BIN_ASSET_DIR =
             "flutter_assets/assets/openclaw/whisper-runtime/bin"
         private const val WHISPER_RUNTIME_LIB_ASSET_DIR =
@@ -394,7 +379,7 @@ class NativeNodeEmbeddedService : Service() {
                 .put("missingAssets", JSONArray(missing))
                 .put(
                     "nodeModulesTarAssetPresent",
-                    assetExists(OPENCLAW_TARBALL_ASSET)
+                    false // OPENCLAW_TARBALL_ASSET removed — gateway installed via npm
                 )
                 .put("productionGatewayPort", 18789)
                 .put("smokePort", PORT)
@@ -431,37 +416,22 @@ class NativeNodeEmbeddedService : Service() {
         val missingRequiredFiles = requiredFiles.filterNot { it.exists() }
         if (missingRequiredFiles.isNotEmpty()) {
             appendLog(
-                "full OpenClaw bundle cache invalid; missing=" +
-                    missingRequiredFiles.joinToString(",") { it.relativeTo(dir).path }
+                "full OpenClaw bundle cache invalid; " +
+                    "will install via npm (APK tarball removed)"
             )
-            if (dir.exists()) dir.deleteRecursively()
-            dir.mkdirs()
-            val counts = extractOpenClawTarball(dir)
-            extractedNow = true
-            entryCount = counts.first
-            fileCount = counts.second
+            entryCount = 0
+            fileCount = 0
         } else {
             fileCount = countExistingFiles(dir)
             entryCount = fileCount
         }
+        val provisioningBin = File(workDir(applicationContext), "provisioning/bin")
         val androidTmpPatchCount = patchOpenClawAndroidTmpDirs(
             packageDir,
             File(workDir(applicationContext), "tmp/openclaw")
         )
-        val provisioningBin = File(workDir(applicationContext), "provisioning/bin")
-        val cliCoreBinCount = copyCliCoreBinAssets(provisioningBin)
-        val visionMediaBinCount = copyVisionMediaBinAssets(provisioningBin)
-        val audioRuntimeBinCount = copyAudioRuntimeBinAssets(
-            File(workDir(applicationContext), "provisioning/audio-runtime/bin")
-        )
         val pythonDebugWheelCount = copyPythonDebugWheelAssets(
             File(workDir(applicationContext), "provisioning/python-debug/wheels")
-        )
-        val terminalBinCount = copyTerminalBinAssets(
-            File(workDir(applicationContext), "provisioning/terminal/bin")
-        )
-        val terminalLibCount = copyTerminalLibAssets(
-            File(workDir(applicationContext), "provisioning/terminal/lib")
         )
         val whisperBinCount = copyWhisperRuntimeBinAssets(provisioningBin)
         val whisperLibCount = copyWhisperRuntimeLibAssets(
@@ -497,22 +467,11 @@ class NativeNodeEmbeddedService : Service() {
                 .put("runMainEntry", runMainEntry.absolutePath)
                 .put("packageJson", packageJson.absolutePath)
                 .put("typeboxPackage", typeboxPackage.absolutePath)
-                .put("asset", OPENCLAW_TARBALL_ASSET)
                 .put("extractedNow", extractedNow)
                 .put("entryCount", entryCount)
                 .put("fileCount", fileCount)
-                .put("cliCoreBinAssetDir", CLI_CORE_BIN_ASSET_DIR)
-                .put("cliCoreBinCount", cliCoreBinCount)
-                .put("visionMediaBinAssetDir", VISION_MEDIA_BIN_ASSET_DIR)
-                .put("visionMediaBinCount", visionMediaBinCount)
-                .put("audioRuntimeBinAssetDir", AUDIO_RUNTIME_BIN_ASSET_DIR)
-                .put("audioRuntimeBinCount", audioRuntimeBinCount)
                 .put("pythonDebugWheelAssetDir", PYTHON_DEBUG_WHEEL_ASSET_DIR)
                 .put("pythonDebugWheelCount", pythonDebugWheelCount)
-                .put("terminalBinAssetDir", TERMINAL_BIN_ASSET_DIR)
-                .put("terminalBinCount", terminalBinCount)
-                .put("terminalLibAssetDir", TERMINAL_LIB_ASSET_DIR)
-                .put("terminalLibCount", terminalLibCount)
                 .put("whisperRuntimeBinAssetDir", WHISPER_RUNTIME_BIN_ASSET_DIR)
                 .put("whisperRuntimeBinCount", whisperBinCount)
                 .put("whisperRuntimeLibAssetDir", WHISPER_RUNTIME_LIB_ASSET_DIR)
@@ -542,7 +501,6 @@ class NativeNodeEmbeddedService : Service() {
             extractedNow = extractedNow,
             entryCount = entryCount,
             fileCount = fileCount,
-            cliCoreBinCount = cliCoreBinCount,
             androidTmpPatchCount = androidTmpPatchCount
         )
     }
@@ -579,91 +537,13 @@ class NativeNodeEmbeddedService : Service() {
         return patchedCount
     }
 
-    private fun extractOpenClawTarball(targetRoot: File): Pair<Int, Int> {
-        val canonicalRoot = targetRoot.canonicalFile
-        var entryCount = 0
-        var fileCount = 0
-
-        assets.open(OPENCLAW_TARBALL_ASSET).use { rawInput ->
-            BufferedInputStream(rawInput, 256 * 1024).use { buffered ->
-                GZIPInputStream(buffered).use { gzip ->
-                    TarArchiveInputStream(gzip).use { tar ->
-                        var entry: TarArchiveEntry? = tar.nextEntry
-                        while (entry != null) {
-                            entryCount++
-                            val normalized = normalizeTarEntryName(entry.name)
-                            if (normalized == null) {
-                                appendLog("skipped unsafe OpenClaw tar entry name=${entry.name}")
-                                entry = tar.nextEntry
-                                continue
-                            }
-
-                            val outFile = File(canonicalRoot, normalized)
-                            val canonicalOut = outFile.canonicalFile
-                            if (!canonicalOut.path.startsWith(canonicalRoot.path + File.separator)) {
-                                appendLog("skipped escaping OpenClaw tar entry name=${entry.name}")
-                                entry = tar.nextEntry
-                                continue
-                            }
-
-                            when {
-                                entry.isDirectory -> canonicalOut.mkdirs()
-                                entry.isSymbolicLink || entry.isLink -> {
-                                    appendLog("skipped OpenClaw tar link entry name=${entry.name}")
-                                }
-                                entry.isFile -> {
-                                    canonicalOut.parentFile?.mkdirs()
-                                    FileOutputStream(canonicalOut).use { output ->
-                                        tar.copyTo(output)
-                                    }
-                                    if ((entry.mode and 0b001_001_001) != 0) {
-                                        canonicalOut.setExecutable(true, false)
-                                    }
-                                    fileCount++
-                                }
-                            }
-                            entry = tar.nextEntry
-                        }
-                    }
-                }
-            }
-        }
-
-        if (fileCount == 0) {
-            throw IllegalStateException("OpenClaw tarball extraction produced no files")
-        }
-        return Pair(entryCount, fileCount)
-    }
-
-    private fun copyCliCoreBinAssets(targetDir: File): Int {
-        return copyBundledBinAssets(CLI_CORE_BIN_ASSET_DIR, targetDir, "CLI-core")
-    }
-
-    private fun copyVisionMediaBinAssets(targetDir: File): Int {
-        return copyBundledBinAssets(VISION_MEDIA_BIN_ASSET_DIR, targetDir, "vision-media")
-    }
-
-    private fun copyAudioRuntimeBinAssets(targetDir: File): Int {
-        return copyBundledBinAssets(AUDIO_RUNTIME_BIN_ASSET_DIR, targetDir, "audio-runtime")
-    }
+    // extractOpenClawTarball removed — gateway installed via npm during setup
 
     private fun copyPythonDebugWheelAssets(targetDir: File): Int {
         return copyBundledWheelAssets(
             PYTHON_DEBUG_WHEEL_ASSET_DIR,
             targetDir,
             "python-debug"
-        )
-    }
-
-    private fun copyTerminalBinAssets(targetDir: File): Int {
-        return copyBundledBinAssets(TERMINAL_BIN_ASSET_DIR, targetDir, "terminal")
-    }
-
-    private fun copyTerminalLibAssets(targetDir: File): Int {
-        return copyBundledLibraryAssets(
-            TERMINAL_LIB_ASSET_DIR,
-            targetDir,
-            "terminal"
         )
     }
 
