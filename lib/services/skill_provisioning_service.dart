@@ -920,11 +920,6 @@ class SkillProvisioningService {
       }
     }
 
-    // Copy APK-bundled whisper runtime shared libraries (e.g. libomp.so)
-    // to managed lib dir so they're available via LD_LIBRARY_PATH.
-    // This works regardless of whether the pack is APK-provided or remote.
-    await _copyBundledWhisperRuntimeLibraries(layout);
-
     final remainingPythonPackages =
         requiredPackages.difference(satisfiedPythonPackages);
     if (remainingPythonPackages.isNotEmpty) {
@@ -1885,6 +1880,7 @@ class SkillProvisioningService {
         await _downloadAndExtractPack(layout, pack);
       }
       await _applyDependencyPackFileModes(layout, pack);
+      await _copyBundledWhisperRuntimeLibraries(layout);
 
       final smoke = await _runDependencyPackSmoke(layout, pack);
       if (!smoke.ok) {
