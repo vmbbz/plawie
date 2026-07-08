@@ -8,7 +8,7 @@ import '../widgets/glass_card.dart';
 
 /// Full-screen VRM avatar store: browse, download, equip, and delete avatars.
 ///
-/// Bundled avatars (gemini.vrm, boruto.vrm) are always shown as installed.
+/// Bundled avatars — gemini.vrm and boruto.vrm are now downloaded on first use.
 /// Cloud avatars come from [kCloudVrmCatalog] and are downloaded on demand.
 class VrmStoreScreen extends StatefulWidget {
   const VrmStoreScreen({super.key});

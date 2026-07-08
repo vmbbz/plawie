@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -35,6 +36,33 @@ class VrmAssetServer {
       _server = null;
       _port = null;
     });
+
+    // Ensure default avatar is cached. gemini.vrm is no longer bundled —
+    // download it on first launch so the WebView renderer doesn't 404.
+    await _ensureDefaultVrmDownloaded();
+  }
+
+  Future<void> _ensureDefaultVrmDownloaded() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final cached = File('${docs.path}/vrm_cache/gemini.vrm');
+      if (await cached.exists()) return;
+      final url = Uri.parse(
+        'https://github.com/vmbbz/plawie/releases/download/'
+        'vrm-pack-v/gemini.vrm',
+      );
+      final request = await HttpClient().getUrl(url);
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        debugPrint('[VRM] gemini.vrm download failed: HTTP ${response.statusCode}');
+        return;
+      }
+      await cached.parent.create(recursive: true);
+      await response.pipe(cached.openWrite());
+      debugPrint('[VRM] gemini.vrm downloaded to cache (${await cached.length()} bytes)');
+    } catch (e) {
+      debugPrint('[VRM] gemini.vrm auto-download error: $e');
+    }
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
@@ -66,15 +94,12 @@ class VrmAssetServer {
       } catch (_) {}
     }
 
-    // Fall back to bundled Flutter assets. If a previously selected cloud VRM
-    // has been removed from cache, serve the bundled default instead of leaving
-    // the WebView rendering an empty scene forever.
-    var assetPath = 'assets/vrm/$path';
+    // Fall back to bundled Flutter assets (animations and JS libs are still
+    // bundled; VRM models are downloaded to vrm_cache at first use).
     try {
-      final data = await rootBundle.load(assetPath);
+      final data = await rootBundle.load('assets/vrm/$path');
       final bytes =
           data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-
       request.response.statusCode = 200;
       request.response.headers.set('Content-Type', mimeType);
       request.response.headers.set('Content-Length', bytes.length.toString());
@@ -82,27 +107,8 @@ class VrmAssetServer {
       request.response.headers.set('Cache-Control', 'no-cache');
       request.response.add(bytes);
     } catch (e) {
-      if (path.endsWith('.vrm') && path != 'gemini.vrm') {
-        try {
-          assetPath = 'assets/vrm/gemini.vrm';
-          final data = await rootBundle.load(assetPath);
-          final bytes =
-              data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-          request.response.statusCode = 200;
-          request.response.headers.set('Content-Type', mimeType);
-          request.response.headers
-              .set('Content-Length', bytes.length.toString());
-          request.response.headers.set('Access-Control-Allow-Origin', '*');
-          request.response.headers.set('Cache-Control', 'no-cache');
-          request.response.add(bytes);
-        } catch (_) {
-          request.response.statusCode = 404;
-          request.response.write('Not found: $assetPath');
-        }
-      } else {
-        request.response.statusCode = 404;
-        request.response.write('Not found: $assetPath');
-      }
+      request.response.statusCode = 404;
+      request.response.write('Not found: assets/vrm/$path');
     }
 
     await request.response.close();

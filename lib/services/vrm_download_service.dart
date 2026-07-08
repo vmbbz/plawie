@@ -24,8 +24,8 @@ class CloudVrmEntry {
   }
 }
 
-// Bundled VRMs that are always available (no download needed).
-const List<String> kBundledVrms = ['gemini.vrm'];
+// Bundled VRMs that are pre-installed (empty now — gemini downloads on first use).
+const List<String> kBundledVrms = <String>[];
 
 // Base URL for GitHub Releases VRM pack (tag: vrm-pack-v on github.com/vmbbz/plawie).
 const String _kReleaseBase =
@@ -43,7 +43,9 @@ const List<CloudVrmEntry> kCloudVrmCatalog = [
   CloudVrmEntry(fileName: 'trump.vrm',             displayName: 'Trump',            sizeBytes: 15090720, downloadUrl: '$_kReleaseBase/trump.vrm'),
   CloudVrmEntry(fileName: 'joker.vrm',             displayName: 'Joker',            sizeBytes: 18868256, downloadUrl: '$_kReleaseBase/joker.vrm'),
   CloudVrmEntry(fileName: 'soyako.vrm',            displayName: 'Soyako',           sizeBytes: 19686968, downloadUrl: '$_kReleaseBase/soyako.vrm'),
-  CloudVrmEntry(fileName: 'gemini-pink.vrm',       displayName: 'Gemini (Pink)',    sizeBytes: 20980520, downloadUrl: '$_kReleaseBase/gemini-pink.vrm'),
+  CloudVrmEntry(fileName: 'gemini.vrm',             displayName: 'Gemini (Default)', sizeBytes: 19227960, downloadUrl: '$_kReleaseBase/gemini.vrm'),
+  CloudVrmEntry(fileName: 'boruto.vrm',             displayName: 'Boruto',          sizeBytes:  5908256, downloadUrl: '$_kReleaseBase/boruto.vrm'),
+  CloudVrmEntry(fileName: 'gemini-pink.vrm',        displayName: 'Gemini (Pink)',   sizeBytes: 20980520, downloadUrl: '$_kReleaseBase/gemini-pink.vrm'),
   CloudVrmEntry(fileName: 'war_boudica.vrm',       displayName: 'War Boudica',      sizeBytes: 21335060, downloadUrl: '$_kReleaseBase/war_boudica.vrm'),
   CloudVrmEntry(fileName: 'frankenstein.vrm',      displayName: 'Frankenstein',     sizeBytes: 22993724, downloadUrl: '$_kReleaseBase/frankenstein.vrm'),
   CloudVrmEntry(fileName: 'superman.vrm',          displayName: 'Superman',         sizeBytes: 32617848, downloadUrl: '$_kReleaseBase/superman.vrm'),

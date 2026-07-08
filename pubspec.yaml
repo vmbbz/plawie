@@ -79,7 +79,6 @@ flutter:
     - assets/ic_launcher.png
     - assets/app_icon_official.svg
     - assets/vrm/avatar_scene.html
-    - assets/vrm/gemini.vrm
     - assets/vrm/animations/
     - assets/vrm/animations/limbs/
     - assets/vrm/lib/
