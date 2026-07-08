@@ -5,30 +5,55 @@
       "version": "whisper-cpp-v2-2026",
       "source": "remote",
       "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v3/android-whisper-runtime-whisper-cpp-v2-2026.zip",
-      "abis": ["arm64-v8a"],
+      "abis": [
+        "arm64-v8a"
+      ],
       "sizeBytes": 6647593,
       "sha256": "d68beb3f9ab2329e06fe643d38d2d1abb508dc5353cf034f694ecf82b8cae874",
       "signature": {
         "type": "ed25519",
-        "value": "EH2PljH7xMN+djMG2JbMHy+TYCTfIVEUfaWvtVCa5NOZ6LpIDo/rCb+yGRtaMQAwcI14yqAA1NQmyV76Kj+9Cg==",
+        "value": "BGDUE2DwfSC2WGdqGIpCcuWa6PkXHsC64oyfsNZs57ukz+zHnGGnoNoEgv2iOzs+WcFe/7cAKjRLpW2f1i+RDw==",
         "keyId": "838fff1844341501"
       },
       "archiveType": "zip",
       "installPath": "dependencies/packs/android-whisper-runtime",
       "files": [
-        {"path": "bin/whisper", "sha256": "c11375efe80632a3defb46b4d4400158b8121c26be92349cb80a67bc96f7a4ec", "sizeBytes": 25348944, "executable": true},
-        {"path": "lib/libomp.so", "sha256": "b0b507bb9e89360304272ba335d5fb2f6661f88842c2b3c749474cb7b8acda76", "sizeBytes": 1234864, "executable": false}
+        {
+          "path": "bin/whisper",
+          "sha256": "c11375efe80632a3defb46b4d4400158b8121c26be92349cb80a67bc96f7a4ec",
+          "sizeBytes": 25348944,
+          "executable": true
+        },
+        {
+          "path": "lib/libomp.so",
+          "sha256": "b0b507bb9e89360304272ba335d5fb2f6661f88842c2b3c749474cb7b8acda76",
+          "sizeBytes": 1234864,
+          "executable": false
+        }
       ],
-      "smokeCommand": {"command": "whisper", "args": ["--version"]},
-      "rollback": {"strategy": "remove_install_path"},
-      "provides": {"bins": ["whisper"]}
+      "smokeCommand": {
+        "command": "whisper",
+        "args": [
+          "--version"
+        ]
+      },
+      "rollback": {
+        "strategy": "remove_install_path"
+      },
+      "provides": {
+        "bins": [
+          "whisper"
+        ]
+      }
     },
     {
       "id": "android-tts-runtime",
       "version": "sherpa-onnx-v1-2026",
       "source": "remote",
       "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v1/android-tts-runtime-sherpa-onnx-v1-2026.zip",
-      "abis": ["arm64-v8a"],
+      "abis": [
+        "arm64-v8a"
+      ],
       "sizeBytes": 24926042,
       "sha256": "e22c8ed6a3e6910a093a12b9746f84cc897ca123732823f74cb8b344760e8dc0",
       "signature": {
@@ -39,114 +64,250 @@
       "archiveType": "zip",
       "installPath": "dependencies/packs/android-tts-runtime",
       "files": [
-        {"path": "bin/sherpa-onnx", "sha256": "f4db14c6fefb62f53352c90d13cd9e01453a23d9d182fbe6ef5a03f4039f7f1b", "sizeBytes": 46672824, "executable": true},
-        {"path": "lib/libonnxruntime.so", "sha256": "4d2318b3849abb8862133d3068fc7e807ed8b2671cc6d83657fff2fcb9e1caad", "sizeBytes": 25831632, "executable": false},
-        {"path": "lib/libsherpa-onnx-core.so", "sha256": "aac6f369f1985c96c788e8e64883ecc3bc9915bbc158ec86eb998946f0449ddd", "sizeBytes": 4406112, "executable": false}
+        {
+          "path": "bin/sherpa-onnx",
+          "sha256": "f4db14c6fefb62f53352c90d13cd9e01453a23d9d182fbe6ef5a03f4039f7f1b",
+          "sizeBytes": 46672824,
+          "executable": true
+        },
+        {
+          "path": "lib/libonnxruntime.so",
+          "sha256": "4d2318b3849abb8862133d3068fc7e807ed8b2671cc6d83657fff2fcb9e1caad",
+          "sizeBytes": 25831632,
+          "executable": false
+        },
+        {
+          "path": "lib/libsherpa-onnx-core.so",
+          "sha256": "aac6f369f1985c96c788e8e64883ecc3bc9915bbc158ec86eb998946f0449ddd",
+          "sizeBytes": 4406112,
+          "executable": false
+        }
       ],
-      "smokeCommand": {"command": "sherpa-onnx", "args": ["--help"]},
-      "rollback": {"strategy": "remove_install_path"},
-      "provides": {"bins": ["sherpa-onnx"]}
+      "smokeCommand": {
+        "command": "sherpa-onnx",
+        "args": [
+          "--help"
+        ]
+      },
+      "rollback": {
+        "strategy": "remove_install_path"
+      },
+      "provides": {
+        "bins": [
+          "sherpa-onnx"
+        ]
+      }
     },
     {
       "id": "android-cli-core-pack",
       "version": "cli-core-v1-2026",
       "source": "remote",
       "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v4/android-cli-core-pack-v1-2026.zip",
-      "abis": ["arm64-v8a"],
+      "abis": [
+        "arm64-v8a"
+      ],
       "sizeBytes": 32066651,
       "sha256": "f95370809e8e0a1bb4682e68e5a5b34e154e382e94f4554f3366d7b2b1803608",
       "signature": {
         "type": "ed25519",
-        "value": "REPLACE_ME_SIGN_WITH_PRIVATE_KEY_838fff1844341501",
+        "value": "Ps/1R0yTRHAf4h0SOEqqa6tFzz/Ukyy1LypOnaYlFlwx2Tq4CoLa4EnrIMaaPd0e4D+mtF/DSLyF6mJACBuPAA==",
         "keyId": "838fff1844341501"
       },
       "archiveType": "zip",
       "installPath": "dependencies/packs/android-cli-core-pack",
       "files": [
-        {"path": "bin/blu", "sha256": "9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442", "sizeBytes": 8257832, "executable": true},
-        {"path": "bin/eightctl", "sha256": "8242e7624b6c0e3c9bd1fa932b515f8d589c47be09940da9032230f75d88d755", "sizeBytes": 10158376, "executable": true},
-        {"path": "bin/himalaya", "sha256": "83c900e58ff0ab931187fea7c49a36a29343e291ea8179b876c37bfbb34d572b", "sizeBytes": 28958664, "executable": true},
-        {"path": "bin/openhue", "sha256": "281cf0c17f593a32fe83571db7f467c956cd92a1b4bded26f6c8a8408f0ba3f9", "sizeBytes": 11206952, "executable": true},
-        {"path": "bin/sonos", "sha256": "411713ad1cd0e6841db7f5a6583d9d2f1767c1ef8c5f1cf143a666d5717ee8b5", "sizeBytes": 10813736, "executable": true},
-        {"path": "bin/wacli", "sha256": "63d36f54e82d8a2e76b2ef9ae44fe41b3c0bc0474ea19b9f31aae39ab9b43453", "sizeBytes": 21713936, "executable": true}
+        {
+          "path": "bin/blu",
+          "sha256": "9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442",
+          "sizeBytes": 8257832,
+          "executable": true
+        },
+        {
+          "path": "bin/eightctl",
+          "sha256": "8242e7624b6c0e3c9bd1fa932b515f8d589c47be09940da9032230f75d88d755",
+          "sizeBytes": 10158376,
+          "executable": true
+        },
+        {
+          "path": "bin/himalaya",
+          "sha256": "83c900e58ff0ab931187fea7c49a36a29343e291ea8179b876c37bfbb34d572b",
+          "sizeBytes": 28958664,
+          "executable": true
+        },
+        {
+          "path": "bin/openhue",
+          "sha256": "281cf0c17f593a32fe83571db7f467c956cd92a1b4bded26f6c8a8408f0ba3f9",
+          "sizeBytes": 11206952,
+          "executable": true
+        },
+        {
+          "path": "bin/sonos",
+          "sha256": "411713ad1cd0e6841db7f5a6583d9d2f1767c1ef8c5f1cf143a666d5717ee8b5",
+          "sizeBytes": 10813736,
+          "executable": true
+        },
+        {
+          "path": "bin/wacli",
+          "sha256": "63d36f54e82d8a2e76b2ef9ae44fe41b3c0bc0474ea19b9f31aae39ab9b43453",
+          "sizeBytes": 21713936,
+          "executable": true
+        }
       ],
-      "rollback": {"strategy": "remove_install_path"},
-      "provides": {"bins": ["blu", "eightctl", "himalaya", "openhue", "sonos", "wacli"]}
+      "rollback": {
+        "strategy": "remove_install_path"
+      },
+      "provides": {
+        "bins": [
+          "blu",
+          "eightctl",
+          "himalaya",
+          "openhue",
+          "sonos",
+          "wacli"
+        ]
+      }
     },
     {
       "id": "android-vision-media-pack",
       "version": "vision-media-v1-2026",
       "source": "remote",
       "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v4/android-vision-media-pack-v1-2026.zip",
-      "abis": ["arm64-v8a"],
+      "abis": [
+        "arm64-v8a"
+      ],
       "sizeBytes": 4779510,
       "sha256": "e7e5ab8fc4872f05eecc0f66c59e6e7825d136da2f81da3328795fafe2786286",
       "signature": {
         "type": "ed25519",
-        "value": "REPLACE_ME_SIGN_WITH_PRIVATE_KEY_838fff1844341501",
+        "value": "jFEbWhBOPTToQRBVUnlkL/7oeQiTEPxi52PdQzYXHrgeO93oBC1BAHPTVGXzGOOqi4pSCkno5pa5vtpAZxf4Aw==",
         "keyId": "838fff1844341501"
       },
       "archiveType": "zip",
       "installPath": "dependencies/packs/android-vision-media-pack",
       "files": [
-        {"path": "bin/ffmpeg", "sha256": "5359bcf9ee6b0deff2c9352ab28fde51602bbac75325f3f8b41781a7a4d0a09e", "sizeBytes": 3287176, "executable": true},
-        {"path": "bin/gifgrep", "sha256": "431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098", "sizeBytes": 8782177, "executable": true}
+        {
+          "path": "bin/ffmpeg",
+          "sha256": "5359bcf9ee6b0deff2c9352ab28fde51602bbac75325f3f8b41781a7a4d0a09e",
+          "sizeBytes": 3287176,
+          "executable": true
+        },
+        {
+          "path": "bin/gifgrep",
+          "sha256": "431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098",
+          "sizeBytes": 8782177,
+          "executable": true
+        }
       ],
-      "rollback": {"strategy": "remove_install_path"},
-      "provides": {"bins": ["ffmpeg", "gifgrep"]}
+      "rollback": {
+        "strategy": "remove_install_path"
+      },
+      "provides": {
+        "bins": [
+          "ffmpeg",
+          "gifgrep"
+        ]
+      }
     },
     {
       "id": "android-audio-runtime-pack",
       "version": "audio-runtime-v1-2026",
       "source": "remote",
       "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v4/android-audio-runtime-pack-v1-2026.zip",
-      "abis": ["arm64-v8a"],
+      "abis": [
+        "arm64-v8a"
+      ],
       "sizeBytes": 1711284,
       "sha256": "7c1374c60a9857822dbaf64b7bd5223875550975ef3528f504015c12de369cc1",
       "signature": {
         "type": "ed25519",
-        "value": "REPLACE_ME_SIGN_WITH_PRIVATE_KEY_838fff1844341501",
+        "value": "i/dvtsynrpF2DnFS8FqTK5ypiHuZdK3ee3fnobJpzzoyDz6zEgZ8g8LUY1pvY/CKEOm+qeZXFJuLcDRQrLioBw==",
         "keyId": "838fff1844341501"
       },
       "archiveType": "zip",
       "installPath": "dependencies/packs/android-audio-runtime-pack",
       "files": [
-        {"path": "bin/songsee", "sha256": "98ba6bbd89e69f515192300e0fbbecb607e3e1aba7697e138431ccfd86cf2cab", "sizeBytes": 4718945, "executable": true}
+        {
+          "path": "bin/songsee",
+          "sha256": "98ba6bbd89e69f515192300e0fbbecb607e3e1aba7697e138431ccfd86cf2cab",
+          "sizeBytes": 4718945,
+          "executable": true
+        }
       ],
-      "rollback": {"strategy": "remove_install_path"},
-      "provides": {"bins": ["songsee"]}
+      "rollback": {
+        "strategy": "remove_install_path"
+      },
+      "provides": {
+        "bins": [
+          "songsee"
+        ]
+      }
     },
     {
       "id": "android-terminal-pack",
       "version": "terminal-v1-2026",
       "source": "remote",
       "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v4/android-terminal-pack-v1-2026.zip",
-      "abis": ["arm64-v8a"],
+      "abis": [
+        "arm64-v8a"
+      ],
       "sizeBytes": 677346,
       "sha256": "f15111323cf57ef689a6ee3387fef41235741a67d34342c0ec3f001529f77931",
       "signature": {
         "type": "ed25519",
-        "value": "REPLACE_ME_SIGN_WITH_PRIVATE_KEY_838fff1844341501",
+        "value": "L+GO2oanFxGp8LzIJTsR/cfUZH4ZGo3Ar/ePmaJT6ed+vd8GE7Y+NiRqiGXuZ+RwACNJlXFVo5pL0/DFLXMGDA==",
         "keyId": "838fff1844341501"
       },
       "archiveType": "zip",
       "installPath": "dependencies/packs/android-terminal-pack",
       "files": [
-        {"path": "bin/tmux", "sha256": "9db38fdb4178abd13d19a32f40d265b61473694487e5c6ffc60e43ba11f1ca96", "sizeBytes": 986016, "executable": true},
-        {"path": "lib/libandroid-glob.so", "sha256": "e47405b23e40aea9bd5aad4c3cbf518065cba8ef1c4e24c8aae7fd77e10fe850", "sizeBytes": 10536, "executable": false},
-        {"path": "lib/libandroid-support.so", "sha256": "739cf829511d71dafd6c67fdbb70f3f0c6048642ea2e1967790ee961fde14430", "sizeBytes": 20736, "executable": false},
-        {"path": "lib/libevent_core-2.1.so", "sha256": "3e5697cf20492127371704d935ef8c7538a6ea82a6dd0fc9b427f8a55b8001f3", "sizeBytes": 192056, "executable": false},
-        {"path": "lib/libncursesw.so.6", "sha256": "795f855f5a988d9e89116847b2c9aa03720cedbc02026259ca735be25398c4c5", "sizeBytes": 384496, "executable": false}
+        {
+          "path": "bin/tmux",
+          "sha256": "9db38fdb4178abd13d19a32f40d265b61473694487e5c6ffc60e43ba11f1ca96",
+          "sizeBytes": 986016,
+          "executable": true
+        },
+        {
+          "path": "lib/libandroid-glob.so",
+          "sha256": "e47405b23e40aea9bd5aad4c3cbf518065cba8ef1c4e24c8aae7fd77e10fe850",
+          "sizeBytes": 10536,
+          "executable": false
+        },
+        {
+          "path": "lib/libandroid-support.so",
+          "sha256": "739cf829511d71dafd6c67fdbb70f3f0c6048642ea2e1967790ee961fde14430",
+          "sizeBytes": 20736,
+          "executable": false
+        },
+        {
+          "path": "lib/libevent_core-2.1.so",
+          "sha256": "3e5697cf20492127371704d935ef8c7538a6ea82a6dd0fc9b427f8a55b8001f3",
+          "sizeBytes": 192056,
+          "executable": false
+        },
+        {
+          "path": "lib/libncursesw.so.6",
+          "sha256": "795f855f5a988d9e89116847b2c9aa03720cedbc02026259ca735be25398c4c5",
+          "sizeBytes": 384496,
+          "executable": false
+        }
       ],
-      "rollback": {"strategy": "remove_install_path"},
-      "provides": {"bins": ["tmux"]}
+      "rollback": {
+        "strategy": "remove_install_path"
+      },
+      "provides": {
+        "bins": [
+          "tmux"
+        ]
+      }
     },
     {
       "id": "android-agent-cli-pack",
       "version": "opencode-v1.17.9-2026",
       "source": "remote",
       "url": "https://github.com/vmbbz/plawie/releases/download/dependency-packs-v2/android-agent-cli-pack-opencode-v1.17.9-2026.zip",
-      "abis": ["arm64-v8a"],
+      "abis": [
+        "arm64-v8a"
+      ],
       "sizeBytes": 52124730,
       "sha256": "c9cced93949385ade08a77798d8c624aa0cbfd36cb930703b94609331f6ab17a",
       "signature": {
@@ -157,14 +318,45 @@
       "archiveType": "zip",
       "installPath": "dependencies/packs/android-agent-cli-pack",
       "files": [
-        {"path": "bin/coding-agent", "sha256": "5609e288519cac6ad6dc0eddb4bd99fb77564e82d878e9a54915c565c75f0402", "sizeBytes": 141823216, "executable": true},
-        {"path": "lib/libc++_shared.so", "sha256": "ab4e6c71b96b851de45a8a9bd86369e7dbc2130a44b3b4520564be94847910f2", "sizeBytes": 9236352, "executable": false},
-        {"path": "lib/libopentui.so", "sha256": "4f9c16e90496fa457321fb17a2bf64a0e67535077a7763d0feb836e95e9c0f44", "sizeBytes": 9905129, "executable": false},
-        {"path": "lib/libtagfix.so", "sha256": "7899ec6bfce01f0393611e5c9a9a00a83aff218eea55362881ebf0bee3aaacc1", "sizeBytes": 5272, "executable": false}
+        {
+          "path": "bin/coding-agent",
+          "sha256": "5609e288519cac6ad6dc0eddb4bd99fb77564e82d878e9a54915c565c75f0402",
+          "sizeBytes": 141823216,
+          "executable": true
+        },
+        {
+          "path": "lib/libc++_shared.so",
+          "sha256": "ab4e6c71b96b851de45a8a9bd86369e7dbc2130a44b3b4520564be94847910f2",
+          "sizeBytes": 9236352,
+          "executable": false
+        },
+        {
+          "path": "lib/libopentui.so",
+          "sha256": "4f9c16e90496fa457321fb17a2bf64a0e67535077a7763d0feb836e95e9c0f44",
+          "sizeBytes": 9905129,
+          "executable": false
+        },
+        {
+          "path": "lib/libtagfix.so",
+          "sha256": "7899ec6bfce01f0393611e5c9a9a00a83aff218eea55362881ebf0bee3aaacc1",
+          "sizeBytes": 5272,
+          "executable": false
+        }
       ],
-      "smokeCommand": {"command": "coding-agent", "args": ["--version"]},
-      "rollback": {"strategy": "remove_install_path"},
-      "provides": {"bins": ["coding-agent"]}
+      "smokeCommand": {
+        "command": "coding-agent",
+        "args": [
+          "--version"
+        ]
+      },
+      "rollback": {
+        "strategy": "remove_install_path"
+      },
+      "provides": {
+        "bins": [
+          "coding-agent"
+        ]
+      }
     }
   ]
 }
