@@ -1,4 +1,4 @@
-package com.nxg.openclawproot
+package com.openclaw.plawie
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -18,7 +18,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 object CanvasScreenshotManager {
-    const val CHANNEL = "com.nxg.openclawproot/canvas_screenshot"
+    const val CHANNEL = "com.openclaw.plawie/canvas_screenshot"
 
     private var activity: FlutterActivity? = null
 

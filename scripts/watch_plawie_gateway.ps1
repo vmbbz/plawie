@@ -1,5 +1,5 @@
 param(
-  [string]$Package = "com.nxg.openclawproot",
+  [string]$Package = "com.openclaw.plawie",
   [string]$OutDir = "test-watch",
   [string]$Adb = "adb",
   [switch]$NoFollow

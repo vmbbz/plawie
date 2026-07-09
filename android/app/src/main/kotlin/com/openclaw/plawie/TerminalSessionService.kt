@@ -1,4 +1,4 @@
-package com.nxg.openclawproot
+package com.openclaw.plawie
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -57,7 +57,7 @@ class TerminalSessionService : Service() {
             "CREATE_SESSION" -> {
                 val sessionId = intent.getStringExtra("sessionId") ?: generateSessionId()
                 val command = intent.getStringExtra("command") ?: "/bin/bash"
-                val workingDir = intent.getStringExtra("workingDir") ?: "/data/data/com.nxg.openclawproot/files"
+                val workingDir = intent.getStringExtra("workingDir") ?: "/data/data/com.openclaw.plawie/files"
                 createSession(sessionId, command, workingDir)
             }
             "EXECUTE_COMMAND" -> {

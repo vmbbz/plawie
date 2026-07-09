@@ -1,4 +1,4 @@
-package com.nxg.openclawproot
+package com.openclaw.plawie
 
 import android.os.Build
 

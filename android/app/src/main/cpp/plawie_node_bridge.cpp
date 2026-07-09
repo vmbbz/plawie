@@ -45,7 +45,7 @@ int Start(int argc, char* argv[]);
 #endif
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_nxg_openclawproot_NativeNodeBridge_startNode(
+Java_com_openclaw_plawie_NativeNodeBridge_startNode(
     JNIEnv* env,
     jobject,
     jobjectArray java_args) {
@@ -86,11 +86,11 @@ Java_com_nxg_openclawproot_NativeNodeBridge_startNode(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_nxg_openclawproot_NativeNodeBridge_isRunning(JNIEnv*, jobject) {
+Java_com_openclaw_plawie_NativeNodeBridge_isRunning(JNIEnv*, jobject) {
     return g_running.load() ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_nxg_openclawproot_NativeNodeBridge_lastExitCode(JNIEnv*, jobject) {
+Java_com_openclaw_plawie_NativeNodeBridge_lastExitCode(JNIEnv*, jobject) {
     return g_last_exit_code.load();
 }

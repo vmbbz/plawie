@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 /// Provides proot shell configuration for the terminal and onboarding screens.
 /// Must match ProcessManager.kt's gateway mode (command_login) exactly.
 class TerminalService {
-  static const _channel = MethodChannel('com.nxg.openclawproot/native');
+  static const _channel = MethodChannel('com.openclaw.plawie/native');
 
   static const _fakeKernelRelease = '6.17.0-PRoot-Distro';
   static const _fakeKernelVersion =

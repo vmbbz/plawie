@@ -96,7 +96,7 @@
             android:directBootAware="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="com.nxg.openclawproot.ALARM_HEARTBEAT" />
+                <action android:name="com.openclaw.plawie.ALARM_HEARTBEAT" />
             </intent-filter>
         </receiver>
 

@@ -9,7 +9,7 @@ import 'package:path/path.dart' as path;
 void main() {
   test('Android bridge exposes bounded managed ffmpeg runner', () async {
     final activity = await File(
-      'android/app/src/main/kotlin/com/nxg/openclawproot/MainActivity.kt',
+      'android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt',
     ).readAsString();
 
     expect(activity, contains('"runManagedFfmpeg"'));

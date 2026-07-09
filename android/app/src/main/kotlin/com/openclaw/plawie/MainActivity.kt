@@ -1,4 +1,4 @@
-package com.nxg.openclawproot
+package com.openclaw.plawie
 
 import android.util.Log
 import java.io.File
@@ -54,14 +54,14 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.nxg.openclawproot/native"
-    private val EVENT_CHANNEL = "com.nxg.openclawproot/gateway_logs"
+    private val CHANNEL = "com.openclaw.plawie/native"
+    private val EVENT_CHANNEL = "com.openclaw.plawie/gateway_logs"
     companion object {
-        const val ACTION_PIP_MIC = "com.nxg.openclawproot.ACTION_PIP_MIC"
+        const val ACTION_PIP_MIC = "com.openclaw.plawie.ACTION_PIP_MIC"
         const val ACTION_DEBUG_NATIVE_FULL_GATEWAY_BOOTSTRAP =
-            "com.nxg.openclawproot.DEBUG_NATIVE_FULL_GATEWAY_BOOTSTRAP"
+            "com.openclaw.plawie.DEBUG_NATIVE_FULL_GATEWAY_BOOTSTRAP"
         const val ACTION_DEBUG_NATIVE_FULL_GATEWAY_PRODUCTION =
-            "com.nxg.openclawproot.DEBUG_NATIVE_FULL_GATEWAY_PRODUCTION"
+            "com.openclaw.plawie.DEBUG_NATIVE_FULL_GATEWAY_PRODUCTION"
         const val URL_CHANNEL_ID = "openclaw_urls"
         const val NOTIFICATION_PERMISSION_REQUEST = 1001
         const val SCREEN_CAPTURE_REQUEST = 1002
@@ -947,7 +947,7 @@ class MainActivity : FlutterActivity() {
         // EventChannel: Flutter subscribes to receive wake word events
         EventChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            "com.nxg.openclawproot/hotword_events"
+            "com.openclaw.plawie/hotword_events"
         ).setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                 hotwordEventSink = events
@@ -960,7 +960,7 @@ class MainActivity : FlutterActivity() {
         // MethodChannel: Flutter controls the HotwordService
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            "com.nxg.openclawproot/hotword"
+            "com.openclaw.plawie/hotword"
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "startHotword" -> {
@@ -1454,7 +1454,7 @@ class MainActivity : FlutterActivity() {
         try {
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val intent = Intent(this, BootReceiver::class.java).apply {
-                action = "com.nxg.openclawproot.ALARM_HEARTBEAT"
+                action = "com.openclaw.plawie.ALARM_HEARTBEAT"
             }
             val pendingIntent = PendingIntent.getBroadcast(
                 this, 100, intent,

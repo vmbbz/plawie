@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class AppConstants {
   static const String appName = 'Plawie';
   static const String version = '2.2.1';
-  static const String packageName = 'com.nxg.openclawproot';
+  static const String packageName = 'com.openclaw.plawie';
 
   /// Matches ANSI escape sequences (e.g. color codes in terminal output).
   static final ansiEscape = RegExp(r'\x1b\[[0-9;]*[a-zA-Z]');
@@ -59,8 +59,8 @@ class AppConstants {
   static const int wsProtocolMinVersion = 3;
   static const int wsProtocolMaxVersion = 4;
 
-  static const String channelName = 'com.nxg.openclawproot/native';
-  static const String eventChannelName = 'com.nxg.openclawproot/gateway_logs';
+  static const String channelName = 'com.openclaw.plawie/native';
+  static const String eventChannelName = 'com.openclaw.plawie/gateway_logs';
 
   static String getRootfsUrl(String arch) {
     switch (arch) {

@@ -1,6 +1,6 @@
 param(
   [string]$DeviceId = "",
-  [string]$PackageName = "com.nxg.openclawproot",
+  [string]$PackageName = "com.openclaw.plawie",
   [int]$Port = 8765,
   [switch]$SkipBuild,
   [switch]$SkipInstall,

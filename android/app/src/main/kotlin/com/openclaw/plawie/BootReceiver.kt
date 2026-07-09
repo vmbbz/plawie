@@ -1,4 +1,4 @@
-package com.nxg.openclawproot
+package com.openclaw.plawie
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -24,7 +24,7 @@ class BootReceiver : BroadcastReceiver() {
 
         if (action == Intent.ACTION_BOOT_COMPLETED) {
             handleBoot(context)
-        } else if (action == "com.nxg.openclawproot.ALARM_HEARTBEAT") {
+        } else if (action == "com.openclaw.plawie.ALARM_HEARTBEAT") {
             handleHeartbeat(context)
         }
     }
@@ -63,7 +63,7 @@ class BootReceiver : BroadcastReceiver() {
         try {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
             val nextIntent = Intent(context, BootReceiver::class.java).apply {
-                this.action = "com.nxg.openclawproot.ALARM_HEARTBEAT"
+                this.action = "com.openclaw.plawie.ALARM_HEARTBEAT"
             }
             val pendingIntent = android.app.PendingIntent.getBroadcast(
                 context, 100, nextIntent,

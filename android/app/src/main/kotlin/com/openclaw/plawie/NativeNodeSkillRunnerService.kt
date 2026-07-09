@@ -1,4 +1,4 @@
-package com.nxg.openclawproot
+package com.openclaw.plawie
 
 import android.app.Application
 import android.app.Service
@@ -22,8 +22,8 @@ class NativeNodeSkillRunnerService : Service() {
 
     companion object {
         private const val TAG = "NativeNodeSkillRunner"
-        private const val ACTION_START = "com.nxg.openclawproot.native_node_skill_runner.START"
-        private const val ACTION_STOP = "com.nxg.openclawproot.native_node_skill_runner.STOP"
+        private const val ACTION_START = "com.openclaw.plawie.native_node_skill_runner.START"
+        private const val ACTION_STOP = "com.openclaw.plawie.native_node_skill_runner.STOP"
         const val HOST = "127.0.0.1"
         const val PORT = 18791
         private const val MAX_LOG_LINES = 240

@@ -9,7 +9,7 @@ void main() {
 
   test('repairLeakedReadPath fixes bundle absolute paths', () {
     const leaked =
-        './data/data/com.nxg.openclawproot/files/native-node-embedded/'
+        './data/data/com.openclaw.plawie/files/native-node-embedded/'
         'full-openclaw/lib/node_modules/openclaw/skills/canvas/SKILL.md';
     expect(
       SkillWorkspace.repairLeakedReadPath(leaked),

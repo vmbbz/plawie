@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 
 class CanvasScreenshotChannel {
   static const _channel =
-      MethodChannel('com.nxg.openclawproot/canvas_screenshot');
+      MethodChannel('com.openclaw.plawie/canvas_screenshot');
 
   /// Request a native PixelCopy screenshot of the canvas WebView.
   /// Returns PNG bytes or null if capture fails.

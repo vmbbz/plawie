@@ -1,4 +1,4 @@
-package com.nxg.openclawproot
+package com.openclaw.plawie
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -45,9 +45,9 @@ class HotwordService : Service(), RecognitionListener {
         const val CHANNEL_ID = "hotword_channel"
         const val NOTIFICATION_ID = 5
 
-        const val ACTION_WAKE_WORD_DETECTED = "com.nxg.openclawproot.WAKE_WORD_DETECTED"
-        const val ACTION_SET_MODE = "com.nxg.openclawproot.HOTWORD_SET_MODE"
-        const val ACTION_STOP = "com.nxg.openclawproot.HOTWORD_STOP"
+        const val ACTION_WAKE_WORD_DETECTED = "com.openclaw.plawie.WAKE_WORD_DETECTED"
+        const val ACTION_SET_MODE = "com.openclaw.plawie.HOTWORD_SET_MODE"
+        const val ACTION_STOP = "com.openclaw.plawie.HOTWORD_STOP"
 
         private const val MODEL_DIR_NAME = "vosk_model"
         private const val MODEL_URL =

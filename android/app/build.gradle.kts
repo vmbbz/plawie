@@ -11,7 +11,7 @@ val internalNoProotProof =
         ?.toBooleanStrictOrNull() == true
 
 android {
-    namespace = "com.nxg.openclawproot"
+    namespace = "com.openclaw.plawie"
     compileSdk = 36
     // Minimum NDK required across all plugins (speech_to_text requires 28.2.13676358).
     // NDK versions are backward compatible — safe to use the highest required.
@@ -28,7 +28,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.nxg.openclawproot"
+        applicationId = "com.openclaw.plawie"
         minSdk = 29
         targetSdk = 36
         versionCode = flutter.versionCode

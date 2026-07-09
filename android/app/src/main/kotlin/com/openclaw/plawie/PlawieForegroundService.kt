@@ -1,4 +1,4 @@
-package com.nxg.openclawproot
+package com.openclaw.plawie
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -32,8 +32,8 @@ class PlawieForegroundService : Service() {
         const val NOTIFICATION_ID = 4
         
         // Actions
-        const val ACTION_STOP = "com.nxg.openclawproot.ACTION_STOP"
-        const val ACTION_RESTART = "com.nxg.openclawproot.ACTION_RESTART"
+        const val ACTION_STOP = "com.openclaw.plawie.ACTION_STOP"
+        const val ACTION_RESTART = "com.openclaw.plawie.ACTION_RESTART"
         
         // Watchdog configuration (matching SeekerClaw patterns)
         private const val WATCHDOG_INTERVAL_MS = 30_000L    // 30 seconds

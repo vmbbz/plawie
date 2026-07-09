@@ -148,7 +148,7 @@ void main() {
         await File('lib/services/agent_skill_server.dart').readAsString();
     final bridge = await File('lib/services/native_bridge.dart').readAsString();
     final activity = await File(
-      'android/app/src/main/kotlin/com/nxg/openclawproot/MainActivity.kt',
+      'android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt',
     ).readAsString();
 
     expect(server, contains("case 'eightctl':"));

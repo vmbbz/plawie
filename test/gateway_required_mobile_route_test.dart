@@ -27,7 +27,7 @@ void main() {
   test('required healthcheck intent produces device-node tool chips', () async {
     final temp = await Directory.systemTemp.createTemp('device_health_route_');
     addTearDown(() => temp.delete(recursive: true));
-    const nativeChannel = MethodChannel('com.nxg.openclawproot/native');
+    const nativeChannel = MethodChannel('com.openclaw.plawie/native');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(nativeChannel, (call) async {
       return switch (call.method) {

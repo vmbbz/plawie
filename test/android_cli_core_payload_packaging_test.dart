@@ -15,7 +15,7 @@ void main() {
   test('Native bootstrap extracts CLI-core assets into provisioning bin',
       () async {
     final bootstrap = await File(
-      'android/app/src/main/kotlin/com/nxg/openclawproot/'
+      'android/app/src/main/kotlin/com/openclaw/plawie/'
       'NativeNodeEmbeddedService.kt',
     ).readAsString();
 
@@ -40,7 +40,7 @@ void main() {
       () async {
     final pubspec = await File('pubspec.yaml').readAsString();
     final bootstrap = await File(
-      'android/app/src/main/kotlin/com/nxg/openclawproot/'
+      'android/app/src/main/kotlin/com/openclaw/plawie/'
       'NativeNodeEmbeddedService.kt',
     ).readAsString();
 
@@ -63,7 +63,7 @@ void main() {
       () async {
     final pubspec = await File('pubspec.yaml').readAsString();
     final bootstrap = await File(
-      'android/app/src/main/kotlin/com/nxg/openclawproot/'
+      'android/app/src/main/kotlin/com/openclaw/plawie/'
       'NativeNodeEmbeddedService.kt',
     ).readAsString();
 
@@ -85,7 +85,7 @@ void main() {
       () async {
     final pubspec = await File('pubspec.yaml').readAsString();
     final bootstrap = await File(
-      'android/app/src/main/kotlin/com/nxg/openclawproot/'
+      'android/app/src/main/kotlin/com/openclaw/plawie/'
       'NativeNodeEmbeddedService.kt',
     ).readAsString();
 
@@ -112,7 +112,7 @@ void main() {
   test('Native bootstrap declares audio runtime bin asset lane', () async {
     final pubspec = await File('pubspec.yaml').readAsString();
     final bootstrap = await File(
-      'android/app/src/main/kotlin/com/nxg/openclawproot/'
+      'android/app/src/main/kotlin/com/openclaw/plawie/'
       'NativeNodeEmbeddedService.kt',
     ).readAsString();
 

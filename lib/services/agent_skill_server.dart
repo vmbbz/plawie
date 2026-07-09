@@ -3191,11 +3191,11 @@ class AgentSkillServer {
         _sendNodeFrame(request, frame);
 
       case 'get_battery':
-        final level = await const MethodChannel('com.nxg.openclawproot/native')
+        final level = await const MethodChannel('com.openclaw.plawie/native')
                 .invokeMethod<int>('getBatteryLevel') ??
             -1;
         final charging =
-            await const MethodChannel('com.nxg.openclawproot/native')
+            await const MethodChannel('com.openclaw.plawie/native')
                     .invokeMethod<bool>('isCharging') ??
                 false;
         _sendJson(request, {'level': level, 'isCharging': charging});

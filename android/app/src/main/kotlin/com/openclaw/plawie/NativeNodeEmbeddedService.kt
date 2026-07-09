@@ -1,4 +1,4 @@
-package com.nxg.openclawproot
+package com.openclaw.plawie
 
 import android.app.Application
 import android.app.Notification
@@ -17,6 +17,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -69,8 +71,8 @@ class NativeNodeEmbeddedService : Service() {
             "flutter_assets/assets/openclaw/agent-cli-pack/bin"
         private const val NOTIFICATION_CHANNEL_ID = "native_node_smoke"
         private const val NOTIFICATION_ID = 5
-        private const val ACTION_START = "com.nxg.openclawproot.native_node.START"
-        private const val ACTION_STOP = "com.nxg.openclawproot.native_node.STOP"
+        private const val ACTION_START = "com.openclaw.plawie.native_node.START"
+        private const val ACTION_STOP = "com.openclaw.plawie.native_node.STOP"
         private const val EXTRA_PORT = "port"
         private const val EXTRA_CANARY_MODE = "canaryMode"
         const val HOST = "127.0.0.1"
@@ -144,7 +146,7 @@ class NativeNodeEmbeddedService : Service() {
     }
 
     private fun buildNotification(text: String): Notification {
-        val intent = Intent(this, Class.forName("com.nxg.openclawproot.MainActivity"))
+        val intent = Intent(this, Class.forName("com.openclaw.plawie.MainActivity"))
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -417,8 +419,15 @@ class NativeNodeEmbeddedService : Service() {
         if (missingRequiredFiles.isNotEmpty()) {
             appendLog(
                 "full OpenClaw bundle cache invalid; " +
-                    "will install via npm (APK tarball removed)"
+                    "syncing from PRoot npm install"
             )
+            syncOpenClawFromProotInstall(dir)
+            val syncedMissing = requiredFiles.filterNot { it.exists() }
+            if (syncedMissing.isNotEmpty()) {
+                appendLog(
+                    "sync incomplete; missing=${syncedMissing.joinToString(",") { it.name }}"
+                )
+            }
             entryCount = 0
             fileCount = 0
         } else {
@@ -537,7 +546,38 @@ class NativeNodeEmbeddedService : Service() {
         return patchedCount
     }
 
-    // extractOpenClawTarball removed — gateway installed via npm during setup
+    private fun syncOpenClawFromProotInstall(targetDir: File) {
+        val prootPath = File(filesDir, "rootfs/ubuntu/usr/local/lib/node_modules/openclaw")
+        if (!prootPath.exists() || !prootPath.isDirectory) {
+            appendLog("PRoot npm openclaw install not found at ${prootPath.absolutePath}")
+            return
+        }
+        val packageDir = File(targetDir, "lib/node_modules/openclaw")
+        if (packageDir.exists()) packageDir.deleteRecursively()
+        packageDir.parentFile?.mkdirs()
+        var copied = 0
+        prootPath.walkTopDown().forEach { source ->
+            val relative = source.relativeTo(prootPath).path
+            if (relative == ".") return@forEach
+            val dest = File(packageDir, relative)
+            if (source.isDirectory) {
+                dest.mkdirs()
+            } else if (source.isFile) {
+                dest.parentFile?.mkdirs()
+                try {
+                    Files.copy(source.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    dest.setExecutable(source.canExecute(), false)
+                    copied++
+                } catch (e: Exception) {
+                    appendLog("syncOpenClaw: failed to copy ${source.name}: ${e.message}")
+                }
+            }
+        }
+        appendLog(
+            "synced openclaw from PRoot npm install to native workspace " +
+                "source=${prootPath.absolutePath} dest=${packageDir.absolutePath} files=$copied"
+        )
+    }
 
     private fun copyPythonDebugWheelAssets(targetDir: File): Int {
         return copyBundledWheelAssets(
