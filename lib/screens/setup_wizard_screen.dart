@@ -503,6 +503,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
       (3, 'Install rollback Node.js', SetupStep.installingNode),
       (4, 'Install rollback OpenClaw', SetupStep.installingOpenClaw),
       (5, 'Configure Bionic Bypass', SetupStep.configuringBypass),
+      (6, 'Download dependency packs', SetupStep.downloadingPacks),
     ];
 
     return ListView(

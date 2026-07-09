@@ -13,6 +13,7 @@ import 'dart:io';
 import '../constants/openclaw_paths.dart';
 import 'gateway_service.dart';
 import 'package:uuid/uuid.dart';
+import 'skill_provisioning_service.dart';
 
 class BootstrapService {
   static const bool _forceLiveOpenClawInstall = true;
@@ -546,6 +547,31 @@ class BootstrapService {
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.98,
             'Auto-approving local node...', 99);
         await _approveLocalNodeIfNeeded();
+
+        // ---------------------------------------------------------
+        // Step 5.5: Download all dependency packs
+        // ---------------------------------------------------------
+        _emitProgress(onProgress, SetupStep.downloadingPacks, 0.0,
+            'Downloading dependency packs...', 95,
+            subMessage: 'whisper, tts, CLI tools, agent');
+
+        var packsDownloaded = 0;
+        var totalPacks = 0;
+        await SkillProvisioningService.installAllRemotePacks(
+          onProgress: (packId, progress) {
+            packsDownloaded++;
+            totalPacks = 7;
+            final pct = packsDownloaded / totalPacks;
+            _emitProgress(
+              onProgress,
+              SetupStep.downloadingPacks,
+              pct,
+              'Downloading dependency packs ($packsDownloaded / $totalPacks)',
+              95 + (pct * 5).round(),
+              subMessage: packId,
+            );
+          },
+        );
 
         _emitProgress(
             onProgress, SetupStep.complete, 1.0, 'Setup complete!', 100,

@@ -20,6 +20,64 @@ class SkillProvisioningService {
   static const _pythonTag = 'cp311';
   static const _pythonAbiTag = 'cp311';
   static const _androidWheelAbi = 'arm64_v8a';
+  static const List<String> setupWizardPackIds = [
+    'android-whisper-runtime',
+    'android-tts-runtime',
+    'android-cli-core-pack',
+    'android-vision-media-pack',
+    'android-audio-runtime-pack',
+    'android-terminal-pack',
+    'android-agent-cli-pack',
+  ];
+
+  /// Installs all remote dependency packs from the manifest.
+  /// Used by the setup wizard to pre-download everything before first use.
+  /// Returns true if all packs installed successfully.
+  static Future<bool> installAllRemotePacks({
+    required void Function(String packName, double progress) onProgress,
+  }) async {
+    try {
+      final filesDir = await NativeBridge.getFilesDir();
+      final layout = _SkillProvisioningLayout(filesDir);
+      final packs = await _loadDependencyPackCatalog(layout);
+      var successCount = 0;
+      var failCount = 0;
+
+      for (final pack in packs) {
+        if (pack.source != _DependencyPackSource.remote) continue;
+        if (!setupWizardPackIds.contains(pack.id)) continue;
+        final receipt = await _readDependencyReceipt(layout, pack.id);
+        if (receipt != null) {
+          successCount++;
+          continue;
+        }
+        onProgress(pack.id, 0.0);
+        await layout.dependencyReceiptDir.create(recursive: true);
+        await layout.dependencyTmpDir.create(recursive: true);
+        try {
+          await _downloadAndExtractPack(layout, pack);
+          await _applyDependencyPackFileModes(layout, pack);
+          await _copyBundledWhisperRuntimeLibraries(layout);
+
+          final smoke = await _runDependencyPackSmoke(layout, pack);
+          if (!smoke.ok) {
+            await _rollbackDependencyPackInstall(layout, pack);
+            failCount++;
+            continue;
+          }
+          await _writeDependencyReceipt(layout, pack);
+          successCount++;
+          onProgress(pack.id, 1.0);
+        } catch (e) {
+          failCount++;
+        }
+      }
+      return failCount == 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
   static const _androidCliCorePackId = 'android-cli-core-pack';
   static const _androidCliCorePackBins = <String>{
     'blu',
@@ -3484,7 +3542,10 @@ class SkillProvisioningService {
     // Ensure the binary is executable before running the smoke test.
     if (!Platform.isWindows) {
       try {
-        await Process.run('chmod', ['755', executable.path]);
+        final r = await Process.run('sh', ['-c', 'chmod 755 "${executable.path}"']);
+        if (r.exitCode != 0) {
+          debugPrint('[DEPS] chmod failed pack=${pack.id} bin=$normalizedCommand: ${r.stderr}');
+        }
       } catch (error) {
         debugPrint(
           '[DEPS] failed chmod smoke binary pack=${pack.id} '
@@ -3514,7 +3575,6 @@ class SkillProvisioningService {
         command.args,
         workingDirectory: layout.nativeStateRoot,
         environment: env,
-        runInShell: true,
       );
       final stdoutFuture = _readBoundedProcessStream(process.stdout);
       final stderrFuture = _readBoundedProcessStream(process.stderr);

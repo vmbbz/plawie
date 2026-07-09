@@ -110,7 +110,7 @@
       "sha256": "f95370809e8e0a1bb4682e68e5a5b34e154e382e94f4554f3366d7b2b1803608",
       "signature": {
         "type": "ed25519",
-        "value": "Ps/1R0yTRHAf4h0SOEqqa6tFzz/Ukyy1LypOnaYlFlwx2Tq4CoLa4EnrIMaaPd0e4D+mtF/DSLyF6mJACBuPAA==",
+        "value": "RjgEZAOJXy/8KvXnjjrHYuociQKTDbrtJOrx/a/D1tZuiyo+K/Ld18ZPEFjawtJdzM/Yl1ag3jj3lwD8lKB4Bg==",
         "keyId": "838fff1844341501"
       },
       "archiveType": "zip",
@@ -156,6 +156,12 @@
       "rollback": {
         "strategy": "remove_install_path"
       },
+      "smokeCommand": {
+        "command": "wacli",
+        "args": [
+          "--version"
+        ]
+      },
       "provides": {
         "bins": [
           "blu",
@@ -179,7 +185,7 @@
       "sha256": "e7e5ab8fc4872f05eecc0f66c59e6e7825d136da2f81da3328795fafe2786286",
       "signature": {
         "type": "ed25519",
-        "value": "jFEbWhBOPTToQRBVUnlkL/7oeQiTEPxi52PdQzYXHrgeO93oBC1BAHPTVGXzGOOqi4pSCkno5pa5vtpAZxf4Aw==",
+        "value": "WjuR7LkaHY66jhjJib7oOnXbWj0Vb08w42p9v9TCsBdLlbq/08AyJBEodTahlrPNLI0oLqaAfIPtCjq4Z2MCCg==",
         "keyId": "838fff1844341501"
       },
       "archiveType": "zip",
@@ -201,6 +207,12 @@
       "rollback": {
         "strategy": "remove_install_path"
       },
+      "smokeCommand": {
+        "command": "ffmpeg",
+        "args": [
+          "--help"
+        ]
+      },
       "provides": {
         "bins": [
           "ffmpeg",
@@ -220,7 +232,7 @@
       "sha256": "7c1374c60a9857822dbaf64b7bd5223875550975ef3528f504015c12de369cc1",
       "signature": {
         "type": "ed25519",
-        "value": "i/dvtsynrpF2DnFS8FqTK5ypiHuZdK3ee3fnobJpzzoyDz6zEgZ8g8LUY1pvY/CKEOm+qeZXFJuLcDRQrLioBw==",
+        "value": "g+7T1wMH4OFePelQe2xvxGHO+TJeq3hTKlZT+V2wE66Q/xt/ktP3aPHMSqWJ73mkvYAFbfPaxNDYGpDn9SyHDw==",
         "keyId": "838fff1844341501"
       },
       "archiveType": "zip",
@@ -235,6 +247,12 @@
       ],
       "rollback": {
         "strategy": "remove_install_path"
+      },
+      "smokeCommand": {
+        "command": "songsee",
+        "args": [
+          "--help"
+        ]
       },
       "provides": {
         "bins": [
@@ -254,7 +272,7 @@
       "sha256": "f15111323cf57ef689a6ee3387fef41235741a67d34342c0ec3f001529f77931",
       "signature": {
         "type": "ed25519",
-        "value": "L+GO2oanFxGp8LzIJTsR/cfUZH4ZGo3Ar/ePmaJT6ed+vd8GE7Y+NiRqiGXuZ+RwACNJlXFVo5pL0/DFLXMGDA==",
+        "value": "Q5++gaGD6jKpyzXueUb0fVNPHlp3JNR/kDNBaRb7Kg0h5ZHAkEYcNZ1t5FQlVTaIfTbHNu+RT7UWQqLFJfosBg==",
         "keyId": "838fff1844341501"
       },
       "archiveType": "zip",
@@ -293,6 +311,12 @@
       ],
       "rollback": {
         "strategy": "remove_install_path"
+      },
+      "smokeCommand": {
+        "command": "tmux",
+        "args": [
+          "--help"
+        ]
       },
       "provides": {
         "bins": [

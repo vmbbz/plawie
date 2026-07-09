@@ -35,9 +35,9 @@ class NativeManagedCliRunResult {
 }
 
 class NativeBridge {
-  static const _channel = MethodChannel('com.nxg.openclawproot/native');
+  static const _channel = MethodChannel('com.openclaw.plawie/native');
   static const _eventChannel =
-      EventChannel('com.nxg.openclawproot/gateway_logs');
+      EventChannel('com.openclaw.plawie/gateway_logs');
 
   static Future<String> getProotPath() async {
     return await _channel.invokeMethod('getProotPath');
@@ -626,9 +626,9 @@ class NativeBridge {
 
   // ── Wake Word "Plawie" ─────────────────────────────────────────────────────
 
-  static const _hotwordChannel = MethodChannel('com.nxg.openclawproot/hotword');
+  static const _hotwordChannel = MethodChannel('com.openclaw.plawie/hotword');
   static const _hotwordEventChannel =
-      EventChannel('com.nxg.openclawproot/hotword_events');
+      EventChannel('com.openclaw.plawie/hotword_events');
 
   static Future<bool> startHotword() async {
     return await _hotwordChannel.invokeMethod<bool>('startHotword') ?? false;
