@@ -18,6 +18,7 @@ import 'skill_provisioning_service.dart';
 class BootstrapService {
   static const bool _forceLiveOpenClawInstall = true;
   static const String _latestOpenClawInstallCommand = 'unset NODE_OPTIONS; '
+      'rm -rf /usr/local/lib/node_modules/openclaw 2>/dev/null; '
       'env -u NODE_OPTIONS /usr/local/bin/npm install -g openclaw@latest '
       '--prefix /usr/local --no-audit --no-fund --omit=dev';
 
@@ -698,6 +699,7 @@ class BootstrapService {
 
       _log('✅ OpenClaw installed + heavy caches cleaned');
     } catch (e) {
+      developer.log('[BOOTSTRAP] BIN_WRAPPER_ERROR: Failed to install openclaw: $e');
       throw PlatformException(
         code: 'BIN_WRAPPER_ERROR',
         message: 'Failed to install openclaw: $e',

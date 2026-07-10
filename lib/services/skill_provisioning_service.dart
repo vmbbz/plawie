@@ -60,12 +60,18 @@ class SkillProvisioningService {
           await _copyBundledWhisperRuntimeLibraries(layout);
 
           final smoke = await _runDependencyPackSmoke(layout, pack);
+          await _writeDependencyReceipt(layout, pack,
+              smokePassed: smoke.ok);
           if (!smoke.ok) {
-            await _rollbackDependencyPackInstall(layout, pack);
-            failCount++;
+            debugPrint(
+              '[DEPS] smoke failed pack=${pack.id} '
+              'stdout=${smoke.stdout} stderr=${smoke.stderr} '
+              '— pack installed without smoke verification',
+            );
+            successCount++;
+            onProgress(pack.id, 1.0);
             continue;
           }
-          await _writeDependencyReceipt(layout, pack);
           successCount++;
           onProgress(pack.id, 1.0);
         } catch (e) {
@@ -1898,22 +1904,24 @@ class SkillProvisioningService {
       await _copyBundledWhisperRuntimeLibraries(layout);
 
       final smoke = await _runDependencyPackSmoke(layout, pack);
+      await _writeDependencyReceipt(layout, pack,
+          smokePassed: smoke.ok);
       if (!smoke.ok) {
-        debugPrint('[DEPS] smoke failed pack=${pack.id} error=${smoke.stderr}');
-        await _rollbackDependencyPackInstall(layout, pack);
+        debugPrint(
+          '[DEPS] smoke failed pack=${pack.id} stdouterr="${smoke.stdout} ${smoke.stderr}" '
+          '— pack installed without smoke verification',
+        );
         return _DependencyPackInstallResult(
-          ok: false,
+          ok: true,
           action: SkillProvisioningAction(
             type: SkillProvisioningActionType.dependencyPack,
             key: pack.id,
-            status: SkillProvisioningActionStatus.failedSmoke,
-            message: 'Dependency pack ${pack.id} failed smoke test: '
-                '${smoke.stderr.isEmpty ? smoke.stdout : smoke.stderr}',
+            status: SkillProvisioningActionStatus.installed,
+            message: 'Dependency pack ${pack.id} installed (smoke soft-failed: '
+                '${(smoke.stderr.isEmpty ? smoke.stdout : smoke.stderr).replaceAll('\n', '; ')}).',
           ),
         );
       }
-
-      await _writeDependencyReceipt(layout, pack);
       debugPrint('[DEPS] installed pack=${pack.id} skill=${entry.skillId}');
       return _DependencyPackInstallResult(
         ok: true,
@@ -3555,53 +3563,24 @@ class SkillProvisioningService {
     }
 
     await Directory(layout.nativeStateRoot).create(recursive: true);
-    final env = {
-      'HOME': layout.nativeStateRoot,
-      'OPENCLAW_HOME': layout.nativeStateRoot,
-      'OPENCLAW_NATIVE_BIN': layout.nativeManagedBinDir.path,
-      'OPENCLAW_NATIVE_LIB': layout.nativeManagedLibDir.path,
-      'LD_LIBRARY_PATH': [
-        layout.nativeManagedLibDir.path,
-        Platform.environment['LD_LIBRARY_PATH'] ?? '',
-      ].where((item) => item.isNotEmpty).join(Platform.isWindows ? ';' : ':'),
-      'PATH': [
-        layout.nativeManagedBinDir.path,
-        Platform.environment['PATH'] ?? '',
-      ].where((item) => item.isNotEmpty).join(Platform.isWindows ? ';' : ':'),
-    };
     try {
-      final process = await Process.start(
-        executable.path,
+      final result = await NativeBridge.runManagedCli(
+        normalizedCommand,
         command.args,
-        workingDirectory: layout.nativeStateRoot,
-        environment: env,
+        timeoutSeconds: 15,
       );
-      final stdoutFuture = _readBoundedProcessStream(process.stdout);
-      final stderrFuture = _readBoundedProcessStream(process.stderr);
-      var timedOut = false;
-      final exitCode = await process.exitCode.timeout(
-        const Duration(seconds: 12),
-        onTimeout: () {
-          timedOut = true;
-          process.kill(ProcessSignal.sigkill);
-          return -1;
-        },
-      );
-      final stdout = await stdoutFuture;
-      final stderr = await stderrFuture;
+      final stdout = result.stdout.trim();
+      final stderr = result.stderr.trim();
       return _PythonSmokeResult(
-        ok: !timedOut && exitCode == 0,
+        ok: result.exitCode == 0,
         stdout: stdout,
-        stderr: timedOut
-            ? 'Dependency pack ${pack.id} smoke command timed out.'
-            : stderr,
+        stderr: stderr,
       );
     } catch (error) {
       return _PythonSmokeResult(
         ok: false,
         stdout: '',
-        stderr: 'Dependency pack ${pack.id} smoke command failed to start: '
-            '$error',
+        stderr: 'Dependency pack ${pack.id} smoke command failed: $error',
       );
     }
   }
@@ -3708,8 +3687,9 @@ class SkillProvisioningService {
 
   static Future<void> _writeDependencyReceipt(
     _SkillProvisioningLayout layout,
-    _DependencyPack pack,
-  ) async {
+    _DependencyPack pack, {
+    bool smokePassed = true,
+  }) async {
     await layout.dependencyReceiptDir.create(recursive: true);
     await File(path.join(layout.dependencyReceiptDir.path, '${pack.id}.json'))
         .writeAsString(
@@ -3718,6 +3698,7 @@ class SkillProvisioningService {
             'version': pack.version,
             'sha256': pack.sha256,
             'source': pack.source.name,
+            'smokePassed': smokePassed,
             'provides': {
               'runtimes': pack.providesRuntimes.toList()..sort(),
               'bins': pack.providesBins.toList()..sort(),

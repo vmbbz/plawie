@@ -85,7 +85,12 @@ class MainActivity : FlutterActivity() {
         "openhue",
         "sonos",
         "wacli",
-        "songsee"
+        "songsee",
+        "ffmpeg",
+        "whisper",
+        "sherpa-onnx",
+        "tmux",
+        "coding-agent"
     )
 
     // Wake word EventChannel sink — receives "wake_word_detected" events from HotwordService
@@ -307,6 +312,7 @@ class MainActivity : FlutterActivity() {
                                 val output = processManager.runInProotSync(command, timeout)
                                 runOnUiThread { result.success(output) }
                             } catch (e: Exception) {
+                                Log.e("MainActivity", "runInProot failed: command=$command", e)
                                 runOnUiThread { result.error("PROOT_ERROR", e.message, null) }
                             }
                         }.start()
@@ -694,6 +700,7 @@ class MainActivity : FlutterActivity() {
                                 bootstrapManager.createBinWrappers(packageName)
                                 runOnUiThread { result.success(true) }
                             } catch (e: Exception) {
+                                Log.e("MainActivity", "createBinWrappers failed", e)
                                 runOnUiThread { result.error("BIN_WRAPPER_ERROR", e.message, null) }
                             }
                         }.start()
