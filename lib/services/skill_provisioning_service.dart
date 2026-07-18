@@ -1,8 +1,8 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 
 import 'native_bridge.dart';
 import 'dependency_pack_manifest.dart';
+import 'signing_keys.dart';
 import 'skill_execution_descriptor.dart';
 import 'skill_parity_audit_service.dart';
 
@@ -40,15 +41,21 @@ class SkillProvisioningService {
       final filesDir = await NativeBridge.getFilesDir();
       final layout = _SkillProvisioningLayout(filesDir);
       final packs = await _loadDependencyPackCatalog(layout);
-      var successCount = 0;
+      final remotePacks = {
+        for (final pack in packs)
+          if (pack.source == _DependencyPackSource.remote) pack.id: pack,
+      };
       var failCount = 0;
 
-      for (final pack in packs) {
-        if (pack.source != _DependencyPackSource.remote) continue;
-        if (!setupWizardPackIds.contains(pack.id)) continue;
-        final receipt = await _readDependencyReceipt(layout, pack.id);
-        if (receipt != null) {
-          successCount++;
+      for (final packId in setupWizardPackIds) {
+        final pack = remotePacks[packId];
+        if (pack == null) {
+          failCount++;
+          debugPrint('[DEPS] required setup pack is missing: $packId');
+          continue;
+        }
+        if (await _dependencyPackReceiptValid(layout, pack)) {
+          onProgress(pack.id, 1.0);
           continue;
         }
         onProgress(pack.id, 0.0);
@@ -56,26 +63,27 @@ class SkillProvisioningService {
         await layout.dependencyTmpDir.create(recursive: true);
         try {
           await _downloadAndExtractPack(layout, pack);
+          await _verifyDependencyPackFiles(layout, pack);
           await _applyDependencyPackFileModes(layout, pack);
           await _copyBundledWhisperRuntimeLibraries(layout);
 
           final smoke = await _runDependencyPackSmoke(layout, pack);
-          await _writeDependencyReceipt(layout, pack,
-              smokePassed: smoke.ok);
           if (!smoke.ok) {
+            await _rollbackDependencyPackInstall(layout, pack);
             debugPrint(
               '[DEPS] smoke failed pack=${pack.id} '
               'stdout=${smoke.stdout} stderr=${smoke.stderr} '
-              '— pack installed without smoke verification',
+              '— rolled back',
             );
-            successCount++;
-            onProgress(pack.id, 1.0);
+            failCount++;
             continue;
           }
-          successCount++;
+          await _writeDependencyReceipt(layout, pack, smokePassed: true);
           onProgress(pack.id, 1.0);
         } catch (e) {
           failCount++;
+          await _rollbackDependencyPackInstall(layout, pack);
+          debugPrint('[DEPS] setup install failed pack=${pack.id}: $e');
         }
       }
       return failCount == 0;
@@ -93,12 +101,12 @@ class SkillProvisioningService {
     'sonos',
     'wacli',
   };
-  static const _androidVisionMediaPackId = 'android-vision-media-runtime';
+  static const _androidVisionMediaPackId = 'android-vision-media-pack';
   static const _androidVisionMediaPackBins = <String>{
     'ffmpeg',
     'gifgrep',
   };
-  static const _androidAudioRuntimePackId = 'android-audio-runtime';
+  static const _androidAudioRuntimePackId = 'android-audio-runtime-pack';
   static const _androidAudioRuntimePackBins = <String>{
     'songsee',
   };
@@ -117,17 +125,10 @@ class SkillProvisioningService {
   static const _androidWhisperRuntimePackBins = <String>{
     'whisper',
   };
-  static const _androidWhisperRuntimeModels = <String>{
-    'ggml-base.bin',
-  };
   static const _androidTtsRuntimePackId = 'android-tts-runtime';
   static const _androidTtsRuntimePackVersion = 'sherpa-onnx-v1-2026';
   static const _androidTtsRuntimePackBins = <String>{
     'sherpa-onnx',
-  };
-  static const _androidTtsRuntimeLibs = <String>{
-    'libonnxruntime.so',
-    'libsherpa-onnx-core.so',
   };
   static const _androidNodeExecutablePackId = 'android-node-executable-pack';
   static const _androidNodeExecutablePackVersion = 'node-v20-apk-v1';
@@ -496,7 +497,8 @@ class SkillProvisioningService {
           try {
             final r = await Process.run('chmod', ['755', target.path]);
             if (r.exitCode != 0) {
-              debugPrint('[DEPS] chmod failed exit=${r.exitCode} stderr=${r.stderr}');
+              debugPrint(
+                  '[DEPS] chmod failed exit=${r.exitCode} stderr=${r.stderr}');
             }
           } catch (_) {}
         }
@@ -887,22 +889,18 @@ class SkillProvisioningService {
                         : 'bin:$bin',
         status: SkillProvisioningActionStatus.missingPack,
         message: isCliCoreBin
-            ? 'Android CLI-core payload is missing "$bin". Bundle assets/openclaw/cli-core/bin/$bin in the APK or publish a signed dependency pack for arm64-v8a.'
+            ? 'Android CLI-core dependency pack is unavailable for "$bin". Publish a signed dependency pack for arm64-v8a.'
             : isVisionMediaBin
-                ? 'Android vision-media payload is missing "$bin". Bundle assets/openclaw/vision-media/bin/$bin in the APK or publish a signed dependency pack for arm64-v8a.'
+                ? 'Android vision-media dependency pack is unavailable for "$bin". Publish a signed dependency pack for arm64-v8a.'
                 : isAudioRuntimeBin
-                    ? 'Android audio runtime payload is missing "$bin". Bundle assets/openclaw/audio-runtime/bin/$bin in the APK or publish a signed dependency pack for arm64-v8a.'
+                    ? 'Android audio dependency pack is unavailable for "$bin". Publish a signed dependency pack for arm64-v8a.'
                     : isTerminalBin
-                        ? 'Android terminal payload is missing "$bin". Bundle assets/openclaw/terminal/bin/$bin plus required assets/openclaw/terminal/lib/ shared libraries in the APK or publish a signed dependency pack for arm64-v8a.'
+                        ? 'Android terminal dependency pack is unavailable for "$bin". Publish a signed dependency pack for arm64-v8a.'
                         : 'No Native dependency pack advertises binary "$bin" for arm64-v8a.',
       ));
     }
     for (final pack in selected) {
-      final receipt = await _readDependencyReceipt(layout, pack.id);
-      if (receipt != null &&
-          receipt.version == pack.version &&
-          receipt.sha256 == pack.sha256 &&
-          await _dependencyPackMarkersPresent(layout, pack)) {
+      if (await _dependencyPackReceiptValid(layout, pack)) {
         final packSatisfiedPackages = await _satisfiedPythonPackagesForPack(
           layout,
           pack,
@@ -969,8 +967,8 @@ class SkillProvisioningService {
       // shadows the working build-time copy.
       final actuallyNeed = <String>{};
       for (final package in remainingPythonPackages) {
-        final smoke = await _smokePythonImport(layout, package,
-            skillId: entry.skillId);
+        final smoke =
+            await _smokePythonImport(layout, package, skillId: entry.skillId);
         if (smoke.ok) {
           satisfiedPythonPackages.add(package);
           actions.add(SkillProvisioningAction(
@@ -983,12 +981,16 @@ class SkillProvisioningService {
           actuallyNeed.add(package);
         }
       }
-      if (actuallyNeed.isNotEmpty) {
+      final packagesToAudit = <String>{...actuallyNeed};
+      if (requiredPythonRequirements.isNotEmpty) {
+        packagesToAudit.addAll(remainingPythonPackages);
+      }
+      if (packagesToAudit.isNotEmpty) {
         final wheelResult = await _provisionPythonWheels(
           entry,
           layout,
           requiredPythonRequirements: {
-            for (final package in actuallyNeed)
+            for (final package in packagesToAudit)
               package: requiredPythonRequirements[package] ?? package,
           },
           apply: apply,
@@ -997,14 +999,21 @@ class SkillProvisioningService {
         changed = changed || wheelResult.changed;
         reloadRecommended = reloadRecommended || wheelResult.reloadRecommended;
         satisfiedPythonPackages.addAll(wheelResult.satisfiedPythonPackages);
+        if (wheelResult.actions.any(
+          (action) =>
+              action.key == 'dependency-closure' &&
+              action.status != SkillProvisioningActionStatus.ready,
+        )) {
+          satisfiedPythonPackages.removeAll(packagesToAudit);
+        }
       }
     }
 
     final stillUnverified =
         requiredPackages.difference(satisfiedPythonPackages);
     if (apply && stillUnverified.isNotEmpty) {
-      final installed =
-          await _scanInstalledPythonPackageVersions(layout, skillId: entry.skillId);
+      final installed = await _scanInstalledPythonPackageVersions(layout,
+          skillId: entry.skillId);
       for (final package in stillUnverified) {
         final requirement = _pythonRequirementForPackage(
           requiredPythonRequirements,
@@ -1015,8 +1024,8 @@ class SkillProvisioningService {
             !_pythonRequirementSatisfied(version, requirement)) {
           continue;
         }
-        final smoke = await _smokePythonImport(layout, package,
-            skillId: entry.skillId);
+        final smoke =
+            await _smokePythonImport(layout, package, skillId: entry.skillId);
         if (smoke.ok) {
           satisfiedPythonPackages.add(package);
           actions.add(SkillProvisioningAction(
@@ -1855,6 +1864,14 @@ class SkillProvisioningService {
           );
           continue;
         }
+        if (json['source']?.toString().toLowerCase() != 'apk' &&
+            !await _verifyDependencyPackSignature(json)) {
+          debugPrint(
+            '[DEPS] rejected dependency pack manifest '
+            '${json['id'] ?? 'unknown'}: invalid signature',
+          );
+          continue;
+        }
         final pack = _DependencyPack.fromJson(json);
         if (pack != null && !packs.any((existing) => existing.id == pack.id)) {
           packs.add(pack);
@@ -1867,8 +1884,8 @@ class SkillProvisioningService {
       final uri = Uri.parse(
         const String.fromEnvironment(
           'OPENCLAW_DEPENDENCY_PACK_MANIFEST',
-              defaultValue:
-                  'https://raw.githubusercontent.com/vmbbz/plawie/native-node-gateway-research/android-arm64-v8a.json',
+          defaultValue:
+              'https://raw.githubusercontent.com/vmbbz/plawie/native-node-gateway-research/android-arm64-v8a.json',
         ),
       );
       final response = await http.get(uri).timeout(const Duration(seconds: 8));
@@ -1883,6 +1900,69 @@ class SkillProvisioningService {
     }
 
     return packs;
+  }
+
+  static Future<bool> _verifyDependencyPackSignature(
+    Map<String, dynamic> packJson,
+  ) async {
+    final url = packJson['url']?.toString() ?? '';
+    final uri = Uri.tryParse(url);
+    // Local file packs are used only by desktop tests. Android production
+    // accepts remote executable packs exclusively through the pinned key.
+    if (!Platform.isAndroid && uri?.scheme == 'file') return true;
+
+    final signatureJson = packJson['signature'];
+    if (signatureJson is! Map) return false;
+    final signature = Map<String, dynamic>.from(signatureJson);
+    if (signature['type']?.toString().toLowerCase() != 'ed25519' ||
+        signature['keyId']?.toString() != kDependencyPackSigningKeyId) {
+      return false;
+    }
+
+    final publicKey = _dependencyPackPublicKey();
+    if (publicKey == null) return false;
+    try {
+      final signatureBytes = base64Decode(signature['value']?.toString() ?? '');
+      final payload = Map<String, dynamic>.from(packJson)..remove('signature');
+      return Ed25519().verify(
+        utf8.encode(_canonicalDependencyPackJson(payload)),
+        signature: Signature(signatureBytes, publicKey: publicKey),
+      );
+    } catch (error) {
+      debugPrint('[DEPS] dependency pack signature parse failed: $error');
+      return false;
+    }
+  }
+
+  static SimplePublicKey? _dependencyPackPublicKey() {
+    try {
+      final pem = kDependencyPackPublicKey
+          .replaceAll('-----BEGIN PUBLIC KEY-----', '')
+          .replaceAll('-----END PUBLIC KEY-----', '')
+          .replaceAll(RegExp(r'\s'), '');
+      final der = base64Decode(pem);
+      if (der.length < 32) return null;
+      return SimplePublicKey(
+        der.sublist(der.length - 32),
+        type: KeyPairType.ed25519,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _canonicalDependencyPackJson(Object? value) {
+    if (value is Map) {
+      final entries = value.entries
+          .map((entry) => MapEntry(entry.key.toString(), entry.value))
+          .toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+      return '{${entries.map((entry) => '${jsonEncode(entry.key)}:${_canonicalDependencyPackJson(entry.value)}').join(',')}}';
+    }
+    if (value is Iterable) {
+      return '[${value.map(_canonicalDependencyPackJson).join(',')}]';
+    }
+    return jsonEncode(value);
   }
 
   static Future<_DependencyPackInstallResult> _installDependencyPack(
@@ -1900,28 +1980,29 @@ class SkillProvisioningService {
       } else {
         await _downloadAndExtractPack(layout, pack);
       }
+      await _verifyDependencyPackFiles(layout, pack);
       await _applyDependencyPackFileModes(layout, pack);
       await _copyBundledWhisperRuntimeLibraries(layout);
 
       final smoke = await _runDependencyPackSmoke(layout, pack);
-      await _writeDependencyReceipt(layout, pack,
-          smokePassed: smoke.ok);
       if (!smoke.ok) {
+        await _rollbackDependencyPackInstall(layout, pack);
         debugPrint(
           '[DEPS] smoke failed pack=${pack.id} stdouterr="${smoke.stdout} ${smoke.stderr}" '
-          '— pack installed without smoke verification',
+          '— rolled back',
         );
         return _DependencyPackInstallResult(
-          ok: true,
+          ok: false,
           action: SkillProvisioningAction(
             type: SkillProvisioningActionType.dependencyPack,
             key: pack.id,
-            status: SkillProvisioningActionStatus.installed,
-            message: 'Dependency pack ${pack.id} installed (smoke soft-failed: '
-                '${(smoke.stderr.isEmpty ? smoke.stdout : smoke.stderr).replaceAll('\n', '; ')}).',
+            status: SkillProvisioningActionStatus.failedSmoke,
+            message: 'Dependency pack ${pack.id} failed smoke verification: '
+                '${(smoke.stderr.isEmpty ? smoke.stdout : smoke.stderr).replaceAll('\n', '; ')}',
           ),
         );
       }
+      await _writeDependencyReceipt(layout, pack, smokePassed: true);
       debugPrint('[DEPS] installed pack=${pack.id} skill=${entry.skillId}');
       return _DependencyPackInstallResult(
         ok: true,
@@ -1934,6 +2015,7 @@ class SkillProvisioningService {
         ),
       );
     } catch (error) {
+      await _rollbackDependencyPackInstall(layout, pack);
       debugPrint('[DEPS] install failed pack=${pack.id} error=$error');
       return _DependencyPackInstallResult(
         ok: false,
@@ -1976,8 +2058,8 @@ class SkillProvisioningService {
     var changed = false;
     var reloadRecommended = false;
 
-    final installed =
-        await _scanInstalledPythonPackageVersions(layout, skillId: entry.skillId);
+    final installed = await _scanInstalledPythonPackageVersions(layout,
+        skillId: entry.skillId);
     final rootPackages =
         requiredPythonRequirements.keys.map(_normalizeDependencyName).toSet();
     final queue = <_PythonRequirementRequest>[
@@ -2011,6 +2093,7 @@ class SkillProvisioningService {
       final requiresDist = await _readInstalledPythonPackageRequiresDist(
         layout,
         request.name,
+        skillId: entry.skillId,
       );
       for (final dependency in requiresDist) {
         final normalized = _normalizeDependencyName(dependency.name);
@@ -2170,8 +2253,8 @@ class SkillProvisioningService {
 
     if (apply && satisfiedPackages.isNotEmpty) {
       for (final package in satisfiedPackages.toList()) {
-        final smoke = await _smokePythonImport(layout, package,
-            skillId: entry.skillId);
+        final smoke =
+            await _smokePythonImport(layout, package, skillId: entry.skillId);
         if (!smoke.ok) {
           satisfiedPackages.remove(package);
           debugPrint(
@@ -2654,8 +2737,8 @@ class SkillProvisioningService {
     if (skillId != null) {
       for (final skillDir in layout.nativeSkillDirs(skillId)) {
         scanRoots.add(Directory(path.join(skillDir.path, 'site-packages')));
-        scanRoots
-            .add(Directory(path.join(skillDir.path, '.python', 'site-packages')));
+        scanRoots.add(
+            Directory(path.join(skillDir.path, '.python', 'site-packages')));
       }
     }
     // Legacy location.
@@ -2708,43 +2791,65 @@ class SkillProvisioningService {
   static Future<List<_PythonRequirementRequest>>
       _readInstalledPythonPackageRequiresDist(
     _SkillProvisioningLayout layout,
-    String packageName,
-  ) async {
+    String packageName, {
+    String? skillId,
+  }) async {
     final normalized = _normalizeDependencyName(packageName);
     final root = layout.nativePythonSitePackagesDir;
+    final chaquopyRoot = Directory(path.join(
+      root.parent.parent.parent.parent.parent.parent.path,
+      'chaquopy',
+      'AssetFinder',
+      'app',
+      'site-packages',
+    ));
+    final scanRoots = <Directory>[
+      root,
+      chaquopyRoot,
+      Directory(path.join(layout.nativeStateRoot, 'python', 'site-packages')),
+    ];
+    if (skillId != null) {
+      for (final skillDir in layout.nativeSkillDirs(skillId)) {
+        scanRoots.add(Directory(path.join(skillDir.path, 'site-packages')));
+        scanRoots.add(
+            Directory(path.join(skillDir.path, '.python', 'site-packages')));
+      }
+    }
     try {
-      if (!await root.exists()) return const <_PythonRequirementRequest>[];
-      await for (final entity in root.list(recursive: false)) {
-        if (entity is! Directory) continue;
-        final name = path.basename(entity.path).toLowerCase();
-        if (!name.endsWith('.dist-info') && !name.endsWith('.egg-info')) {
-          continue;
-        }
-        final parsed = _parsePythonDistInfoName(name);
-        final metadata = await _readPythonPackageMetadata(entity);
-        final actualName = _normalizeDependencyName(
-          metadata['name'] ?? parsed?.name ?? name.split('-').first,
-        );
-        if (actualName != normalized) continue;
-        final metadataFile = File(path.join(entity.path, 'METADATA'));
-        if (!await metadataFile.exists()) {
+      for (final scanRoot in scanRoots) {
+        if (!await scanRoot.exists()) continue;
+        await for (final entity in scanRoot.list(recursive: false)) {
+          if (entity is! Directory) continue;
+          final name = path.basename(entity.path).toLowerCase();
+          if (!name.endsWith('.dist-info') && !name.endsWith('.egg-info')) {
+            continue;
+          }
+          final parsed = _parsePythonDistInfoName(name);
+          final metadata = await _readPythonPackageMetadata(entity);
+          final actualName = _normalizeDependencyName(
+            metadata['name'] ?? parsed?.name ?? name.split('-').first,
+          );
+          if (actualName != normalized) continue;
+          final metadataFile = File(path.join(entity.path, 'METADATA'));
+          if (!await metadataFile.exists()) continue;
+          final requires = <String>[];
+          for (final line in await metadataFile.readAsLines()) {
+            if (line.trim().isEmpty) break;
+            if (line.startsWith(' ') || line.startsWith('\t')) continue;
+            final index = line.indexOf(':');
+            if (index <= 0) continue;
+            final key = line.substring(0, index).trim().toLowerCase();
+            if (key == 'requires-dist') {
+              requires.add(line.substring(index + 1).trim());
+            }
+          }
+          if (requires.isNotEmpty) {
+            return _readWheelRequiresDist({
+              'requires-dist': jsonEncode(requires),
+            });
+          }
           return const <_PythonRequirementRequest>[];
         }
-        final requires = <String>[];
-        for (final line in await metadataFile.readAsLines()) {
-          if (line.trim().isEmpty) break;
-          if (line.startsWith(' ') || line.startsWith('\t')) continue;
-          final index = line.indexOf(':');
-          if (index <= 0) continue;
-          final key = line.substring(0, index).trim().toLowerCase();
-          if (key == 'requires-dist') {
-            requires.add(line.substring(index + 1).trim());
-          }
-        }
-        if (requires.isEmpty) return const <_PythonRequirementRequest>[];
-        return _readWheelRequiresDist({
-          'requires-dist': jsonEncode(requires),
-        });
       }
     } catch (_) {}
     return const <_PythonRequirementRequest>[];
@@ -3399,12 +3504,13 @@ class SkillProvisioningService {
     // Copy shared library files from pack lib to managed lib dir.
     final managedLibDir = layout.nativeManagedLibDir;
     await managedLibDir.create(recursive: true);
-    for (final file in pack.files.where(
-        (f) => !f.executable && f.pathValue.endsWith('.so'))) {
-      final packLib = _dependencyPackInstalledFile(layout, pack, file.pathValue);
+    for (final file in pack.files
+        .where((f) => !f.executable && f.pathValue.endsWith('.so'))) {
+      final packLib =
+          _dependencyPackInstalledFile(layout, pack, file.pathValue);
       if (packLib == null || !await packLib.exists()) continue;
-      final target = File(path.join(
-          managedLibDir.path, path.basename(file.pathValue)));
+      final target =
+          File(path.join(managedLibDir.path, path.basename(file.pathValue)));
       try {
         await packLib.copy(target.path);
       } catch (error) {
@@ -3431,39 +3537,64 @@ class SkillProvisioningService {
         !sharedInstallPath &&
         await installDir.exists()) {
       await installDir.delete(recursive: true);
-      // Also remove provided binaries from managed bin to ensure clean state.
-      for (final bin in pack.providesBins) {
-        final managedBin = File(path.join(layout.nativeManagedBinDir.path, bin));
+    } else {
+      for (final file in pack.files) {
+        final target =
+            _dependencyPackInstalledFile(layout, pack, file.pathValue);
+        if (target == null) continue;
         try {
-          if (await managedBin.exists()) {
-            await managedBin.delete();
-          }
-        } catch (_) {}
+          if (await target.exists()) await target.delete();
+        } catch (error) {
+          debugPrint(
+            '[DEPS] failed rollback pack=${pack.id} file=${target.path}: $error',
+          );
+        }
       }
-      return;
     }
 
-    for (final file in pack.files) {
-      final target = _dependencyPackInstalledFile(layout, pack, file.pathValue);
-      if (target == null) continue;
-      try {
-        if (await target.exists()) {
-          await target.delete();
-        }
-      } catch (error) {
-        debugPrint(
-          '[DEPS] failed rollback pack=${pack.id} file=${target.path}: $error',
-        );
-      }
-    }
-    // Also remove provided binaries from managed bin.
     for (final bin in pack.providesBins) {
       final managedBin = File(path.join(layout.nativeManagedBinDir.path, bin));
       try {
-        if (await managedBin.exists()) {
-          await managedBin.delete();
-        }
-      } catch (_) {}
+        if (await managedBin.exists()) await managedBin.delete();
+      } catch (error) {
+        debugPrint(
+          '[DEPS] failed rollback managed bin pack=${pack.id} bin=$bin: $error',
+        );
+      }
+    }
+
+    final receipt = File(
+      path.join(layout.dependencyReceiptDir.path, '${pack.id}.json'),
+    );
+    try {
+      if (await receipt.exists()) await receipt.delete();
+    } catch (error) {
+      debugPrint('[DEPS] failed remove receipt pack=${pack.id}: $error');
+    }
+  }
+
+  static Future<void> _verifyDependencyPackFiles(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    for (final file in pack.files) {
+      final target = _dependencyPackInstalledFile(layout, pack, file.pathValue);
+      if (target == null || !await target.exists()) {
+        throw StateError('Pack ${pack.id} is missing ${file.pathValue}.');
+      }
+      final length = await target.length();
+      if (file.sizeBytes != null && length != file.sizeBytes) {
+        throw StateError(
+          'Pack ${pack.id} has invalid size for ${file.pathValue}.',
+        );
+      }
+      final digest =
+          crypto.sha256.convert(await target.readAsBytes()).toString();
+      if (file.sha256 != null && digest != file.sha256) {
+        throw StateError(
+          'Pack ${pack.id} has invalid SHA-256 for ${file.pathValue}.',
+        );
+      }
     }
   }
 
@@ -3550,9 +3681,11 @@ class SkillProvisioningService {
     // Ensure the binary is executable before running the smoke test.
     if (!Platform.isWindows) {
       try {
-        final r = await Process.run('sh', ['-c', 'chmod 755 "${executable.path}"']);
+        final r =
+            await Process.run('sh', ['-c', 'chmod 755 "${executable.path}"']);
         if (r.exitCode != 0) {
-          debugPrint('[DEPS] chmod failed pack=${pack.id} bin=$normalizedCommand: ${r.stderr}');
+          debugPrint(
+              '[DEPS] chmod failed pack=${pack.id} bin=$normalizedCommand: ${r.stderr}');
         }
       } catch (error) {
         debugPrint(
@@ -3583,27 +3716,6 @@ class SkillProvisioningService {
         stderr: 'Dependency pack ${pack.id} smoke command failed: $error',
       );
     }
-  }
-
-  static Future<String> _readBoundedProcessStream(Stream<List<int>> stream) {
-    final completer = Completer<String>();
-    const maxChars = 4096;
-    final buffer = StringBuffer();
-    late final StreamSubscription<String> subscription;
-    subscription = stream
-        .transform(const Utf8Decoder(allowMalformed: true))
-        .listen((chunk) {
-      if (buffer.length >= maxChars) return;
-      final remaining = maxChars - buffer.length;
-      buffer.write(
-          chunk.length > remaining ? chunk.substring(0, remaining) : chunk);
-    }, onError: (Object error) {
-      if (!completer.isCompleted) completer.complete(buffer.toString());
-    }, onDone: () {
-      subscription.cancel();
-      if (!completer.isCompleted) completer.complete(buffer.toString());
-    }, cancelOnError: true);
-    return completer.future;
   }
 
   static bool _smokeCommandLooksSafe(String command) {
@@ -3641,7 +3753,8 @@ class SkillProvisioningService {
     final receipt = await _readDependencyReceipt(layout, pack.id);
     if (receipt == null ||
         receipt.version != pack.version ||
-        receipt.sha256 != pack.sha256) {
+        receipt.sha256 != pack.sha256 ||
+        !receipt.smokePassed) {
       return true;
     }
     return !await _dependencyPackMarkersPresent(layout, pack);
@@ -3683,6 +3796,19 @@ class SkillProvisioningService {
     final file = File(path.join(layout.dependencyReceiptDir.path, '$id.json'));
     final json = await _readJson(file);
     return json == null ? null : _DependencyPackReceipt.fromJson(json);
+  }
+
+  static Future<bool> _dependencyPackReceiptValid(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    final receipt = await _readDependencyReceipt(layout, pack.id);
+    return receipt != null &&
+        receipt.id == pack.id &&
+        receipt.version == pack.version &&
+        receipt.sha256 == pack.sha256 &&
+        receipt.smokePassed &&
+        await _dependencyPackMarkersPresent(layout, pack);
   }
 
   static Future<void> _writeDependencyReceipt(
@@ -4797,10 +4923,14 @@ class _DependencyPackReceipt {
 
 class _DependencyPackFile {
   final String pathValue;
+  final String? sha256;
+  final int? sizeBytes;
   final bool executable;
 
   const _DependencyPackFile({
     required this.pathValue,
+    required this.sha256,
+    required this.sizeBytes,
     required this.executable,
   });
 
@@ -4809,6 +4939,8 @@ class _DependencyPackFile {
     if (pathValue == null || pathValue.isEmpty) return null;
     return _DependencyPackFile(
       pathValue: pathValue,
+      sha256: json['sha256']?.toString().trim().toLowerCase(),
+      sizeBytes: (json['sizeBytes'] as num?)?.toInt(),
       executable: json['executable'] == true,
     );
   }

@@ -14,6 +14,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStream
+import org.json.JSONObject
 
 class BootstrapManager(
     private val context: Context,
@@ -26,8 +27,9 @@ class BootstrapManager(
     private val homeDir get() = "$filesDir/home"
     private val configDir get() = "$filesDir/config"
     private val libDir get() = "$filesDir/lib"
-    private val forceLiveOpenClawInstall = true
-    private val minimumNodeVersion = listOf(22, 22, 2)
+    private val preferPrebundledOpenClaw = false
+    private val requiredOpenClawVersion = "2026.7.1"
+    private val minimumNodeVersion = listOf(22, 22, 3)
     private val setupCompleteMarker get() = File("$filesDir/rootfs/root/.clawa/.bootstrap_complete")
 
     fun setupDirectories() {
@@ -63,17 +65,10 @@ class BootstrapManager(
         val nodeMeetsMinimum = isInstalledNodeAtLeastMinimum()
         val openclawBin = File("$rootfsDir/usr/local/bin/openclaw")
         val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
-        val entryPointExists = pkgDir.exists() && (
-            File(pkgDir, "openclaw.mjs").exists() || 
-            File(pkgDir, "bin/openclaw.mjs").exists() ||
-            File(pkgDir, "openclaw.js").exists() ||
-            File(pkgDir, "bin/openclaw.js").exists() ||
-            File(pkgDir, "index.js").exists()
-        )
 
         return rootfs.exists() && binBash.exists() && bypass.exists()
             && node.exists() && nodeMeetsMinimum && openclawBin.exists()
-            && pkgDir.exists() && entryPointExists
+            && isOpenClawPackageReady(pkgDir)
     }
 
     fun getBootstrapStatus(): Map<String, Any> {
@@ -84,18 +79,15 @@ class BootstrapManager(
         val nodeMeetsMinimum = isNodeVersionAtLeast(nodeVersion, minimumNodeVersion)
         val openclawBinExists = File("$rootfsDir/usr/local/bin/openclaw").exists()
         val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
-        val openclawPkgExists = File(pkgDir, "package.json").exists()
-        
-        val entryPointExists = File(pkgDir, "openclaw.mjs").exists() || 
-                             File(pkgDir, "bin/openclaw.mjs").exists() ||
-                             File(pkgDir, "openclaw.js").exists() ||
-                             File(pkgDir, "bin/openclaw.js").exists() ||
-                             File(pkgDir, "index.js").exists()
+        val openclawPackageExists = File(pkgDir, "package.json").exists()
+        val openclawVersion = readOpenClawVersion(pkgDir)
+        val entryPointExists = hasOpenClawEntryPoint(pkgDir)
+        val openclawInstalled = isOpenClawPackageReady(pkgDir)
 
         val bypassExists = File("$rootfsDir/root/.openclaw/bionic-bypass.js").exists()
         
         val installReady = rootfsExists && binBashExists && bypassExists
-                && nodeExists && nodeMeetsMinimum && openclawBinExists && openclawPkgExists && entryPointExists
+                && nodeExists && nodeMeetsMinimum && openclawBinExists && openclawInstalled
 
         return mapOf(
             "rootfsExists" to rootfsExists,
@@ -103,7 +95,10 @@ class BootstrapManager(
             "nodeInstalled" to nodeExists,
             "nodeVersion" to nodeVersion,
             "nodeMeetsMinimum" to nodeMeetsMinimum,
-            "openclawInstalled" to openclawPkgExists,
+            "openclawInstalled" to openclawInstalled,
+            "openclawPackageExists" to openclawPackageExists,
+            "openclawVersion" to (openclawVersion ?: ""),
+            "openclawVersionCompatible" to (openclawVersion == requiredOpenClawVersion),
             "openclawEntryPointExists" to entryPointExists,
             "openclawBinExists" to openclawBinExists,
             "bypassInstalled" to bypassExists,
@@ -155,6 +150,39 @@ class BootstrapManager(
             if (current[i] < minimum[i]) return false
         }
         return true
+    }
+
+    private fun readOpenClawVersion(pkgDir: File): String? {
+        val packageJson = File(pkgDir, "package.json")
+        if (!packageJson.exists()) return null
+        return try {
+            JSONObject(packageJson.readText()).optString("version")
+                .takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun hasOpenClawEntryPoint(pkgDir: File): Boolean {
+        if (!pkgDir.exists()) return false
+        val candidates = listOf(
+            "openclaw.mjs",
+            "bin/openclaw.mjs",
+            "bin/openclaw.js",
+            "bin/openclaw",
+            "cli.js",
+            "index.js"
+        )
+        if (candidates.any { File(pkgDir, it).exists() }) return true
+        return pkgDir.listFiles()?.any {
+            it.name.startsWith("openclaw") &&
+                (it.name.endsWith(".mjs") || it.name.endsWith(".js"))
+        } == true
+    }
+
+    private fun isOpenClawPackageReady(pkgDir: File): Boolean {
+        return readOpenClawVersion(pkgDir) == requiredOpenClawVersion &&
+            hasOpenClawEntryPoint(pkgDir)
     }
 
     fun extractRootfs(tarPath: String) {
@@ -1737,8 +1765,8 @@ os.networkInterfaces = () => ({});
     fun ensureOpenClawReady(): Map<String, Any> {
         Log.i("BootstrapManager", "Executing final readiness checks...")
         
-        // === CRITICAL: FORCE INSTALL INSIDE PROOT FIRST ===
-        // This resolves the MODULE_NOT_FOUND error on fresh device installs
+        // Validate the pinned package before creating wrappers. A stale package
+        // or stale npm launcher is repaired only when it is actually needed.
         ensureOpenClawInstalled()
 
         // 2. Re-verify binary wrappers and sync skills
@@ -1752,48 +1780,42 @@ os.networkInterfaces = () => ({});
 
     private fun ensureOpenClawInstalled() {
         val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
-        val packageJson = File(pkgDir, "package.json")
-        
-        if (packageJson.exists() && !forceLiveOpenClawInstall) {
-            Log.i("BootstrapManager", "OpenClaw already present in rootfs")
+        if (isOpenClawPackageReady(pkgDir)) {
+            Log.i(
+                "BootstrapManager",
+                "OpenClaw $requiredOpenClawVersion already present in rootfs"
+            )
             return
         }
 
-        if (forceLiveOpenClawInstall) {
-            Log.i("BootstrapManager", "Pre-bundled OpenClaw disabled; installing latest official package")
-            fallbackToNpmInstall()
-        } else {
-            // 1. Try pre-bundled fast path first
+        if (preferPrebundledOpenClaw) {
+            // Try the APK fast path only when it is enabled and then verify it.
             preBundleOpenClawIfNeeded()
         }
 
-        // 2. Final verification with fallback to live npm
-        // Use existing pkgDir and packageJson
-        
-        // Comprehensive entry point check
-        fun hasEntryPoint(): Boolean {
-            if (!pkgDir.exists()) return false
-            val candidates = listOf("openclaw.mjs", "bin/openclaw.mjs", "bin/openclaw.js", "bin/openclaw", "cli.js", "index.js")
-            if (candidates.any { File(pkgDir, it).exists() }) return true
-            // Dir scan
-            return pkgDir.listFiles()?.any { it.name.startsWith("openclaw") && (it.name.endsWith(".mjs") || it.name.endsWith(".js")) } == true
-        }
-
-        if (!hasEntryPoint()) {
-            Log.w("BootstrapManager", "OpenClaw entry point not found after pre-bundle – falling back to live install")
+        if (!isOpenClawPackageReady(pkgDir)) {
+            Log.i(
+                "BootstrapManager",
+                "Installing pinned OpenClaw $requiredOpenClawVersion from npm"
+            )
             fallbackToNpmInstall()
         }
 
-        if (!packageJson.exists() && !hasEntryPoint()) {
-            throw RuntimeException("OpenClaw install failed inside proot. Check proot logs.")
+        if (!isOpenClawPackageReady(pkgDir)) {
+            throw RuntimeException(
+                "OpenClaw $requiredOpenClawVersion is not ready inside proot. Check proot logs."
+            )
         }
-        
+
         Log.i("BootstrapManager", "[BOOTSTRAP] OpenClaw verified and ready.")
     }
 
     private fun preBundleOpenClawIfNeeded() {
-        if (forceLiveOpenClawInstall) {
-            Log.i("BootstrapManager", "Skipping pre-bundled OpenClaw assets for latest gateway compatibility")
+        if (!preferPrebundledOpenClaw) {
+            Log.i(
+                "BootstrapManager",
+                "Skipping pre-bundled OpenClaw assets; using pinned npm package"
+            )
             return
         }
 
@@ -1856,9 +1878,13 @@ os.networkInterfaces = () => ({});
     }
 
     private fun fallbackToNpmInstall() {
-        Log.i("BootstrapManager", "Performing industrial-grade live fallback install via npm...")
+        Log.i("BootstrapManager", "Installing pinned OpenClaw package via npm...")
         processManager.runInProotSync(
-            "unset NODE_OPTIONS; env -u NODE_OPTIONS /usr/local/bin/npm install -g openclaw@latest --prefix /usr/local --no-audit --no-fund --omit=dev --silent",
+            "unset NODE_OPTIONS; " +
+                "rm -rf /usr/local/bin/openclaw /usr/local/bin/openclaw.cmd /usr/local/bin/openclaw.ps1; " +
+                "rm -rf /usr/local/lib/node_modules/openclaw 2>/dev/null; " +
+                "env -u NODE_OPTIONS /usr/local/bin/npm install -g openclaw@$requiredOpenClawVersion " +
+                "--prefix /usr/local --no-audit --no-fund --omit=dev --silent",
             1800
         )
     }

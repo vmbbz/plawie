@@ -20,7 +20,12 @@ print('keyId: ' + keyId)
 
 for pack in manifest['packs']:
     pack_copy = {k: v for k, v in pack.items() if k != 'signature'}
-    canonical = json.dumps(pack_copy, sort_keys=True, separators=(',', ':'))
+    canonical = json.dumps(
+        pack_copy,
+        sort_keys=True,
+        separators=(',', ':'),
+        ensure_ascii=False,
+    )
     pid = pack['id']
     print('Signing: ' + pid + ' payload_len=' + str(len(canonical)))
     signature = private_key.sign(canonical.encode('utf-8'))
@@ -36,17 +41,17 @@ with open(project_dir + '/android-arm64-v8a.json', 'w') as f:
 
 # Also write the public key Dart constant file
 pub_pem_str = pub_pem.decode().strip()
-dart_content = '''// Auto-generated signing key identifier and public key.
+dart_content = """// Auto-generated signing key identifier and public key.
 // DO NOT COMMIT the private key (signing-private.pem) to git.
 
 /// The keyId embedded in dependency pack manifests.
 /// Corresponds to the first 16 hex chars of SHA256(public_key_pem).
-const String kDependencyPackSigningKeyId = \'''' + keyId + '''\';
+const String kDependencyPackSigningKeyId = '""" + keyId + """';
 
 /// The ed25519 public key (PEM) for verifying dependency pack signatures.
 /// Keep this in sync with signing-public.pem.
-const String kDependencyPackPublicKey = \'''' + pub_pem_str + '''\';
-'''
+const String kDependencyPackPublicKey = r'''""" + pub_pem_str + """''';
+"""
 
 with open(project_dir + '/lib/services/signing_keys.dart', 'w') as f:
     f.write(dart_content)

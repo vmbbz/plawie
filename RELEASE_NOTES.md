@@ -33,10 +33,11 @@ No more silent failures or corrupted environments.
 - **Proactive Watchdog**: A background monitor detects missing dependencies or stale configurations on startup.
 - **Surgical Self-Healing**: If a configuration error is detected, Plawie automatically patches `openclaw.json` and `tools.allow` in under 3 seconds.
 
-### 3. Hardened Bootstrap (Instant Setup)
-Initial setup time has been reduced by **~95%** (from 15 minutes to under 40 seconds).
-- **Pre-bundled Core**: OpenClaw's heavy `node_modules` are now pre-extracted from an atomic APK tarball.
-- **Multi-threaded Downloader**: Remaining assets are acquired via a parallel HTTP Range downloader, saturating your connection for maximum speed.
+### 3. Hardened Bootstrap (Native-First Setup)
+The bootstrap keeps the production Gateway on the embedded native Node runtime while retaining PRoot for explicit rollback and temporary package staging.
+- **Pinned Core**: OpenClaw `2026.7.1` is installed reproducibly against Node `22.22.3`.
+- **Safe Retries**: Stale npm launchers are removed before reinstall, and package version/entry-point integrity is verified afterward.
+- **Remote Packs Last**: Signed dependency packs are downloaded only after the Gateway is healthy, and setup is not marked complete if a required pack fails.
 
 ### 4. Ephemeral Build Lifecycle (-800 MB Savings)
 We've optimized the disk footprint to keep your phone lean.
@@ -49,8 +50,8 @@ We've optimized the disk footprint to keep your phone lean.
 
 | Component | Status | Purpose |
 | :--- | :---: | :--- |
-| **PRoot Ubuntu 24.04** | `HARDENED` | Standardized execution layer |
-| **Node.js v22.22.2** | `STABLE` | High-performance gateway engine |
+| **Embedded Node.js v22.22.3** | `STABLE` | Native production Gateway engine |
+| **PRoot Ubuntu 24.04** | `ROLLBACK` | Explicit compatibility and recovery path |
 | **Foreground Service** | `PERSISTENT` | Zero-drop background execution |
 | **Storage Bridge** | `OPT-IN` | Granular SAF /sdcard access |
 

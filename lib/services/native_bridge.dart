@@ -209,7 +209,7 @@ class NativeBridge {
     if (!cmd.contains('openclaw')) return cmd;
 
     // Replace naked 'openclaw' commands only. Package specs such as
-    // openclaw@latest and asset names such as openclaw-node-modules.tar.gz
+    // openclaw@2026.7.1 and asset names such as openclaw-node-modules.tar.gz
     // must be left untouched during setup installs.
     // (?<![/\.]) matches only if NOT preceded by / or .
     // (?![.@-]) avoids .js entry points, npm package specs, and filenames.

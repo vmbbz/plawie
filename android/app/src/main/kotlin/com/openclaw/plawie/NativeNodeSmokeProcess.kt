@@ -68,8 +68,8 @@ class NativeNodeSmokeProcess(
 
         if (!libnode.exists()) {
             appendLog(
-                "embedded libnode.so is not packaged at ${libnode.absolutePath}; " +
-                    "package Node >=22.19.0 as jniLibs/arm64-v8a/libnode.so"
+                    "embedded libnode.so is not packaged at ${libnode.absolutePath}; " +
+                    "package Node >=22.22.3 as jniLibs/arm64-v8a/libnode.so"
             )
             return false
         }

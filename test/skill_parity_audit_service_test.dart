@@ -359,8 +359,8 @@ requests>=2.28.0
     await File(path.join(nativeRoot, 'runtimes', 'python', 'bridge.json'))
         .writeAsString(jsonEncode({
       'runtime': 'chaquopy',
-      'python': '3.13',
-      'version': '3.13-chaquopy-17.0.0',
+      'python': '3.11',
+      'version': '3.11-chaquopy-17.0.0',
     }));
     final python = File(path.join(pythonBin.path, 'python3'));
     await python.writeAsString('#!/system/bin/sh\nexit 0\n');
@@ -447,8 +447,8 @@ requests>=2.28.0
     await File(path.join(nativeRoot, 'runtimes', 'python', 'bridge.json'))
         .writeAsString(jsonEncode({
       'runtime': 'chaquopy',
-      'python': '3.13',
-      'version': '3.13-chaquopy-17.0.0',
+      'python': '3.11',
+      'version': '3.11-chaquopy-17.0.0',
     }));
     final python = File(path.join(pythonBin.path, 'python3'));
     await python.writeAsString('#!/system/bin/sh\nexit 0\n');
@@ -468,7 +468,7 @@ Version: 2.1.3
         'id': 'pandas',
         'version': '2.1.3',
         'sha256': 'test',
-        'python': '3.13',
+        'python': '3.11',
         'requestedRequirement': 'pandas>=2.2.0',
         'compatibilityOverride': true,
         'smokePassed': true,
@@ -568,8 +568,8 @@ yfinance>=0.2.66
         .create(recursive: true)
         .then((file) => file.writeAsString(jsonEncode({
               'runtime': 'chaquopy',
-              'python': '3.13',
-              'version': '3.13-chaquopy-17.0.0',
+              'python': '3.11',
+              'version': '3.11-chaquopy-17.0.0',
             })));
     await File(path.join(nativeBin.path, 'python3')).writeAsString(
       '#!/system/bin/sh\nexit 0\n',
@@ -726,8 +726,8 @@ Auth
         .create(recursive: true)
         .then((file) => file.writeAsString(jsonEncode({
               'runtime': 'chaquopy',
-              'python': '3.13',
-              'version': '3.13-chaquopy-17.0.0',
+              'python': '3.11',
+              'version': '3.11-chaquopy-17.0.0',
             })));
     await File(path.join(nativeBin.path, 'python3')).writeAsString(
       '#!/system/bin/sh\nexit 0\n',

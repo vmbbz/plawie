@@ -82,207 +82,8 @@ requirements:
     );
   });
 
-  test('provisioning installs APK-provided dependency pack for CLI bins',
+  test('provisioning plans the remote Android CLI-core dependency pack',
       () async {
-    final temp = await Directory.systemTemp.createTemp('skill_provision_cli_');
-    addTearDown(() => temp.delete(recursive: true));
-
-    final nativeRoot = path.join(
-      temp.path,
-      'native-node-embedded',
-      'native-home',
-      '.openclaw',
-    );
-    final nativeSkills =
-        Directory(path.join(nativeRoot, 'workspace', 'skills'));
-    final bundledBinDir = Directory(path.join(
-      temp.path,
-      'native-node-embedded',
-      'provisioning',
-      'bin',
-    ));
-    await nativeSkills.create(recursive: true);
-    await bundledBinDir.create(recursive: true);
-
-    final blucli = Directory(path.join(nativeSkills.path, 'blucli'));
-    await blucli.create(recursive: true);
-    await File(path.join(blucli.path, 'SKILL.md')).writeAsString('''
----
-requirements:
-  bins:
-    - blu
----
-# Blue CLI
-''');
-    await File(path.join(bundledBinDir.path, 'blu')).writeAsString(
-      '#!/system/bin/sh\nprintf "blu test\\n"\n',
-      flush: true,
-    );
-
-    final before = await SkillParityAuditService.instance.audit(
-      filesDir: temp.path,
-      repairNativeFromProot: false,
-      cacheTtl: Duration.zero,
-    );
-    expect(
-      before.executionMatrix
-          .singleWhere((entry) => entry.skillId == 'blucli')
-          .gates,
-      contains('missing_native_bin'),
-    );
-
-    final first = await SkillProvisioningService.instance.provisionSnapshot(
-      before,
-      skillId: 'blucli',
-    );
-
-    expect(first.changed, isTrue);
-    expect(first.reloadRecommended, isTrue);
-    expect(first.results.single.status, SkillProvisioningStatus.satisfied);
-    expect(
-      first.results.single.actions
-          .where((action) =>
-              action.type == SkillProvisioningActionType.dependencyPack)
-          .map((action) => action.key),
-      contains('android-cli-core-pack'),
-    );
-    expect(
-      await File(path.join(nativeRoot, 'bin', 'blu')).exists(),
-      isTrue,
-    );
-    expect(
-      await File(path.join(
-        nativeRoot,
-        'dependencies',
-        'receipts',
-        'android-cli-core-pack.json',
-      )).exists(),
-      isTrue,
-    );
-
-    await File(path.join(nativeRoot, 'bin', 'blu')).delete();
-    final stale = await SkillParityAuditService.instance.audit(
-      filesDir: temp.path,
-      repairNativeFromProot: false,
-      cacheTtl: Duration.zero,
-    );
-    expect(
-      stale.executionMatrix
-          .singleWhere((entry) => entry.skillId == 'blucli')
-          .gates,
-      contains('missing_native_bin'),
-    );
-
-    final repaired = await SkillProvisioningService.instance.provisionSnapshot(
-      stale,
-      skillId: 'blucli',
-    );
-    expect(repaired.changed, isTrue);
-    expect(
-      repaired.results.single.actions
-          .where((action) =>
-              action.type == SkillProvisioningActionType.dependencyPack &&
-              action.key == 'android-cli-core-pack')
-          .map((action) => action.status),
-      contains(SkillProvisioningActionStatus.installed),
-    );
-
-    final after = await SkillParityAuditService.instance.audit(
-      filesDir: temp.path,
-      repairNativeFromProot: false,
-      cacheTtl: Duration.zero,
-    );
-    expect(
-      after.executionMatrix
-          .singleWhere((entry) => entry.skillId == 'blucli')
-          .status,
-      SkillExecutionStatus.ready,
-    );
-  });
-
-  test('APK CLI-core pack satisfies sonoscli through sonos binary name',
-      () async {
-    final temp =
-        await Directory.systemTemp.createTemp('skill_provision_sonos_');
-    addTearDown(() => temp.delete(recursive: true));
-
-    final nativeRoot = path.join(
-      temp.path,
-      'native-node-embedded',
-      'native-home',
-      '.openclaw',
-    );
-    final nativeSkills =
-        Directory(path.join(nativeRoot, 'workspace', 'skills'));
-    final bundledBinDir = Directory(path.join(
-      temp.path,
-      'native-node-embedded',
-      'provisioning',
-      'bin',
-    ));
-    await nativeSkills.create(recursive: true);
-    await bundledBinDir.create(recursive: true);
-
-    final sonoscli = Directory(path.join(nativeSkills.path, 'sonoscli'));
-    await sonoscli.create(recursive: true);
-    await File(path.join(sonoscli.path, 'SKILL.md')).writeAsString('''
----
-requirements:
-  bins:
-    - sonos
----
-# Sonos CLI
-''');
-    await File(path.join(bundledBinDir.path, 'sonos')).writeAsString(
-      '#!/system/bin/sh\nprintf "sonos test\\n"\n',
-      flush: true,
-    );
-
-    final before = await SkillParityAuditService.instance.audit(
-      filesDir: temp.path,
-      repairNativeFromProot: false,
-      cacheTtl: Duration.zero,
-    );
-    expect(
-      before.executionMatrix
-          .singleWhere((entry) => entry.skillId == 'sonoscli')
-          .gates,
-      contains('missing_native_bin'),
-    );
-
-    final first = await SkillProvisioningService.instance.provisionSnapshot(
-      before,
-      skillId: 'sonoscli',
-    );
-
-    expect(first.changed, isTrue);
-    expect(first.results.single.status, SkillProvisioningStatus.satisfied);
-    expect(
-      first.results.single.actions
-          .where((action) =>
-              action.type == SkillProvisioningActionType.dependencyPack)
-          .map((action) => action.key),
-      contains('android-cli-core-pack'),
-    );
-    expect(
-      await File(path.join(nativeRoot, 'bin', 'sonos')).exists(),
-      isTrue,
-    );
-
-    final after = await SkillParityAuditService.instance.audit(
-      filesDir: temp.path,
-      repairNativeFromProot: false,
-      cacheTtl: Duration.zero,
-    );
-    expect(
-      after.executionMatrix
-          .singleWhere((entry) => entry.skillId == 'sonoscli')
-          .status,
-      SkillExecutionStatus.ready,
-    );
-  });
-
-  test('provisioning explains missing Android CLI-core payload bins', () async {
     final temp =
         await Directory.systemTemp.createTemp('skill_provision_cli_missing_');
     addTearDown(() => temp.delete(recursive: true));
@@ -320,7 +121,7 @@ requirements:
       repairNativeFromProot: false,
       cacheTtl: Duration.zero,
     );
-    final report = await SkillProvisioningService.instance.provisionSnapshot(
+    final report = await SkillProvisioningService.instance.planSnapshot(
       snapshot,
       skillId: 'openhue',
     );
@@ -330,16 +131,13 @@ requirements:
     final packAction = report.results.single.actions.singleWhere(
       (action) =>
           action.type == SkillProvisioningActionType.dependencyPack &&
-          action.key == 'android-cli-core-pack:openhue',
+          action.key == 'android-cli-core-pack',
     );
-    expect(packAction.status, SkillProvisioningActionStatus.missingPack);
-    expect(
-        packAction.message, contains('assets/openclaw/cli-core/bin/openhue'));
-    expect(packAction.message, contains('signed dependency pack'));
+    expect(packAction.status, SkillProvisioningActionStatus.missingDependency);
+    expect(packAction.message, contains('can satisfy this skill'));
   });
 
-  test('provisioning installs APK-provided vision media pack for ffmpeg',
-      () async {
+  test('provisioning plans the remote vision media pack for ffmpeg', () async {
     final temp =
         await Directory.systemTemp.createTemp('skill_provision_vision_media_');
     addTearDown(() => temp.delete(recursive: true));
@@ -388,40 +186,32 @@ requirements:
       contains('missing_native_bin'),
     );
 
-    final report = await SkillProvisioningService.instance.provisionSnapshot(
+    final report = await SkillProvisioningService.instance.planSnapshot(
       before,
       skillId: 'video-frames',
     );
 
-    expect(report.changed, isTrue);
-    expect(report.reloadRecommended, isTrue);
-    expect(report.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(report.changed, isFalse);
+    expect(report.reloadRecommended, isFalse);
+    expect(report.results.single.status, SkillProvisioningStatus.missingBinary);
     expect(
       report.results.single.actions
           .where((action) =>
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
-      contains('android-vision-media-runtime'),
+      contains('android-vision-media-pack'),
     );
     expect(
       report.results.single.actions
           .where((action) => action.type == SkillProvisioningActionType.binary)
           .map((action) => action.key),
-      isNot(contains('ffmpeg')),
+      contains('ffmpeg'),
     );
-    expect(await File(path.join(nativeRoot, 'bin', 'ffmpeg')).exists(), isTrue);
     expect(
-      await File(path.join(
-        nativeRoot,
-        'dependencies',
-        'receipts',
-        'android-vision-media-runtime.json',
-      )).exists(),
-      isTrue,
-    );
+        await File(path.join(nativeRoot, 'bin', 'ffmpeg')).exists(), isFalse);
   });
 
-  test('provisioning explains missing Android vision media ffmpeg payload',
+  test('provisioning plans the remote vision media pack when ffmpeg is absent',
       () async {
     final temp = await Directory.systemTemp
         .createTemp('skill_provision_ffmpeg_missing_');
@@ -460,7 +250,7 @@ requirements:
       repairNativeFromProot: false,
       cacheTtl: Duration.zero,
     );
-    final report = await SkillProvisioningService.instance.provisionSnapshot(
+    final report = await SkillProvisioningService.instance.planSnapshot(
       snapshot,
       skillId: 'video-frames',
     );
@@ -470,15 +260,13 @@ requirements:
     final packAction = report.results.single.actions.singleWhere(
       (action) =>
           action.type == SkillProvisioningActionType.dependencyPack &&
-          action.key == 'android-vision-media-runtime:ffmpeg',
+          action.key == 'android-vision-media-pack',
     );
-    expect(packAction.status, SkillProvisioningActionStatus.missingPack);
-    expect(packAction.message,
-        contains('assets/openclaw/vision-media/bin/ffmpeg'));
-    expect(packAction.message, contains('signed dependency pack'));
+    expect(packAction.status, SkillProvisioningActionStatus.missingDependency);
+    expect(packAction.message, contains('can satisfy this skill'));
   });
 
-  test('gifgrep requires android-vision-media-runtime pack when binary not bundled',
+  test('gifgrep plans the remote vision media pack when binary is absent',
       () async {
     final temp =
         await Directory.systemTemp.createTemp('skill_provision_gifgrep_');
@@ -521,7 +309,7 @@ requirements:
       repairNativeFromProot: false,
       cacheTtl: Duration.zero,
     );
-    final report = await SkillProvisioningService.instance.provisionSnapshot(
+    final report = await SkillProvisioningService.instance.planSnapshot(
       snapshot,
       skillId: 'gifgrep',
     );
@@ -533,14 +321,13 @@ requirements:
           .where((action) =>
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
-      contains('android-vision-media-runtime:gifgrep'),
+      contains('android-vision-media-pack'),
     );
     expect(
         await File(path.join(nativeRoot, 'bin', 'gifgrep')).exists(), isFalse);
   });
 
-  test('provisioning installs APK-provided vision media pack for gifgrep',
-      () async {
+  test('provisioning plans the remote vision media pack for gifgrep', () async {
     final temp =
         await Directory.systemTemp.createTemp('skill_provision_gifgrep_pack_');
     addTearDown(() => temp.delete(recursive: true));
@@ -589,41 +376,32 @@ requirements:
       contains('missing_native_bin'),
     );
 
-    final report = await SkillProvisioningService.instance.provisionSnapshot(
+    final report = await SkillProvisioningService.instance.planSnapshot(
       before,
       skillId: 'gifgrep',
     );
 
-    expect(report.changed, isTrue);
-    expect(report.reloadRecommended, isTrue);
-    expect(report.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(report.changed, isFalse);
+    expect(report.reloadRecommended, isFalse);
+    expect(report.results.single.status, SkillProvisioningStatus.missingBinary);
     expect(
       report.results.single.actions
           .where((action) =>
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
-      contains('android-vision-media-runtime'),
+      contains('android-vision-media-pack'),
     );
     expect(
       report.results.single.actions
           .where((action) => action.type == SkillProvisioningActionType.binary)
           .map((action) => action.key),
-      isNot(contains('gifgrep')),
+      contains('gifgrep'),
     );
     expect(
-        await File(path.join(nativeRoot, 'bin', 'gifgrep')).exists(), isTrue);
-    expect(
-      await File(path.join(
-        nativeRoot,
-        'dependencies',
-        'receipts',
-        'android-vision-media-runtime.json',
-      )).exists(),
-      isTrue,
-    );
+        await File(path.join(nativeRoot, 'bin', 'gifgrep')).exists(), isFalse);
   });
 
-  test('provisioning installs APK-provided audio runtime pack for songsee',
+  test('provisioning plans the remote audio runtime pack for songsee',
       () async {
     final temp =
         await Directory.systemTemp.createTemp('skill_provision_songsee_');
@@ -674,31 +452,23 @@ requirements:
       contains('missing_native_bin'),
     );
 
-    final report = await SkillProvisioningService.instance.provisionSnapshot(
+    final report = await SkillProvisioningService.instance.planSnapshot(
       before,
       skillId: 'songsee',
     );
 
-    expect(report.changed, isTrue);
-    expect(report.reloadRecommended, isTrue);
-    expect(report.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(report.changed, isFalse);
+    expect(report.reloadRecommended, isFalse);
+    expect(report.results.single.status, SkillProvisioningStatus.missingBinary);
     expect(
       report.results.single.actions
           .where((action) =>
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
-      contains('android-audio-runtime'),
+      contains('android-audio-runtime-pack'),
     );
-    expect(await File(path.join(nativeRoot, 'bin', 'songsee')).exists(), isTrue);
     expect(
-      await File(path.join(
-        nativeRoot,
-        'dependencies',
-        'receipts',
-        'android-audio-runtime.json',
-      )).exists(),
-      isTrue,
-    );
+        await File(path.join(nativeRoot, 'bin', 'songsee')).exists(), isFalse);
   });
 
   test('spotify-player remains blocked when only songsee audio payload exists',
@@ -760,7 +530,7 @@ metadata:
           .where((action) =>
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
-      isNot(contains('android-audio-runtime')),
+      isNot(contains('android-audio-runtime-pack')),
     );
     expect(
       await File(path.join(nativeRoot, 'bin', 'spotify_player')).exists(),
@@ -769,7 +539,7 @@ metadata:
     expect(await File(path.join(nativeRoot, 'bin', 'spogo')).exists(), isFalse);
   });
 
-  test('provisioning installs APK-provided terminal pack for tmux', () async {
+  test('provisioning plans the remote terminal pack for tmux', () async {
     final temp =
         await Directory.systemTemp.createTemp('skill_provision_terminal_');
     addTearDown(() => temp.delete(recursive: true));
@@ -829,14 +599,14 @@ requirements:
       contains('missing_native_bin'),
     );
 
-    final report = await SkillProvisioningService.instance.provisionSnapshot(
+    final report = await SkillProvisioningService.instance.planSnapshot(
       before,
       skillId: 'tmux',
     );
 
-    expect(report.changed, isTrue);
-    expect(report.reloadRecommended, isTrue);
-    expect(report.results.single.status, SkillProvisioningStatus.satisfied);
+    expect(report.changed, isFalse);
+    expect(report.reloadRecommended, isFalse);
+    expect(report.results.single.status, SkillProvisioningStatus.missingBinary);
     expect(
       report.results.single.actions
           .where((action) =>
@@ -844,30 +614,7 @@ requirements:
           .map((action) => action.key),
       contains('android-terminal-pack'),
     );
-    expect(await File(path.join(nativeRoot, 'bin', 'tmux')).exists(), isTrue);
-    expect(
-      await File(path.join(nativeRoot, 'lib', 'libevent-2.1.so')).exists(),
-      isTrue,
-    );
-    expect(
-      await File(path.join(
-        nativeRoot,
-        'dependencies',
-        'receipts',
-        'android-terminal-pack.json',
-      )).exists(),
-      isTrue,
-    );
-
-    final after = await SkillParityAuditService.instance.audit(
-      filesDir: temp.path,
-      repairNativeFromProot: false,
-      cacheTtl: Duration.zero,
-    );
-    final matrix = {
-      for (final entry in after.executionMatrix) entry.skillId: entry,
-    };
-    expect(matrix['tmux']?.status, SkillExecutionStatus.ready);
+    expect(await File(path.join(nativeRoot, 'bin', 'tmux')).exists(), isFalse);
   });
 
   test('provisioning does not advertise diagram-maker as CLI-core binary',
@@ -1595,7 +1342,7 @@ requirements:
           action.status == SkillProvisioningActionStatus.failedSmoke,
     );
     expect(failedSmoke.status, SkillProvisioningActionStatus.failedSmoke);
-    expect(failedSmoke.message, contains('command smoke failed'));
+    expect(failedSmoke.message, contains('failed smoke verification'));
     expect(
       await File(path.join(nativeRoot, 'bin', fileName)).exists(),
       isFalse,

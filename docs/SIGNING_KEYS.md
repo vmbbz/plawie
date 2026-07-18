@@ -1,41 +1,23 @@
-# Signing Keys — Dependency Pack Manifests
+# Signing Dependency-Pack Manifests
 
-**DO NOT COMMIT THE PRIVATE KEY TO GIT. KEEP IT BACKED UP.**
+Private signing keys must never be committed, pasted into issue trackers, or
+stored under the project directory. The previous key was exposed in Git history
+and must be treated as compromised; rotate it before the next production
+dependency-pack release.
 
-## Key ID
-`838fff1844341501`
+The app pins the public key and key ID in
+`lib/services/signing_keys.dart`. Store the matching private key only in the
+release secret manager or an offline encrypted key store.
 
-## Private Key (ed25519)
-```
------BEGIN PRIVATE KEY-----
-MC4CAQAwBQYDK2VwBCIEIF6wijZVlVTVBzsWKamN3kq/H7MzayXUmKw/ZA9vbPcj
------END PRIVATE KEY-----
-```
+## Re-signing a release manifest
 
-## Public Key (ed25519)
-```
------BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEATMgPQFa95wsW0yRuLIIzO5fYThR73fv+UyR+Ofn5O1U=
------END PUBLIC KEY-----
-```
+1. Create or retrieve the current Ed25519 private key outside this repository.
+2. Run `docs/sign_manifest.py <project_dir> <secure-key-directory>`.
+3. Verify the script changes `android-arm64-v8a.json` and
+   `lib/services/signing_keys.dart` together.
+4. Run the Flutter test suite, commit both files, and push the manifest before
+   releasing an APK that pins the new public key.
 
-## Backup Files
-- `C:\Users\cosyc\AppData\Local\Temp\opencode\signing-private.pem`
-- `C:\Users\cosyc\AppData\Local\Temp\opencode\signing-public.pem`
-
-## Signing Script
-`sign_manifest.py` is at `C:\Users\cosyc\AppData\Local\Temp\opencode\sign_manifest.py`
-
-Usage:
-```
-python sign_manifest.py <project_dir> <tmp_dir>
-```
-
-## How to Re-sign
-1. Ensure `signing-private.pem` is in `<tmp_dir>`
-2. Run: `python sign_manifest.py C:\dev-shared\openclaw-projects\openclaw_final <tmp_dir>`
-3. The script updates `android-arm64-v8a.json` and `lib/services/signing_keys.dart`
-4. Commit and push both files
-
-## Verified Signatures
-All 7 packs in `android-arm64-v8a.json` are currently signed with this key.
+The app accepts remote executable packs only when the manifest entry’s
+canonical JSON verifies against the pinned Ed25519 key, then verifies the
+archive and extracted-file SHA-256 values before installation.

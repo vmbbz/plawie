@@ -16,10 +16,15 @@ import 'package:uuid/uuid.dart';
 import 'skill_provisioning_service.dart';
 
 class BootstrapService {
-  static const bool _forceLiveOpenClawInstall = true;
-  static const String _latestOpenClawInstallCommand = 'unset NODE_OPTIONS; '
+  // Pin the core Gateway package for reproducible fresh installs. Dependency
+  // packs remain independently versioned and downloaded in the final setup
+  // phase below.
+  static const String _requiredOpenClawVersion = '2026.7.1';
+  static const bool _usePrebundledOpenClaw = false;
+  static const String _openClawInstallCommand = 'unset NODE_OPTIONS; '
+      'rm -rf /usr/local/bin/openclaw /usr/local/bin/openclaw.cmd /usr/local/bin/openclaw.ps1; '
       'rm -rf /usr/local/lib/node_modules/openclaw 2>/dev/null; '
-      'env -u NODE_OPTIONS /usr/local/bin/npm install -g openclaw@latest '
+      'env -u NODE_OPTIONS /usr/local/bin/npm install -g openclaw@2026.7.1 '
       '--prefix /usr/local --no-audit --no-fund --omit=dev';
 
   final Dio _dio = Dio(BaseOptions(
@@ -437,9 +442,9 @@ class BootstrapService {
             'Installing OpenClaw core...', 80);
 
         bool success = false;
-        if (_forceLiveOpenClawInstall) {
+        if (!_usePrebundledOpenClaw) {
           _log(
-              '[SETUP] Pre-bundled OpenClaw disabled; installing latest from npm.');
+              '[SETUP] Installing pinned OpenClaw $_requiredOpenClawVersion from npm.');
         } else {
           success = await _extractPrebundledOpenClaw(onProgress);
         }
@@ -556,23 +561,37 @@ class BootstrapService {
             'Downloading dependency packs...', 95,
             subMessage: 'whisper, tts, CLI tools, agent');
 
-        var packsDownloaded = 0;
-        var totalPacks = 0;
-        await SkillProvisioningService.installAllRemotePacks(
+        final totalPacks = SkillProvisioningService.setupWizardPackIds.length;
+        final completedPackIds = <String>{};
+        final packsReady = await SkillProvisioningService.installAllRemotePacks(
           onProgress: (packId, progress) {
-            packsDownloaded++;
-            totalPacks = 7;
-            final pct = packsDownloaded / totalPacks;
+            final currentProgress = progress.clamp(0.0, 1.0).toDouble();
+            if (currentProgress >= 1.0) {
+              completedPackIds.add(packId);
+            }
+            final pct = ((completedPackIds.length +
+                        (completedPackIds.contains(packId)
+                            ? 0.0
+                            : currentProgress)) /
+                    totalPacks)
+                .clamp(0.0, 1.0)
+                .toDouble();
             _emitProgress(
               onProgress,
               SetupStep.downloadingPacks,
               pct,
-              'Downloading dependency packs ($packsDownloaded / $totalPacks)',
+              'Downloading dependency packs (${completedPackIds.length} / $totalPacks)',
               95 + (pct * 5).round(),
               subMessage: packId,
             );
           },
         );
+        if (!packsReady) {
+          throw StateError(
+            'One or more required dependency packs failed verification. '
+            'Setup was not marked complete; retry when the network is available.',
+          );
+        }
 
         _emitProgress(
             onProgress, SetupStep.complete, 1.0, 'Setup complete!', 100,
@@ -639,9 +658,9 @@ class BootstrapService {
 
       // 2. Fresh install (latest) + peer dep fix for @buape/carbon
       await NativeBridge.runInProot(
-        '$_latestOpenClawInstallCommand && '
+        '$_openClawInstallCommand && '
         'cd /usr/local/lib/node_modules/openclaw && '
-        'env -u NODE_OPTIONS /usr/local/bin/npm install --no-audit --no-fund --omit=dev 2>/dev/null || true',
+        'env -u NODE_OPTIONS /usr/local/bin/npm install --no-audit --no-fund --omit=dev',
         timeout: 1800,
       );
 
@@ -676,34 +695,55 @@ class BootstrapService {
     final rootfsDir = await getRootfsDirectory();
     final openclawDir =
         Directory('$rootfsDir/usr/local/lib/node_modules/openclaw');
+    final packageJson = File('$openclawDir/package.json');
 
     final exists = await openclawDir.exists();
-    if (exists && !_forceLiveOpenClawInstall) {
-      _log('✅ OpenClaw already present (pre-bundled or previously installed)');
+    final installedVersion = await _readOpenClawVersion(packageJson);
+    if (exists && installedVersion == _requiredOpenClawVersion) {
+      _log('✅ OpenClaw $_requiredOpenClawVersion already present');
       return;
     }
 
     _log(exists
-        ? '⬆️ Updating OpenClaw to latest official package...'
-        : '🚨 Installing OpenClaw (this may take 30-60s)...');
+        ? '⬆️ Updating OpenClaw from ${installedVersion ?? 'an unknown version'} to $_requiredOpenClawVersion...'
+        : '🚨 Installing OpenClaw $_requiredOpenClawVersion (this may take 30-60s)...');
 
     try {
       // 1. Install with minimal flags
       await NativeBridge.runInProot(
-        _latestOpenClawInstallCommand,
+        _openClawInstallCommand,
         timeout: 1800,
       );
 
       // 2. AGGRESSIVE CLEANUP (Save ~300-400 MB)
       await _performFinalCleanup();
 
-      _log('✅ OpenClaw installed + heavy caches cleaned');
+      final installedAfterInstall = await _readOpenClawVersion(packageJson);
+      if (installedAfterInstall != _requiredOpenClawVersion) {
+        throw StateError(
+          'OpenClaw install completed without the expected package version '
+          '$_requiredOpenClawVersion (found ${installedAfterInstall ?? 'none'}).',
+        );
+      }
+      _log(
+          '✅ OpenClaw $_requiredOpenClawVersion installed + heavy caches cleaned');
     } catch (e) {
-      developer.log('[BOOTSTRAP] BIN_WRAPPER_ERROR: Failed to install openclaw: $e');
+      developer.log(
+          '[BOOTSTRAP] OPENCLAW_INSTALL_ERROR: Failed to install openclaw: $e');
       throw PlatformException(
-        code: 'BIN_WRAPPER_ERROR',
+        code: 'OPENCLAW_INSTALL_ERROR',
         message: 'Failed to install openclaw: $e',
       );
+    }
+  }
+
+  Future<String?> _readOpenClawVersion(File packageJson) async {
+    if (!await packageJson.exists()) return null;
+    try {
+      final decoded = jsonDecode(await packageJson.readAsString());
+      return decoded is Map ? decoded['version']?.toString() : null;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -722,9 +762,9 @@ class BootstrapService {
   /// This bypasses the need for a 10-minute 'npm install' on the user's device.
   Future<bool> _extractPrebundledOpenClaw(
       Function(SetupState) onProgress) async {
-    if (_forceLiveOpenClawInstall) {
+    if (!_usePrebundledOpenClaw) {
       _log(
-          '📦 Pre-bundled OpenClaw assets are disabled for latest gateway compatibility.');
+          '📦 Pre-bundled OpenClaw assets are disabled; using pinned npm package.');
       return false;
     }
 

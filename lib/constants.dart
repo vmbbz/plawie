@@ -27,7 +27,10 @@ class AppConstants {
 
   // Node.js binary tarball — downloaded directly by Flutter, extracted by Java.
   // Bypasses curl/gpg/NodeSource which fail inside proot.
-  static const String nodeVersion = '22.22.2';
+  // OpenClaw 2026.7.1 requires Node >=22.22.3 on the Node 22 line.
+  // Keep this in lockstep with the native embedded Node build and the PRoot
+  // bootstrap gate so a fresh install does not only fail at npm time.
+  static const String nodeVersion = '22.22.3';
   static const String nodeBaseUrl =
       'https://nodejs.org/dist/v$nodeVersion/node-v$nodeVersion-linux-';
 

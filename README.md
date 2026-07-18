@@ -95,7 +95,7 @@ Plawie isn't just an app; it's a living digital entity. It combines industrial-g
 1. **Download** the latest APK from [Releases](https://github.com/vmbbz/plawie/releases/latest).
 2. **Install** on any device running Android 10+.
 3. **Launch** → choose Gemini, Claude, OpenAI, Grok, OpenRouter, or Groq and add your own provider key.
-4. **Install** → Plawie sets up the hardened PRoot Gateway and pairs the local device node.
+4. **Install** → Plawie prepares the native Node Gateway, keeps PRoot available for rollback, and pairs the local device node.
 5. **Start Chatting** with your personal AI companion.
 
 > **Pro Tip:** Use **Cloud Agent Mode** for full OpenClaw skills/tools/dashboard. Use **Local LLM** only when you want private offline NDK chat.
@@ -106,13 +106,14 @@ Plawie isn't just an app; it's a living digital entity. It combines industrial-g
 
 Plawie isn't just a UI wrapper; it is built on an untouchable technical foundation:
 
-### 1. The Autonomous PRoot Gateway
-We run a complete local Unix environment inside Android using PRoot. Inside this sandbox operates our highly optimized Node.js OpenClaw gateway. This gateway manages provider routing, sessions, tools, skills, and dashboard access while the Flutter app pairs as a native device node.
+### 1. The Native-First OpenClaw Gateway
+The production Gateway runs through the embedded Android `libnode.so` runtime and owns loopback port `18789`. The Ubuntu/PRoot environment is retained as an explicit bootstrap and emergency rollback path, not the normal Gateway owner. The Gateway manages provider routing, sessions, tools, skills, and dashboard access while Flutter pairs as a native device node.
 
 **Specifications:**
-- **OS Layer**: Hardened Ubuntu 24.04 (PRoot Sandbox)
-- **Runtime**: Node.js v22.22.2 LTS (High-Performance AI Gateway)
-- **Bootstrap**: Parallel Multi-Threaded Engine (<40s Setup)
+- **Production Runtime**: Embedded Node.js v22.22.3 (`libnode.so`)
+- **Rollback Runtime**: Hardened Ubuntu 24.04 (PRoot Sandbox)
+- **Core Gateway**: OpenClaw 2026.7.1, pinned for reproducible setup
+- **Bootstrap**: Native-first startup, with remote dependency packs downloaded last
 - **Footprint**: Ephemeral Build Lifecycle (Saves 800MB+ storage)
 
 #### Gateway Configuration

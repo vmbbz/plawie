@@ -929,7 +929,7 @@ class NativeNodeEmbeddedService : Service() {
                 new Intl.DateTimeFormat("en-US", { timeZone: "UTC" }).format(new Date(0)).length > 0;
 
               const missingAssets = Array.isArray(manifest.missingAssets) ? manifest.missingAssets : [];
-              const engineOk = versionAtLeast(process.versions.node, "22.19.0");
+              const engineOk = versionAtLeast(process.versions.node, "22.22.3");
               const passed = engineOk &&
                 bridgeToolsLoaded &&
                 skillFiles.length >= 4 &&
@@ -943,7 +943,7 @@ class NativeNodeEmbeddedService : Service() {
                 kind: manifest.bundleKind,
                 bundleRoot,
                 engineOk,
-                minimumNode: "22.19.0",
+                minimumNode: "22.22.3",
                 node: process.version,
                 platform: process.platform,
                 arch: process.arch,

@@ -1,6 +1,6 @@
 # OpenClaw Boot Sequence
 
-Last updated: 2026-06-02
+Last updated: 2026-07-18
 
 This is the production startup contract for Plawie on Android.
 
@@ -32,6 +32,23 @@ The old PRoot setup/repair sequence remains only for emergency rollback:
 9. Start local model features only after the Gateway baseline is stable.
 
 ## Fresh Install
+
+Fresh setup is ordered so the native Gateway becomes healthy before optional
+dependency packs are downloaded:
+
+1. Prepare the PRoot rootfs as an explicit rollback/staging environment.
+2. Install Node `22.22.3`, which satisfies the pinned OpenClaw `2026.7.1`
+   engine range.
+3. Remove stale npm launchers, install the pinned OpenClaw package, and verify
+   its package version and entry point.
+4. Start the native embedded Gateway on `18789` and complete health/pairing
+   checks.
+5. Download and smoke-test the signed remote dependency packs.
+6. Mark setup complete only after all required dependency packs verify.
+
+PRoot does not become the production Gateway owner during this flow. It remains
+available for explicit rollback and is also the current package staging source
+for the native full-Gateway workspace.
 
 Setup collects:
 
