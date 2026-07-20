@@ -1879,13 +1879,41 @@ os.networkInterfaces = () => ({});
 
     private fun fallbackToNpmInstall() {
         Log.i("BootstrapManager", "Installing pinned OpenClaw package via npm...")
-        processManager.runInProotSync(
-            "unset NODE_OPTIONS; " +
-                "rm -rf /usr/local/bin/openclaw /usr/local/bin/openclaw.cmd /usr/local/bin/openclaw.ps1; " +
-                "rm -rf /usr/local/lib/node_modules/openclaw 2>/dev/null; " +
-                "env -u NODE_OPTIONS /usr/local/bin/npm install -g openclaw@$requiredOpenClawVersion " +
-                "--prefix /usr/local --no-audit --no-fund --omit=dev --silent",
-            1800
+        val output = processManager.runInProotSync(
+            """
+            unset NODE_OPTIONS
+            set -eu
+            export npm_config_prefix=/usr/local
+            export NPM_CONFIG_PREFIX=/usr/local
+            export npm_config_cache=/tmp/npm-cache
+            rm -f /usr/local/bin/openclaw /usr/local/bin/openclaw.cmd /usr/local/bin/openclaw.ps1
+            rm -rf /usr/local/lib/node_modules/openclaw
+            env -u NODE_OPTIONS /usr/local/bin/npm install -g openclaw@$requiredOpenClawVersion --prefix /usr/local --no-audit --no-fund --omit=dev
+            package_json=/usr/local/lib/node_modules/openclaw/package.json
+            if [ ! -f "${'$'}package_json" ]; then
+              echo "OPENCLAW_INSTALL_VERIFY_ERROR package-json-missing path=${'$'}package_json prefix=${'$'}(env -u NODE_OPTIONS /usr/local/bin/npm prefix -g 2>/dev/null || true) root=${'$'}(env -u NODE_OPTIONS /usr/local/bin/npm root -g 2>/dev/null || true)" >&2
+              exit 73
+            fi
+            version="${'$'}(env -u NODE_OPTIONS /usr/local/bin/node -p "require('/usr/local/lib/node_modules/openclaw/package.json').version" 2>/dev/null || true)"
+            if [ "${'$'}version" != "$requiredOpenClawVersion" ]; then
+              echo "OPENCLAW_INSTALL_VERIFY_ERROR version=${'$'}version expected=$requiredOpenClawVersion" >&2
+              exit 74
+            fi
+            if [ ! -f /usr/local/lib/node_modules/openclaw/openclaw.mjs ] && \
+               [ ! -f /usr/local/lib/node_modules/openclaw/bin/openclaw.mjs ] && \
+               [ ! -f /usr/local/lib/node_modules/openclaw/bin/openclaw.js ]; then
+              echo "OPENCLAW_INSTALL_VERIFY_ERROR entry-point-missing" >&2
+              exit 75
+            fi
+            printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "${'$'}version"
+            """.trimIndent(),
+            1800,
         )
+
+        val marker = "__OPENCLAW_INSTALL_VERIFIED__=$requiredOpenClawVersion"
+        check(output.lineSequence().any { it.trim() == marker }) {
+            "OpenClaw npm install returned without $marker. " +
+                "Output: ${output.takeLast(2000)}"
+        }
     }
 }

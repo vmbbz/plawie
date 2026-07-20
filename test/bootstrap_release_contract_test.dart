@@ -31,6 +31,23 @@ void main() {
     }
   });
 
+  test('OpenClaw installation verifies the package in PRoot and native rootfs',
+      () async {
+    final bootstrap =
+        await File('lib/services/bootstrap_service.dart').readAsString();
+    final nativeBootstrap = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/BootstrapManager.kt',
+    ).readAsString();
+
+    for (final source in [bootstrap, nativeBootstrap]) {
+      expect(source, contains('npm_config_prefix=/usr/local'));
+      expect(source, contains('OPENCLAW_INSTALL_VERIFY_ERROR'));
+      expect(source, contains('__OPENCLAW_INSTALL_VERIFIED__='));
+    }
+    expect(bootstrap, contains('_openClawVersionProbeCommand'));
+    expect(bootstrap, contains('_awaitNativeOpenClawStatus'));
+  });
+
   test('fresh setup gates completion on dependency-pack verification',
       () async {
     final bootstrap =

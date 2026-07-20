@@ -21,11 +21,58 @@ class BootstrapService {
   // phase below.
   static const String _requiredOpenClawVersion = '2026.7.1';
   static const bool _usePrebundledOpenClaw = false;
-  static const String _openClawInstallCommand = 'unset NODE_OPTIONS; '
-      'rm -rf /usr/local/bin/openclaw /usr/local/bin/openclaw.cmd /usr/local/bin/openclaw.ps1; '
-      'rm -rf /usr/local/lib/node_modules/openclaw 2>/dev/null; '
-      'env -u NODE_OPTIONS /usr/local/bin/npm install -g openclaw@2026.7.1 '
-      '--prefix /usr/local --no-audit --no-fund --omit=dev';
+  static const String _openClawVersionMarker = '__OPENCLAW_VERSION__=';
+  static const String _openClawInstallMarker = '__OPENCLAW_INSTALL_VERIFIED__=';
+
+  // Keep installation and verification in the PRoot namespace. The Android
+  // filesystem view can briefly lag behind a large npm transaction; checking
+  // package.json only from Dart can therefore report a false negative even
+  // though the gateway can already resolve and run the package.
+  static const String _openClawVersionProbeCommand = r'''
+unset NODE_OPTIONS
+set -eu
+package_json=/usr/local/lib/node_modules/openclaw/package.json
+if [ ! -f "$package_json" ]; then
+  printf '__OPENCLAW_VERSION__=missing\n'
+  exit 0
+fi
+if [ ! -f /usr/local/lib/node_modules/openclaw/openclaw.mjs ] && \
+   [ ! -f /usr/local/lib/node_modules/openclaw/bin/openclaw.mjs ] && \
+   [ ! -f /usr/local/lib/node_modules/openclaw/bin/openclaw.js ]; then
+  printf '__OPENCLAW_VERSION__=missing-entry-point\n'
+  exit 0
+fi
+version="$(env -u NODE_OPTIONS /usr/local/bin/node -p "require('/usr/local/lib/node_modules/openclaw/package.json').version" 2>/dev/null || true)"
+printf '__OPENCLAW_VERSION__=%s\n' "$version"
+''';
+
+  static const String _openClawInstallCommand = r'''
+unset NODE_OPTIONS
+set -eu
+export npm_config_prefix=/usr/local
+export NPM_CONFIG_PREFIX=/usr/local
+export npm_config_cache=/tmp/npm-cache
+rm -f /usr/local/bin/openclaw /usr/local/bin/openclaw.cmd /usr/local/bin/openclaw.ps1
+rm -rf /usr/local/lib/node_modules/openclaw
+env -u NODE_OPTIONS /usr/local/bin/npm install -g openclaw@2026.7.1 --prefix /usr/local --no-audit --no-fund --omit=dev
+package_json=/usr/local/lib/node_modules/openclaw/package.json
+if [ ! -f "$package_json" ]; then
+  echo "OPENCLAW_INSTALL_VERIFY_ERROR package-json-missing path=$package_json prefix=$(env -u NODE_OPTIONS /usr/local/bin/npm prefix -g 2>/dev/null || true) root=$(env -u NODE_OPTIONS /usr/local/bin/npm root -g 2>/dev/null || true)" >&2
+  exit 73
+fi
+version="$(env -u NODE_OPTIONS /usr/local/bin/node -p "require('/usr/local/lib/node_modules/openclaw/package.json').version" 2>/dev/null || true)"
+if [ "$version" != "2026.7.1" ]; then
+  echo "OPENCLAW_INSTALL_VERIFY_ERROR version=$version expected=2026.7.1" >&2
+  exit 74
+fi
+if [ ! -f /usr/local/lib/node_modules/openclaw/openclaw.mjs ] && \
+   [ ! -f /usr/local/lib/node_modules/openclaw/bin/openclaw.mjs ] && \
+   [ ! -f /usr/local/lib/node_modules/openclaw/bin/openclaw.js ]; then
+  echo "OPENCLAW_INSTALL_VERIFY_ERROR entry-point-missing" >&2
+  exit 75
+fi
+printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
+''';
 
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 30),
@@ -658,7 +705,7 @@ class BootstrapService {
 
       // 2. Fresh install (latest) + peer dep fix for @buape/carbon
       await NativeBridge.runInProot(
-        '$_openClawInstallCommand && '
+        '$_openClawInstallCommand\n'
         'cd /usr/local/lib/node_modules/openclaw && '
         'env -u NODE_OPTIONS /usr/local/bin/npm install --no-audit --no-fund --omit=dev',
         timeout: 1800,
@@ -692,39 +739,54 @@ class BootstrapService {
   }
 
   Future<void> _ensureOpenClawPackageExists() async {
-    final rootfsDir = await getRootfsDirectory();
-    final openclawDir =
-        Directory('$rootfsDir/usr/local/lib/node_modules/openclaw');
-    final packageJson = File('$openclawDir/package.json');
-
-    final exists = await openclawDir.exists();
-    final installedVersion = await _readOpenClawVersion(packageJson);
-    if (exists && installedVersion == _requiredOpenClawVersion) {
+    final installedVersion = await _probeOpenClawVersionInProot();
+    if (installedVersion == _requiredOpenClawVersion) {
+      await _awaitNativeOpenClawStatus();
       _log('✅ OpenClaw $_requiredOpenClawVersion already present');
       return;
     }
 
-    _log(exists
-        ? '⬆️ Updating OpenClaw from ${installedVersion ?? 'an unknown version'} to $_requiredOpenClawVersion...'
-        : '🚨 Installing OpenClaw $_requiredOpenClawVersion (this may take 30-60s)...');
+    _log(installedVersion == null
+        ? '🚨 Installing OpenClaw $_requiredOpenClawVersion (this may take 30-60s)...'
+        : '⬆️ Updating OpenClaw from $installedVersion to $_requiredOpenClawVersion...');
 
     try {
-      // 1. Install with minimal flags
-      await NativeBridge.runInProot(
+      // Install and assert the package from the same PRoot namespace that
+      // launches the gateway. The command emits a marker only after npm,
+      // package metadata, version, and entry point all agree.
+      final installOutput = await NativeBridge.runInProot(
         _openClawInstallCommand,
         timeout: 1800,
       );
-
-      // 2. AGGRESSIVE CLEANUP (Save ~300-400 MB)
-      await _performFinalCleanup();
-
-      final installedAfterInstall = await _readOpenClawVersion(packageJson);
-      if (installedAfterInstall != _requiredOpenClawVersion) {
+      final reportedVersion = _extractMarkedVersion(
+        installOutput,
+        _openClawInstallMarker,
+      );
+      if (reportedVersion != _requiredOpenClawVersion) {
         throw StateError(
-          'OpenClaw install completed without the expected package version '
-          '$_requiredOpenClawVersion (found ${installedAfterInstall ?? 'none'}).',
+          'OpenClaw installer returned without the expected verification '
+          'marker for $_requiredOpenClawVersion '
+          '(reported ${reportedVersion ?? 'none'}).',
         );
       }
+
+      final installedAfterInstall = await _probeOpenClawVersionInProot();
+      if (installedAfterInstall != _requiredOpenClawVersion) {
+        throw StateError(
+          'OpenClaw installer verification disagreed with its final PRoot '
+          'probe: expected $_requiredOpenClawVersion, found '
+          '${installedAfterInstall ?? 'none'}.',
+        );
+      }
+
+      // The native wrapper creator reads the Android rootfs directly. Wait for
+      // it to observe the same verified package before cleanup and setup move
+      // on, rather than failing immediately on a transient filesystem view.
+      await _awaitNativeOpenClawStatus();
+
+      // Save space only after both execution environments agree on the
+      // package. npm's cache is configured in /tmp by ProcessManager.
+      await _performFinalCleanup();
       _log(
           '✅ OpenClaw $_requiredOpenClawVersion installed + heavy caches cleaned');
     } catch (e) {
@@ -737,14 +799,49 @@ class BootstrapService {
     }
   }
 
-  Future<String?> _readOpenClawVersion(File packageJson) async {
-    if (!await packageJson.exists()) return null;
-    try {
-      final decoded = jsonDecode(await packageJson.readAsString());
-      return decoded is Map ? decoded['version']?.toString() : null;
-    } catch (_) {
+  Future<String?> _probeOpenClawVersionInProot() async {
+    final output = await NativeBridge.runInProot(
+      _openClawVersionProbeCommand,
+      timeout: 30,
+    );
+    return _extractMarkedVersion(output, _openClawVersionMarker);
+  }
+
+  String? _extractMarkedVersion(String output, String marker) {
+    final markerIndex = output.lastIndexOf(marker);
+    if (markerIndex < 0) return null;
+
+    final value = output
+        .substring(markerIndex + marker.length)
+        .split(RegExp(r'\r?\n'))
+        .first
+        .trim();
+    if (value.isEmpty || value == 'missing' || value == 'missing-entry-point') {
       return null;
     }
+    return value;
+  }
+
+  Future<void> _awaitNativeOpenClawStatus() async {
+    Map<String, dynamic> lastStatus = const <String, dynamic>{};
+    for (var attempt = 0; attempt < 20; attempt++) {
+      lastStatus = await NativeBridge.getBootstrapStatus();
+      final version = lastStatus['openclawVersion']?.toString();
+      final installed = lastStatus['openclawInstalled'] == true;
+      if (installed && version == _requiredOpenClawVersion) return;
+
+      if (attempt < 19) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+    }
+
+    throw StateError(
+      'OpenClaw $_requiredOpenClawVersion was verified in PRoot, but Android '
+      'could not validate the same package after 5 seconds '
+      '(version: ${lastStatus['openclawVersion'] ?? 'none'}, '
+      'package: ${lastStatus['openclawPackageExists'] ?? false}, '
+      'entry point: ${lastStatus['openclawEntryPointExists'] ?? false}).',
+    );
   }
 
   Future<void> _installMinimalBuildTools() async {
@@ -817,9 +914,9 @@ class BootstrapService {
   Future<void> _performFinalCleanup() async {
     _log('🧹 Performing final heavy cleanup...');
     await NativeBridge.runInProot('''
-      rm -rf /root/.npm/_cacache /root/.npm/_logs &&
-      apt-get clean &&
-      rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+      rm -rf /tmp/npm-cache /root/.npm/_cacache /root/.npm/_logs || true
+      apt-get clean || true
+      rm -rf /var/lib/apt/lists/* /var/cache/apt/* || true
     ''');
   }
 
