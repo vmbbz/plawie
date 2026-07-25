@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -22,10 +23,14 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class OfficialOpenClawInstallService : Service() {
     private var activeRequestId: String? = null
+    private var lastNotificationText: String? = null
+    private var lastNotificationProgress: Int = Int.MIN_VALUE
+    private var lastNotificationAtMs: Long = 0L
 
     companion object {
         private const val TAG = "OfficialOpenClawInstall"
         private const val LEGACY_NOTIFICATION_ID = 6
+        private const val MIN_NOTIFICATION_UPDATE_INTERVAL_MS = 1_500L
         private const val ACTION_PROVISION =
             "com.openclaw.plawie.official_openclaw.PROVISION"
         private const val EXTRA_REQUEST_ID = "requestId"
@@ -66,6 +71,9 @@ class OfficialOpenClawInstallService : Service() {
                 0.02
             )
         )
+        lastNotificationText = "Resolving the latest official OpenClaw release…"
+        lastNotificationProgress = 2
+        lastNotificationAtMs = SystemClock.elapsedRealtime()
         if (intent?.action != ACTION_PROVISION) {
             stopSelf(startId)
             return START_NOT_STICKY
@@ -105,7 +113,8 @@ class OfficialOpenClawInstallService : Service() {
                 }.provisionLatest(requestId)
                 updateSetupNotification(
                     "Official OpenClaw verified. Finalizing setup…",
-                    0.99
+                    0.99,
+                    force = true
                 )
                 OfficialOpenClawProvisioner.markIsolatedProvisionSucceeded(
                     applicationContext,
@@ -160,12 +169,29 @@ class OfficialOpenClawInstallService : Service() {
         super.onDestroy()
     }
 
-    private fun updateSetupNotification(text: String, progress: Double) {
+    private fun updateSetupNotification(
+        text: String,
+        progress: Double,
+        force: Boolean = false
+    ) {
+        val boundedProgress = (progress.coerceIn(0.0, 1.0) * 100.0).toInt()
+        val now = SystemClock.elapsedRealtime()
+        val duplicate = text == lastNotificationText &&
+            boundedProgress == lastNotificationProgress
+        if (!force &&
+            (duplicate || now - lastNotificationAtMs < MIN_NOTIFICATION_UPDATE_INTERVAL_MS)
+        ) {
+            return
+        }
+
         runCatching {
             getSystemService(NotificationManager::class.java).notify(
                 SetupService.NOTIFICATION_ID,
                 buildNotification(text, progress)
             )
+            lastNotificationText = text
+            lastNotificationProgress = boundedProgress
+            lastNotificationAtMs = now
         }.onFailure { error ->
             Log.w(TAG, "Could not update shared setup notification", error)
         }

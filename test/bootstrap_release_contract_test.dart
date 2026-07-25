@@ -290,6 +290,11 @@ void main() {
     final mainActivity = await File(
       'android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt',
     ).readAsString();
+    final bootstrap =
+        await File('lib/services/bootstrap_service.dart').readAsString();
+    final isolatedInstaller = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/OfficialOpenClawInstallService.kt',
+    ).readAsString();
 
     expect(setupService,
         contains('OfficialOpenClawInstallService.clearLegacyNotification'));
@@ -316,6 +321,67 @@ void main() {
     expect(
       mainActivity,
       contains('nativeNodeSmokeProcess.isFullGatewayProductionRunning()'),
+    );
+    expect(
+      bootstrap,
+      contains('updateNotification: false'),
+    );
+    expect(
+      isolatedInstaller,
+      contains('MIN_NOTIFICATION_UPDATE_INTERVAL_MS = 1_500L'),
+    );
+    expect(
+      setupService,
+      contains('MIN_NOTIFICATION_UPDATE_INTERVAL_MS = 1_000L'),
+    );
+  });
+
+  test('native startup avoids redundant process and filesystem work', () async {
+    final nativeProcess = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/NativeNodeSmokeProcess.kt',
+    ).readAsString();
+    final nativeRuntime = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/NativeNodeEmbeddedService.kt',
+    ).readAsString();
+    final gateway =
+        await File('lib/services/gateway_service.dart').readAsString();
+    final provisioning = await File(
+      'lib/services/skill_provisioning_service.dart',
+    ).readAsString();
+
+    expect(
+      nativeProcess,
+      contains('stop skipped; no native runtime process or listener is active'),
+    );
+    expect(nativeRuntime, isNot(contains('countExistingFiles')));
+    expect(nativeRuntime, isNot(contains('walkTopDown().count')));
+    expect(
+      nativeRuntime,
+      contains('"verificationMode", "activated-receipt-and-required-files"'),
+    );
+
+    final freshStart = gateway.indexOf(
+      "await NativeBridge.acquirePartialWakeLock();",
+    );
+    final runtimeStart = gateway.indexOf(
+      'final success = await _runtime.start(',
+      freshStart,
+    );
+    expect(freshStart, greaterThanOrEqualTo(0));
+    expect(runtimeStart, greaterThan(freshStart));
+    expect(
+      gateway.substring(freshStart, runtimeStart),
+      isNot(contains('_auditNativeSkillParity')),
+    );
+    expect(gateway, isNot(contains('bypassCooldown: true')));
+
+    expect(provisioning, contains('receipt.id == pack.id'));
+    expect(provisioning, contains('receipt.version == pack.version'));
+    expect(provisioning, contains('receipt.sha256 == pack.sha256'));
+    expect(provisioning, contains('receipt.smokePassed'));
+    expect(
+      provisioning,
+      contains('await _dependencyPackMarkersPresent(layout, pack)'),
     );
   });
 }

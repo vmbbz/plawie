@@ -565,6 +565,7 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
           text,
           15 + (0.30 * corePercent).round(),
           subMessage: 'Official upstream • $corePercent% verified path',
+          updateNotification: false,
         );
       } catch (error) {
         _log('[SETUP] Official installer progress poll skipped', error: error);
@@ -1182,8 +1183,10 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
 
   void _emitProgress(Function(SetupState) onProgress, SetupStep step,
       double progress, String message, int notifProgress,
-      {String? subMessage}) {
-    _updateSetupNotification(message, progress: notifProgress);
+      {String? subMessage, bool updateNotification = true}) {
+    if (updateNotification) {
+      _updateSetupNotification(message, progress: notifProgress);
+    }
     onProgress(SetupState(
       step: step,
       progress: progress,

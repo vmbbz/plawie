@@ -129,6 +129,15 @@ class NativeNodeSmokeProcess(
     }
 
     fun stop(): Boolean {
+        val listenerActive = isRunningOnAnyKnownPort()
+        val processActive = isIsolatedProcessAlive()
+        if (!listenerActive && !processActive) {
+            appendLog(
+                "stop skipped; no native runtime process or listener is active"
+            )
+            return true
+        }
+
         return try {
             NativeNodeEmbeddedService.stop(context.applicationContext)
             appendLog("requested embedded Node smoke service stop")

@@ -15,6 +15,7 @@ class SetupService : Service() {
     companion object {
         const val CHANNEL_ID = "openclaw_setup"
         const val NOTIFICATION_ID = 3
+        private const val MIN_NOTIFICATION_UPDATE_INTERVAL_MS = 1_000L
         var isRunning = false
             private set
         private var instance: SetupService? = null
@@ -137,8 +138,12 @@ class SetupService : Service() {
             val now = System.currentTimeMillis()
             val duplicate = text == lastNotificationText &&
                 progress == lastNotificationProgress
+            val terminal = progress >= 100
 
-            if (duplicate && now - lastNotificationAtMs < 1_000L) {
+            if (!terminal &&
+                (duplicate ||
+                    now - lastNotificationAtMs < MIN_NOTIFICATION_UPDATE_INTERVAL_MS)
+            ) {
                 return
             }
 

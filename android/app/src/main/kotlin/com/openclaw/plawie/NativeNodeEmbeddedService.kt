@@ -45,9 +45,7 @@ class NativeNodeEmbeddedService : Service() {
         val packageDir: File,
         val launcher: File,
         val manifest: File,
-        val extractedNow: Boolean,
-        val entryCount: Int,
-        val fileCount: Int,
+        val requiredFileCount: Int,
         val androidTmpPatchCount: Int
     )
 
@@ -329,8 +327,9 @@ class NativeNodeEmbeddedService : Service() {
             val script = writeFullGatewayBootstrapScript(bundle, requestedPort, requestedCanaryMode)
             appendLog(
                 "prepared full OpenClaw bundle packageDir=${bundle.packageDir.absolutePath} " +
-                    "launcher=${bundle.launcher.absolutePath} extractedNow=${bundle.extractedNow} " +
-                    "entries=${bundle.entryCount} files=${bundle.fileCount}"
+                    "launcher=${bundle.launcher.absolutePath} " +
+                    "verification=activated-receipt-and-required-files " +
+                    "requiredFiles=${bundle.requiredFileCount}"
             )
             updateNotification("Starting OpenClaw gateway…")
             startNodeScript(
@@ -493,9 +492,6 @@ class NativeNodeEmbeddedService : Service() {
             runMainEntry,
             typeboxPackage
         )
-        var extractedNow = false
-        var entryCount = 0
-        var fileCount = 0
 
         val missingRequiredFiles = requiredFiles.filterNot { it.exists() }
         if (missingRequiredFiles.isNotEmpty()) {
@@ -504,9 +500,6 @@ class NativeNodeEmbeddedService : Service() {
                     missingRequiredFiles.joinToString(",") { it.name } +
                     ". Run native setup to download the official OpenClaw release."
             )
-        } else {
-            fileCount = countExistingFiles(dir)
-            entryCount = fileCount
         }
         val provisioningBin = File(workDir(applicationContext), "provisioning/bin")
         val androidTmpPatchCount = patchOpenClawAndroidTmpDirs(
@@ -552,9 +545,8 @@ class NativeNodeEmbeddedService : Service() {
                 .put("runMainEntry", runMainEntry.absolutePath)
                 .put("packageJson", packageJson.absolutePath)
                 .put("typeboxPackage", typeboxPackage.absolutePath)
-                .put("extractedNow", extractedNow)
-                .put("entryCount", entryCount)
-                .put("fileCount", fileCount)
+                .put("verificationMode", "activated-receipt-and-required-files")
+                .put("requiredFileCount", requiredFiles.size)
                 .put("pythonDebugWheelAssetDir", PYTHON_DEBUG_WHEEL_ASSET_DIR)
                 .put("pythonDebugWheelCount", pythonDebugWheelCount)
                 .put("whisperRuntimeBinAssetDir", WHISPER_RUNTIME_BIN_ASSET_DIR)
@@ -587,9 +579,7 @@ class NativeNodeEmbeddedService : Service() {
             packageDir = packageDir,
             launcher = launcher,
             manifest = manifest,
-            extractedNow = extractedNow,
-            entryCount = entryCount,
-            fileCount = fileCount,
+            requiredFileCount = requiredFiles.size,
             androidTmpPatchCount = androidTmpPatchCount
         )
     }
@@ -963,11 +953,6 @@ class NativeNodeEmbeddedService : Service() {
             return null
         }
         return name
-    }
-
-    private fun countExistingFiles(root: File): Int {
-        if (!root.exists()) return 0
-        return root.walkTopDown().count { it.isFile }
     }
 
     private fun writeSmokeScript(

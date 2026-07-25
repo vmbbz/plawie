@@ -1706,9 +1706,6 @@ class GatewayService {
         _addActivity(
           '[NATIVE-DEFAULT] Skipping PRoot config rewrite for native startup.',
         );
-        await _auditNativeSkillParity(
-          reason: 'native pre-start',
-        );
       } else {
         await _configureGateway();
       }
@@ -4756,7 +4753,6 @@ HEARTBEAT_OK.
             _lastPostReadySkillParityAuditAt = DateTime.now();
             unawaited(_auditNativeSkillParity(
               reason: 'gateway-rpc-ready',
-              bypassCooldown: true,
             ));
           }
           unawaited(_ensureNodeConnectedAfterGatewayReady(

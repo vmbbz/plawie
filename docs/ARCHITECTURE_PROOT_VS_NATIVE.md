@@ -1,6 +1,6 @@
 # PRoot vs Native Runtime Architecture
 
-Last updated: 2026-07-25
+Last updated: 2026-07-26
 
 Status: native `libnode.so` is the intended production Gateway runtime. PRoot
 is retained as an emergency rollback runtime that is provisioned only after an
@@ -337,10 +337,14 @@ Linux command packs remain available only behind the explicit PRoot rollback
 choice. Native setup must never download, extract, or start PRoot to make an
 optional pack work.
 
-The setup UI and its single setup notification receive durable micro-progress
-from the isolated official installer: release validation, exact tarball bytes,
-pinned npm bootstrap, npm installation, and final package verification. This is
-status-only telemetry and contains no credentials.
+The setup UI receives durable micro-progress from the isolated official
+installer: release validation, exact tarball bytes, pinned npm bootstrap, npm
+installation, and final package verification. During that transaction the
+isolated installer is the only Android notification writer; Flutter polls the
+same persisted status for the in-app micro-updates without rewriting the phone
+notification. Notification updates are coalesced, while the first and terminal
+states are always published. This is status-only telemetry and contains no
+credentials.
 
 Native provider configuration is allowlisted. An external upstream provider
 such as Groq is not written into the native Gateway config until a verified
@@ -354,10 +358,12 @@ the native config before startup. A future verified native extension pack must
 extend that policy explicitly; config text alone cannot authorize package
 installation.
 
-Native skill parity checks are read-only during startup and normal chat. They
-never copy from PRoot, install remote dependency packs, or execute a repair.
-Dependency provisioning is an explicit management action, and raw Linux ELF
-packs remain restricted to an explicitly selected compatible PRoot runtime.
+Native skill parity checks are read-only during startup and normal chat. Fresh
+startup does not run a synchronous pre-listener audit; one cooldown-protected
+audit runs after Gateway RPC readiness. They never copy from PRoot, install
+remote dependency packs, or execute a repair. Dependency provisioning is an
+explicit management action, and raw Linux ELF packs remain restricted to an
+explicitly selected compatible PRoot runtime.
 
 PRoot is not downloaded, extracted, configured, or auto-started by native
 fresh setup. Its Ubuntu rootfs and separate rollback OpenClaw installation are
@@ -435,10 +441,26 @@ native `openclaw.json` no longer contains `/root` after configuring the NDK
 bridge. Without this, embedded Node can fail with `ENOENT` while trying to
 create Linux-only paths such as `/root`.
 
-Observed native startup memory in the full Gateway bootstrap log included an
-RSS near `452.6 MB` at ready and near `501.7 MB` post-ready. This is full
-OpenClaw under native Node, not a tiny smoke process. PRoot's additional cost is
-the compatibility/userland layer around a similar Gateway workload.
+The 2026-07-26 fresh-install trace reached Gateway-ready about `16.25 s` after
+embedded Node launch. HTTP bind occurred about `2.48 s` before full readiness;
+the ten enabled startup plugins loaded in about `1.49 s`. The later agent-runtime
+plugin prewarm ran after readiness and completed in about `320 ms`, so it is
+retained as upstream warmup rather than moved onto the critical path.
+
+Startup trusts the already activated, cryptographically verified official-core
+receipt and checks four required package files. It does not recursively recount
+the roughly 45,824 package files on every launch. Optional asset lanes retain
+their own digest/target receipts, so unchanged Python/audio assets are reused.
+An absent native runtime is also not started merely to receive a stop command.
+
+OpenClaw's process telemetry reported roughly `679-681 MB` around readiness, but
+Android `dumpsys meminfo` for the isolated Gateway process measured about
+`295 MB` PSS and `366 MB` RSS in the same run. These metrics have different
+accounting boundaries and must not be compared as if equivalent. The main app
+process separately measured about `659 MB` PSS, including about `314 MB` of
+graphics while the avatar/log UI was open; that is a UI memory concern, not
+Gateway or dependency-pack memory. Native still removes PRoot's compatibility
+and Ubuntu-userland overhead around the Gateway workload.
 
 ## Release Edge Cases
 
