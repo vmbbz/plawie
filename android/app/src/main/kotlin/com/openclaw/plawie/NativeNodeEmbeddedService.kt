@@ -513,8 +513,8 @@ class NativeNodeEmbeddedService : Service() {
             packageDir,
             File(workDir(applicationContext), "tmp/openclaw")
         )
-        val androidStartupCheckpointPatchCount =
-            patchOpenClawAndroidStartupCheckpoint(packageDir)
+        val androidStartupCompatibilityPatchCount =
+            patchOpenClawAndroidStartupMigrations(packageDir)
         val pythonDebugWheelCount = copyPythonDebugWheelAssets(
             File(workDir(applicationContext), "provisioning/python-debug/wheels")
         )
@@ -571,8 +571,8 @@ class NativeNodeEmbeddedService : Service() {
                 .put("agentCliBinCount", agentBinCount)
                 .put("androidTmpPatchCount", androidTmpPatchCount)
                 .put(
-                    "androidStartupCheckpointPatchCount",
-                    androidStartupCheckpointPatchCount
+                    "androidStartupCompatibilityPatchCount",
+                    androidStartupCompatibilityPatchCount
                 )
                 .put("bindHost", HOST)
                 .put("bindPort", port)
@@ -628,22 +628,33 @@ class NativeNodeEmbeddedService : Service() {
 
     /**
      * The official Gateway fast path already guards and pins the selected
-     * config snapshot in prepareGatewayRunBootstrap(). OpenClaw then runs a
-     * second desktop-oriented startup-migration checkpoint backed by a
-     * short-lived node:sqlite connection. Node 22.22.3's Android libnode build
-     * can open and write that database, but crashes while closing the
-     * checkpoint connection. Keep the config guard and state migrations; skip
-     * only the redundant SQLite checkpoint for the embedded Android runtime.
+     * config snapshot in prepareGatewayRunBootstrap(). It then enters a
+     * desktop-oriented legacy state-migration preflight before the Gateway
+     * opens its normal state database. Direct device canaries prove that this
+     * Android libnode build can import node:sqlite and open, write, read, and
+     * close a database; the SIGSEGV is isolated to that legacy preflight.
+     *
+     * Plawie's native state directory is app-owned and starts on the current
+     * schema. It is never populated by importing the PRoot rollback home, so
+     * automatic desktop legacy migration is neither required nor safe here.
+     * Keep config snapshot validation and normal Gateway state persistence,
+     * while disabling the legacy migration pass and its secondary SQLite
+     * checkpoint only for process.platform === "android".
      */
-    private fun patchOpenClawAndroidStartupCheckpoint(packageDir: File): Int {
+    private fun patchOpenClawAndroidStartupMigrations(packageDir: File): Int {
         val distDir = File(packageDir, "dist")
         if (!distDir.isDirectory) return 0
 
         val functionStart = Regex(
             """function shouldRequireStartupMigrationCheckpoint\(commandPath\) \{\r?\n"""
         )
-        val androidGuard =
+        val checkpointGuard =
             "\tif (process.platform === \"android\") return false;"
+        val migrationSource =
+            "\tconst shouldConsiderStateMigration = shouldMigrateStateFromPath(commandPath);"
+        val migrationGuard =
+            "\tconst shouldConsiderStateMigration = process.platform !== \"android\" && " +
+                "shouldMigrateStateFromPath(commandPath);"
         var patchedCount = 0
         var compatibleFileFound = false
 
@@ -655,31 +666,37 @@ class NativeNodeEmbeddedService : Service() {
             }
             ?.forEach { file ->
                 val raw = file.readText()
-                if (raw.contains(androidGuard)) {
-                    compatibleFileFound = true
-                    return@forEach
-                }
-                if (!functionStart.containsMatchIn(raw)) return@forEach
+                var updated = raw
 
-                file.writeText(
-                    raw.replaceFirst(
+                if (!updated.contains(checkpointGuard)) {
+                    if (!functionStart.containsMatchIn(updated)) return@forEach
+                    updated = updated.replaceFirst(
                         functionStart,
                         "function shouldRequireStartupMigrationCheckpoint(commandPath) {\n" +
-                            "$androidGuard\n"
+                            "$checkpointGuard\n"
                     )
-                )
+                }
+
+                if (!updated.contains(migrationGuard)) {
+                    if (!updated.contains(migrationSource)) return@forEach
+                    updated = updated.replaceFirst(migrationSource, migrationGuard)
+                }
+
                 compatibleFileFound = true
-                patchedCount++
+                if (updated != raw) {
+                    file.writeText(updated)
+                    patchedCount++
+                }
             }
 
         if (!compatibleFileFound) {
             throw IllegalStateException(
                 "Official OpenClaw package is missing the Android-compatible " +
-                    "startup checkpoint hook. Update Plawie before running this release."
+                    "startup migration hooks. Update Plawie before running this release."
             )
         }
         appendLog(
-            "verified OpenClaw Android startup checkpoint adapter " +
+            "verified OpenClaw Android startup migration adapter " +
                 "patchedFiles=$patchedCount"
         )
         return patchedCount

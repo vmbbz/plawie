@@ -223,11 +223,22 @@ void main() {
     expect(nativeRuntime, contains('traceBlockedNpm'));
     expect(
       nativeRuntime,
-      contains('patchOpenClawAndroidStartupCheckpoint(packageDir)'),
+      contains('patchOpenClawAndroidStartupMigrations(packageDir)'),
     );
     expect(
       nativeRuntime,
       contains('if (process.platform === \\"android\\") return false;'),
+    );
+    expect(
+      nativeRuntime,
+      contains(
+        'process.platform !== \\"android\\" && " +\n'
+        '                "shouldMigrateStateFromPath(commandPath);',
+      ),
+    );
+    expect(
+      gateway,
+      contains('Native setup must enter waitForStartup immediately'),
     );
     expect(gateway, contains('_applyNativeProviderConfigPolicy'));
     expect(gateway, contains('_applyNativeBundledPluginPolicy'));

@@ -1767,9 +1767,23 @@ class GatewayService {
         await _verifyGatewayConfigHardened(reason: 'post-start');
       }
 
-      // Force token re-acquisition after start so the connection never
-      // uses stale auth from a previous process.
-      await fetchAuthenticatedDashboardUrl(force: true).catchError((_) => null);
+      // Native setup must enter waitForStartup immediately so an isolated
+      // libnode crash is surfaced by the process probe. Dashboard discovery
+      // can wait for the listener and must not hold setup inside attachOrStart
+      // for minutes while the native process has already exited.
+      if (nativeProductionOwner) {
+        unawaited(
+          fetchAuthenticatedDashboardUrl(force: true)
+              .timeout(
+                const Duration(seconds: 8),
+                onTimeout: () => null,
+              )
+              .catchError((_) => null),
+        );
+      } else {
+        await fetchAuthenticatedDashboardUrl(force: true)
+            .catchError((_) => null);
+      }
 
       _consecutiveFailures = 0;
       _httpWaitingSince =
@@ -1827,6 +1841,12 @@ class GatewayService {
         throw TimeoutException(
             'Gateway process failed to start after ${timeout.inSeconds}s');
       }
+      if (_state.status == GatewayStatus.error) {
+        throw StateError(
+          _state.errorMessage ??
+              'Gateway entered an error state during startup.',
+        );
+      }
       if (_state.status == GatewayStatus.running) break;
       if (expectsNativeFullGateway) {
         final nativeProcessAlive =
@@ -1879,6 +1899,12 @@ class GatewayService {
       if (DateTime.now().difference(startTime) > timeout) {
         throw TimeoutException(
             'Gateway health check timed out after ${timeout.inSeconds}s');
+      }
+      if (_state.status == GatewayStatus.error) {
+        throw StateError(
+          _state.errorMessage ??
+              'Gateway entered an error state before health was ready.',
+        );
       }
       try {
         final token = await retrieveTokenFromConfig()

@@ -170,14 +170,20 @@ $filesDir/native-node-embedded/native-home/
 $filesDir/native-node-embedded/native-home/.openclaw/
 ```
 
-Before launch, the Android runtime adapter applies two narrow, idempotent
+Before launch, the Android runtime adapter applies narrow, idempotent
 mobile compatibility changes to the verified installed tree:
 
 - `/tmp/openclaw` is redirected into app-private storage.
-- The desktop startup-migration SQLite checkpoint is disabled only on Android.
-  OpenClaw's earlier guarded config snapshot, config guard, and state migrations
-  still run. This avoids a Node 22.22.3 Android `libnode.so` close-path crash
-  after the short-lived checkpoint writes its WAL.
+- The desktop legacy state-migration preflight and its secondary SQLite
+  checkpoint are disabled only on Android. OpenClaw's guarded config snapshot,
+  config validation, and normal Gateway SQLite state still run. Direct device
+  canaries pass SQLite import/open/write/read/close; the crash is specific to
+  the legacy migration preflight. Plawie's native state starts on the current
+  schema and is not imported from the separate PRoot rollback home.
+
+Native `attachOrStart` does not await dashboard discovery before entering the
+process/health waiter. If the isolated process exits, setup receives the
+diagnostic promptly instead of continuing a stale 180-second progress loop.
 
 The isolated Gateway service is non-sticky. Android must not resurrect a
 crashed production Gateway with an empty intent, because the default diagnostic
