@@ -192,6 +192,8 @@ void main() {
     ).readAsString();
     final gateway =
         await File('lib/services/gateway_service.dart').readAsString();
+    final providers =
+        await File('lib/services/model_provider_catalog.dart').readAsString();
     final packs = await File('lib/services/skill_provisioning_service.dart')
         .readAsString();
 
@@ -218,8 +220,23 @@ void main() {
     expect(installer, contains('markIsolatedProvisionProgress'));
     expect(mainActivity, contains('getOfficialOpenClawProvisionStatus'));
     expect(nativeRuntime, contains('makeBlockedNpmProcess'));
+    expect(nativeRuntime, contains('traceBlockedNpm'));
     expect(gateway, contains('_applyNativeProviderConfigPolicy'));
+    expect(gateway, contains('_applyNativeBundledPluginPolicy'));
     expect(gateway, contains('nativeGatewayExternalPackageForProvider'));
+    expect(providers, contains('nativeGatewayBundledPluginIds'));
+
+    final nativeAuditStart =
+        gateway.indexOf('Future<void> _auditNativeSkillParity(');
+    final nativeAuditEnd =
+        gateway.indexOf('Iterable<String> _skillProvisioningActivityLines(');
+    expect(nativeAuditStart, greaterThanOrEqualTo(0));
+    expect(nativeAuditEnd, greaterThan(nativeAuditStart));
+    final nativeAudit = gateway.substring(nativeAuditStart, nativeAuditEnd);
+    expect(nativeAudit, contains('repairNativeFromProot: false'));
+    expect(nativeAudit, contains('.planSnapshot(snapshot)'));
+    expect(nativeAudit, isNot(contains('.provisionSnapshot(snapshot)')));
+    expect(nativeAudit, isNot(contains('repairNativeFromProot: true')));
   });
 
   test('setup and gateway notifications have distinct non-redundant owners',

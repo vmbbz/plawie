@@ -189,6 +189,31 @@ class ModelProviderCatalog {
     'zenmux',
   };
 
+  /// Bundled upstream plugins that are safe to activate in the stock Android
+  /// native runtime. Keeping this explicit prevents upstream startup from
+  /// discovering an optional external plugin and attempting an implicit npm
+  /// repair inside the long-lived gateway process.
+  ///
+  /// Verified native extension packs must extend this policy deliberately;
+  /// merely writing an arbitrary plugin ID into openclaw.json is not enough.
+  static const Set<String> nativeGatewayBundledPluginIds = <String>{
+    'anthropic',
+    'canvas',
+    'device-pair',
+    'google',
+    'image-generation-core',
+    'llm-task',
+    'media-understanding-core',
+    'memory-core',
+    'microsoft',
+    'openai',
+    'openrouter',
+    'phone-control',
+    'talk-voice',
+    'video-generation-core',
+    'xai',
+  };
+
   /// Upstream provider packages which must be delivered through an explicit,
   /// verified Plawie extension path before native configuration may enable
   /// them. They are never installed implicitly by gateway startup.

@@ -193,6 +193,18 @@ runtime. For example, Groq is an upstream external
 `@openclaw/groq-provider` package and cannot be enabled in native setup until a
 verified native extension pack exists.
 
+The native config writes an explicit `plugins.allow` containing only
+Android-safe bundled official-core plugins. It drops arbitrary load paths,
+legacy install records, unsupported entries, and unsupported slot selections.
+If upstream nevertheless requests npm, the launcher blocks it and records
+sanitized command arguments and a callsite in
+`native-full-gateway-bootstrap-stdio.log`; it never logs credentials.
+
+Native startup skill parity is audit-only. It uses
+`repairNativeFromProot: false` and plans missing dependencies without
+installing them. Gateway attach, pre-start, readiness, and chat must not copy
+from PRoot or download/execute a dependency pack as a side effect.
+
 The OpenClaw core receipt is separate from Plawie optional dependency-pack
 receipts:
 

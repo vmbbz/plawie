@@ -1,6 +1,6 @@
 # PRoot vs Native Runtime Architecture
 
-Last updated: 2026-07-21
+Last updated: 2026-07-25
 
 Status: native `libnode.so` is the intended production Gateway runtime. PRoot
 is retained as an emergency rollback runtime that is provisioned only after an
@@ -322,6 +322,18 @@ Native provider configuration is allowlisted. An external upstream provider
 such as Groq is not written into the native Gateway config until a verified
 native extension delivery path exists; the Gateway is never allowed to launch
 an automatic npm/plugin-repair transaction during normal startup.
+
+Native plugin activation is also allowlisted to Android-safe plugins already
+shipped in the verified official core. Arbitrary plugin load paths, legacy
+install records, unsupported entries, and unsupported slots are removed from
+the native config before startup. A future verified native extension pack must
+extend that policy explicitly; config text alone cannot authorize package
+installation.
+
+Native skill parity checks are read-only during startup and normal chat. They
+never copy from PRoot, install remote dependency packs, or execute a repair.
+Dependency provisioning is an explicit management action, and raw Linux ELF
+packs remain restricted to an explicitly selected compatible PRoot runtime.
 
 PRoot is not downloaded, extracted, configured, or auto-started by native
 fresh setup. Its Ubuntu rootfs and separate rollback OpenClaw installation are

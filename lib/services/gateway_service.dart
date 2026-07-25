@@ -1597,8 +1597,6 @@ class GatewayService {
       if (nativeProductionOwner) {
         unawaited(_auditNativeSkillParity(
           reason: 'attach-existing',
-          repair: true,
-          reloadIfChanged: true,
         ));
       }
       return;
@@ -1656,8 +1654,6 @@ class GatewayService {
       if (nativeProductionOwner) {
         unawaited(_auditNativeSkillParity(
           reason: 'attach-existing-booting',
-          repair: true,
-          reloadIfChanged: true,
         ));
       }
       return;
@@ -1712,8 +1708,6 @@ class GatewayService {
         );
         await _auditNativeSkillParity(
           reason: 'native pre-start',
-          repair: true,
-          reloadIfChanged: false,
         );
       } else {
         await _configureGateway();
@@ -2971,6 +2965,7 @@ HEARTBEAT_OK.
     } else {
       _removeNativeProviderAuthMetadata(config, retainedProviderIds);
       _removeUnavailableNativeModelReferences(config, retainedProviderIds);
+      _applyNativeBundledPluginPolicy(config);
       return;
     }
 
@@ -2996,12 +2991,53 @@ HEARTBEAT_OK.
     }
     _removeNativeProviderAuthMetadata(config, retainedProviderIds);
     _removeUnavailableNativeModelReferences(config, retainedProviderIds);
+    _applyNativeBundledPluginPolicy(config);
 
     if (removedProviderIds.isNotEmpty) {
       final removed = removedProviderIds.toList()..sort();
       _addActivity(
         '[NATIVE] Removed unsupported or unconfigured gateway providers: ${removed.join(', ')}.',
       );
+    }
+  }
+
+  void _applyNativeBundledPluginPolicy(Map<String, dynamic> config) {
+    final allowed = ModelProviderCatalog.nativeGatewayBundledPluginIds.toList()
+      ..sort();
+    final rawPlugins = config['plugins'];
+    final plugins = rawPlugins is Map ? rawPlugins : <String, dynamic>{};
+    config['plugins'] = plugins;
+
+    // Native gateway startup is read-only with respect to package management.
+    // Runtime plugin paths/install records are accepted only by a future
+    // verified extension-pack flow, never by an arbitrary config mutation.
+    plugins['allow'] = allowed;
+    plugins.remove('load');
+    plugins.remove('installs');
+
+    final entries = plugins['entries'];
+    if (entries is Map) {
+      for (final rawId in entries.keys.toList(growable: false)) {
+        final id = rawId.toString().trim().toLowerCase();
+        if (!ModelProviderCatalog.nativeGatewayBundledPluginIds.contains(id)) {
+          entries.remove(rawId);
+        }
+      }
+      if (entries.isEmpty) plugins.remove('entries');
+    }
+
+    final slots = plugins['slots'];
+    if (slots is Map) {
+      for (final rawSlot in slots.keys.toList(growable: false)) {
+        final selectedId = slots[rawSlot]?.toString().trim().toLowerCase();
+        if (selectedId == null ||
+            selectedId == 'none' ||
+            !ModelProviderCatalog.nativeGatewayBundledPluginIds
+                .contains(selectedId)) {
+          slots.remove(rawSlot);
+        }
+      }
+      if (slots.isEmpty) plugins.remove('slots');
     }
   }
 
@@ -3496,8 +3532,6 @@ HEARTBEAT_OK.
 
   Future<void> _auditNativeSkillParity({
     required String reason,
-    bool repair = false,
-    bool reloadIfChanged = false,
     bool bypassCooldown = false,
   }) async {
     if (_runtime.id !=
@@ -3508,7 +3542,6 @@ HEARTBEAT_OK.
     final now = DateTime.now();
     final last = _lastSkillParityAuditAt;
     if (!bypassCooldown &&
-        !repair &&
         last != null &&
         now.difference(last) < _skillParityAuditCooldown) {
       return;
@@ -3516,31 +3549,12 @@ HEARTBEAT_OK.
 
     _skillParityAuditInFlight = true;
     try {
-      var snapshot = await SkillParityAuditService.instance
-          .audit(repairNativeFromProot: repair)
+      final snapshot = await SkillParityAuditService.instance
+          .audit(repairNativeFromProot: false)
           .timeout(const Duration(seconds: 20));
-      var provisioning = await SkillProvisioningService.instance
-          .provisionSnapshot(snapshot)
-          .timeout(const Duration(minutes: 4));
-      final provisioningChanged = provisioning.changed;
-      final provisioningReloadRecommended = provisioning.reloadRecommended;
-      if (provisioningChanged || provisioningReloadRecommended) {
-        final refreshedSnapshot = await SkillParityAuditService.instance
-            .audit(
-              repairNativeFromProot: false,
-              cacheTtl: Duration.zero,
-            )
-            .timeout(const Duration(seconds: 20));
-        final refreshedProvisioning = await SkillProvisioningService.instance
-            .planSnapshot(refreshedSnapshot)
-            .timeout(const Duration(seconds: 20));
-        _addActivity(
-          '[SKILL-PROVISION] refreshed after repair: '
-          '${refreshedProvisioning.compactLogLine} reason=$reason',
-        );
-        snapshot = refreshedSnapshot;
-        provisioning = refreshedProvisioning;
-      }
+      final provisioning = await SkillProvisioningService.instance
+          .planSnapshot(snapshot)
+          .timeout(const Duration(seconds: 20));
       _lastSkillParityAuditAt = DateTime.now();
       _lastSkillParitySnapshot = snapshot;
       _lastSkillProvisioningReport = provisioning;
@@ -3563,24 +3577,9 @@ HEARTBEAT_OK.
       }
       if (snapshot.repair.errors.isNotEmpty) {
         _addActivity(
-          '[SKILL-PARITY] repair errors: '
+          '[SKILL-PARITY] audit errors: '
           '${snapshot.repair.errors.take(4).join('; ')}',
         );
-      }
-      if (snapshot.repair.changed && reloadIfChanged) {
-        _addActivity(
-          '[SKILL-PARITY] Native skill mirror changed; reloading Gateway.',
-        );
-        await applyActiveOwnerConfigChange('native skill parity mirror')
-            .timeout(const Duration(seconds: 35), onTimeout: () {});
-      }
-      if (provisioningReloadRecommended && reloadIfChanged) {
-        _addActivity(
-          '[SKILL-PROVISION] Native dependency files changed; reloading Gateway.',
-        );
-        await applyActiveOwnerConfigChange(
-                'native skill dependency provisioning')
-            .timeout(const Duration(seconds: 35), onTimeout: () {});
       }
     } catch (e) {
       _addActivity('[SKILL-PARITY] audit failed ($reason): $e');
@@ -4701,7 +4700,6 @@ HEARTBEAT_OK.
             unawaited(_auditNativeSkillParity(
               reason: 'gateway-rpc-ready',
               bypassCooldown: true,
-              reloadIfChanged: true,
             ));
           }
           unawaited(_ensureNodeConnectedAfterGatewayReady(
@@ -5345,7 +5343,6 @@ $message''';
         GatewayRuntimeRegistry.nativeNodeFullGatewayProduction.id) {
       await _auditNativeSkillParity(
         reason: 'chat-context',
-        repair: false,
       );
     }
 

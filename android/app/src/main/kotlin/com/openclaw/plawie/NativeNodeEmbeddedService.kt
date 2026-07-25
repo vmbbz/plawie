@@ -1434,22 +1434,52 @@ class NativeNodeEmbeddedService : Service() {
               const blockedNativeNpmMessage = (command) =>
                 "Blocked automatic " + String(command) +
                 " plugin repair in the native gateway. Install external providers only through a verified Plawie dependency pack.";
-              const makeBlockedNpmProcess = (command) => {
+              const sanitizeNpmArg = (value) =>
+                String(value)
+                  .replace(/([?&](?:token|auth|password)=)[^&\s]+/gi, "${'$'}1[REDACTED]")
+                  .replace(/(\/\/)[^/:\s]+:[^@\s]+@/g, "${'$'}1[REDACTED]@");
+              const traceBlockedNpm = (command, args = []) => {
+                if (nativeNpmSpawnTraced) return;
+                nativeNpmSpawnTraced = true;
+                const argv = Array.isArray(args)
+                  ? args.map((value) => sanitizeNpmArg(value))
+                  : [];
+                const stack = new Error().stack || "";
+                process.stderr.write(
+                  "[NATIVE-NPM] blocked " + JSON.stringify({
+                    command: path.basename(String(command)),
+                    args: argv
+                  }) + "\n"
+                );
+                process.stderr.write(
+                  "[NATIVE-NPM] callsite " +
+                  stack.split("\n").slice(2, 9).join(" | ") +
+                  "\n"
+                );
+              };
+              const makeBlockedNpmProcess = (command, args = []) => {
                 const proc = new EventEmitter();
                 proc.stdout = new PassThrough();
                 proc.stderr = new PassThrough();
                 proc.stdin = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+                proc.stdio = [proc.stdin, proc.stdout, proc.stderr];
                 proc.pid = 0;
                 proc.killed = false;
+                proc.connected = false;
                 proc.exitCode = null;
                 proc.signalCode = null;
                 proc.kill = () => {
                   proc.killed = true;
                   return false;
                 };
+                proc.ref = () => proc;
+                proc.unref = () => proc;
+                proc.disconnect = () => {};
                 setImmediate(() => {
+                  traceBlockedNpm(command, args);
                   const message = blockedNativeNpmMessage(command);
                   process.stderr.write("[NATIVE-NPM] " + message + "\n");
+                  proc.emit("spawn");
                   proc.stderr.write(message + "\n");
                   proc.stdout.end();
                   proc.stderr.end();
@@ -1459,7 +1489,8 @@ class NativeNodeEmbeddedService : Service() {
                 });
                 return proc;
               };
-              const blockedNpmSync = (asObject, command) => {
+              const blockedNpmSync = (asObject, command, args = []) => {
+                traceBlockedNpm(command, args);
                 const message = blockedNativeNpmMessage(command);
                 const stderr = Buffer.from(message + "\n");
                 if (asObject) {
@@ -1480,25 +1511,7 @@ class NativeNodeEmbeddedService : Service() {
               };
               childProcess.spawn = function(command, args, options) {
                 if (pythonKind(command)) return makeProcess(command, args, options || {});
-                if (npmKind(command)) return makeBlockedNpmProcess(command);
-                if (npmKind(command) && !nativeNpmSpawnTraced) {
-                  nativeNpmSpawnTraced = true;
-                  const argv = Array.isArray(args)
-                    ? args.map((value) => String(value))
-                    : [];
-                  const stack = new Error().stack || "";
-                  process.stderr.write(
-                    `[NATIVE-NPM] spawn ${'$'}{JSON.stringify({
-                      command: String(command),
-                      args: argv
-                    })}\n`
-                  );
-                  process.stderr.write(
-                    `[NATIVE-NPM] callsite ${'$'}{
-                      stack.split("\n").slice(1, 8).join(" | ")
-                    }\n`
-                  );
-                }
+                if (npmKind(command)) return makeBlockedNpmProcess(command, args);
                 return original.spawn.apply(this, arguments);
               };
               childProcess.execFile = function(file, args, options, callback) {
@@ -1514,7 +1527,7 @@ class NativeNodeEmbeddedService : Service() {
                   actualOptions = {};
                 }
                 if (npmKind(file)) {
-                  const proc = makeBlockedNpmProcess(file);
+                  const proc = makeBlockedNpmProcess(file, actualArgs || []);
                   if (actualCallback) {
                     let stdout = "";
                     let stderr = "";
@@ -1578,19 +1591,19 @@ class NativeNodeEmbeddedService : Service() {
               };
               childProcess.spawnSync = function(command, args, options) {
                 if (pythonKind(command)) return syncBlocked("object");
-                if (npmKind(command)) return blockedNpmSync(true, command);
+                if (npmKind(command)) return blockedNpmSync(true, command, args);
                 return original.spawnSync.apply(this, arguments);
               };
               childProcess.execFileSync = function(file, args, options) {
                 if (pythonKind(file)) return syncBlocked("buffer");
-                if (npmKind(file)) return blockedNpmSync(false, file);
+                if (npmKind(file)) return blockedNpmSync(false, file, args);
                 return original.execFileSync.apply(this, arguments);
               };
               childProcess.execSync = function(command, options) {
                 const tokens = tokenise(command);
                 if (tokens.length && pythonKind(tokens[0])) return syncBlocked("buffer");
                 if (tokens.length && npmKind(tokens[0])) {
-                  return blockedNpmSync(false, tokens[0]);
+                  return blockedNpmSync(false, tokens[0], tokens.slice(1));
                 }
                 return original.execSync.apply(this, arguments);
               };
