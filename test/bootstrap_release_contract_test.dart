@@ -221,6 +221,14 @@ void main() {
     expect(mainActivity, contains('getOfficialOpenClawProvisionStatus'));
     expect(nativeRuntime, contains('makeBlockedNpmProcess'));
     expect(nativeRuntime, contains('traceBlockedNpm'));
+    expect(
+      nativeRuntime,
+      contains('patchOpenClawAndroidStartupCheckpoint(packageDir)'),
+    );
+    expect(
+      nativeRuntime,
+      contains('if (process.platform === \\"android\\") return false;'),
+    );
     expect(gateway, contains('_applyNativeProviderConfigPolicy'));
     expect(gateway, contains('_applyNativeBundledPluginPolicy'));
     expect(gateway, contains('nativeGatewayExternalPackageForProvider'));
@@ -259,6 +267,9 @@ void main() {
         contains('NativeNodeEmbeddedService.clearGatewayNotification'));
     expect(nativeRuntime, contains('private const val NOTIFICATION_ID = 7'));
     expect(nativeRuntime, contains('stopForeground(true)'));
+    expect(nativeRuntime, contains('discarded null restart intent'));
+    expect(nativeRuntime, contains('return START_NOT_STICKY'));
+    expect(nativeRuntime, isNot(contains('return START_STICKY')));
     expect(nodeService, contains('const val NOTIFICATION_ID = 9'));
     expect(nodeService,
         contains('Node foreground service deferred until setup completes'));

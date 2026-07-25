@@ -68,6 +68,13 @@ Current owner-aware control-plane coverage:
   runtime home.
 - Gateway startup skips PRoot wrapper repair and passive PRoot package auto-heal
   while native owns the Gateway.
+- The native adapter keeps OpenClaw's guarded config snapshot, config guard, and
+  state migrations, but skips the redundant desktop startup-migration SQLite
+  checkpoint on Android because Node 22.22.3 `libnode.so` crashes while closing
+  that short-lived checkpoint connection.
+- The isolated native Gateway service is non-sticky; only an explicit owner or
+  watchdog request may restart it. Android must never turn a production crash
+  into an implicit `18790` diagnostics process.
 - Provider credential changes restart the native Gateway owner instead of
   calling the PRoot-only `openclaw reload` path.
 - Dashboard pairing uses Gateway RPC first; PRoot CLI approval is rollback-only

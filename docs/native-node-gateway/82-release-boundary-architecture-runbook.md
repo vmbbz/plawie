@@ -170,6 +170,21 @@ $filesDir/native-node-embedded/native-home/
 $filesDir/native-node-embedded/native-home/.openclaw/
 ```
 
+Before launch, the Android runtime adapter applies two narrow, idempotent
+mobile compatibility changes to the verified installed tree:
+
+- `/tmp/openclaw` is redirected into app-private storage.
+- The desktop startup-migration SQLite checkpoint is disabled only on Android.
+  OpenClaw's earlier guarded config snapshot, config guard, and state migrations
+  still run. This avoids a Node 22.22.3 Android `libnode.so` close-path crash
+  after the short-lived checkpoint writes its WAL.
+
+The isolated Gateway service is non-sticky. Android must not resurrect a
+crashed production Gateway with an empty intent, because the default diagnostic
+port would otherwise hide the crash behind a healthy `18790` smoke process.
+The app watchdog may restart the Gateway only through an explicit production
+owner request.
+
 The installed package must satisfy this layout before native Gateway start:
 
 ```text

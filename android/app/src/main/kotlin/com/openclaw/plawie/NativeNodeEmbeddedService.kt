@@ -130,6 +130,14 @@ class NativeNodeEmbeddedService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent == null) {
+            appendLog(
+                "discarded null restart intent; native Node runtimes require an explicit owner request"
+            )
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
         if (intent?.action == ACTION_PROMOTE_NOTIFICATION) {
             foregroundNotificationId = NOTIFICATION_ID
             startForeground(
@@ -138,7 +146,7 @@ class NativeNodeEmbeddedService : Service() {
             )
             getSystemService(NotificationManager::class.java)
                 .cancel(SetupService.NOTIFICATION_ID)
-            return START_STICKY
+            return START_NOT_STICKY
         }
 
         foregroundNotificationId = if (SetupGuards.isSetupInProgress(applicationContext)) {
@@ -152,11 +160,16 @@ class NativeNodeEmbeddedService : Service() {
             "Starting OpenClaw gateway…"
         }
         startForeground(foregroundNotificationId, buildNotification(startupText))
-        when (intent?.action) {
+        when (intent.action) {
             ACTION_STOP -> stopEmbeddedRuntime(startId)
-            else -> startEmbeddedRuntime(intent)
+            ACTION_START -> startEmbeddedRuntime(intent)
+            else -> {
+                appendLog("discarded unsupported service action=${intent.action}")
+                releaseForegroundNotification()
+                stopSelf(startId)
+            }
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
@@ -500,6 +513,8 @@ class NativeNodeEmbeddedService : Service() {
             packageDir,
             File(workDir(applicationContext), "tmp/openclaw")
         )
+        val androidStartupCheckpointPatchCount =
+            patchOpenClawAndroidStartupCheckpoint(packageDir)
         val pythonDebugWheelCount = copyPythonDebugWheelAssets(
             File(workDir(applicationContext), "provisioning/python-debug/wheels")
         )
@@ -555,6 +570,10 @@ class NativeNodeEmbeddedService : Service() {
                 .put("agentCliBinAssetDir", AGENT_CLI_BIN_ASSET_DIR)
                 .put("agentCliBinCount", agentBinCount)
                 .put("androidTmpPatchCount", androidTmpPatchCount)
+                .put(
+                    "androidStartupCheckpointPatchCount",
+                    androidStartupCheckpointPatchCount
+                )
                 .put("bindHost", HOST)
                 .put("bindPort", port)
                 .put("canaryMode", canaryMode)
@@ -604,6 +623,65 @@ class NativeNodeEmbeddedService : Service() {
                     "tmpDir=${nativeTmpDir.absolutePath}"
             )
         }
+        return patchedCount
+    }
+
+    /**
+     * The official Gateway fast path already guards and pins the selected
+     * config snapshot in prepareGatewayRunBootstrap(). OpenClaw then runs a
+     * second desktop-oriented startup-migration checkpoint backed by a
+     * short-lived node:sqlite connection. Node 22.22.3's Android libnode build
+     * can open and write that database, but crashes while closing the
+     * checkpoint connection. Keep the config guard and state migrations; skip
+     * only the redundant SQLite checkpoint for the embedded Android runtime.
+     */
+    private fun patchOpenClawAndroidStartupCheckpoint(packageDir: File): Int {
+        val distDir = File(packageDir, "dist")
+        if (!distDir.isDirectory) return 0
+
+        val functionStart = Regex(
+            """function shouldRequireStartupMigrationCheckpoint\(commandPath\) \{\r?\n"""
+        )
+        val androidGuard =
+            "\tif (process.platform === \"android\") return false;"
+        var patchedCount = 0
+        var compatibleFileFound = false
+
+        distDir.listFiles()
+            ?.filter { file ->
+                file.isFile &&
+                    file.name.startsWith("config-guard-") &&
+                    file.name.endsWith(".js")
+            }
+            ?.forEach { file ->
+                val raw = file.readText()
+                if (raw.contains(androidGuard)) {
+                    compatibleFileFound = true
+                    return@forEach
+                }
+                if (!functionStart.containsMatchIn(raw)) return@forEach
+
+                file.writeText(
+                    raw.replaceFirst(
+                        functionStart,
+                        "function shouldRequireStartupMigrationCheckpoint(commandPath) {\n" +
+                            "$androidGuard\n"
+                    )
+                )
+                compatibleFileFound = true
+                patchedCount++
+            }
+
+        if (!compatibleFileFound) {
+            throw IllegalStateException(
+                "Official OpenClaw package is missing the Android-compatible " +
+                    "startup checkpoint hook. Update Plawie before running this release."
+            )
+        }
+        appendLog(
+            "verified OpenClaw Android startup checkpoint adapter " +
+                "patchedFiles=$patchedCount"
+        )
         return patchedCount
     }
 

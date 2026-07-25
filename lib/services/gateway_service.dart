@@ -1814,6 +1814,10 @@ class GatewayService {
   Future<void> waitForStartup(
       {Duration timeout = const Duration(seconds: 120)}) async {
     final startTime = DateTime.now();
+    final expectsNativeFullGateway =
+        _runtime.id == 'native-node-full-gateway-production' ||
+            _runtime.id == 'native-node-full-gateway-bootstrap';
+    var nativeProcessObserved = false;
 
     // 1. Wait for the gateway process to exist.
     // Do not depend only on the 15s health timer to flip status->running:
@@ -1824,6 +1828,33 @@ class GatewayService {
             'Gateway process failed to start after ${timeout.inSeconds}s');
       }
       if (_state.status == GatewayStatus.running) break;
+      if (expectsNativeFullGateway) {
+        final nativeProcessAlive =
+            await NativeBridge.isNativeNodeIsolatedProcessAlive()
+                .timeout(const Duration(seconds: 2), onTimeout: () => false);
+        if (nativeProcessAlive) {
+          nativeProcessObserved = true;
+        } else if (nativeProcessObserved) {
+          String diagnostics = '';
+          try {
+            diagnostics =
+                await _runtime.getLogs().timeout(const Duration(seconds: 3));
+          } catch (_) {}
+          final diagnosticTail = diagnostics
+              .split('\n')
+              .where((line) => line.trim().isNotEmpty)
+              .toList()
+              .reversed
+              .take(6)
+              .toList()
+              .reversed
+              .join('\n');
+          throw StateError(
+            'Native OpenClaw gateway exited before its health endpoint became '
+            'available.${diagnosticTail.isEmpty ? '' : '\n$diagnosticTail'}',
+          );
+        }
+      }
       final processAlive = await _runtime
           .isRunning()
           .timeout(const Duration(seconds: 3), onTimeout: () => false);
