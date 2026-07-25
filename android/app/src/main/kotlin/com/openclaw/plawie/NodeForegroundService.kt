@@ -48,6 +48,9 @@ class NodeForegroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var startTime: Long = 0
     private var sharesNativeGatewayNotification = false
+    private var foregroundStarted = false
+    @Volatile
+    private var lastNotificationText: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -71,7 +74,14 @@ class NodeForegroundService : Service() {
         if (startTime == 0L) {
             startTime = System.currentTimeMillis()
         }
-        startForeground(activeNotificationId(), buildNotification("Node connected"))
+        if (!foregroundStarted) {
+            lastNotificationText = "Node connected"
+            startForeground(
+                activeNotificationId(),
+                buildNotification("Node connected"),
+            )
+            foregroundStarted = true
+        }
         acquireWakeLock()
         return START_STICKY
     }
@@ -81,14 +91,28 @@ class NodeForegroundService : Service() {
         instance = null
         releaseWakeLock()
         releaseForegroundNotification()
+        foregroundStarted = false
+        lastNotificationText = null
         super.onDestroy()
     }
 
     private fun updateNotification(text: String) {
+        synchronized(this) {
+            if (lastNotificationText == text) {
+                return
+            }
+            lastNotificationText = text
+        }
         try {
             val manager = getSystemService(NotificationManager::class.java)
             manager.notify(activeNotificationId(), buildNotification(text))
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            synchronized(this) {
+                if (lastNotificationText == text) {
+                    lastNotificationText = null
+                }
+            }
+        }
     }
 
     private fun acquireWakeLock() {

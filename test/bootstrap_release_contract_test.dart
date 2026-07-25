@@ -319,6 +319,16 @@ void main() {
     );
     expect(nodeService, contains('if (wakeLock?.isHeld == true)'));
     expect(nodeService, contains('stopForeground(false)'));
+    expect(nodeService, contains('if (lastNotificationText == text)'));
+    expect(nativeRuntime, contains('if (lastNotificationText == text)'));
+    expect(
+      gateway,
+      isNot(
+        contains(
+          'action.status == SkillProvisioningActionStatus.missingPack',
+        ),
+      ),
+    );
     expect(nodeService,
         contains('Node foreground service deferred until setup completes'));
     expect(gateway, isNot(contains('FlutterForegroundTask.startService')));

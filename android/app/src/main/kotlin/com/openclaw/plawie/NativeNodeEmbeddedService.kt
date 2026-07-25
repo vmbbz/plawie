@@ -30,6 +30,8 @@ class NativeNodeEmbeddedService : Service() {
     private var activePort = PORT
     private var activeCanaryMode = "embedded-smoke"
     private var foregroundNotificationId = GATEWAY_NOTIFICATION_ID
+    @Volatile
+    private var lastNotificationText: String? = null
     private val fullGatewayBootstrapStartClaimed = AtomicBoolean(false)
     private var lastStartIgnoredMessage: String? = null
     private var lastStartIgnoredAtMs: Long = 0L
@@ -140,6 +142,7 @@ class NativeNodeEmbeddedService : Service() {
 
         if (intent?.action == ACTION_PROMOTE_NOTIFICATION) {
             foregroundNotificationId = GATEWAY_NOTIFICATION_ID
+            lastNotificationText = "OpenClaw gateway running"
             startForeground(
                 foregroundNotificationId,
                 buildNotification("OpenClaw gateway running")
@@ -159,6 +162,7 @@ class NativeNodeEmbeddedService : Service() {
         } else {
             "Starting OpenClaw gateway…"
         }
+        lastNotificationText = startupText
         startForeground(foregroundNotificationId, buildNotification(startupText))
         when (intent.action) {
             ACTION_STOP -> stopEmbeddedRuntime(startId)
@@ -214,10 +218,21 @@ class NativeNodeEmbeddedService : Service() {
     }
 
     private fun updateNotification(text: String) {
+        synchronized(this) {
+            if (lastNotificationText == text) {
+                return
+            }
+            lastNotificationText = text
+        }
         runCatching {
             getSystemService(NotificationManager::class.java)
                 .notify(foregroundNotificationId, buildNotification(text))
         }.onFailure { error ->
+            synchronized(this) {
+                if (lastNotificationText == text) {
+                    lastNotificationText = null
+                }
+            }
             Log.w(TAG, "Could not update gateway notification", error)
         }
     }

@@ -267,15 +267,21 @@ The native runtime shares the setup record while setup is still active, then
 promotes it to the running-Gateway record at completion. Once paired, the local
 phone-node service reuses that same package/channel/ID instead of adding a
 second persistent notification. Stopping only the phone node detaches it from
-the shared record; the native Gateway remains the notification owner. The old
-Flutter foreground-task notification is not started. Hotword, screen capture,
-and terminal notifications remain separate only while those distinct
-user-enabled capabilities are active.
+the shared record; the native Gateway remains the notification owner.
+Unchanged notification text and repeated service-start requests are coalesced
+instead of reposting the same Android record. The old Flutter foreground-task
+notification is not started. Hotword, screen capture, and terminal
+notifications remain separate only while those distinct user-enabled
+capabilities are active.
 
 ## Gateway Plugins, Skills, And Device Capabilities
 
 Gateway plugin logs are runtime-extension evidence, not a complete list of
 every skill or phone action.
+
+The post-ready native skill audit emits one readiness/provisioning summary.
+Unchanged missing optional packs stay available in structured management state
+but are not repeated line-by-line in every Gateway startup log.
 
 Observed PRoot startup plugins:
 

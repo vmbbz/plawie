@@ -3692,8 +3692,7 @@ HEARTBEAT_OK.
         return action.changed ||
             action.status == SkillProvisioningActionStatus.installed ||
             action.status == SkillProvisioningActionStatus.failedSmoke ||
-            action.status == SkillProvisioningActionStatus.failedVerification ||
-            action.status == SkillProvisioningActionStatus.missingPack;
+            action.status == SkillProvisioningActionStatus.failedVerification;
       });
       for (final action in notable) {
         if (emitted >= 16) break;
