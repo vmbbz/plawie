@@ -1,6 +1,6 @@
 # Release Boundary Architecture And Runbook
 
-Date: 2026-06-02
+Date: 2026-07-25
 
 Status: current release-boundary reference after the fresh-key native default
 release gate passed.
@@ -135,15 +135,34 @@ Rules:
 
 ## Native Node Package Path
 
-The native production runtime is embedded in the Android app:
+The native production runtime in the Android app contains only Plawie-owned
+runtime components:
 
 ```text
 libnode.so
 libplawie_node_bridge.so
-assets/openclaw-node-modules.tar.gz
 ```
 
-The app extracts the OpenClaw package into app-private storage:
+It does not contain an OpenClaw package archive. On fresh setup, the app
+resolves the latest stable `openclaw/openclaw` GitHub release, verifies its
+published evidence/checksum sidecars, downloads the exact official npm tarball
+attested by that evidence, verifies its SHA-512 integrity, and installs it with
+an integrity-pinned official npm CLI bootstrap.
+
+The npm transaction runs in an isolated Android process because embedded
+`process.exit()` can terminate a libnode host process. Before npm starts, the
+app persists the verified upstream release metadata beside an app-private
+staging directory. If npm exits the installer process after writing its durable
+`exit 0` record, the UI process verifies and atomically activates that same
+staged package. Recovery never downloads the OpenClaw tarball a second time.
+
+The isolated installer also persists sanitized progress in the same durable
+status record. Flutter and the one shared setup foreground notification show
+release validation, byte-level official tarball download, pinned npm bootstrap,
+npm installation liveness, and final verification without creating a second
+notification.
+
+The verified official package is installed into app-private storage:
 
 ```text
 $filesDir/native-node-embedded/
@@ -151,19 +170,43 @@ $filesDir/native-node-embedded/native-home/
 $filesDir/native-node-embedded/native-home/.openclaw/
 ```
 
-The bundled package details proven on-device:
+The installed package must satisfy this layout before native Gateway start:
 
 ```text
 package root: lib/node_modules/openclaw
-package version: 2026.5.28
+package version: version named by the verified upstream release evidence
 declared binary entry: openclaw.mjs
 Android embedded entry used: dist/cli/run-main.js
-required Node engine: node >=22.19.0
+required Node engine: node >=22.22.3
 ```
 
 The Android launcher bypasses the desktop CLI wrapper and imports
 `dist/cli/run-main.js` directly. It also patches Android-safe temp behavior and
 rewrites copied `/root/.openclaw` paths to the native app-owned state directory.
+
+## Native Provider And Optional-Pack Boundary
+
+The embedded native Gateway is configured only with providers that can run from
+the official core or through the explicit local NDK bridge. The app removes
+stale catalog defaults and refuses an automatic npm/plugin-repair request at
+runtime. For example, Groq is an upstream external
+`@openclaw/groq-provider` package and cannot be enabled in native setup until a
+verified native extension pack exists.
+
+The OpenClaw core receipt is separate from Plawie optional dependency-pack
+receipts:
+
+- core reuse requires the exact verified upstream version and tarball integrity;
+- optional-pack reuse requires matching id, version, SHA-256, provisioned
+  markers, and a passing smoke receipt.
+
+Do not add a raw ELF command pack to native fresh setup. Stock Android blocks
+execution from app-writable storage. Native setup accepts only payloads that
+have a verified Android-native loader (APK/JNI), embedded-libnode JavaScript,
+or data-only assets. Current remote Linux command packs are excluded from
+native first-run setup and stay available only after the user explicitly
+chooses PRoot rollback. Optional-pack problems must never invalidate an already
+verified native Gateway core installation.
 
 The Dart config mirror also rewrites Linux-only PRoot paths before native reads
 them:
@@ -175,6 +218,23 @@ them:
 The latest installed-device test confirmed the native `openclaw.json` contains
 no `/root` entries after NDK bridge configuration. This prevents embedded Node
 from attempting to create `/root` during Gateway-owned local bridge turns.
+
+## Foreground Notification Ownership
+
+Foreground notifications have one owner per active role:
+
+| Role | Owner | Notification |
+| --- | --- | --- |
+| Setup, including official npm provisioning | `SetupService` and the isolated installer sharing one record | ID 3, `OpenClaw Setup` |
+| Native Gateway after setup is complete | `NativeNodeEmbeddedService` | ID 7, `OpenClaw Gateway` |
+| Explicit PRoot rollback Gateway | `PlawieForegroundService` | ID 4 |
+| Optional paired node connection | `NodeForegroundService`, only after setup completes | ID 9 |
+
+The native runtime shares the setup record while setup is still active, then
+promotes it to the running-Gateway record at completion. The old Flutter
+foreground-task notification is not started. Hotword, screen capture, and
+terminal notifications remain separate only while those distinct user-enabled
+capabilities are active.
 
 ## Gateway Plugins, Skills, And Device Capabilities
 
@@ -251,8 +311,9 @@ paths that still read or repair PRoot state:
 $filesDir/rootfs/ubuntu/root/.openclaw/
 ```
 
-Native bootstrap can hydrate selected OpenClaw state from the PRoot `.openclaw`
-tree, then rewrites unsafe Linux paths into native app-private paths.
+Fresh native bootstrap neither starts nor reads PRoot. It builds native
+app-private state from the official upstream package; PRoot is entered only
+after the user explicitly requests rollback.
 
 ## Memory And Efficiency Boundary
 
@@ -302,8 +363,8 @@ Behavior:
 - If an operator rolls back to PRoot, the marker remains applied.
 - Because the marker remains applied, rollback is sticky across force-stop and
   relaunch.
-- If native default startup fails during attach/start, `GatewayService` attempts
-  automatic PRoot restore before reporting failure.
+- If native default startup fails during attach/start, `GatewayService`
+  reports the failure and leaves PRoot rollback as an explicit user action.
 
 ## Switch To Native
 
@@ -318,7 +379,7 @@ Expected result:
 - PRoot stops.
 - Production port `18789` is released.
 - Native full Gateway starts in process
-  `com.nxg.openclawproot:native_node_smoke`.
+  `com.openclaw.plawie:native_node_smoke`.
 - `gateway_runtime_owner` becomes `native-node-full-gateway-production`.
 - `http://127.0.0.1:18789/health` returns
   `{"ok":true,"status":"live"}`.

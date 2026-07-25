@@ -30,7 +30,6 @@ import 'openclaw_service.dart';
 import 'diagnostic_service.dart';
 import 'node_service.dart';
 import 'tts_service.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 class _FastCloudRoute {
   final String provider;
@@ -1734,8 +1733,15 @@ class GatewayService {
         throw Exception('Native start failed.');
       }
 
-      // Start foreground service to keep AI agent alive in background
-      unawaited(startForegroundService());
+      // The selected Android runtime is the sole foreground-service owner.
+      // Native production uses NativeNodeEmbeddedService; explicit PRoot
+      // rollback uses PlawieForegroundService. Do not add a third Flutter
+      // foreground notification on top of either one.
+      _addActivity(
+        nativeProductionOwner
+            ? '[NATIVE] Native gateway service owns the persistent notification.'
+            : '[PROOT] PRoot gateway service owns the persistent notification.',
+      );
 
       // Warn user if battery optimization is active — Android can kill PRoot.
       // Fire-and-forget: showing the dialog must NOT block _startHealthCheck().
@@ -2118,6 +2124,15 @@ class GatewayService {
     }
   }
 
+  Future<bool> _isProotRollbackProvisioned() async {
+    try {
+      final rootfs = '${await getFilesDir()}/rootfs/ubuntu';
+      return await File('$rootfs/bin/bash').exists();
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<List<File>> _openClawConfigReadOrder() async {
     final proot = File(await _openClawConfigPath());
     final native = File(await _nativeOpenClawConfigPath());
@@ -2162,8 +2177,12 @@ class GatewayService {
     final proot = await _prootAuthProfilesFile();
     final native = await _nativeAuthProfilesFile();
     if (await _nativeConfigOwnerSelected()) {
-      return <File>[native, proot];
+      return <File>[
+        native,
+        if (await _isProotRollbackProvisioned()) proot,
+      ];
     }
+    if (!await _isProotRollbackProvisioned()) return <File>[];
     final targets = <File>[proot];
     if (await native.exists()) targets.add(native);
     return targets;
@@ -2172,19 +2191,19 @@ class GatewayService {
   Future<void> _ensureWorkspaceHeartbeatFile() async {
     try {
       final nativeOwner = await _nativeConfigOwnerSelected();
-      final roots = <String>[
-        nativeOwner
-            ? await _nativeOpenClawRootPath()
-            : await _prootOpenClawRootPath(),
-        nativeOwner
-            ? await _prootOpenClawRootPath()
-            : await _nativeOpenClawRootPath(),
-      ];
-      for (final root in roots) {
-        if (!nativeOwner && root.contains('/native-node-embedded/')) {
-          final nativeConfig = File('$root/openclaw.json');
-          if (!await nativeConfig.exists()) continue;
+      final prootReady = await _isProotRollbackProvisioned();
+      final roots = <String>[];
+      if (nativeOwner) {
+        roots.add(await _nativeOpenClawRootPath());
+        if (prootReady) roots.add(await _prootOpenClawRootPath());
+      } else if (prootReady) {
+        roots.add(await _prootOpenClawRootPath());
+        final nativeRoot = await _nativeOpenClawRootPath();
+        if (await File('$nativeRoot/openclaw.json').exists()) {
+          roots.add(nativeRoot);
         }
+      }
+      for (final root in roots) {
         final workspace = Directory('$root/workspace');
         await workspace.create(recursive: true);
 
@@ -2372,13 +2391,16 @@ HEARTBEAT_OK.
       final prootConfig = await _prootGatewayConfigFrom(workingConfig);
       final nativeConfig = await _nativeGatewayConfigFrom(workingConfig);
       final nativeOwner = await _nativeConfigOwnerSelected();
+      final prootReady = await _isProotRollbackProvisioned();
       final prootFile = File(await _openClawConfigPath());
       final nativeFile = File(await _nativeOpenClawConfigPath());
 
       if (nativeOwner) {
         await _writeConfigFileIfChanged(nativeFile, nativeConfig);
-        await _writeConfigFileIfChanged(prootFile, prootConfig);
-      } else {
+        if (prootReady) {
+          await _writeConfigFileIfChanged(prootFile, prootConfig);
+        }
+      } else if (prootReady) {
         await _writeConfigFileIfChanged(prootFile, prootConfig);
         if (await nativeFile.exists()) {
           await _writeConfigFileIfChanged(nativeFile, nativeConfig);
@@ -2463,11 +2485,16 @@ HEARTBEAT_OK.
       final prootEnv = File('${await _prootOpenClawRootPath()}/.env');
       final nativeEnv = File('${await _nativeOpenClawRootPath()}/.env');
       final envFiles = nativeOwner
-          ? <File>[nativeEnv, prootEnv]
-          : <File>[
-              prootEnv,
-              if (await nativeEnv.exists()) nativeEnv,
-            ];
+          ? <File>[
+              nativeEnv,
+              if (await _isProotRollbackProvisioned()) prootEnv,
+            ]
+          : await _isProotRollbackProvisioned()
+              ? <File>[
+                  prootEnv,
+                  if (await nativeEnv.exists()) nativeEnv,
+                ]
+              : <File>[];
 
       for (final file in envFiles) {
         String content = '';
@@ -2505,7 +2532,18 @@ HEARTBEAT_OK.
   }
 
   /// Direct I/O: configure gateway binding and node settings.
-  Future<void> _configureGateway() async {
+  Future<void> configureNativeGatewayForSetup() async {
+    if (!await _nativeConfigOwnerSelected()) {
+      throw StateError(
+          'Native gateway configuration requires the native runtime owner.');
+    }
+    await _configureGateway(applyNativeProviderPolicy: true);
+  }
+
+  /// Direct I/O: configure gateway binding and node settings.
+  Future<void> _configureGateway({
+    bool applyNativeProviderPolicy = false,
+  }) async {
     await _ensureWorkspaceHeartbeatFile();
     final config = await _readConfig();
 
@@ -2567,11 +2605,7 @@ HEARTBEAT_OK.
     (config['gateway'] as Map).remove('startup');
     (config['gateway'] as Map).remove('sidecars');
 
-    // Provider cleanup. Remove stale daemon/proxy model routes from old builds
-    // so returning installs cannot accidentally revive a removed runtime.
-    _ensureCatalogProviderDefaults(config);
     _removeLegacyOllamaConfig(config);
-    ensureGatewayTalkTtsConfig(config);
 
     // Remove keys that have never been part of the OpenClaw schema.
     // These were written by earlier builds and must be stripped so the gateway
@@ -2597,7 +2631,6 @@ HEARTBEAT_OK.
     // The mobile default uses official groups plus stable primitives so device
     // actions remain available without loading every plugin/provider tool.
     GatewayToolCatalog.applyDefaultMobilePolicy(config);
-    ensureGatewayTalkTtsConfig(config);
     final gatewayConfig = config['gateway'];
     if (gatewayConfig is Map) {
       gatewayConfig.remove('startup');
@@ -2605,7 +2638,6 @@ HEARTBEAT_OK.
     }
     final modelsConfig = config['models'];
     if (modelsConfig is Map) {
-      _ensureCatalogProviderDefaults(config);
       modelsConfig['pricing'] ??= <String, dynamic>{};
       final pricing = modelsConfig['pricing'];
       if (pricing is Map) {
@@ -2630,10 +2662,17 @@ HEARTBEAT_OK.
     if (primary is String && primary.trim().isNotEmpty) {
       config['agents']['defaults']['model']['primary'] =
           ModelProviderCatalog.canonicalizeModelId(primary);
-    } else {
+    } else if (!applyNativeProviderPolicy) {
       config['agents']['defaults']['model']['primary'] =
           ModelProviderCatalog.defaultCloudFallbackModel;
     }
+
+    if (applyNativeProviderPolicy) {
+      await _applyNativeProviderConfigPolicy(config);
+    } else {
+      _ensureCatalogProviderDefaults(config);
+    }
+    ensureGatewayTalkTtsConfig(config);
     final timeoutSeconds = config['agents']['defaults']['timeoutSeconds'];
     if (timeoutSeconds is! num || timeoutSeconds < 240) {
       config['agents']['defaults']['timeoutSeconds'] = 240;
@@ -2740,6 +2779,17 @@ HEARTBEAT_OK.
       return;
     }
     final config = await _readConfig();
+    final nativeOwner = await _nativeConfigOwnerSelected();
+    if (nativeOwner) {
+      await _applyNativeProviderConfigPolicy(config);
+      final issue = _nativeGatewayModelSelectionIssue(config, canonical);
+      if (issue != null) {
+        // Still persist the cleanup that prevents an old provider block from
+        // making the gateway try an unsupported automatic npm repair.
+        await _writeConfig(config);
+        throw StateError(issue);
+      }
+    }
     config['agents'] ??= {};
     config['agents']['defaults'] ??= {};
     if (config['agents']['defaults'] is Map) {
@@ -2747,7 +2797,11 @@ HEARTBEAT_OK.
     }
     config['agents']['defaults']['model'] ??= {};
     config['agents']['defaults']['model']['primary'] = canonical;
-    _ensureCatalogProviderDefaults(config);
+    if (nativeOwner) {
+      await _applyNativeProviderConfigPolicy(config);
+    } else {
+      _ensureCatalogProviderDefaults(config);
+    }
     try {
       if (await _runtime.isRunning()) {
         _beginGatewayConfigTransition(
@@ -2867,6 +2921,304 @@ HEARTBEAT_OK.
     }
   }
 
+  /// Native gateway configuration is intentionally allowlisted. Older builds
+  /// wrote every UI catalog provider into openclaw.json, which makes upstream
+  /// attempt plugin repair for providers such as Groq. That repair invokes a
+  /// standalone npm, unavailable (and unsafe to auto-run) on stock Android.
+  Future<void> _applyNativeProviderConfigPolicy(
+    Map<String, dynamic> config,
+  ) async {
+    final retainedProviderIds = <String>{};
+    for (final provider in ModelProviderCatalog.providers) {
+      final id = provider.id;
+      if (!ModelProviderCatalog.isProviderSupportedByNativeGateway(id)) {
+        continue;
+      }
+      if (await _hasDurableProviderCredential(config, id)) {
+        retainedProviderIds.add(id);
+      }
+    }
+
+    final models = config['models'];
+    final providers = models is Map && models['providers'] is Map
+        ? models['providers'] as Map
+        : null;
+    final existingNdkProvider =
+        providers?[ModelProviderCatalog.plawieNdkProviderId];
+    if (existingNdkProvider is Map) {
+      retainedProviderIds.add(ModelProviderCatalog.plawieNdkProviderId);
+    }
+
+    final removedProviderIds = <String>{};
+    if (providers != null) {
+      for (final rawId in providers.keys.toList(growable: false)) {
+        final id = rawId.toString().trim().toLowerCase();
+        if (!retainedProviderIds.contains(id)) {
+          providers.remove(rawId);
+          if (id.isNotEmpty) removedProviderIds.add(id);
+        }
+      }
+    }
+
+    late final Map targetProviders;
+    if (providers != null) {
+      targetProviders = providers;
+    } else if (retainedProviderIds.isNotEmpty) {
+      config['models'] ??= <String, dynamic>{};
+      final targetModels = config['models'] as Map;
+      targetModels['providers'] = <String, dynamic>{};
+      targetProviders = targetModels['providers'] as Map;
+    } else {
+      _removeNativeProviderAuthMetadata(config, retainedProviderIds);
+      _removeUnavailableNativeModelReferences(config, retainedProviderIds);
+      return;
+    }
+
+    for (final id in retainedProviderIds) {
+      final existing = targetProviders[id];
+      if (id == ModelProviderCatalog.plawieNdkProviderId) {
+        if (existing is Map) {
+          targetProviders[id] = ModelProviderCatalog.mergeProviderConfig(
+            id,
+            existing,
+          );
+        }
+        continue;
+      }
+      targetProviders[id] = ModelProviderCatalog.mergeProviderConfig(
+        id,
+        existing is Map ? existing : null,
+      );
+    }
+
+    if (targetProviders.isEmpty && models is Map) {
+      models.remove('providers');
+    }
+    _removeNativeProviderAuthMetadata(config, retainedProviderIds);
+    _removeUnavailableNativeModelReferences(config, retainedProviderIds);
+
+    if (removedProviderIds.isNotEmpty) {
+      final removed = removedProviderIds.toList()..sort();
+      _addActivity(
+        '[NATIVE] Removed unsupported or unconfigured gateway providers: ${removed.join(', ')}.',
+      );
+    }
+  }
+
+  Future<bool> _hasDurableProviderCredential(
+    Map<String, dynamic> config,
+    String provider,
+  ) async {
+    final normalized = _normalizeProvider(provider);
+    final providerConfig = config['models']?['providers']?[normalized];
+    if (providerConfig is Map &&
+        (_credentialValueLooksSet(providerConfig['apiKey']) ||
+            _credentialValueLooksSet(providerConfig['apiKeyRef']))) {
+      return true;
+    }
+
+    final envKey = _getEnvKeyForProvider(normalized);
+    final envVars = config['env']?['vars'];
+    if (envKey.isNotEmpty &&
+        envVars is Map &&
+        _credentialValueLooksSet(envVars[envKey])) {
+      return true;
+    }
+
+    try {
+      for (final authFile in await _authProfilesReadOrder()) {
+        if (!await authFile.exists()) continue;
+        final raw = await authFile.readAsString();
+        if (raw.trim().isEmpty) continue;
+        final decoded = jsonDecode(raw);
+        if (decoded is! Map) continue;
+        final profiles = decoded['profiles'];
+        if (profiles is! Map) continue;
+        final profile = profiles[authProfileIdForProvider(normalized)];
+        if (profile is! Map) continue;
+        if (_credentialValueLooksSet(profile['key']) ||
+            _credentialValueLooksSet(profile['token']) ||
+            _credentialValueLooksSet(profile['keyRef']) ||
+            _credentialValueLooksSet(profile['tokenRef'])) {
+          return true;
+        }
+      }
+    } catch (_) {
+      // A malformed optional auth profile must not preserve a provider that the
+      // native gateway cannot prove it can configure.
+    }
+    return false;
+  }
+
+  void _removeNativeProviderAuthMetadata(
+    Map<String, dynamic> config,
+    Set<String> retainedProviderIds,
+  ) {
+    final auth = config['auth'];
+    if (auth is! Map) return;
+    final managedProviderIds = <String>{
+      ...ModelProviderCatalog.providers.map((provider) => provider.id),
+      ModelProviderCatalog.plawieNdkProviderId,
+    };
+
+    final profiles = auth['profiles'];
+    if (profiles is Map) {
+      for (final rawProfileId in profiles.keys.toList(growable: false)) {
+        final profileId = rawProfileId.toString();
+        final profile = profiles[rawProfileId];
+        final configuredProvider = profile is Map
+            ? profile['provider']?.toString().trim().toLowerCase()
+            : null;
+        final provider = configuredProvider ??
+            (profileId.contains(':')
+                ? profileId.split(':').first.trim().toLowerCase()
+                : '');
+        if (managedProviderIds.contains(provider) &&
+            !retainedProviderIds.contains(provider)) {
+          profiles.remove(rawProfileId);
+        }
+      }
+      if (profiles.isEmpty) auth.remove('profiles');
+    }
+
+    final order = auth['order'];
+    if (order is Map) {
+      for (final rawProvider in order.keys.toList(growable: false)) {
+        final provider = rawProvider.toString().trim().toLowerCase();
+        if (managedProviderIds.contains(provider) &&
+            !retainedProviderIds.contains(provider)) {
+          order.remove(rawProvider);
+        }
+      }
+      if (order.isEmpty) auth.remove('order');
+    }
+    if (auth.isEmpty) config.remove('auth');
+  }
+
+  void _removeUnavailableNativeModelReferences(
+    Map<String, dynamic> config,
+    Set<String> retainedProviderIds,
+  ) {
+    final defaults = config['agents']?['defaults'];
+    if (defaults is! Map) return;
+    final model = defaults['model'];
+    if (model is! Map) return;
+
+    final primary = model['primary'];
+    if (primary is String &&
+        !_isRetainedNativeGatewayModel(primary, retainedProviderIds)) {
+      model.remove('primary');
+    }
+
+    final fallbacks = model['fallbacks'];
+    if (fallbacks is List) {
+      final retainedFallbacks = fallbacks
+          .whereType<String>()
+          .where(
+            (value) =>
+                _isRetainedNativeGatewayModel(value, retainedProviderIds),
+          )
+          .toList(growable: false);
+      if (retainedFallbacks.isEmpty) {
+        model.remove('fallbacks');
+      } else {
+        model['fallbacks'] = retainedFallbacks;
+      }
+    }
+  }
+
+  bool _isRetainedNativeGatewayModel(
+    String model,
+    Set<String> retainedProviderIds,
+  ) {
+    final canonical = ModelProviderCatalog.canonicalizeModelId(model);
+    final separator = canonical.indexOf('/');
+    if (separator <= 0) return false;
+    final provider = canonical.substring(0, separator).trim().toLowerCase();
+    return retainedProviderIds.contains(provider);
+  }
+
+  String? _nativeGatewayModelSelectionIssue(
+    Map<String, dynamic> config,
+    String model,
+  ) {
+    final canonical = ModelProviderCatalog.canonicalizeModelId(model);
+    final separator = canonical.indexOf('/');
+    if (separator <= 0) {
+      return 'Select a configured native gateway provider before choosing $canonical.';
+    }
+    final provider = canonical.substring(0, separator).trim().toLowerCase();
+    final externalPackage =
+        ModelProviderCatalog.nativeGatewayExternalPackageForProvider(provider);
+    if (externalPackage != null) {
+      return '$provider requires the upstream $externalPackage extension. '
+          'Native setup never installs provider plugins automatically; choose a supported provider or install a verified extension pack when available.';
+    }
+    if (!ModelProviderCatalog.isProviderSupportedByNativeGateway(provider)) {
+      return '$provider is not supported by the embedded native gateway.';
+    }
+    final providers = config['models']?['providers'];
+    if (providers is! Map || providers[provider] is! Map) {
+      final label =
+          ModelProviderCatalog.providerById(provider)?.label ?? provider;
+      return 'Configure a valid $label API key before selecting $canonical.';
+    }
+    return null;
+  }
+
+  bool _nativeProviderConfigIsSafe(Map<String, dynamic> config) {
+    final models = config['models'];
+    final providers = models is Map ? models['providers'] : null;
+    if (providers is Map) {
+      for (final rawProvider in providers.keys) {
+        final provider = rawProvider.toString().trim().toLowerCase();
+        if (!ModelProviderCatalog.isProviderSupportedByNativeGateway(
+            provider)) {
+          return false;
+        }
+        if (provider != ModelProviderCatalog.plawieNdkProviderId &&
+            !_configHasProviderCredential(config, provider)) {
+          return false;
+        }
+      }
+    }
+
+    final primary =
+        config['agents']?['defaults']?['model']?['primary']?.toString();
+    if (primary != null &&
+        primary.trim().isNotEmpty &&
+        !_isRetainedNativeGatewayModel(
+          primary,
+          providers is Map
+              ? providers.keys
+                  .map((value) => value.toString().trim().toLowerCase())
+                  .toSet()
+              : <String>{},
+        )) {
+      return false;
+    }
+
+    final auth = config['auth'];
+    final profiles = auth is Map ? auth['profiles'] : null;
+    final order = auth is Map ? auth['order'] : null;
+    const externalProviderIds = <String>{'groq'};
+    final hasExternalProfile = profiles is Map &&
+        profiles.keys.any((rawProfileId) {
+          final profile = profiles[rawProfileId];
+          final provider = profile is Map
+              ? profile['provider']?.toString().trim().toLowerCase()
+              : rawProfileId.toString().split(':').first.trim().toLowerCase();
+          return externalProviderIds.contains(provider);
+        });
+    final hasExternalOrder = order is Map &&
+        order.keys.any(
+          (key) => externalProviderIds.contains(
+            key.toString().trim().toLowerCase(),
+          ),
+        );
+    return !hasExternalProfile && !hasExternalOrder;
+  }
+
   /// Map a provider name to its default model string (provider/model).
   /// Public so GatewayProvider can call it during configureAndStart.
   String getModelForProvider(String provider) {
@@ -2892,6 +3244,25 @@ HEARTBEAT_OK.
   }) async {
     final openClawProvider = _normalizeProvider(provider);
     final envKey = _getEnvKeyForProvider(provider);
+    final nativeOwner = await _nativeConfigOwnerSelected();
+    final externalPackage =
+        ModelProviderCatalog.nativeGatewayExternalPackageForProvider(
+      openClawProvider,
+    );
+    if (nativeOwner && externalPackage != null) {
+      throw UnsupportedError(
+        '$openClawProvider requires the upstream $externalPackage extension. '
+        'It is not installed automatically in Plawie native mode.',
+      );
+    }
+    if (nativeOwner &&
+        !ModelProviderCatalog.isProviderSupportedByNativeGateway(
+          openClawProvider,
+        )) {
+      throw UnsupportedError(
+        '$openClawProvider is not supported by the embedded native gateway.',
+      );
+    }
 
     final defaultModels =
         ModelProviderCatalog.defaultModelsForProvider(openClawProvider);
@@ -2955,6 +3326,9 @@ HEARTBEAT_OK.
     config['gateway']['auth'] ??= {};
     (config['gateway']['auth'] as Map).remove('unauthenticatedLocalhost');
     _applyExplicitAuthMode(config);
+    if (nativeOwner) {
+      await _applyNativeProviderConfigPolicy(config);
+    }
 
     var gatewayRunningForCredentialChange = false;
     try {
@@ -12280,7 +12654,6 @@ ${lines.join('\n')}
     }
 
     const selectedOwnerId = 'native-node-full-gateway-production';
-    const rollbackOwnerId = 'proot';
     final prefs = PreferencesService();
     await prefs.init();
     final ownerBefore = prefs.gatewayRuntimeOwner;
@@ -12298,7 +12671,6 @@ ${lines.join('\n')}
     var nativeHealthOk = false;
     var wsConnected = false;
     Map<String, dynamic> nativeHealth = <String, dynamic>{};
-    Map<String, dynamic>? rollbackReport;
     Object? switchError;
     Object? wsConnectError;
 
@@ -12406,8 +12778,10 @@ ${lines.join('\n')}
       unawaited(_checkHealth());
     } catch (e) {
       switchError = e;
-      rollbackReport = await _restoreProotDefaultOwner(
-          reason: 'failed-native-default-start');
+      _addActivity(
+        '[NATIVE-DEFAULT-SWITCH] Native start failed; keeping native selected. '
+        'Use the explicit PRoot rollback command only if the user requests it.',
+      );
     } finally {
       _nativeDefaultOwnerSwitchInFlight = false;
     }
@@ -12420,7 +12794,6 @@ ${lines.join('\n')}
         productionPortReleased &&
         nativeStarted &&
         nativeHealthOk;
-    final rollbackOk = rollbackReport == null || rollbackReport['ok'] == true;
     final nativeHealthKeys = nativeHealth.keys.toList()..sort();
 
     _addActivity(
@@ -12431,19 +12804,17 @@ ${lines.join('\n')}
       'nativeStarted=$nativeStarted nativeRunning=$nativeRunning '
       'nativeHealthOk=$nativeHealthOk wsConnected=$wsConnected '
       'switchError=${switchError ?? 'none'} '
-      'wsConnectError=${wsConnectError ?? 'none'} '
-      'rollbackAttempted=${rollbackReport != null}',
+      'wsConnectError=${wsConnectError ?? 'none'}',
     );
 
     yield [
       ok ? 'Native default owner enabled' : 'Native default owner pending',
       '',
       'phase: native-default-owner-switch',
-      'mode: persistent-native-production-owner-with-explicit-proot-rollback',
+      'mode: persistent-native-production-owner',
       'ownerBefore: $ownerBefore',
       'ownerAfter: $ownerAfter',
       'selectedOwnerId: $selectedOwnerId',
-      'rollbackOwnerId: $rollbackOwnerId',
       'nativePreStartStopped: $nativePreStartStopped',
       'prootStopped: $prootStopped',
       'productionPortReleased: $productionPortReleased',
@@ -12454,18 +12825,14 @@ ${lines.join('\n')}
       'nativeHealthStatus: ${nativeHealth['status'] ?? nativeHealth['ok'] ?? 'unknown'}',
       'nativeHealthKeys: $nativeHealthKeys',
       'wsConnected: $wsConnected',
-      'rollbackAttempted: ${rollbackReport != null}',
-      'rollbackOk: $rollbackOk',
       if (switchError != null) 'switchError: $switchError',
       if (wsConnectError != null) 'wsConnectError: $wsConnectError',
-      if (rollbackReport != null)
-        'rollbackPhase: ${rollbackReport['phase']} ownerAfterRollback: ${rollbackReport['ownerAfter']} prootHealthOk: ${rollbackReport['prootHealthOk']}',
       'durationMs: ${DateTime.now().difference(startedAt).inMilliseconds}',
       '',
       ok
           ? 'Native is now persisted as the default production owner. Use /native-default-owner-rollback to restore PRoot.'
-          : 'Native default owner is not promotable from this run; PRoot rollback was attempted.',
-      'nextGate: cold-start/restart with native as selected default, then release-window rollback switch',
+          : 'Native default owner is not promotable from this run; it remains selected until you explicitly choose PRoot rollback.',
+      'nextGate: inspect native diagnostics or explicitly choose the rollback runtime',
     ].join('\n');
   }
 
@@ -16586,8 +16953,20 @@ ${lines.join('\n')}
     if (model.startsWith('agent/')) return {};
 
     final Map<String, dynamic> changedMetadata = {};
+    final canonical = ModelProviderCatalog.canonicalizeModelId(model);
     final config = await _readConfig();
-    _ensureCatalogProviderDefaults(config);
+    final nativeOwner = await _nativeConfigOwnerSelected();
+    if (nativeOwner) {
+      await _applyNativeProviderConfigPolicy(config);
+      final issue = _nativeGatewayModelSelectionIssue(config, canonical);
+      if (issue != null) {
+        await _writeConfig(config);
+        _addActivity('[MODEL] Native model sync skipped: $issue');
+        return {};
+      }
+    } else {
+      _ensureCatalogProviderDefaults(config);
+    }
 
     config['agents'] ??= {};
     config['agents']['defaults'] ??= {};
@@ -16599,8 +16978,8 @@ ${lines.join('\n')}
     final current = config['agents']['defaults']['model']['primary'] as String?;
     bool needsSync = false;
 
-    if (current != model) {
-      config['agents']['defaults']['model']['primary'] = model;
+    if (current != canonical) {
+      config['agents']['defaults']['model']['primary'] = canonical;
       needsSync = true;
     }
 
@@ -16614,9 +16993,9 @@ ${lines.join('\n')}
         }
       } catch (_) {}
       await _writeConfig(config);
-      _addActivity('[MODEL] syncToConfig: $model');
+      _addActivity('[MODEL] syncToConfig: $canonical');
 
-      changedMetadata['primaryModel'] = model;
+      changedMetadata['primaryModel'] = canonical;
     }
 
     return changedMetadata;
@@ -16721,22 +17100,6 @@ ${lines.join('\n')}
     _updateState(_state.copyWith(clearDashboardUrl: true));
   }
 
-  /// Polished background keep-alive using flutter_foreground_task.
-  /// Ensures the OpenClaw gateway survives Android memory management.
-  Future<void> startForegroundService() async {
-    try {
-      await FlutterForegroundTask.startService(
-        notificationTitle: "OpenClaw Gateway Running",
-        notificationText: "Keeping AI agent alive in background",
-        callback: () async {},
-      );
-      _addActivity(
-          '[SYS] Foreground service started (better battery + stability)');
-    } catch (e) {
-      _addActivity('[SYS] Foreground service not available: $e');
-    }
-  }
-
   void dispose() {
     _healthTimer?.cancel();
     _logSubscription?.cancel();
@@ -16799,6 +17162,11 @@ ${lines.join('\n')}
     final hasCatalogProviders = providers is Map &&
         ModelProviderCatalog.providers
             .every((provider) => providers.containsKey(provider.id));
+    final nativeProviderPolicyApplies =
+        _runtime.id != PreferencesService.gatewayRuntimeOwnerProot;
+    final hasSafeProviderConfiguration = nativeProviderPolicyApplies
+        ? _nativeProviderConfigIsSafe(config)
+        : (models is Map && providers is Map && hasCatalogProviders);
     final authRoot = config['auth'];
     final authProfiles = authRoot is Map ? authRoot['profiles'] : null;
     final authOrder = authRoot is Map ? authRoot['order'] : null;
@@ -16833,11 +17201,9 @@ ${lines.join('\n')}
         discovery is Map &&
         discovery['mdns']?['mode'] == 'off' &&
         discovery['wideArea']?['enabled'] == false &&
-        models is Map &&
-        providers is Map &&
-        hasCatalogProviders &&
-        !providers.containsKey('ollama') &&
-        !models.containsKey('startup') &&
+        hasSafeProviderConfiguration &&
+        (models is! Map || !models.containsKey('startup')) &&
+        (providers is! Map || !providers.containsKey('ollama')) &&
         !gateway.containsKey('startup') &&
         !gateway.containsKey('sidecars') &&
         hasMessagesTtsProvider &&
@@ -16921,7 +17287,11 @@ ${lines.join('\n')}
       }
     }
     GatewayToolCatalog.applyDefaultMobilePolicy(currentConfig);
-    _ensureCatalogProviderDefaults(currentConfig);
+    if (await _nativeConfigOwnerSelected()) {
+      await _applyNativeProviderConfigPolicy(currentConfig);
+    } else {
+      _ensureCatalogProviderDefaults(currentConfig);
+    }
     final currentGateway = currentConfig['gateway'];
     if (currentGateway is Map) {
       currentGateway.remove('startup');

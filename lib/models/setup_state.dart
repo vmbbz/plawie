@@ -1,5 +1,7 @@
 enum SetupStep {
   checkingStatus,
+  provisioningGateway,
+  configuringGateway,
   downloadingRootfs,
   extractingRootfs,
   installingNode,
@@ -49,6 +51,10 @@ class SetupState {
     switch (step) {
       case SetupStep.checkingStatus:
         return 'Checking status...';
+      case SetupStep.provisioningGateway:
+        return 'Downloading official OpenClaw gateway';
+      case SetupStep.configuringGateway:
+        return 'Configuring native gateway';
       case SetupStep.downloadingRootfs:
         return 'Downloading Ubuntu rootfs';
       case SetupStep.extractingRootfs:
@@ -74,26 +80,30 @@ class SetupState {
     switch (step) {
       case SetupStep.checkingStatus:
         return 0;
-      case SetupStep.downloadingRootfs:
+      case SetupStep.provisioningGateway:
         return 1;
-      case SetupStep.extractingRootfs:
+      case SetupStep.configuringGateway:
         return 2;
-      case SetupStep.installingNode:
+      case SetupStep.downloadingRootfs:
         return 3;
-      case SetupStep.installingOpenClaw:
+      case SetupStep.extractingRootfs:
         return 4;
-      case SetupStep.configuringBypass:
+      case SetupStep.installingNode:
         return 5;
-      case SetupStep.downloadingPacks:
+      case SetupStep.installingOpenClaw:
         return 6;
-      case SetupStep.cleanup:
+      case SetupStep.configuringBypass:
         return 7;
-      case SetupStep.complete:
+      case SetupStep.downloadingPacks:
         return 8;
+      case SetupStep.cleanup:
+        return 9;
+      case SetupStep.complete:
+        return 10;
       case SetupStep.error:
         return -1;
     }
   }
 
-  static const int totalSteps = 8;
+  static const int totalSteps = 10;
 }

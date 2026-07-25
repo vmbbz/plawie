@@ -1,9 +1,10 @@
 # PRoot vs Native Runtime Architecture
 
-Last updated: 2026-06-02
+Last updated: 2026-07-21
 
 Status: native `libnode.so` is the intended production Gateway runtime. PRoot
-is retained as an emergency rollback runtime.
+is retained as an emergency rollback runtime that is provisioned only after an
+explicit user request.
 
 ## Main Goal
 
@@ -256,19 +257,75 @@ Silent third-party app messaging should not be claimed as complete just because
 `phone-control` is loaded. It requires a concrete Android bridge command,
 permission review, UI confirmation policy, and a tested Gateway tool contract.
 
-## Runtime Package Scope
+## Official OpenClaw Delivery Boundary
 
-Native `libnode.so` does not require user-downloadable Linux packages to run
-the Gateway.
+Plawie does **not** bundle, mirror, sign, or publish an OpenClaw Gateway
+release. Fresh native setup always resolves the latest stable release from
+[`openclaw/openclaw`](https://github.com/openclaw/openclaw/releases), then
+installs the exact upstream-published npm tarball named by that release's
+post-publish evidence.
 
-Native Gateway requirements are bundled or app-owned:
+```text
+APK: libnode.so + Plawie Android bridge + dependency-pack verifier
+  -> official openclaw/openclaw GitHub latest release metadata
+  -> release evidence JSON + upstream SHA-256 sidecar verification
+  -> exact registry.npmjs.org OpenClaw tarball + SHA-512 integrity verification
+  -> embedded Node runs an integrity-pinned official npm CLI bootstrap
+  -> app-private native-node-embedded/full-openclaw/
+```
+
+The installer fails closed if the release is a draft/prerelease, required
+evidence is absent, evidence checksums fail, npm provenance/signature evidence
+is not affirmative, the tarball leaves the official npm registry, its SHA-512
+does not match, or the installed package layout/version is incomplete.
+
+Native Gateway requirements bundled in the APK are deliberately limited to
+Plawie-owned runtime components:
 
 - `libnode.so`;
 - `libplawie_node_bridge.so`;
-- `assets/openclaw-node-modules.tar.gz`;
-- native OpenClaw home/config mirror;
+- native OpenClaw home/config support;
 - Android node host on `127.0.0.1:8765`;
 - fllama/NDK runtime for direct local inference.
+
+Plawie GitHub release assets remain reserved for Plawie-specific signed
+dependency packs (Whisper, TTS, CLI tools, and related Android capabilities).
+They are never an OpenClaw core mirror.
+
+The core and every optional pack keep separate durable receipts:
+
+- the official core receipt binds the installed version to its verified upstream
+  tarball integrity, so an unchanged official release is not downloaded or
+  installed twice;
+- an optional-pack receipt binds the pack id, version, SHA-256, provided
+  capabilities, install time, and smoke-test result, so a valid compatible pack
+  is reused rather than downloaded again.
+
+Native fresh setup may request only packs that are genuinely runnable through a
+verified Android-native loader: APK/JNI libraries, JavaScript executed by the
+embedded libnode runtime, or data-only assets. The current remote command packs
+contain raw ELF executables, and stock Android denies execution from
+app-writable storage. They are therefore deliberately excluded from native
+first-run setup; the app records that no native-compatible optional pack is
+required instead of spending data on a guaranteed failed smoke test.
+
+Linux command packs remain available only behind the explicit PRoot rollback
+choice. Native setup must never download, extract, or start PRoot to make an
+optional pack work.
+
+The setup UI and its single setup notification receive durable micro-progress
+from the isolated official installer: release validation, exact tarball bytes,
+pinned npm bootstrap, npm installation, and final package verification. This is
+status-only telemetry and contains no credentials.
+
+Native provider configuration is allowlisted. An external upstream provider
+such as Groq is not written into the native Gateway config until a verified
+native extension delivery path exists; the Gateway is never allowed to launch
+an automatic npm/plugin-repair transaction during normal startup.
+
+PRoot is not downloaded, extracted, configured, or auto-started by native
+fresh setup. Its Ubuntu rootfs and separate rollback OpenClaw installation are
+downloaded only after the user selects **Set up emergency PRoot rollback**.
 
 Go and Homebrew are PRoot rollback shell extras. They are useful only if an
 operator intentionally enters the emergency Ubuntu/PRoot environment and wants
@@ -354,7 +411,8 @@ Before public release, verify all of these:
 - fresh install starts native by default;
 - upgrade from old PRoot install applies the one-time native cutover;
 - manual rollback remains sticky across force-stop, reboot, and app relaunch;
-- native startup failure automatically restores PRoot;
+- native startup failure reports a clear error and leaves PRoot rollback as an
+  explicit user-demand action;
 - native and PRoot owner checks use app-scoped process/health/log evidence, not
   whole-phone background WebSocket noise;
 - provider billing/rate-limit errors are surfaced accurately, not replaced by

@@ -75,4 +75,176 @@ void main() {
     expect(signingKeys, contains("kDependencyPackPublicKey = r'''"));
     expect(signingDocs, isNot(contains('BEGIN PRIVATE KEY')));
   });
+
+  test('fresh setup installs only the official upstream native gateway',
+      () async {
+    final bootstrap =
+        await File('lib/services/bootstrap_service.dart').readAsString();
+    final installer = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/OfficialOpenClawProvisioner.kt',
+    ).readAsString();
+    final nativeRuntime = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/NativeNodeEmbeddedService.kt',
+    ).readAsString();
+    final gateway =
+        await File('lib/services/gateway_service.dart').readAsString();
+    final setupGuards = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/SetupGuards.kt',
+    ).readAsString();
+    final mainActivity = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt',
+    ).readAsString();
+    final isolatedInstaller = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/OfficialOpenClawInstallService.kt',
+    ).readAsString();
+    final manifest =
+        await File('android/app/src/main/AndroidManifest.xml').readAsString();
+
+    final freshSetupStart = bootstrap.indexOf('Future<void> runFullSetup(');
+    final rollbackSetupStart =
+        bootstrap.indexOf('Future<void> provisionProotRollback(');
+    expect(freshSetupStart, greaterThanOrEqualTo(0));
+    expect(rollbackSetupStart, greaterThan(freshSetupStart));
+    final freshSetup = bootstrap.substring(freshSetupStart, rollbackSetupStart);
+
+    expect(freshSetup, contains('NativeBridge.provisionOfficialOpenClaw()'));
+    expect(
+      freshSetup,
+      contains('_stopGatewayBeforeSetup(includeProotRollback: false)'),
+    );
+    final rollbackSetup = bootstrap.substring(rollbackSetupStart);
+    expect(
+      rollbackSetup,
+      contains('_stopGatewayBeforeSetup(includeProotRollback: true)'),
+    );
+    expect(
+      bootstrap,
+      contains('if (includeProotRollback) {'),
+    );
+    expect(freshSetup, isNot(contains('NativeBridge.setupDirs()')));
+    expect(freshSetup, isNot(contains('NativeBridge.writeResolv()')));
+    expect(freshSetup, isNot(contains('NativeBridge.runInProot(')));
+    expect(freshSetup, isNot(contains('NativeBridge.extractRootfs(')));
+    expect(freshSetup, isNot(contains('NativeBridge.installBionicBypass()')));
+
+    expect(
+        installer,
+        contains(
+            'https://api.github.com/repos/openclaw/openclaw/releases/latest'));
+    expect(installer, contains('openclawNpmTarball'));
+    expect(installer, contains('openclawNpmIntegrity'));
+    expect(installer, contains('npmRegistrySignaturesVerified'));
+    expect(installer, contains('npmProvenanceAttestationMatched'));
+    expect(installer, contains('verifySha512Integrity'));
+    expect(installer, contains('NPM_CLI_INTEGRITY'));
+    expect(installer, contains('--ignore-scripts'));
+    expect(installer, contains('npmExitCodeFromLogs'));
+    expect(mainActivity, contains('OfficialOpenClawInstallService.start'));
+    expect(mainActivity, contains('awaitIsolatedProvisionResult'));
+    expect(isolatedInstaller, contains('Process.killProcess(Process.myPid())'));
+    expect(manifest, contains('android:process=":native_node_install"'));
+    expect(nativeRuntime, isNot(contains('syncOpenClawFromProotInstall')));
+    expect(gateway, isNot(contains("reason: 'failed-native-default-start'")));
+    expect(setupGuards, contains('setup/.bootstrap_complete'));
+    expect(File('assets/openclaw-node-modules.tar.gz').existsSync(), isFalse);
+  });
+
+  test('native installer recovers a completed npm transaction once', () async {
+    final provisioner = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/OfficialOpenClawProvisioner.kt',
+    ).readAsString();
+    final installer = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/OfficialOpenClawInstallService.kt',
+    ).readAsString();
+    final setupService = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/SetupService.kt',
+    ).readAsString();
+
+    expect(provisioner,
+        contains('writeStagedRelease(staging, release, requestId)'));
+    expect(provisioner, contains('recoverCompletedStagedInstall(requestId)'));
+    expect(provisioner,
+        contains('npmExitCodeFromLogs(cacheDir, staged.stagedAtEpochMs)'));
+    expect(provisioner,
+        contains('activateVerifiedInstall(candidate, staged.release)'));
+    expect(installer, contains('}.provisionLatest(requestId)'));
+    expect(installer, contains('SetupService.NOTIFICATION_ID'));
+    expect(installer, contains('stopForeground(false)'));
+    expect(setupService,
+        contains('fun ensureNotificationChannel(context: Context)'));
+  });
+
+  test('native first setup reports official progress and skips raw Linux packs',
+      () async {
+    final bootstrap =
+        await File('lib/services/bootstrap_service.dart').readAsString();
+    final provisioner = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/OfficialOpenClawProvisioner.kt',
+    ).readAsString();
+    final installer = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/OfficialOpenClawInstallService.kt',
+    ).readAsString();
+    final mainActivity = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt',
+    ).readAsString();
+    final nativeRuntime = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/NativeNodeEmbeddedService.kt',
+    ).readAsString();
+    final gateway =
+        await File('lib/services/gateway_service.dart').readAsString();
+    final packs = await File('lib/services/skill_provisioning_service.dart')
+        .readAsString();
+
+    final freshSetupStart = bootstrap.indexOf('Future<void> runFullSetup(');
+    final rollbackSetupStart =
+        bootstrap.indexOf('Future<void> provisionProotRollback(');
+    final freshSetup = bootstrap.substring(freshSetupStart, rollbackSetupStart);
+
+    expect(
+      freshSetup,
+      contains('_provisionOfficialOpenClawWithProgress(onProgress)'),
+    );
+    expect(
+      freshSetup,
+      contains('SkillProvisioningService.nativeSetupWizardPackIds'),
+    );
+    expect(
+      freshSetup,
+      isNot(contains('SkillProvisioningService.setupWizardPackIds')),
+    );
+    expect(packs, contains('nativeSetupWizardPackIds = <String>[]'));
+    expect(provisioner, contains('onBytesCopied'));
+    expect(provisioner, contains('markIsolatedProvisionProgress'));
+    expect(installer, contains('markIsolatedProvisionProgress'));
+    expect(mainActivity, contains('getOfficialOpenClawProvisionStatus'));
+    expect(nativeRuntime, contains('makeBlockedNpmProcess'));
+    expect(gateway, contains('_applyNativeProviderConfigPolicy'));
+    expect(gateway, contains('nativeGatewayExternalPackageForProvider'));
+  });
+
+  test('setup and gateway notifications have distinct non-redundant owners',
+      () async {
+    final setupService = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/SetupService.kt',
+    ).readAsString();
+    final nativeRuntime = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/NativeNodeEmbeddedService.kt',
+    ).readAsString();
+    final nodeService = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/NodeForegroundService.kt',
+    ).readAsString();
+    final gateway =
+        await File('lib/services/gateway_service.dart').readAsString();
+
+    expect(setupService,
+        contains('OfficialOpenClawInstallService.clearLegacyNotification'));
+    expect(setupService,
+        contains('NativeNodeEmbeddedService.clearGatewayNotification'));
+    expect(nativeRuntime, contains('private const val NOTIFICATION_ID = 7'));
+    expect(nativeRuntime, contains('stopForeground(true)'));
+    expect(nodeService, contains('const val NOTIFICATION_ID = 9'));
+    expect(nodeService,
+        contains('Node foreground service deferred until setup completes'));
+    expect(gateway, isNot(contains('FlutterForegroundTask.startService')));
+  });
 }

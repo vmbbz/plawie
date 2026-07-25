@@ -20,7 +20,6 @@ class BootstrapService {
   // packs remain independently versioned and downloaded in the final setup
   // phase below.
   static const String _requiredOpenClawVersion = '2026.7.1';
-  static const bool _usePrebundledOpenClaw = false;
   static const String _openClawVersionMarker = '__OPENCLAW_VERSION__=';
   static const String _openClawInstallMarker = '__OPENCLAW_INSTALL_VERIFIED__=';
 
@@ -84,21 +83,27 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
         name: 'BootstrapService', error: error, stackTrace: stackTrace);
   }
 
-  Future<void> _stopGatewayBeforeSetup() async {
+  Future<void> _stopGatewayBeforeSetup({
+    required bool includeProotRollback,
+  }) async {
     // Setup performs many config writes. If even one old gateway process is
     // still watching openclaw.json, those writes become live reloads and can
     // race the first websocket/node pairing. Stop through both the Dart service
     // and a direct process sweep, then wait until the native detector agrees.
     await GatewayService().stop().catchError((_) => null);
 
-    const gatewayProcessPattern =
-        r'[o]penclaw.*gateway|[n]ode .*openclaw.*gateway|[n]ode .*openclaw\.mjs.*gateway';
-    await NativeBridge.runInProot(
-      "pkill -TERM -f '$gatewayProcessPattern' 2>/dev/null || true; "
-      'sleep 1; '
-      "pkill -KILL -f '$gatewayProcessPattern' 2>/dev/null || true",
-      timeout: 10,
-    ).catchError((_) => '');
+    // A native fresh install must never launch PRoot, even for a best-effort
+    // cleanup command. PRoot is touched only by the explicit rollback flow.
+    if (includeProotRollback) {
+      const gatewayProcessPattern =
+          r'[o]penclaw.*gateway|[n]ode .*openclaw.*gateway|[n]ode .*openclaw\.mjs.*gateway';
+      await NativeBridge.runInProot(
+        "pkill -TERM -f '$gatewayProcessPattern' 2>/dev/null || true; "
+        'sleep 1; '
+        "pkill -KILL -f '$gatewayProcessPattern' 2>/dev/null || true",
+        timeout: 10,
+      ).catchError((_) => '');
+    }
 
     for (var attempt = 0; attempt < 12; attempt++) {
       final running =
@@ -302,7 +307,290 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
     }
   }
 
+  /// Native-first fresh setup.
+  ///
+  /// The OpenClaw core is resolved from the official openclaw/openclaw GitHub
+  /// release and installed by the embedded Android Node runtime. PRoot is not
+  /// touched here; users may opt into it later through [provisionProotRollback].
   Future<void> runFullSetup(
+      {required void Function(SetupState) onProgress}) async {
+    final setupPrefs = PreferencesService();
+    await setupPrefs.init();
+    setupPrefs.setupInProgress = true;
+    setupPrefs.gatewayRuntimeOwner =
+        PreferencesService.gatewayRuntimeOwnerNativeProduction;
+
+    try {
+      await _stopGatewayBeforeSetup(includeProotRollback: false);
+      await GatewayService()
+          .clearDeviceToken(clearProtocol: true)
+          .catchError((_) => null);
+
+      try {
+        await NativeBridge.startSetupService();
+      } catch (error) {
+        _log('Non-fatal: setup service failed to start', error: error);
+      }
+
+      _emitProgress(
+        onProgress,
+        SetupStep.checkingStatus,
+        0.05,
+        'Preparing the native Node gateway...',
+        5,
+        subMessage: 'Embedded libnode • no PRoot',
+      );
+      final existing = await NativeBridge.getNativeOpenClawStatus();
+      final existingVersion = existing['version']?.toString() ?? '';
+
+      _emitProgress(
+        onProgress,
+        SetupStep.provisioningGateway,
+        0.10,
+        existing['ready'] == true
+            ? 'Checking the official OpenClaw release...'
+            : 'Downloading the official OpenClaw gateway...',
+        15,
+        subMessage: 'openclaw/openclaw GitHub release',
+      );
+      final provisioned =
+          await _provisionOfficialOpenClawWithProgress(onProgress);
+      if (provisioned['installed'] != true) {
+        throw StateError(
+            'Official OpenClaw installer did not report a completed install.');
+      }
+      final installedVersion = provisioned['version']?.toString() ?? '';
+      if (installedVersion.isEmpty) {
+        throw StateError(
+            'Official OpenClaw installer completed without a package version.');
+      }
+      _log(
+        '[SETUP] Official native OpenClaw $installedVersion ready '
+        '(previous=${existingVersion.isEmpty ? 'none' : existingVersion}).',
+      );
+
+      final gateway = GatewayService();
+      _emitProgress(
+        onProgress,
+        SetupStep.configuringGateway,
+        0.42,
+        'Configuring native gateway security...',
+        50,
+        subMessage: 'Loopback binding • device pairing',
+      );
+      await gateway.configureNativeGatewayForSetup();
+
+      final pendingProvider = setupPrefs.pendingProvider;
+      final pendingApiKey = setupPrefs.pendingApiKey;
+      if (pendingProvider != null && pendingProvider.isNotEmpty) {
+        final providerModel =
+            ModelProviderCatalog.setupSafeModelForProvider(pendingProvider);
+        final hasApiKey = pendingApiKey != null && pendingApiKey.isNotEmpty;
+        if (hasApiKey) {
+          _emitProgress(
+            onProgress,
+            SetupStep.configuringGateway,
+            0.50,
+            'Configuring API credentials...',
+            58,
+            subMessage:
+                'Saving ${pendingProvider.replaceAll('_API_KEY', '')} securely',
+          );
+          await gateway.configureApiKey(
+            pendingProvider,
+            pendingApiKey,
+            runBackgroundOnboard: false,
+          );
+          setupPrefs.pendingApiKey = null;
+          setupPrefs.apiKeyConfigured = true;
+        }
+
+        try {
+          await gateway.persistModel(providerModel);
+          setupPrefs.configuredModel = providerModel;
+        } catch (error) {
+          _log('[SETUP] Failed to persist native bootstrap model',
+              error: error);
+        }
+        setupPrefs.pendingProvider = null;
+        setupPrefs.apiProvider =
+            ModelProviderCatalog.apiProviderForSetupId(pendingProvider);
+      }
+
+      await gateway.configureNativeGatewayForSetup();
+
+      _emitProgress(
+        onProgress,
+        SetupStep.configuringGateway,
+        0.62,
+        'Starting the native OpenClaw gateway...',
+        68,
+        subMessage: 'Official gateway • embedded libnode',
+      );
+      await gateway.attachOrStart(forceStart: true);
+
+      _emitProgress(
+        onProgress,
+        SetupStep.configuringGateway,
+        0.72,
+        'Verifying native gateway...',
+        78,
+        subMessage: 'WebSocket • node pairing • health check',
+      );
+      await gateway.waitForStartup(timeout: const Duration(seconds: 180));
+      await Future<void>.delayed(const Duration(seconds: 3));
+      await _approveLocalNodeIfNeeded();
+
+      _emitProgress(
+        onProgress,
+        SetupStep.downloadingPacks,
+        0.0,
+        'Checking optional Plawie packs...',
+        82,
+        subMessage: 'Only Android-native compatible packs are eligible',
+      );
+      final nativePackIds = SkillProvisioningService.nativeSetupWizardPackIds;
+      if (nativePackIds.isEmpty) {
+        _emitProgress(
+          onProgress,
+          SetupStep.downloadingPacks,
+          1.0,
+          'No native-compatible optional packs are required.',
+          100,
+          subMessage:
+              'Gateway core is ready • Linux command packs stay opt-in via PRoot',
+        );
+      } else {
+        final totalPacks = nativePackIds.length;
+        final completedPackIds = <String>{};
+        final packsReady = await SkillProvisioningService.installAllRemotePacks(
+          packIds: nativePackIds,
+          onProgress: (packId, progress) {
+            final currentProgress = progress.clamp(0.0, 1.0).toDouble();
+            if (currentProgress >= 1.0) completedPackIds.add(packId);
+            final fraction = ((completedPackIds.length +
+                        (completedPackIds.contains(packId)
+                            ? 0.0
+                            : currentProgress)) /
+                    totalPacks)
+                .clamp(0.0, 1.0)
+                .toDouble();
+            _emitProgress(
+              onProgress,
+              SetupStep.downloadingPacks,
+              fraction,
+              'Downloading compatible optional packs (${completedPackIds.length} / $totalPacks)',
+              82 + (fraction * 18).round(),
+              subMessage: packId,
+            );
+          },
+        );
+        if (!packsReady) {
+          _log(
+            '[SETUP] Optional native-compatible packs need retry; core gateway setup will continue.',
+          );
+        }
+      }
+
+      await NativeBridge.markBootstrapComplete();
+      setupPrefs.setupComplete = true;
+      if (setupPrefs.dashboardUrl == null || setupPrefs.dashboardUrl!.isEmpty) {
+        setupPrefs.dashboardUrl = 'http://127.0.0.1:18789';
+      }
+      _emitProgress(
+        onProgress,
+        SetupStep.complete,
+        1.0,
+        'Native setup complete!',
+        100,
+        subMessage: 'Official OpenClaw gateway is online',
+      );
+      await NativeBridge.promoteNativeGatewayNotification()
+          .catchError((_) => false);
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      _stopSetupService();
+    } on DioException catch (error) {
+      _stopSetupService();
+      _log('Network error during native setup', error: error);
+      onProgress(SetupState(
+        step: SetupStep.error,
+        error:
+            'Network error: ${error.message}. Check your internet connection.',
+      ));
+    } catch (error, stack) {
+      _stopSetupService();
+      _log('Native setup failed globally', error: error, stackTrace: stack);
+      onProgress(SetupState(
+        step: SetupStep.error,
+        error: 'Setup failed: $error',
+      ));
+    } finally {
+      setupPrefs.setupInProgress = false;
+    }
+  }
+
+  Future<Map<String, dynamic>> _provisionOfficialOpenClawWithProgress(
+    void Function(SetupState) onProgress,
+  ) async {
+    var pollInFlight = false;
+    var lastFingerprint = '';
+
+    Future<void> publishProgress() async {
+      if (pollInFlight) return;
+      pollInFlight = true;
+      try {
+        final status = await NativeBridge.getOfficialOpenClawProvisionStatus();
+        final state = status['state']?.toString().trim() ?? '';
+        if (state != 'queued' && state != 'running') return;
+
+        final message = status['message']?.toString().trim();
+        final rawFraction = status['progress'];
+        final fraction = (rawFraction is num
+                ? rawFraction.toDouble()
+                : double.tryParse(rawFraction?.toString() ?? '')) ??
+            0.0;
+        final boundedFraction = fraction.clamp(0.0, 1.0).toDouble();
+        final text = message == null || message.isEmpty
+            ? 'Preparing the official OpenClaw gateway…'
+            : message;
+        final fingerprint = '$text:${(boundedFraction * 100).round()}';
+        if (fingerprint == lastFingerprint) return;
+        lastFingerprint = fingerprint;
+
+        final corePercent = (boundedFraction * 100).round();
+        _emitProgress(
+          onProgress,
+          SetupStep.provisioningGateway,
+          0.10 + (0.30 * boundedFraction),
+          text,
+          15 + (0.30 * corePercent).round(),
+          subMessage: 'Official upstream • $corePercent% verified path',
+        );
+      } catch (error) {
+        _log('[SETUP] Official installer progress poll skipped', error: error);
+      } finally {
+        pollInFlight = false;
+      }
+    }
+
+    final provisionFuture = NativeBridge.provisionOfficialOpenClaw();
+    final poller = Timer.periodic(
+      const Duration(milliseconds: 450),
+      (_) => unawaited(publishProgress()),
+    );
+    unawaited(publishProgress());
+    try {
+      return await provisionFuture;
+    } finally {
+      poller.cancel();
+    }
+  }
+
+  /// Explicit, user-demand-only PRoot rollback provisioning.
+  ///
+  /// Native setup never calls this method. It remains available only for users
+  /// who deliberately choose the legacy rollback environment.
+  Future<void> provisionProotRollback(
       {required void Function(SetupState) onProgress}) async {
     final setupFlowPrefs = PreferencesService();
     await setupFlowPrefs.init();
@@ -310,7 +598,7 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
     try {
       // Pause any background gateway automation while setup rewrites config.
       // Reusing the singleton ensures provider-owned timers/subscriptions are stopped too.
-      await _stopGatewayBeforeSetup();
+      await _stopGatewayBeforeSetup(includeProotRollback: true);
       await GatewayService()
           .clearDeviceToken(clearProtocol: true)
           .catchError((_) => null);
@@ -488,20 +776,13 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.65,
             'Installing OpenClaw core...', 80);
 
-        bool success = false;
-        if (!_usePrebundledOpenClaw) {
-          _log(
-              '[SETUP] Installing pinned OpenClaw $_requiredOpenClawVersion from npm.');
-        } else {
-          success = await _extractPrebundledOpenClaw(onProgress);
-        }
-
-        if (!success) {
-          _log('ℹ️ Installing OpenClaw from npm...');
-          await _installMinimalBuildTools();
-          await _ensureOpenClawPackageExists();
-          await _purgeBuildTools();
-        }
+        _log(
+          '[PROOT ROLLBACK] Installing pinned OpenClaw '
+          '$_requiredOpenClawVersion from npm after explicit user request.',
+        );
+        await _installMinimalBuildTools();
+        await _ensureOpenClawPackageExists();
+        await _purgeBuildTools();
       } else {
         _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.75,
             'OpenClaw already present', 95);
@@ -853,61 +1134,6 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
       'apt-get clean && rm -rf /var/lib/apt/lists/*',
       timeout: 300,
     );
-  }
-
-  /// Extracts a pre-bundled openclaw-node-modules.tar.gz from app assets to the rootfs.
-  /// This bypasses the need for a 10-minute 'npm install' on the user's device.
-  Future<bool> _extractPrebundledOpenClaw(
-      Function(SetupState) onProgress) async {
-    if (!_usePrebundledOpenClaw) {
-      _log(
-          '📦 Pre-bundled OpenClaw assets are disabled; using pinned npm package.');
-      return false;
-    }
-
-    _log('📦 Checking for pre-bundled OpenClaw assets...');
-    try {
-      final rootfsDir = await getRootfsDirectory();
-
-      // Check if the asset exists in the bundle
-      _log('📖 Reading 100MB pre-bundled modules (this may take a moment)...');
-      final ByteData data =
-          await rootBundle.load('assets/openclaw-node-modules.tar.gz');
-
-      _log('🚚 Pre-bundled OpenClaw found! Extracting...');
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.3,
-          'Using pre-bundled OpenClaw (fast setup)...', 85,
-          subMessage: 'Extracting assets from APK bundle');
-
-      // 1. Create target directory
-      await NativeBridge.runInProot('mkdir -p /usr/local/lib/node_modules');
-
-      // 2. Write asset to a temporary file in the rootfs
-      final tempTarPath = '$rootfsDir/tmp/openclaw-modules.tar.gz';
-      final buffer = data.buffer.asUint8List();
-      await File(tempTarPath).writeAsBytes(buffer);
-
-      // 3. Extract using tar inside proot (native and fast)
-      // Handles various structures (package/, openclaw/, or lib/node_modules/)
-      await NativeBridge.runInProot(
-        'cd /tmp && tar -xzf openclaw-modules.tar.gz && rm openclaw-modules.tar.gz && '
-        'if [ -d package ]; then rm -rf /usr/local/lib/node_modules/openclaw && mv package /usr/local/lib/node_modules/openclaw; '
-        'elif [ -d openclaw ]; then rm -rf /usr/local/lib/node_modules/openclaw && mv openclaw /usr/local/lib/node_modules/openclaw; '
-        'elif [ -d lib/node_modules/openclaw ]; then rm -rf /usr/local/lib/node_modules/openclaw && mv lib/node_modules/openclaw /usr/local/lib/node_modules/openclaw; fi && '
-        'chmod +x /usr/local/lib/node_modules/openclaw/*.mjs 2>/dev/null || true',
-        timeout: 120,
-      );
-
-      _log('✅ Pre-bundled OpenClaw extracted successfully');
-      _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.8,
-          'Pre-bundled OpenClaw ready', 90,
-          subMessage: 'Verifying package integrity');
-      return true;
-    } catch (e) {
-      _log(
-          'ℹ️ No pre-bundled OpenClaw found in assets, falling back to npm install. ($e)');
-      return false;
-    }
   }
 
   /// Final heavy cleanup of caches and temporary files.

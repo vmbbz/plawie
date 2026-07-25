@@ -97,17 +97,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       defaultModel: ModelProviderCatalog.defaultCloudFallbackModel,
       requiresApiKey: true,
     ),
-    _ProviderInfo(
-      id: 'groq',
-      name: 'Groq',
-      subtitle: 'Lightning fast',
-      icon: Icons.bolt,
-      color: Color(0xFFF55036),
-      hint: 'gsk_...',
-      prefix: 'gsk_',
-      defaultModel: 'groq/llama-3.3-70b-versatile',
-      requiresApiKey: true,
-    ),
+    // Groq is an upstream external OpenClaw plugin. It remains unavailable
+    // here until it has a verified Android-native extension pack; setup must
+    // never ask the gateway to install it implicitly with npm.
   ];
 
   @override

@@ -31,11 +31,21 @@ class SkillProvisioningService {
     'android-agent-cli-pack',
   ];
 
+  /// Packs safe to install during the native-first setup transaction.
+  ///
+  /// Current remote packs contain executable ELF command binaries. Android
+  /// denies execution from app-writable storage, so downloading them during a
+  /// native setup only wastes data and guarantees a smoke-test failure. Add an
+  /// ID here only after its payload runs through a verified Android-native
+  /// loader (for example APK/JNI, JS through embedded libnode, or data-only).
+  static const List<String> nativeSetupWizardPackIds = <String>[];
+
   /// Installs all remote dependency packs from the manifest.
-  /// Used by the setup wizard to pre-download everything before first use.
-  /// Returns true if all packs installed successfully.
+  /// Used by an explicit compatible-runtime setup path to pre-download packs.
+  /// Returns true if all requested packs installed successfully.
   static Future<bool> installAllRemotePacks({
     required void Function(String packName, double progress) onProgress,
+    List<String>? packIds,
   }) async {
     try {
       final filesDir = await NativeBridge.getFilesDir();
@@ -47,7 +57,7 @@ class SkillProvisioningService {
       };
       var failCount = 0;
 
-      for (final packId in setupWizardPackIds) {
+      for (final packId in packIds ?? setupWizardPackIds) {
         final pack = remotePacks[packId];
         if (pack == null) {
           failCount++;

@@ -18,7 +18,9 @@ object SetupGuards {
     private const val PREF_GATEWAY_RUNTIME_OWNER = "flutter.gateway_runtime_owner"
     private const val OWNER_PROOT = "proot"
     private const val OWNER_NATIVE_PRODUCTION = "native-node-full-gateway-production"
-    private const val SETUP_COMPLETE_MARKER = "rootfs/root/.clawa/.bootstrap_complete"
+    private const val SETUP_COMPLETE_MARKER = "setup/.bootstrap_complete"
+    private const val LEGACY_SETUP_COMPLETE_MARKER =
+        "rootfs/root/.clawa/.bootstrap_complete"
 
     fun isSetupInProgress(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -26,7 +28,8 @@ object SetupGuards {
     }
 
     fun hasSetupCompleteMarker(context: Context): Boolean {
-        return File(context.filesDir, SETUP_COMPLETE_MARKER).exists()
+        return File(context.filesDir, SETUP_COMPLETE_MARKER).exists() ||
+            File(context.filesDir, LEGACY_SETUP_COMPLETE_MARKER).exists()
     }
 
     fun isMarkedSetupComplete(context: Context): Boolean {

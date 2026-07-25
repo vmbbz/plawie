@@ -30,7 +30,8 @@ class BootstrapManager(
     private val preferPrebundledOpenClaw = false
     private val requiredOpenClawVersion = "2026.7.1"
     private val minimumNodeVersion = listOf(22, 22, 3)
-    private val setupCompleteMarker get() = File("$filesDir/rootfs/root/.clawa/.bootstrap_complete")
+    private val setupCompleteMarker get() = File("$filesDir/setup/.bootstrap_complete")
+    private val legacySetupCompleteMarker get() = File("$filesDir/rootfs/root/.clawa/.bootstrap_complete")
 
     fun setupDirectories() {
         listOf(rootfsDir, tmpDir, homeDir, configDir, "$homeDir/.openclaw", libDir).forEach {
@@ -54,6 +55,10 @@ class BootstrapManager(
     }
 
     fun isBootstrapComplete(): Boolean {
+        if (SetupGuards.isNativeGatewayOwner(context)) {
+            return OfficialOpenClawProvisioner.nativePackageStatus(context).ready &&
+                SetupGuards.isMarkedSetupComplete(context)
+        }
         return isInstallReady() && SetupGuards.isMarkedSetupComplete(context)
     }
 
@@ -83,6 +88,7 @@ class BootstrapManager(
         val openclawVersion = readOpenClawVersion(pkgDir)
         val entryPointExists = hasOpenClawEntryPoint(pkgDir)
         val openclawInstalled = isOpenClawPackageReady(pkgDir)
+        val nativeOpenClaw = OfficialOpenClawProvisioner.nativePackageStatus(context)
 
         val bypassExists = File("$rootfsDir/root/.openclaw/bionic-bypass.js").exists()
         
@@ -101,9 +107,13 @@ class BootstrapManager(
             "openclawVersionCompatible" to (openclawVersion == requiredOpenClawVersion),
             "openclawEntryPointExists" to entryPointExists,
             "openclawBinExists" to openclawBinExists,
+            "nativeOpenClawInstalled" to nativeOpenClaw.ready,
+            "nativeOpenClawVersion" to (nativeOpenClaw.version ?: ""),
+            "nativeOpenClawReceiptVersion" to (nativeOpenClaw.receiptVersion ?: ""),
             "bypassInstalled" to bypassExists,
             "installReady" to installReady,
-            "setupCompleteMarkerExists" to setupCompleteMarker.exists(),
+            "setupCompleteMarkerExists" to
+                (setupCompleteMarker.exists() || legacySetupCompleteMarker.exists()),
             "setupMarkedComplete" to SetupGuards.isMarkedSetupComplete(context),
             "setupInProgress" to SetupGuards.isSetupInProgress(context),
             "complete" to isBootstrapComplete()
@@ -1759,55 +1769,22 @@ os.networkInterfaces = () => ({});
     }
 
     /**
-     * Final validation and synchronization point for the OpenClaw environment.
-     * Called at the end of the bootstrap process to ensure agent readiness.
+     * Validates an already-provisioned PRoot rollback environment.
+     *
+     * This method must never install or repair packages: native setup is the
+     * default path, and PRoot is only provisioned after an explicit user choice.
      */
     fun ensureOpenClawReady(): Map<String, Any> {
-        Log.i("BootstrapManager", "Executing final readiness checks...")
-        
-        // Validate the pinned package before creating wrappers. A stale package
-        // or stale npm launcher is repaired only when it is actually needed.
-        ensureOpenClawInstalled()
+        if (!isOpenClawPackageReady(File("$rootfsDir/usr/local/lib/node_modules/openclaw"))) {
+            throw RuntimeException(
+                "PRoot rollback OpenClaw is not installed. Set up the optional rollback environment first."
+            )
+        }
 
-        // 2. Re-verify binary wrappers and sync skills
         createBinWrappers("openclaw")
         ensureAgentSkillsAwareness()
         ensurePermanentProfile()
-        
-        // 4. Return full status for verification (industrial-grade consistency)
         return getBootstrapStatus()
-    }
-
-    private fun ensureOpenClawInstalled() {
-        val pkgDir = File("$rootfsDir/usr/local/lib/node_modules/openclaw")
-        if (isOpenClawPackageReady(pkgDir)) {
-            Log.i(
-                "BootstrapManager",
-                "OpenClaw $requiredOpenClawVersion already present in rootfs"
-            )
-            return
-        }
-
-        if (preferPrebundledOpenClaw) {
-            // Try the APK fast path only when it is enabled and then verify it.
-            preBundleOpenClawIfNeeded()
-        }
-
-        if (!isOpenClawPackageReady(pkgDir)) {
-            Log.i(
-                "BootstrapManager",
-                "Installing pinned OpenClaw $requiredOpenClawVersion from npm"
-            )
-            fallbackToNpmInstall()
-        }
-
-        if (!isOpenClawPackageReady(pkgDir)) {
-            throw RuntimeException(
-                "OpenClaw $requiredOpenClawVersion is not ready inside proot. Check proot logs."
-            )
-        }
-
-        Log.i("BootstrapManager", "[BOOTSTRAP] OpenClaw verified and ready.")
     }
 
     private fun preBundleOpenClawIfNeeded() {

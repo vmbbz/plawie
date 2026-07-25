@@ -36,8 +36,7 @@ class NativeManagedCliRunResult {
 
 class NativeBridge {
   static const _channel = MethodChannel('com.openclaw.plawie/native');
-  static const _eventChannel =
-      EventChannel('com.openclaw.plawie/gateway_logs');
+  static const _eventChannel = EventChannel('com.openclaw.plawie/gateway_logs');
 
   static Future<String> getProotPath() async {
     return await _channel.invokeMethod('getProotPath');
@@ -67,6 +66,10 @@ class NativeBridge {
     if (!nativeOk && prefs.setupComplete) {
       try {
         final status = await getBootstrapStatus();
+        if (prefs.gatewayRuntimeOwner ==
+            PreferencesService.gatewayRuntimeOwnerNativeProduction) {
+          return status['nativeOpenClawInstalled'] == true;
+        }
         if (status['nodeMeetsMinimum'] == false) return false;
       } catch (_) {}
     }
@@ -80,6 +83,27 @@ class NativeBridge {
 
   static Future<Map<String, dynamic>> ensureOpenClawReady() async {
     final result = await _channel.invokeMethod('ensureOpenClawReady');
+    return Map<String, dynamic>.from(result);
+  }
+
+  /// Downloads and installs the latest official OpenClaw gateway attested by
+  /// the upstream GitHub release. This is native-only and never enters PRoot.
+  static Future<Map<String, dynamic>> provisionOfficialOpenClaw() async {
+    final result = await _channel.invokeMethod('provisionOfficialOpenClaw');
+    return Map<String, dynamic>.from(result);
+  }
+
+  static Future<Map<String, dynamic>> getNativeOpenClawStatus() async {
+    final result = await _channel.invokeMethod('getNativeOpenClawStatus');
+    return Map<String, dynamic>.from(result);
+  }
+
+  /// Returns the sanitized, durable progress state written by the isolated
+  /// official-gateway installer. This exposes no package credentials or URLs.
+  static Future<Map<String, dynamic>>
+      getOfficialOpenClawProvisionStatus() async {
+    final result =
+        await _channel.invokeMethod('getOfficialOpenClawProvisionStatus');
     return Map<String, dynamic>.from(result);
   }
 
@@ -163,34 +187,12 @@ class NativeBridge {
   }
 
   static Future<String> runInProot(String command, {int timeout = 900}) async {
-    return _runInProotInternal(command, timeout: timeout, allowRepair: true);
-  }
-
-  static Future<String> _runInProotInternal(
-    String command, {
-    required int timeout,
-    required bool allowRepair,
-  }) async {
     final sanitized = _applyAbsoluteBypass(command);
     final withEnv =
         'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && '
         'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $sanitized';
-    try {
-      return await _channel
-          .invokeMethod('runInProot', {'command': withEnv, 'timeout': timeout});
-    } on PlatformException catch (e) {
-      if (allowRepair && _shouldRepairOpenClawCommand(command, e.message)) {
-        try {
-          await ensureOpenClawReady();
-        } catch (_) {}
-        return _runInProotInternal(
-          command,
-          timeout: timeout,
-          allowRepair: false,
-        );
-      }
-      rethrow;
-    }
+    return await _channel
+        .invokeMethod('runInProot', {'command': withEnv, 'timeout': timeout});
   }
 
   /// Execute a command in the persistent shell (one PRoot process reused across calls).
@@ -209,27 +211,13 @@ class NativeBridge {
     if (!cmd.contains('openclaw')) return cmd;
 
     // Replace naked 'openclaw' commands only. Package specs such as
-    // openclaw@2026.7.1 and asset names such as openclaw-node-modules.tar.gz
-    // must be left untouched during setup installs.
+    // openclaw@2026.7.1 and package archive names must be left untouched.
     // (?<![/\.]) matches only if NOT preceded by / or .
     // (?![.@-]) avoids .js entry points, npm package specs, and filenames.
     return cmd.replaceAllMapped(RegExp(r'(?<![/\.])\bopenclaw\b(?![\.@-])'),
         (match) {
       return kOpenClawCommand;
     });
-  }
-
-  static bool _shouldRepairOpenClawCommand(
-      String command, String? errorMessage) {
-    if (errorMessage == null || errorMessage.isEmpty) return false;
-    final hasCliInvocation =
-        RegExp(r'(?<![/\.])\bopenclaw\b(?![\.@-])').hasMatch(command);
-    if (!hasCliInvocation) return false;
-    final lower = errorMessage.toLowerCase();
-    return (lower.contains('command not found') &&
-            lower.contains('openclaw')) ||
-        (lower.contains('/usr/local/bin/openclaw') &&
-            lower.contains('no such file or directory'));
   }
 
   /// Destroy the persistent shell process (called when terminal screen closes).
@@ -433,6 +421,12 @@ class NativeBridge {
 
   static Future<bool> stopNativeNodeSmokeRuntime() async {
     return await _channel.invokeMethod<bool>('stopNativeNodeSmokeRuntime') ??
+        false;
+  }
+
+  static Future<bool> promoteNativeGatewayNotification() async {
+    return await _channel
+            .invokeMethod<bool>('promoteNativeGatewayNotification') ??
         false;
   }
 

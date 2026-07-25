@@ -33,6 +33,19 @@ class SetupService : Service() {
             context.stopService(intent)
         }
 
+        fun ensureNotificationChannel(context: Context) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "OpenClaw Setup",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Shows progress during OpenClaw environment setup"
+            }
+            context.getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(channel)
+        }
+
         fun updateNotification(text: String, progress: Int = -1) {
             instance?.updateNotificationWith(text, progress)
         }
@@ -47,7 +60,12 @@ class SetupService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        ensureNotificationChannel(this)
+        // Older debug builds used separate installer and native-runtime
+        // notification IDs. A new setup is authoritative, so remove only
+        // those stale entries before showing the single shared setup alert.
+        OfficialOpenClawInstallService.clearLegacyNotification(applicationContext)
+        NativeNodeEmbeddedService.clearGatewayNotification(applicationContext)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -79,20 +97,6 @@ class SetupService : Service() {
             if (it.isHeld) it.release()
         }
         wakeLock = null
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "OpenClaw Setup",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Shows progress during OpenClaw environment setup"
-            }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
-        }
     }
 
     /**

@@ -9,6 +9,7 @@ import '../models/optional_package.dart';
 import '../providers/setup_provider.dart';
 import '../services/package_service.dart';
 import '../services/gateway_service.dart';
+import '../services/native_bridge.dart';
 import '../models/gateway_state.dart';
 import '../widgets/progress_step.dart';
 import '../widgets/avatar_logo.dart';
@@ -87,12 +88,52 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
       );
       return;
     }
+    final status = await NativeBridge.getBootstrapStatus();
+    if (status['binBashExists'] != true) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Set up the optional PRoot rollback environment before installing PRoot extras.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => PackageInstallScreen(package: package),
       ),
     );
     if (result == true) _refreshPkgStatuses();
+  }
+
+  Future<void> _requestProotRollbackSetup(SetupProvider provider) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Set up PRoot rollback?'),
+        content: const Text(
+          'This downloads a separate Ubuntu rootfs and a rollback-only OpenClaw environment. '
+          'The native official OpenClaw gateway remains your primary runtime.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Set up rollback'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await provider.runProotRollbackSetup();
+    }
   }
 
   @override
@@ -498,12 +539,10 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
 
   Widget _buildSteps(SetupState state, ThemeData theme, bool isDark) {
     final steps = [
-      (1, 'Download emergency PRoot rootfs', SetupStep.downloadingRootfs),
-      (2, 'Extract rollback rootfs', SetupStep.extractingRootfs),
-      (3, 'Install rollback Node.js', SetupStep.installingNode),
-      (4, 'Install rollback OpenClaw', SetupStep.installingOpenClaw),
-      (5, 'Configure Bionic Bypass', SetupStep.configuringBypass),
-      (6, 'Download dependency packs', SetupStep.downloadingPacks),
+      (1, 'Prepare embedded Node.js', SetupStep.checkingStatus),
+      (2, 'Download official OpenClaw gateway', SetupStep.provisioningGateway),
+      (3, 'Configure native gateway', SetupStep.configuringGateway),
+      (4, 'Download Plawie dependency packs', SetupStep.downloadingPacks),
     ];
 
     return ListView(
@@ -520,7 +559,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           ),
         if (state.isComplete) ...[
           ProgressStep(
-            stepNumber: 6,
+            stepNumber: 4,
             label: 'Setup complete!',
             isComplete: true,
           ),
@@ -540,10 +579,23 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Text(
-              'The native libnode.so Gateway does not require these extras.',
+              'The native gateway is already complete. PRoot downloads only after you explicitly choose the rollback environment.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color:
                     theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.72),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Consumer<SetupProvider>(
+              builder: (context, provider, _) => OutlinedButton.icon(
+                onPressed: provider.isRunning
+                    ? null
+                    : () => _requestProotRollbackSetup(provider),
+                icon: const Icon(Icons.shield_outlined),
+                label: const Text('Set up emergency PRoot rollback'),
               ),
             ),
           ),

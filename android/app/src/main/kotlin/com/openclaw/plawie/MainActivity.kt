@@ -262,7 +262,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "markBootstrapComplete" -> {
                     try {
-                        val marker = java.io.File(filesDir, "rootfs/root/.clawa/.bootstrap_complete")
+                        val marker = java.io.File(filesDir, "setup/.bootstrap_complete")
                         marker.parentFile?.mkdirs()
                         marker.writeText("completed_${System.currentTimeMillis()}")
                         result.success(true)
@@ -275,6 +275,43 @@ class MainActivity : FlutterActivity() {
                 }
                 "ensureOpenClawReady" -> {
                     result.success(bootstrapManager.ensureOpenClawReady())
+                }
+                "provisionOfficialOpenClaw" -> {
+                    Thread {
+                        try {
+                            val requestId = OfficialOpenClawProvisioner
+                                .createIsolatedProvisionRequest(this)
+                            OfficialOpenClawInstallService.start(this, requestId)
+                            val provisioned = OfficialOpenClawProvisioner
+                                .awaitIsolatedProvisionResult(this, requestId)
+                            runOnUiThread { result.success(provisioned) }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.error(
+                                    "OFFICIAL_OPENCLAW_INSTALL_ERROR",
+                                    e.message,
+                                    null
+                                )
+                            }
+                        }
+                    }.start()
+                }
+                "getNativeOpenClawStatus" -> {
+                    val status = OfficialOpenClawProvisioner.nativePackageStatus(this)
+                    result.success(
+                        mapOf(
+                            "ready" to status.ready,
+                            "version" to (status.version ?: ""),
+                            "receiptVersion" to (status.receiptVersion ?: ""),
+                            "receiptIntegrity" to (status.receiptIntegrity ?: "")
+                        )
+                    )
+                }
+                "getOfficialOpenClawProvisionStatus" -> {
+                    result.success(
+                        OfficialOpenClawProvisioner
+                            .isolatedProvisionStatusForChannel(this)
+                    )
                 }
                 "ensureAgentSkillsAwareness" -> {
                     Thread {
@@ -412,9 +449,9 @@ class MainActivity : FlutterActivity() {
                         if (!SetupGuards.isProotGatewayOwner(this)) {
                             Log.i(
                                 "MainActivity",
-                                "startGateway ignored because native Gateway owns production by default"
+                                "startGateway ignored because native Gateway owns production by default; " +
+                                    "PRoot foreground service was not started"
                             )
-                            PlawieForegroundService.start(this)
                             result.success(false)
                             return@setMethodCallHandler
                         }
@@ -485,6 +522,10 @@ class MainActivity : FlutterActivity() {
                     debugNativeFullGatewayProductionStarted = false
                     result.success(stopped)
                 }
+                "promoteNativeGatewayNotification" -> {
+                    NativeNodeEmbeddedService.promoteGatewayNotification(applicationContext)
+                    result.success(true)
+                }
                 "isNativeNodeSmokeRuntimeRunning" -> {
                     result.success(nativeNodeSmokeProcess.isRunning())
                 }
@@ -535,8 +576,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "startNodeService" -> {
                     try {
-                        NodeForegroundService.start(applicationContext)
-                        result.success(true)
+                        result.success(NodeForegroundService.start(applicationContext))
                     } catch (e: Exception) {
                         result.error("SERVICE_ERROR", e.message, null)
                     }

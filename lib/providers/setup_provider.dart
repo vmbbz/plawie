@@ -32,6 +32,21 @@ class SetupProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> runProotRollbackSetup() async {
+    if (_isRunning) return;
+    _isRunning = true;
+    notifyListeners();
+
+    await _bootstrapService.provisionProotRollback(
+      onProgress: (state) {
+        _state = state;
+        notifyListeners();
+      },
+    );
+
+    _isRunning = false;
+    notifyListeners();
+  }
 
   void reset() {
     _state = const SetupState();

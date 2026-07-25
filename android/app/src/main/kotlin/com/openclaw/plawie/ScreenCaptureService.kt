@@ -160,7 +160,7 @@ class ScreenCaptureService : Service() {
     }
 
     companion object {
-        const val NOTIFICATION_ID = 5
+        const val NOTIFICATION_ID = 8
         const val CHANNEL_ID = "openclaw_screen_capture"
 
         @Volatile

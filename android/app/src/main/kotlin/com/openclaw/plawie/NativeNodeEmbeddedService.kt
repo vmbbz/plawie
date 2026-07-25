@@ -17,8 +17,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -31,6 +29,7 @@ class NativeNodeEmbeddedService : Service() {
     private val startedAtMs = SystemClock.elapsedRealtime()
     private var activePort = PORT
     private var activeCanaryMode = "embedded-smoke"
+    private var foregroundNotificationId = NOTIFICATION_ID
     private val fullGatewayBootstrapStartClaimed = AtomicBoolean(false)
     private var lastStartIgnoredMessage: String? = null
     private var lastStartIgnoredAtMs: Long = 0L
@@ -69,10 +68,12 @@ class NativeNodeEmbeddedService : Service() {
             "flutter_assets/assets/openclaw/node-executable-pack/bin"
         private const val AGENT_CLI_BIN_ASSET_DIR =
             "flutter_assets/assets/openclaw/agent-cli-pack/bin"
-        private const val NOTIFICATION_CHANNEL_ID = "native_node_smoke"
-        private const val NOTIFICATION_ID = 5
+        private const val NOTIFICATION_CHANNEL_ID = "openclaw_gateway"
+        private const val NOTIFICATION_ID = 7
         private const val ACTION_START = "com.openclaw.plawie.native_node.START"
         private const val ACTION_STOP = "com.openclaw.plawie.native_node.STOP"
+        private const val ACTION_PROMOTE_NOTIFICATION =
+            "com.openclaw.plawie.native_node.PROMOTE_NOTIFICATION"
         private const val EXTRA_PORT = "port"
         private const val EXTRA_CANARY_MODE = "canaryMode"
         const val HOST = "127.0.0.1"
@@ -103,6 +104,17 @@ class NativeNodeEmbeddedService : Service() {
             })
         }
 
+        fun clearGatewayNotification(context: Context) {
+            context.getSystemService(NotificationManager::class.java)
+                .cancel(NOTIFICATION_ID)
+        }
+
+        fun promoteGatewayNotification(context: Context) {
+            context.startService(Intent(context, NativeNodeEmbeddedService::class.java).apply {
+                action = ACTION_PROMOTE_NOTIFICATION
+            })
+        }
+
         fun workDir(context: Context): File =
             File(context.filesDir, "native-node-embedded")
 
@@ -118,7 +130,28 @@ class NativeNodeEmbeddedService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, buildNotification("Starting..."))
+        if (intent?.action == ACTION_PROMOTE_NOTIFICATION) {
+            foregroundNotificationId = NOTIFICATION_ID
+            startForeground(
+                foregroundNotificationId,
+                buildNotification("OpenClaw gateway running")
+            )
+            getSystemService(NotificationManager::class.java)
+                .cancel(SetupService.NOTIFICATION_ID)
+            return START_STICKY
+        }
+
+        foregroundNotificationId = if (SetupGuards.isSetupInProgress(applicationContext)) {
+            SetupService.NOTIFICATION_ID
+        } else {
+            NOTIFICATION_ID
+        }
+        val startupText = if (intent?.action == ACTION_STOP) {
+            "Stopping OpenClaw gateway…"
+        } else {
+            "Starting OpenClaw gateway…"
+        }
+        startForeground(foregroundNotificationId, buildNotification(startupText))
         when (intent?.action) {
             ACTION_STOP -> stopEmbeddedRuntime(startId)
             else -> startEmbeddedRuntime(intent)
@@ -127,6 +160,7 @@ class NativeNodeEmbeddedService : Service() {
     }
 
     override fun onDestroy() {
+        releaseForegroundNotification()
         appendLog("service destroyed")
         super.onDestroy()
     }
@@ -135,10 +169,10 @@ class NativeNodeEmbeddedService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                "Native Node Gateway",
+                "OpenClaw Gateway",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps the native Node.js gateway process alive"
+                description = "Keeps the official native OpenClaw gateway alive"
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
@@ -158,12 +192,33 @@ class NativeNodeEmbeddedService : Service() {
             Notification.Builder(this)
         }
         return builder
-            .setContentTitle("Native Node Gateway")
+            .setContentTitle("OpenClaw Gateway")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
+    }
+
+    private fun updateNotification(text: String) {
+        runCatching {
+            getSystemService(NotificationManager::class.java)
+                .notify(foregroundNotificationId, buildNotification(text))
+        }.onFailure { error ->
+            Log.w(TAG, "Could not update gateway notification", error)
+        }
+    }
+
+    private fun releaseForegroundNotification() {
+        @Suppress("DEPRECATION")
+        if (
+            foregroundNotificationId == SetupService.NOTIFICATION_ID &&
+                SetupGuards.isSetupInProgress(applicationContext)
+        ) {
+            stopForeground(false)
+        } else {
+            stopForeground(true)
+        }
     }
 
     private fun startEmbeddedRuntime(intent: Intent?) {
@@ -264,6 +319,7 @@ class NativeNodeEmbeddedService : Service() {
                     "launcher=${bundle.launcher.absolutePath} extractedNow=${bundle.extractedNow} " +
                     "entries=${bundle.entryCount} files=${bundle.fileCount}"
             )
+            updateNotification("Starting OpenClaw gateway…")
             startNodeScript(
                 script,
                 requestedPort,
@@ -274,6 +330,7 @@ class NativeNodeEmbeddedService : Service() {
             fullGatewayBootstrapStartClaimed.set(false)
             appendLog("full Gateway bootstrap preparation failed: ${e.message}")
             Log.e(TAG, "Full Gateway bootstrap preparation failed", e)
+            updateNotification("OpenClaw gateway could not start")
             stopSelf()
         }
     }
@@ -288,12 +345,22 @@ class NativeNodeEmbeddedService : Service() {
             "starting $label on $HOST:$requestedPort canaryMode=$requestedCanaryMode " +
                 "script=${script.absolutePath}"
         )
+        updateNotification(
+            if (requestedCanaryMode == FULL_GATEWAY_BOOTSTRAP_MODE) {
+                "Opening official OpenClaw gateway…"
+            } else {
+                "Running native OpenClaw diagnostics…"
+            }
+        )
         val args = arrayOf("plawie-native-node", script.absolutePath)
         val result = NativeNodeBridge.start(args)
         appendLog("bridge start result code=${result.code} message=${result.message}")
 
         if (result.code < 0) {
+            updateNotification("OpenClaw gateway failed to start")
             stopSelf()
+        } else if (requestedCanaryMode == FULL_GATEWAY_BOOTSTRAP_MODE) {
+            updateNotification("OpenClaw gateway running")
         }
     }
 
@@ -303,6 +370,8 @@ class NativeNodeEmbeddedService : Service() {
             "stop requested; terminating isolated native Node process " +
                 "activePort=$activePort activeMode=$activeCanaryMode"
         )
+        updateNotification("Stopping OpenClaw gateway…")
+        releaseForegroundNotification()
         stopSelf(startId)
 
         if (Application.getProcessName().contains(":native_node_smoke")) {
@@ -417,19 +486,11 @@ class NativeNodeEmbeddedService : Service() {
 
         val missingRequiredFiles = requiredFiles.filterNot { it.exists() }
         if (missingRequiredFiles.isNotEmpty()) {
-            appendLog(
-                "full OpenClaw bundle cache invalid; " +
-                    "syncing from PRoot npm install"
+            throw IllegalStateException(
+                "Official upstream OpenClaw install is missing required files: " +
+                    missingRequiredFiles.joinToString(",") { it.name } +
+                    ". Run native setup to download the official OpenClaw release."
             )
-            syncOpenClawFromProotInstall(dir)
-            val syncedMissing = requiredFiles.filterNot { it.exists() }
-            if (syncedMissing.isNotEmpty()) {
-                appendLog(
-                    "sync incomplete; missing=${syncedMissing.joinToString(",") { it.name }}"
-                )
-            }
-            entryCount = 0
-            fileCount = 0
         } else {
             fileCount = countExistingFiles(dir)
             entryCount = fileCount
@@ -544,39 +605,6 @@ class NativeNodeEmbeddedService : Service() {
             )
         }
         return patchedCount
-    }
-
-    private fun syncOpenClawFromProotInstall(targetDir: File) {
-        val prootPath = File(filesDir, "rootfs/ubuntu/usr/local/lib/node_modules/openclaw")
-        if (!prootPath.exists() || !prootPath.isDirectory) {
-            appendLog("PRoot npm openclaw install not found at ${prootPath.absolutePath}")
-            return
-        }
-        val packageDir = File(targetDir, "lib/node_modules/openclaw")
-        if (packageDir.exists()) packageDir.deleteRecursively()
-        packageDir.parentFile?.mkdirs()
-        var copied = 0
-        prootPath.walkTopDown().forEach { source ->
-            val relative = source.relativeTo(prootPath).path
-            if (relative == ".") return@forEach
-            val dest = File(packageDir, relative)
-            if (source.isDirectory) {
-                dest.mkdirs()
-            } else if (source.isFile) {
-                dest.parentFile?.mkdirs()
-                try {
-                    Files.copy(source.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING)
-                    dest.setExecutable(source.canExecute(), false)
-                    copied++
-                } catch (e: Exception) {
-                    appendLog("syncOpenClaw: failed to copy ${source.name}: ${e.message}")
-                }
-            }
-        }
-        appendLog(
-            "synced openclaw from PRoot npm install to native workspace " +
-                "source=${prootPath.absolutePath} dest=${packageDir.absolutePath} files=$copied"
-        )
     }
 
     private fun copyPythonDebugWheelAssets(targetDir: File): Int {
@@ -857,11 +885,12 @@ class NativeNodeEmbeddedService : Service() {
         val script = File(dir, "server.mjs")
         val bundleRoot = JSONObject.quote(preflight.root.absolutePath)
         val manifestPath = JSONObject.quote(preflight.manifest.absolutePath)
-        val prootSkillRoot = JSONObject.quote(
-            File(filesDir, "rootfs/ubuntu/root/.openclaw/skills").absolutePath
+        val nativeStateRoot = File(workDir(applicationContext), "native-home/.openclaw")
+        val nativeSkillRoot = JSONObject.quote(
+            File(nativeStateRoot, "skills").absolutePath
         )
-        val prootConfigPath = JSONObject.quote(
-            File(filesDir, "rootfs/ubuntu/root/.openclaw/openclaw.json").absolutePath
+        val nativeConfigPath = JSONObject.quote(
+            File(nativeStateRoot, "openclaw.json").absolutePath
         )
         val quotedCanaryMode = JSONObject.quote(canaryMode)
         script.writeText(
@@ -877,8 +906,8 @@ class NativeNodeEmbeddedService : Service() {
             const manifestPath = $manifestPath;
             const { createMobileGatewayProbe } = require(path.join(bundleRoot, "mobile_gateway_probe.js"));
             const { inspectSkillRegistry } = require(path.join(bundleRoot, "mobile_skill_registry.js"));
-            const productionSkillsRoot = $prootSkillRoot;
-            const productionConfigPath = $prootConfigPath;
+            const productionSkillsRoot = $nativeSkillRoot;
+            const productionConfigPath = $nativeConfigPath;
 
             const host = "$HOST";
             const port = $port;
@@ -1040,9 +1069,6 @@ class NativeNodeEmbeddedService : Service() {
         val manifestPath = JSONObject.quote(bundle.manifest.absolutePath)
         val nativeHome = JSONObject.quote(File(dir, "native-home").absolutePath)
         val nativeStateDir = JSONObject.quote(File(dir, "native-home/.openclaw").absolutePath)
-        val prootStateDir = JSONObject.quote(
-            File(filesDir, "rootfs/ubuntu/root/.openclaw").absolutePath
-        )
         val nativeTmp = JSONObject.quote(File(dir, "tmp").absolutePath)
         val nativeCache = JSONObject.quote(File(dir, "cache").absolutePath)
         val quotedCanaryMode = JSONObject.quote(canaryMode)
@@ -1063,7 +1089,6 @@ class NativeNodeEmbeddedService : Service() {
             const manifestPath = $manifestPath;
             const nativeHome = $nativeHome;
             const nativeStateDir = $nativeStateDir;
-            const prootStateDir = $prootStateDir;
             const nativeTmp = $nativeTmp;
             const nativeCache = $nativeCache;
             const nativeManagedBin = path.join(nativeStateDir, "bin");
@@ -1190,19 +1215,14 @@ class NativeNodeEmbeddedService : Service() {
               "-" +
               Math.random().toString(36).slice(2, 18);
             const ensureNativeOpenClawConfig = () => {
-              const prootConfigPath = path.join(prootStateDir, "openclaw.json");
               const nativeConfigPath = path.join(nativeStateDir, "openclaw.json");
-              const prootEnvPath = path.join(prootStateDir, ".env");
               const nativeEnvPath = path.join(nativeStateDir, ".env");
-              const prootConfig = readJsonFile(prootConfigPath);
               const existingNativeConfig = readJsonFile(nativeConfigPath);
               const existingNativeAuth =
                 existingNativeConfig.gateway && existingNativeConfig.gateway.auth
                   ? existingNativeConfig.gateway.auth
                   : {};
-              const config = rewriteRootBackedPaths(
-                deepMerge(existingNativeConfig, prootConfig)
-              );
+              const config = rewriteRootBackedPaths(existingNativeConfig);
               const outputCapClamp = clampNativeOutputTokenCaps(config);
               config.gateway = config.gateway && typeof config.gateway === "object"
                 ? config.gateway
@@ -1211,25 +1231,17 @@ class NativeNodeEmbeddedService : Service() {
                 ? config.gateway.auth
                 : {};
               delete config.gateway.auth.unauthenticatedLocalhost;
-              const prootGatewayAuth = prootConfig.gateway && prootConfig.gateway.auth
-                ? prootConfig.gateway.auth
-                : {};
               const configuredToken =
                 existingNativeAuth.token ||
-                prootGatewayAuth.token ||
                 config.gateway.auth.token ||
-                (prootConfig.auth && prootConfig.auth.token) ||
                 makeGatewayToken();
               config.gateway.auth.token = configuredToken;
               config.gateway.auth.mode = "token";
               fs.writeFileSync(nativeConfigPath, JSON.stringify(config, null, 2));
-              if (fs.existsSync(prootEnvPath)) {
-                fs.copyFileSync(prootEnvPath, nativeEnvPath);
-              }
               return {
                 nativeConfigPath,
-                prootConfigFound: fs.existsSync(prootConfigPath),
-                nativeEnvSynced: fs.existsSync(nativeEnvPath),
+                nativeConfigFound: fs.existsSync(nativeConfigPath),
+                nativeEnvFound: fs.existsSync(nativeEnvPath),
                 tokenConfigured: Boolean(config.gateway.auth.token),
                 outputCapClampCount: outputCapClamp.length,
                 outputCapClamp: outputCapClamp.slice(0, 12),
@@ -1324,6 +1336,13 @@ class NativeNodeEmbeddedService : Service() {
                 }
                 return null;
               };
+              const npmKind = (command) => {
+                if (!command) return false;
+                const normalized = String(command).replace(/\\/g, "/");
+                const base = path.basename(normalized).toLowerCase();
+                return base === "npm" || base === "npx";
+              };
+              let nativeNpmSpawnTraced = false;
               const normalizePayloadArgs = (command, args) => {
                 const list = Array.isArray(args) ? args.map((value) => String(value)) : [];
                 return pythonKind(command) === "pip" ? ["-m", "pip", ...list] : list;
@@ -1412,8 +1431,74 @@ class NativeNodeEmbeddedService : Service() {
                 });
                 return proc;
               };
+              const blockedNativeNpmMessage = (command) =>
+                "Blocked automatic " + String(command) +
+                " plugin repair in the native gateway. Install external providers only through a verified Plawie dependency pack.";
+              const makeBlockedNpmProcess = (command) => {
+                const proc = new EventEmitter();
+                proc.stdout = new PassThrough();
+                proc.stderr = new PassThrough();
+                proc.stdin = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+                proc.pid = 0;
+                proc.killed = false;
+                proc.exitCode = null;
+                proc.signalCode = null;
+                proc.kill = () => {
+                  proc.killed = true;
+                  return false;
+                };
+                setImmediate(() => {
+                  const message = blockedNativeNpmMessage(command);
+                  process.stderr.write("[NATIVE-NPM] " + message + "\n");
+                  proc.stderr.write(message + "\n");
+                  proc.stdout.end();
+                  proc.stderr.end();
+                  proc.exitCode = 126;
+                  proc.emit("exit", 126, null);
+                  proc.emit("close", 126, null);
+                });
+                return proc;
+              };
+              const blockedNpmSync = (asObject, command) => {
+                const message = blockedNativeNpmMessage(command);
+                const stderr = Buffer.from(message + "\n");
+                if (asObject) {
+                  return {
+                    status: 126,
+                    signal: null,
+                    pid: 0,
+                    stdout: Buffer.alloc(0),
+                    stderr,
+                    output: [null, Buffer.alloc(0), stderr]
+                  };
+                }
+                const error = new Error(message);
+                error.status = 126;
+                error.stderr = stderr;
+                error.stdout = Buffer.alloc(0);
+                throw error;
+              };
               childProcess.spawn = function(command, args, options) {
                 if (pythonKind(command)) return makeProcess(command, args, options || {});
+                if (npmKind(command)) return makeBlockedNpmProcess(command);
+                if (npmKind(command) && !nativeNpmSpawnTraced) {
+                  nativeNpmSpawnTraced = true;
+                  const argv = Array.isArray(args)
+                    ? args.map((value) => String(value))
+                    : [];
+                  const stack = new Error().stack || "";
+                  process.stderr.write(
+                    `[NATIVE-NPM] spawn ${'$'}{JSON.stringify({
+                      command: String(command),
+                      args: argv
+                    })}\n`
+                  );
+                  process.stderr.write(
+                    `[NATIVE-NPM] callsite ${'$'}{
+                      stack.split("\n").slice(1, 8).join(" | ")
+                    }\n`
+                  );
+                }
                 return original.spawn.apply(this, arguments);
               };
               childProcess.execFile = function(file, args, options, callback) {
@@ -1427,6 +1512,22 @@ class NativeNodeEmbeddedService : Service() {
                 } else if (typeof actualOptions === "function") {
                   actualCallback = actualOptions;
                   actualOptions = {};
+                }
+                if (npmKind(file)) {
+                  const proc = makeBlockedNpmProcess(file);
+                  if (actualCallback) {
+                    let stdout = "";
+                    let stderr = "";
+                    proc.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+                    proc.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+                    proc.on("close", (code) => {
+                      const error = code === 0
+                        ? null
+                        : Object.assign(new Error(stderr || ("Native npm exited " + code)), { code });
+                      actualCallback(error, stdout, stderr);
+                    });
+                  }
+                  return proc;
                 }
                 if (!pythonKind(file)) return original.execFile.apply(this, arguments);
                 const proc = makeProcess(file, actualArgs || [], actualOptions || {});
@@ -1450,6 +1551,14 @@ class NativeNodeEmbeddedService : Service() {
                   actualOptions = {};
                 }
                 const tokens = tokenise(command);
+                if (tokens.length && npmKind(tokens[0])) {
+                  return childProcess.execFile(
+                    tokens[0],
+                    tokens.slice(1),
+                    actualOptions || {},
+                    actualCallback
+                  );
+                }
                 if (!tokens.length || !pythonKind(tokens[0])) {
                   return original.exec.apply(this, arguments);
                 }
@@ -1469,15 +1578,20 @@ class NativeNodeEmbeddedService : Service() {
               };
               childProcess.spawnSync = function(command, args, options) {
                 if (pythonKind(command)) return syncBlocked("object");
+                if (npmKind(command)) return blockedNpmSync(true, command);
                 return original.spawnSync.apply(this, arguments);
               };
               childProcess.execFileSync = function(file, args, options) {
                 if (pythonKind(file)) return syncBlocked("buffer");
+                if (npmKind(file)) return blockedNpmSync(false, file);
                 return original.execFileSync.apply(this, arguments);
               };
               childProcess.execSync = function(command, options) {
                 const tokens = tokenise(command);
                 if (tokens.length && pythonKind(tokens[0])) return syncBlocked("buffer");
+                if (tokens.length && npmKind(tokens[0])) {
+                  return blockedNpmSync(false, tokens[0]);
+                }
                 return original.execSync.apply(this, arguments);
               };
               console.error("[NATIVE-PYTHON] child_process bridge installed for python/python3/pip");

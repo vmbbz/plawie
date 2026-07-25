@@ -173,6 +173,40 @@ class ModelProviderCatalog {
     ),
   ];
 
+  /// Providers the official OpenClaw core can use in Plawie's embedded native
+  /// runtime without asking the gateway to launch a standalone package manager.
+  ///
+  /// This is intentionally narrower than [providers]: the catalog may describe
+  /// optional upstream extensions, but a stock Android app cannot execute an
+  /// arbitrary npm repair command from its writable data directory.
+  static const Set<String> nativeGatewaySupportedProviderIds = <String>{
+    'google',
+    'anthropic',
+    'openai',
+    'xai',
+    'openrouter',
+    // Zenmux uses the core OpenAI-compatible provider configuration.
+    'zenmux',
+  };
+
+  /// Upstream provider packages which must be delivered through an explicit,
+  /// verified Plawie extension path before native configuration may enable
+  /// them. They are never installed implicitly by gateway startup.
+  static const Map<String, String> nativeGatewayExternalProviderPackages =
+      <String, String>{
+    'groq': '@openclaw/groq-provider',
+  };
+
+  static bool isProviderSupportedByNativeGateway(String provider) {
+    final normalized = normalizeProvider(provider);
+    return normalized == plawieNdkProviderId ||
+        nativeGatewaySupportedProviderIds.contains(normalized);
+  }
+
+  static String? nativeGatewayExternalPackageForProvider(String provider) {
+    return nativeGatewayExternalProviderPackages[normalizeProvider(provider)];
+  }
+
   static const List<ModelOption> cloudModels = [
     ModelOption(
       id: 'google/gemini-3.1-pro-preview',

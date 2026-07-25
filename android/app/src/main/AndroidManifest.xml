@@ -81,6 +81,12 @@
             android:foregroundServiceType="specialUse" />
 
         <service
+            android:name=".OfficialOpenClawInstallService"
+            android:exported="false"
+            android:process=":native_node_install"
+            android:foregroundServiceType="specialUse" />
+
+        <service
             android:name=".NativeNodeSkillRunnerService"
             android:exported="false"
             android:process=":native_node_runner" />
