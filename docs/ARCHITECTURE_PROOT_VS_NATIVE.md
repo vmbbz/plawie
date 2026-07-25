@@ -196,14 +196,12 @@ for `8765`.
 
 ## Plugin And Tool Evidence
 
-Current observed Gateway logs prove both PRoot and native load the same 12
-startup plugins:
+The 2026-07-26 official OpenClaw `2026.7.1` native trace loaded these ten
+startup plugins with zero load or registration failures:
 
 ```text
-browser
 canvas
 device-pair
-file-transfer
 google
 memory-core
 microsoft
@@ -213,6 +211,12 @@ phone-control
 talk-voice
 xai
 ```
+
+`browser` and `file-transfer` are still present in the verified official core
+and remain in Plawie's native-safe allowlist, but this upstream release does not
+auto-enable them in its default startup plan. A user configuration may enable
+them without triggering an npm repair; Plawie does not force them onto every
+startup merely to match an older release's plugin count.
 
 Registered startup plugin commands observed:
 
@@ -365,6 +369,15 @@ remote dependency packs, or execute a repair. Dependency provisioning is an
 explicit management action, and raw Linux ELF packs remain restricted to an
 explicitly selected compatible PRoot runtime.
 
+OpenClaw's agent heartbeat is separate from Android's process-health watchdog.
+Upstream defaults an unconfigured agent heartbeat to a full model turn every 30
+minutes. Plawie's mobile default writes `agents.defaults.heartbeat.every =
+"0m"` only when no valid heartbeat map exists, so fresh installs do not
+silently spend network data, battery, tokens, or provider quota. Existing
+explicit heartbeat configuration is preserved. Older Plawie-generated
+`HEARTBEAT.md` files are removed only when their contents exactly match the
+legacy template; user-edited heartbeat tasks are never deleted.
+
 PRoot is not downloaded, extracted, configured, or auto-started by native
 fresh setup. Its Ubuntu rootfs and separate rollback OpenClaw installation are
 downloaded only after the user selects **Set up emergency PRoot rollback**.
@@ -452,6 +465,9 @@ receipt and checks four required package files. It does not recursively recount
 the roughly 45,824 package files on every launch. Optional asset lanes retain
 their own digest/target receipts, so unchanged Python/audio assets are reused.
 An absent native runtime is also not started merely to receive a stop command.
+The wrapper runtime log is rotated above `512 KiB`, retaining the latest 400
+lines, so two-second in-app log polling never has to parse an indefinitely
+growing cross-restart control log.
 
 OpenClaw's process telemetry reported roughly `679-681 MB` around readiness, but
 Android `dumpsys meminfo` for the isolated Gateway process measured about

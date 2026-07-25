@@ -198,8 +198,10 @@ class ModelProviderCatalog {
   /// merely writing an arbitrary plugin ID into openclaw.json is not enough.
   static const Set<String> nativeGatewayBundledPluginIds = <String>{
     'anthropic',
+    'browser',
     'canvas',
     'device-pair',
+    'file-transfer',
     'google',
     'image-generation-core',
     'llm-task',

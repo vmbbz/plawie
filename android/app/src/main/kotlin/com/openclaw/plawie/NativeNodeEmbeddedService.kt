@@ -52,6 +52,8 @@ class NativeNodeEmbeddedService : Service() {
     companion object {
         private const val TAG = "NativeNodeEmbedded"
         private const val FULL_GATEWAY_BOOTSTRAP_MODE = "full-gateway-bootstrap"
+        private const val MAX_RUNTIME_LOG_BYTES = 512L * 1024L
+        private const val RETAIN_RUNTIME_LOG_LINES = 400
         private const val PYTHON_DEBUG_WHEEL_ASSET_DIR =
             "flutter_assets/assets/openclaw/python-debug-runtime/wheels"
         private const val WHISPER_RUNTIME_BIN_ASSET_DIR =
@@ -1827,6 +1829,7 @@ class NativeNodeEmbeddedService : Service() {
         return script
     }
 
+    @Synchronized
     private fun appendLog(message: String) {
         val stamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
         val payload = JSONObject()
@@ -1841,6 +1844,12 @@ class NativeNodeEmbeddedService : Service() {
         try {
             val file = logFile(applicationContext)
             file.parentFile?.mkdirs()
+            if (file.length() > MAX_RUNTIME_LOG_BYTES) {
+                val retained = file.readLines()
+                    .takeLast(RETAIN_RUNTIME_LOG_LINES)
+                    .joinToString(separator = "\n", postfix = "\n")
+                file.writeText(retained)
+            }
             file.appendText(payload + "\n")
         } catch (e: Exception) {
             Log.w(TAG, "Could not append native Node log", e)

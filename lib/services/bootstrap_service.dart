@@ -1389,7 +1389,15 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
       config['agents'] ??= {};
       config['agents']['defaults'] ??= {};
       if (config['agents']['defaults'] is Map) {
-        (config['agents']['defaults'] as Map).remove('skipBootstrap');
+        final defaults = config['agents']['defaults'] as Map;
+        defaults.remove('skipBootstrap');
+        // OpenClaw defaults to a full agent/model turn every 30 minutes when
+        // heartbeat is absent. Mobile setup must not silently spend data,
+        // battery, or provider quota. Preserve every explicit heartbeat map
+        // so users can opt in from the app or dashboard.
+        if (defaults['heartbeat'] is! Map) {
+          defaults['heartbeat'] = <String, dynamic>{'every': '0m'};
+        }
       }
       config['agents']['defaults']['model'] ??= {};
       final currentPrimary =
