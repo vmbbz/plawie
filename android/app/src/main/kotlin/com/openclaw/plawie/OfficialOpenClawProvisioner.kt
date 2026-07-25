@@ -163,7 +163,7 @@ class OfficialOpenClawProvisioner(
     }
 
     private fun receiptMap(release: OfficialRelease, updated: Boolean): Map<String, Any> {
-        val packageDir = File(workDir, PACKAGE_RELATIVE_PATH)
+        val packageDir = canonicalPackageDir(workDir)
         return mapOf(
             "installed" to true,
             "updated" to updated,
@@ -1150,7 +1150,7 @@ class OfficialOpenClawProvisioner(
 
         fun nativePackageStatus(context: Context): NativePackageStatus {
             val workDir = File(context.filesDir, NATIVE_WORK_DIR)
-            val packageDir = File(workDir, PACKAGE_RELATIVE_PATH)
+            val packageDir = canonicalPackageDir(workDir)
             val packageJson = File(packageDir, "package.json")
             val launcher = File(packageDir, "openclaw.mjs")
             val runMain = File(packageDir, "dist/cli/run-main.js")
@@ -1173,6 +1173,10 @@ class OfficialOpenClawProvisioner(
                 receiptVersion = receipt?.optString("version")?.ifBlank { null },
                 receiptIntegrity = receipt?.optString("tarballIntegrity")?.ifBlank { null }
             )
+        }
+
+        private fun canonicalPackageDir(workDir: File): File {
+            return File(File(workDir, FULL_GATEWAY_DIR), PACKAGE_RELATIVE_PATH)
         }
     }
 }

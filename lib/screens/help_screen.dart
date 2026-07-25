@@ -87,7 +87,7 @@ class HelpScreen extends StatelessWidget {
                         context,
                         title: 'Precision Background Stability',
                         description:
-                            'The PlawieForegroundService runs as a high-priority Android service with partial CPU WakeLocks. A watchdog monitors the OpenClaw gateway and triggers a surgical auto-repair if dependencies are missing.',
+                            'The native OpenClaw gateway owns one Android foreground service and persistent notification. The legacy Plawie watchdog is used only when you explicitly select the emergency PRoot rollback runtime.',
                         icon: Icons.security_rounded,
                         color: AppColors.statusGreen,
                       ),

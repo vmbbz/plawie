@@ -77,6 +77,17 @@ Current owner-aware control-plane coverage:
 - The isolated native Gateway service is non-sticky; only an explicit owner or
   watchdog request may restart it. Android must never turn a production crash
   into an implicit `18790` diagnostics process.
+- The canonical verified upstream package and its receipt live under
+  `native-node-embedded/full-openclaw/`. Bootstrap, version checks, and
+  no-redownload decisions must inspect that activated tree rather than the
+  installer's former staging-prefix path.
+- Android's generic `isGatewayRunning` bridge is owner-aware: it probes the
+  isolated native production runtime for the native owner and the PRoot process
+  manager only for explicit rollback.
+- Native mode has one Gateway foreground owner and notification:
+  `NativeNodeEmbeddedService`. Boot and heartbeat recovery restart that owner
+  directly and never start `PlawieForegroundService`; the latter remains the
+  PRoot rollback watchdog only.
 - Native startup returns immediately to the health/process waiter; dashboard
   URL discovery is non-blocking until the listener exists. A dead isolated
   process therefore fails setup promptly instead of being hidden by a

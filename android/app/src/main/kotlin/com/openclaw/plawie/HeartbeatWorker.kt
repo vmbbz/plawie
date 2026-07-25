@@ -20,12 +20,36 @@ class HeartbeatWorker(appContext: Context, workerParams: WorkerParameters) :
             return Result.success()
         }
         
-        // Ensure the foreground service is active
+        if (SetupGuards.isNativeGatewayOwner(applicationContext)) {
+            // NativeNodeEmbeddedService owns both the production process and
+            // its one persistent Gateway notification. The legacy Plawie
+            // watchdog is reserved for the explicit PRoot rollback owner.
+            PlawieForegroundService.stop(applicationContext)
+            val nativeGateway = NativeNodeSmokeProcess(
+                applicationContext,
+                applicationContext.applicationInfo.nativeLibraryDir
+            )
+            if (!nativeGateway.isFullGatewayProductionRunning()) {
+                Log.w(
+                    "HeartbeatWorker",
+                    "Native Gateway is not running; requesting the native owner service..."
+                )
+                nativeGateway.startFullGatewayProduction()
+            } else {
+                Log.i("HeartbeatWorker", "Native Gateway owner is healthy.")
+            }
+            return Result.success()
+        }
+
+        // PRoot rollback keeps its own foreground watchdog active.
         if (!PlawieForegroundService.isRunning) {
-            Log.w("HeartbeatWorker", "Service NOT running, restarting PlawieForegroundService...")
+            Log.w(
+                "HeartbeatWorker",
+                "PRoot watchdog is not running; restarting PlawieForegroundService..."
+            )
             PlawieForegroundService.start(applicationContext)
         } else {
-            Log.i("HeartbeatWorker", "Service is healthy.")
+            Log.i("HeartbeatWorker", "PRoot watchdog is healthy.")
         }
 
         return Result.success()

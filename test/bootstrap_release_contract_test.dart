@@ -139,6 +139,13 @@ void main() {
     expect(installer, contains('NPM_CLI_INTEGRITY'));
     expect(installer, contains('--ignore-scripts'));
     expect(installer, contains('npmExitCodeFromLogs'));
+    expect(installer, contains('canonicalPackageDir(workDir)'));
+    expect(
+      installer,
+      contains(
+        'File(File(workDir, FULL_GATEWAY_DIR), PACKAGE_RELATIVE_PATH)',
+      ),
+    );
     expect(mainActivity, contains('OfficialOpenClawInstallService.start'));
     expect(mainActivity, contains('awaitIsolatedProvisionResult'));
     expect(isolatedInstaller, contains('Process.killProcess(Process.myPid())'));
@@ -271,6 +278,18 @@ void main() {
     ).readAsString();
     final gateway =
         await File('lib/services/gateway_service.dart').readAsString();
+    final heartbeat = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/HeartbeatWorker.kt',
+    ).readAsString();
+    final bootReceiver = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/BootReceiver.kt',
+    ).readAsString();
+    final legacyWatchdog = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/PlawieForegroundService.kt',
+    ).readAsString();
+    final mainActivity = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt',
+    ).readAsString();
 
     expect(setupService,
         contains('OfficialOpenClawInstallService.clearLegacyNotification'));
@@ -285,5 +304,18 @@ void main() {
     expect(nodeService,
         contains('Node foreground service deferred until setup completes'));
     expect(gateway, isNot(contains('FlutterForegroundTask.startService')));
+    expect(heartbeat, contains('SetupGuards.isNativeGatewayOwner'));
+    expect(heartbeat, contains('nativeGateway.startFullGatewayProduction()'));
+    expect(bootReceiver, contains('ensureGatewayOwnerService(context)'));
+    expect(
+      legacyWatchdog,
+      contains(
+        'PlawieForegroundService start ignored; native Gateway service owns notifications',
+      ),
+    );
+    expect(
+      mainActivity,
+      contains('nativeNodeSmokeProcess.isFullGatewayProductionRunning()'),
+    );
   });
 }

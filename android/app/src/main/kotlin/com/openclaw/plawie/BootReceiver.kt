@@ -35,7 +35,7 @@ class BootReceiver : BroadcastReceiver() {
 
         if (autoStart && SetupGuards.canAutomateGateway(context)) {
             Log.i(TAG, "Auto-starting Plawie services...")
-            PlawieForegroundService.start(context)
+            ensureGatewayOwnerService(context)
             NodeForegroundService.start(context)
         } else if (autoStart) {
             Log.i(TAG, "Auto-start deferred until setup completes.")
@@ -50,10 +50,7 @@ class BootReceiver : BroadcastReceiver() {
             return
         }
 
-        if (!PlawieForegroundService.isRunning) {
-            Log.w(TAG, "Service was killed, restarting via Alarm...")
-            PlawieForegroundService.start(context)
-        }
+        ensureGatewayOwnerService(context)
         
         // Reschedule for 30 mins later
         rescheduleHeartbeat(context)
@@ -75,6 +72,30 @@ class BootReceiver : BroadcastReceiver() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to reschedule alarm", e)
+        }
+    }
+
+    private fun ensureGatewayOwnerService(context: Context) {
+        if (SetupGuards.isNativeGatewayOwner(context)) {
+            PlawieForegroundService.stop(context)
+            val nativeGateway = NativeNodeSmokeProcess(
+                context.applicationContext,
+                context.applicationInfo.nativeLibraryDir
+            )
+            if (!nativeGateway.isFullGatewayProductionRunning()) {
+                Log.w(TAG, "Native Gateway was not running; requesting native owner service...")
+                nativeGateway.startFullGatewayProduction()
+            } else {
+                Log.i(TAG, "Native Gateway owner is healthy.")
+            }
+            return
+        }
+
+        if (!PlawieForegroundService.isRunning) {
+            Log.w(TAG, "PRoot watchdog was not running; restarting via Alarm...")
+            PlawieForegroundService.start(context)
+        } else {
+            Log.i(TAG, "PRoot watchdog is healthy.")
         }
     }
 }

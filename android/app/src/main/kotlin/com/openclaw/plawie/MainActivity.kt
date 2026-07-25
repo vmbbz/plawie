@@ -473,7 +473,12 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "isGatewayRunning" -> {
-                    result.success(processManager.isGatewayRunning())
+                    val running = if (SetupGuards.isNativeGatewayOwner(this)) {
+                        nativeNodeSmokeProcess.isFullGatewayProductionRunning()
+                    } else {
+                        processManager.isGatewayRunning()
+                    }
+                    result.success(running)
                 }
                 "getGatewayLogs" -> {
                     result.success(processManager.getRecentLogs())

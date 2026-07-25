@@ -49,6 +49,14 @@ class PlawieForegroundService : Service() {
         private var instance: PlawieForegroundService? = null
 
         fun start(context: Context) {
+            if (SetupGuards.isNativeGatewayOwner(context)) {
+                Log.i(
+                    TAG,
+                    "PlawieForegroundService start ignored; native Gateway service owns notifications"
+                )
+                stop(context)
+                return
+            }
             val intent = Intent(context, PlawieForegroundService::class.java)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -110,6 +118,21 @@ class PlawieForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (SetupGuards.isNativeGatewayOwner(this)) {
+            Log.i(
+                TAG,
+                "Stopping legacy Gateway watchdog because native Gateway owns production"
+            )
+            isRunning = false
+            instance = null
+            stopWatchdog()
+            releaseWakeLock()
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
         when (intent?.action) {
             ACTION_STOP -> {
                 Log.i(TAG, "Notification ACTION_STOP received")
@@ -149,6 +172,12 @@ class PlawieForegroundService : Service() {
      * Re-deliver the start intent so the service restarts via START_STICKY.
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
+        if (SetupGuards.isNativeGatewayOwner(this)) {
+            Log.i(TAG, "onTaskRemoved: native Gateway owns production; legacy restart suppressed")
+            stopSelf()
+            super.onTaskRemoved(rootIntent)
+            return
+        }
         Log.i(TAG, "onTaskRemoved: App swiped away — service will persist via START_STICKY")
         // Re-deliver start command to ensure onStartCommand fires again if OS kills us
         val restartIntent = Intent(applicationContext, PlawieForegroundService::class.java)
