@@ -84,10 +84,13 @@ Current owner-aware control-plane coverage:
 - Android's generic `isGatewayRunning` bridge is owner-aware: it probes the
   isolated native production runtime for the native owner and the PRoot process
   manager only for explicit rollback.
-- Native mode has one Gateway foreground owner and notification:
-  `NativeNodeEmbeddedService`. Boot and heartbeat recovery restart that owner
-  directly and never start `PlawieForegroundService`; the latter remains the
-  PRoot rollback watchdog only.
+- Native mode has one user-visible Gateway foreground notification. The
+  isolated `NativeNodeEmbeddedService` and the paired Android phone-node
+  service share that record so both processes remain protected without
+  presenting duplicate runtime notifications. Boot and heartbeat recovery
+  restart the native Gateway owner directly and never start
+  `PlawieForegroundService`; the latter remains the PRoot rollback watchdog
+  only.
 - Native startup returns immediately to the health/process waiter; dashboard
   URL discovery is non-blocking until the listener exists. A dead isolated
   process therefore fails setup promptly instead of being hidden by a

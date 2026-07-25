@@ -47,12 +47,13 @@ class NodeForegroundService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var startTime: Long = 0
+    private var sharesNativeGatewayNotification = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        createNotificationChannels()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -65,8 +66,12 @@ class NodeForegroundService : Service() {
         }
         isRunning = true
         instance = this
-        startTime = System.currentTimeMillis()
-        startForeground(NOTIFICATION_ID, buildNotification("Node connected"))
+        sharesNativeGatewayNotification =
+            SetupGuards.isNativeGatewayOwner(applicationContext)
+        if (startTime == 0L) {
+            startTime = System.currentTimeMillis()
+        }
+        startForeground(activeNotificationId(), buildNotification("Node connected"))
         acquireWakeLock()
         return START_STICKY
     }
@@ -75,22 +80,28 @@ class NodeForegroundService : Service() {
         isRunning = false
         instance = null
         releaseWakeLock()
+        releaseForegroundNotification()
         super.onDestroy()
     }
 
     private fun updateNotification(text: String) {
         try {
             val manager = getSystemService(NotificationManager::class.java)
-            manager.notify(NOTIFICATION_ID, buildNotification(text))
+            manager.notify(activeNotificationId(), buildNotification(text))
         } catch (_: Exception) {}
     }
 
     private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) {
+            return
+        }
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "OpenClaw::NodeWakeLock"
-        )
+        ).apply {
+            setReferenceCounted(false)
+        }
         wakeLock?.acquire(24 * 60 * 60 * 1000L) // 24 hours max
     }
 
@@ -101,17 +112,50 @@ class NodeForegroundService : Service() {
         wakeLock = null
     }
 
-    private fun createNotificationChannel() {
+    private fun activeNotificationId(): Int =
+        if (sharesNativeGatewayNotification) {
+            NativeNodeEmbeddedService.GATEWAY_NOTIFICATION_ID
+        } else {
+            NOTIFICATION_ID
+        }
+
+    private fun activeChannelId(): String =
+        if (sharesNativeGatewayNotification) {
+            NativeNodeEmbeddedService.GATEWAY_NOTIFICATION_CHANNEL_ID
+        } else {
+            CHANNEL_ID
+        }
+
+    private fun releaseForegroundNotification() {
+        @Suppress("DEPRECATION")
+        if (sharesNativeGatewayNotification) {
+            // NativeNodeEmbeddedService still owns this shared record. Detach
+            // this service without cancelling the Gateway's notification.
+            stopForeground(false)
+        } else {
+            stopForeground(true)
+        }
+    }
+
+    private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            val manager = getSystemService(NotificationManager::class.java)
+            val nodeChannel = NotificationChannel(
                 CHANNEL_ID,
                 "OpenClaw Node Connection",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Keeps the OpenClawX Node connected in the background"
             }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            val gatewayChannel = NotificationChannel(
+                NativeNodeEmbeddedService.GATEWAY_NOTIFICATION_CHANNEL_ID,
+                "OpenClaw Gateway",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Keeps the official native OpenClaw gateway alive"
+            }
+            manager.createNotificationChannel(nodeChannel)
+            manager.createNotificationChannel(gatewayChannel)
         }
     }
 
@@ -123,14 +167,19 @@ class NodeForegroundService : Service() {
         )
 
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
+            Notification.Builder(this, activeChannelId())
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
 
-        builder.setContentTitle("OpenClaw Node")
-            .setContentText(text)
+        val title =
+            if (sharesNativeGatewayNotification) "OpenClaw Gateway" else "OpenClaw Node"
+        val contentText =
+            if (sharesNativeGatewayNotification) "Native gateway • $text" else text
+
+        builder.setContentTitle(title)
+            .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

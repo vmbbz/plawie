@@ -259,15 +259,18 @@ Foreground notifications have one owner per active role:
 | Role | Owner | Notification |
 | --- | --- | --- |
 | Setup, including official npm provisioning | `SetupService` and the isolated installer sharing one record | ID 3, `OpenClaw Setup` |
-| Native Gateway after setup is complete | `NativeNodeEmbeddedService` | ID 7, `OpenClaw Gateway` |
+| Native Gateway and paired local phone node after setup | `NativeNodeEmbeddedService` and `NodeForegroundService` sharing one record | ID 7, `OpenClaw Gateway` |
 | Explicit PRoot rollback Gateway | `PlawieForegroundService` | ID 4 |
-| Optional paired node connection | `NodeForegroundService`, only after setup completes | ID 9 |
+| Optional remote/rollback paired node without the native owner | `NodeForegroundService` | ID 9 |
 
 The native runtime shares the setup record while setup is still active, then
-promotes it to the running-Gateway record at completion. The old Flutter
-foreground-task notification is not started. Hotword, screen capture, and
-terminal notifications remain separate only while those distinct user-enabled
-capabilities are active.
+promotes it to the running-Gateway record at completion. Once paired, the local
+phone-node service reuses that same package/channel/ID instead of adding a
+second persistent notification. Stopping only the phone node detaches it from
+the shared record; the native Gateway remains the notification owner. The old
+Flutter foreground-task notification is not started. Hotword, screen capture,
+and terminal notifications remain separate only while those distinct
+user-enabled capabilities are active.
 
 ## Gateway Plugins, Skills, And Device Capabilities
 

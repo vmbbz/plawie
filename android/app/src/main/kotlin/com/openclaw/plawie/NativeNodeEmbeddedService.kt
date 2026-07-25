@@ -29,7 +29,7 @@ class NativeNodeEmbeddedService : Service() {
     private val startedAtMs = SystemClock.elapsedRealtime()
     private var activePort = PORT
     private var activeCanaryMode = "embedded-smoke"
-    private var foregroundNotificationId = NOTIFICATION_ID
+    private var foregroundNotificationId = GATEWAY_NOTIFICATION_ID
     private val fullGatewayBootstrapStartClaimed = AtomicBoolean(false)
     private var lastStartIgnoredMessage: String? = null
     private var lastStartIgnoredAtMs: Long = 0L
@@ -68,8 +68,8 @@ class NativeNodeEmbeddedService : Service() {
             "flutter_assets/assets/openclaw/node-executable-pack/bin"
         private const val AGENT_CLI_BIN_ASSET_DIR =
             "flutter_assets/assets/openclaw/agent-cli-pack/bin"
-        private const val NOTIFICATION_CHANNEL_ID = "openclaw_gateway"
-        private const val NOTIFICATION_ID = 7
+        internal const val GATEWAY_NOTIFICATION_CHANNEL_ID = "openclaw_gateway"
+        internal const val GATEWAY_NOTIFICATION_ID = 7
         private const val ACTION_START = "com.openclaw.plawie.native_node.START"
         private const val ACTION_STOP = "com.openclaw.plawie.native_node.STOP"
         private const val ACTION_PROMOTE_NOTIFICATION =
@@ -106,7 +106,7 @@ class NativeNodeEmbeddedService : Service() {
 
         fun clearGatewayNotification(context: Context) {
             context.getSystemService(NotificationManager::class.java)
-                .cancel(NOTIFICATION_ID)
+                .cancel(GATEWAY_NOTIFICATION_ID)
         }
 
         fun promoteGatewayNotification(context: Context) {
@@ -139,7 +139,7 @@ class NativeNodeEmbeddedService : Service() {
         }
 
         if (intent?.action == ACTION_PROMOTE_NOTIFICATION) {
-            foregroundNotificationId = NOTIFICATION_ID
+            foregroundNotificationId = GATEWAY_NOTIFICATION_ID
             startForeground(
                 foregroundNotificationId,
                 buildNotification("OpenClaw gateway running")
@@ -152,7 +152,7 @@ class NativeNodeEmbeddedService : Service() {
         foregroundNotificationId = if (SetupGuards.isSetupInProgress(applicationContext)) {
             SetupService.NOTIFICATION_ID
         } else {
-            NOTIFICATION_ID
+            GATEWAY_NOTIFICATION_ID
         }
         val startupText = if (intent?.action == ACTION_STOP) {
             "Stopping OpenClaw gateway…"
@@ -181,7 +181,7 @@ class NativeNodeEmbeddedService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
+                GATEWAY_NOTIFICATION_CHANNEL_ID,
                 "OpenClaw Gateway",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
@@ -199,7 +199,7 @@ class NativeNodeEmbeddedService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+            Notification.Builder(this, GATEWAY_NOTIFICATION_CHANNEL_ID)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)

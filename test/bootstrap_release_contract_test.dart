@@ -300,12 +300,25 @@ void main() {
         contains('OfficialOpenClawInstallService.clearLegacyNotification'));
     expect(setupService,
         contains('NativeNodeEmbeddedService.clearGatewayNotification'));
-    expect(nativeRuntime, contains('private const val NOTIFICATION_ID = 7'));
+    expect(
+      nativeRuntime,
+      contains('internal const val GATEWAY_NOTIFICATION_ID = 7'),
+    );
     expect(nativeRuntime, contains('stopForeground(true)'));
     expect(nativeRuntime, contains('discarded null restart intent'));
     expect(nativeRuntime, contains('return START_NOT_STICKY'));
     expect(nativeRuntime, isNot(contains('return START_STICKY')));
     expect(nodeService, contains('const val NOTIFICATION_ID = 9'));
+    expect(
+      nodeService,
+      contains('NativeNodeEmbeddedService.GATEWAY_NOTIFICATION_ID'),
+    );
+    expect(
+      nodeService,
+      contains('NativeNodeEmbeddedService.GATEWAY_NOTIFICATION_CHANNEL_ID'),
+    );
+    expect(nodeService, contains('if (wakeLock?.isHeld == true)'));
+    expect(nodeService, contains('stopForeground(false)'));
     expect(nodeService,
         contains('Node foreground service deferred until setup completes'));
     expect(gateway, isNot(contains('FlutterForegroundTask.startService')));
