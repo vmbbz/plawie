@@ -3474,9 +3474,10 @@ class SkillProvisioningService {
       throw StateError('Pack ${pack.id} does not include a download URL.');
     }
     await layout.dependencyTmpDir.create(recursive: true);
-    final bytes = await _readDependencyPackBytes(
+    final bytes = await _readOrDownloadDependencyPackBytes(
+      layout,
+      pack,
       url,
-      maxBytes: pack.maxBytes,
       onProgress: onProgress,
     );
     if (pack.maxBytes != null && bytes.length > pack.maxBytes!) {
@@ -3533,6 +3534,120 @@ class SkillProvisioningService {
           await stage.delete(recursive: true);
         } catch (_) {}
       }
+    }
+  }
+
+  static Future<List<int>> _readOrDownloadDependencyPackBytes(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+    String url, {
+    void Function(double progress)? onProgress,
+  }) async {
+    final cachedArchive = _dependencyPackArchiveCacheFile(layout, pack);
+    if (await cachedArchive.exists()) {
+      try {
+        final bytes = await cachedArchive.readAsBytes();
+        _verifyDependencyArchiveBytes(pack, bytes);
+        debugPrint('[DEPS] using verified archive cache pack=${pack.id}');
+        onProgress?.call(1.0);
+        return bytes;
+      } catch (error) {
+        debugPrint(
+          '[DEPS] discarded invalid archive cache pack=${pack.id}: $error',
+        );
+        try {
+          await cachedArchive.delete();
+        } catch (_) {}
+      }
+    }
+
+    final bytes = await _readDependencyPackBytes(
+      url,
+      maxBytes: pack.maxBytes,
+      onProgress: onProgress,
+    );
+    _verifyDependencyArchiveBytes(pack, bytes);
+    await _writeDependencyArchiveCache(layout, pack, bytes);
+    return bytes;
+  }
+
+  static void _verifyDependencyArchiveBytes(
+    _DependencyPack pack,
+    List<int> bytes,
+  ) {
+    if (pack.maxBytes != null && bytes.length > pack.maxBytes!) {
+      throw StateError('Pack ${pack.id} exceeds maxBytes=${pack.maxBytes}.');
+    }
+    final digest = crypto.sha256.convert(bytes).toString().toLowerCase();
+    if (pack.sha256.isNotEmpty && digest != pack.sha256) {
+      throw StateError('SHA256 mismatch for ${pack.id}.');
+    }
+  }
+
+  static File _dependencyPackArchiveCacheFile(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) {
+    final safeId = pack.id.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    final identity = crypto.sha256
+        .convert(utf8.encode('${pack.id}\n${pack.version}\n${pack.sha256}'))
+        .toString();
+    return File(
+      path.join(
+        layout.dependencyArchiveCacheDir.path,
+        '$safeId-$identity.archive',
+      ),
+    );
+  }
+
+  static Future<void> _writeDependencyArchiveCache(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+    List<int> bytes,
+  ) async {
+    final target = _dependencyPackArchiveCacheFile(layout, pack);
+    await target.parent.create(recursive: true);
+    final prefix = '${pack.id.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')}-';
+    await for (final entity in target.parent.list(followLinks: false)) {
+      if (entity is File &&
+          path.basename(entity.path).startsWith(prefix) &&
+          !path.equals(entity.path, target.path)) {
+        try {
+          await entity.delete();
+        } catch (_) {}
+      }
+    }
+    final staged = File(
+      '${target.path}.tmp-${DateTime.now().microsecondsSinceEpoch}',
+    );
+    try {
+      await staged.writeAsBytes(bytes, flush: true);
+      try {
+        await staged.rename(target.path);
+      } on FileSystemException {
+        if (await target.exists()) await target.delete();
+        await staged.rename(target.path);
+      }
+    } finally {
+      if (await staged.exists()) {
+        try {
+          await staged.delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  static Future<void> _deleteDependencyArchiveCache(
+    _SkillProvisioningLayout layout,
+    _DependencyPack pack,
+  ) async {
+    final archive = _dependencyPackArchiveCacheFile(layout, pack);
+    try {
+      if (await archive.exists()) await archive.delete();
+    } catch (error) {
+      debugPrint(
+        '[DEPS] failed cleanup archive cache pack=${pack.id}: $error',
+      );
     }
   }
 
@@ -4007,6 +4122,7 @@ class SkillProvisioningService {
           })}\n',
       flush: true,
     );
+    await _deleteDependencyArchiveCache(layout, pack);
   }
 
   static String _normalizeDependencyName(String value) =>
@@ -4670,6 +4786,8 @@ class _SkillProvisioningLayout {
       Directory(path.join(dependencyReceiptDir.path, 'node-packages'));
   Directory get dependencyTmpDir =>
       Directory(path.join(dependencyRoot.path, 'tmp'));
+  Directory get dependencyArchiveCacheDir =>
+      Directory(path.join(dependencyRoot.path, 'archive-cache'));
   File get dependencyPackManifestFile =>
       File(path.join(dependencyRoot.path, 'dependency_packs.json'));
   File get nodePackageManifestFile =>

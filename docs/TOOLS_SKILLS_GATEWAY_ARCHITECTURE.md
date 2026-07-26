@@ -429,14 +429,18 @@ dependency packs; they are not Gateway mirrors.
 
 Live app-sandbox probes verified the release-matching `wacli`, `ffmpeg`,
 `songsee`, Whisper, Sherpa executable runtime, and `tmux` payloads as native
-Android arm64 binaries. Dynamic pack launchers inherit `.openclaw/lib` through
+Android arm64 binaries when invoked through Android's trusted
+`/system/bin/linker64`. Direct app-data `execve` is blocked by SELinux. Both
+the Flutter bridge and Gateway `child_process` wrappers apply the linker
+invocation; dynamic pack launchers inherit `.openclaw/lib` through
 `LD_LIBRARY_PATH`. The signed terminal manifest's `tmux --help` smoke is
 normalized to `tmux -V`, because tmux prints help but exits 1 for the former.
 
 Native setup installs the six verified Whisper, TTS-runtime, CLI-core,
 vision-media, audio-runtime, and terminal packs. SHA-256/Ed25519 verification,
 per-file checks, native smoke, and a durable receipt form one transaction.
-Retries skip valid receipts instead of spending data twice.
+Retries skip valid receipts instead of spending data twice. Verified archives
+survive a failed smoke for a no-redownload retry and are deleted after success.
 
 Three cards must remain honest native gaps:
 

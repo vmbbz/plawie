@@ -1169,7 +1169,7 @@ class MainActivity : FlutterActivity() {
             throw IllegalStateException("ffmpeg is not executable.")
         }
 
-        val command = listOf(ffmpeg.absolutePath) + args
+        val command = managedNativeElfCommand(ffmpeg, args)
         val process = ProcessBuilder(command)
             .directory(cacheDir)
             .redirectErrorStream(false)
@@ -1258,7 +1258,7 @@ class MainActivity : FlutterActivity() {
 
         nativeHome.mkdirs()
         cacheDir.mkdirs()
-        val command = listOf(binary.absolutePath) + args
+        val command = managedNativeElfCommand(binary, args)
         val process = ProcessBuilder(command)
             .directory(nativeHome)
             .redirectErrorStream(false)
@@ -1309,6 +1309,22 @@ class MainActivity : FlutterActivity() {
             "stderr" to stderr.toString(),
             "binaryPath" to binary.absolutePath
         )
+    }
+
+    /**
+     * Android SELinux denies execute_no_trans for downloaded ELF files in the
+     * app data directory. The verified arm64 packs are Bionic binaries, so
+     * launch them through Android's trusted 64-bit dynamic linker. This keeps
+     * execution native while avoiding a shell or PRoot compatibility layer.
+     */
+    private fun managedNativeElfCommand(binary: File, args: List<String>): List<String> {
+        val linker = File("/system/bin/linker64")
+        if (!linker.isFile || !linker.canExecute()) {
+            throw IllegalStateException(
+                "Android 64-bit linker is unavailable for managed native packs."
+            )
+        }
+        return listOf(linker.absolutePath, binary.absolutePath) + args
     }
 
     private fun readProcessStreamBounded(

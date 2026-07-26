@@ -157,6 +157,7 @@ void main() {
     expect(activity, contains('"runManagedCli"'));
     expect(activity, contains('managedCliAllowlist'));
     expect(activity, contains('"eightctl"'));
+    expect(activity, contains('managedNativeElfCommand(binary, args)'));
     expect(
       GatewayToolCatalog.mobileNodeAllowCommands,
       contains('eightctl.status'),

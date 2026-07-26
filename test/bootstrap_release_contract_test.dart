@@ -254,8 +254,16 @@ void main() {
     expect(packs, contains('_writeJsonAtomically('));
     expect(mainActivity, contains('environment()["LD_LIBRARY_PATH"]'));
     expect(mainActivity, contains('managedLib.absolutePath'));
+    expect(mainActivity, contains('managedNativeElfCommand'));
+    expect(mainActivity, contains('File("/system/bin/linker64")'));
     expect(nativeRuntime, contains('process.env.LD_LIBRARY_PATH = ['));
     expect(nativeRuntime, contains('OPENCLAW_NATIVE_MANAGED_LIB'));
+    expect(nativeRuntime, contains('managedNativeInvocation'));
+    expect(nativeRuntime,
+        contains('const nativeLinker64 = "/system/bin/linker64"'));
+    expect(packs, contains('_readOrDownloadDependencyPackBytes'));
+    expect(packs, contains('using verified archive cache'));
+    expect(packs, contains('dependencyArchiveCacheDir'));
     expect(provisioner, contains('onBytesCopied'));
     expect(provisioner, contains('markIsolatedProvisionProgress'));
     expect(installer, contains('markIsolatedProvisionProgress'));

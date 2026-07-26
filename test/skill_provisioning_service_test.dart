@@ -1356,6 +1356,34 @@ requirements:
       )).exists(),
       isFalse,
     );
+
+    final archiveCache = Directory(path.join(
+      nativeRoot,
+      'dependencies',
+      'archive-cache',
+    ));
+    final cachedArchives = await archiveCache
+        .list()
+        .where((entity) => entity is File)
+        .cast<File>()
+        .toList();
+    expect(cachedArchives, hasLength(1));
+    expect(await cachedArchives.single.readAsBytes(), packBytes);
+
+    // A smoke failure must remain retryable without spending data again.
+    await packFile.delete();
+    final retry = await SkillProvisioningService.instance.provisionSnapshot(
+      snapshot,
+      skillId: 'video-smoke',
+    );
+    expect(
+      retry.results.single.actions.any(
+        (action) =>
+            action.key == 'android-command-smoke-fail-test' &&
+            action.status == SkillProvisioningActionStatus.failedSmoke,
+      ),
+      isTrue,
+    );
   });
 
   test('provisioning does not hide missing transitive Python dependencies',

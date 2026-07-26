@@ -1451,6 +1451,69 @@ class NativeNodeEmbeddedService : Service() {
                 const base = path.basename(normalized).toLowerCase();
                 return base === "npm" || base === "npx";
               };
+              const nativeLinker64 = "/system/bin/linker64";
+              const managedNativeBins = new Set([
+                "blu",
+                "eightctl",
+                "ffmpeg",
+                "gifgrep",
+                "himalaya",
+                "openhue",
+                "sherpa-onnx",
+                "songsee",
+                "sonos",
+                "tmux",
+                "wacli",
+                "whisper"
+              ]);
+              const managedNativeBinary = (command) => {
+                if (!command) return null;
+                const normalized = String(command).replace(/\\/g, "/");
+                const base = path.basename(normalized).toLowerCase();
+                if (!managedNativeBins.has(base)) return null;
+                const candidate = path.resolve(
+                  path.isAbsolute(normalized)
+                    ? normalized
+                    : path.join(nativeManagedBin, base)
+                );
+                if (path.dirname(candidate) !== path.resolve(nativeManagedBin)) {
+                  return null;
+                }
+                try {
+                  if (!fs.statSync(candidate).isFile()) return null;
+                  if (!fs.statSync(nativeLinker64).isFile()) return null;
+                } catch (_) {
+                  return null;
+                }
+                return candidate;
+              };
+              const managedNativeOptions = (options = {}) => {
+                const sourceEnv = options && options.env ? options.env : process.env;
+                const libraryPath = [
+                  nativeManagedLib,
+                  sourceEnv.LD_LIBRARY_PATH || ""
+                ].filter(Boolean).join(":");
+                return {
+                  ...(options || {}),
+                  cwd: options && options.cwd ? options.cwd : nativeHome,
+                  env: {
+                    ...sourceEnv,
+                    HOME: sourceEnv.HOME || nativeHome,
+                    TMPDIR: sourceEnv.TMPDIR || nativeTmp,
+                    LD_LIBRARY_PATH: libraryPath
+                  }
+                };
+              };
+              const managedNativeInvocation = (command, args = []) => {
+                const binary = managedNativeBinary(command);
+                if (!binary) return null;
+                return {
+                  command: nativeLinker64,
+                  args: [binary, ...(Array.isArray(args) ? args : [])]
+                };
+              };
+              const isSimpleExecCommand = (command) =>
+                !/[|&;<>()\n\r]/.test(String(command || ""));
               let nativeNpmSpawnTraced = false;
               const normalizePayloadArgs = (command, args) => {
                 const list = Array.isArray(args) ? args.map((value) => String(value)) : [];
@@ -1621,6 +1684,17 @@ class NativeNodeEmbeddedService : Service() {
               childProcess.spawn = function(command, args, options) {
                 if (pythonKind(command)) return makeProcess(command, args, options || {});
                 if (npmKind(command)) return makeBlockedNpmProcess(command, args);
+                const actualArgs = Array.isArray(args) ? args : [];
+                const actualOptions = Array.isArray(args) ? (options || {}) : (args || {});
+                const managed = managedNativeInvocation(command, actualArgs);
+                if (managed) {
+                  return original.spawn.call(
+                    this,
+                    managed.command,
+                    managed.args,
+                    managedNativeOptions(actualOptions)
+                  );
+                }
                 return original.spawn.apply(this, arguments);
               };
               childProcess.execFile = function(file, args, options, callback) {
@@ -1650,6 +1724,16 @@ class NativeNodeEmbeddedService : Service() {
                     });
                   }
                   return proc;
+                }
+                const managed = managedNativeInvocation(file, actualArgs || []);
+                if (managed) {
+                  return original.execFile.call(
+                    this,
+                    managed.command,
+                    managed.args,
+                    managedNativeOptions(actualOptions || {}),
+                    actualCallback
+                  );
                 }
                 if (!pythonKind(file)) return original.execFile.apply(this, arguments);
                 const proc = makeProcess(file, actualArgs || [], actualOptions || {});
@@ -1681,6 +1765,16 @@ class NativeNodeEmbeddedService : Service() {
                     actualCallback
                   );
                 }
+                if (tokens.length &&
+                    isSimpleExecCommand(command) &&
+                    managedNativeBinary(tokens[0])) {
+                  return childProcess.execFile(
+                    tokens[0],
+                    tokens.slice(1),
+                    actualOptions || {},
+                    actualCallback
+                  );
+                }
                 if (!tokens.length || !pythonKind(tokens[0])) {
                   return original.exec.apply(this, arguments);
                 }
@@ -1701,11 +1795,33 @@ class NativeNodeEmbeddedService : Service() {
               childProcess.spawnSync = function(command, args, options) {
                 if (pythonKind(command)) return syncBlocked("object");
                 if (npmKind(command)) return blockedNpmSync(true, command, args);
+                const actualArgs = Array.isArray(args) ? args : [];
+                const actualOptions = Array.isArray(args) ? (options || {}) : (args || {});
+                const managed = managedNativeInvocation(command, actualArgs);
+                if (managed) {
+                  return original.spawnSync.call(
+                    this,
+                    managed.command,
+                    managed.args,
+                    managedNativeOptions(actualOptions)
+                  );
+                }
                 return original.spawnSync.apply(this, arguments);
               };
               childProcess.execFileSync = function(file, args, options) {
                 if (pythonKind(file)) return syncBlocked("buffer");
                 if (npmKind(file)) return blockedNpmSync(false, file, args);
+                const actualArgs = Array.isArray(args) ? args : [];
+                const actualOptions = Array.isArray(args) ? (options || {}) : (args || {});
+                const managed = managedNativeInvocation(file, actualArgs);
+                if (managed) {
+                  return original.execFileSync.call(
+                    this,
+                    managed.command,
+                    managed.args,
+                    managedNativeOptions(actualOptions)
+                  );
+                }
                 return original.execFileSync.apply(this, arguments);
               };
               childProcess.execSync = function(command, options) {
@@ -1714,9 +1830,20 @@ class NativeNodeEmbeddedService : Service() {
                 if (tokens.length && npmKind(tokens[0])) {
                   return blockedNpmSync(false, tokens[0], tokens.slice(1));
                 }
+                if (tokens.length &&
+                    isSimpleExecCommand(command) &&
+                    managedNativeBinary(tokens[0])) {
+                  return childProcess.execFileSync(
+                    tokens[0],
+                    tokens.slice(1),
+                    options || {}
+                  );
+                }
                 return original.execSync.apply(this, arguments);
               };
-              console.error("[NATIVE-PYTHON] child_process bridge installed for python/python3/pip");
+              console.error(
+                "[NATIVE-RUNTIME] child_process bridge installed for Python and managed Bionic packs"
+              );
             };
             installNativePythonBridge();
             try {

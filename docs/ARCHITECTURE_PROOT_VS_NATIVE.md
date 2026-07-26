@@ -332,9 +332,12 @@ The core and every optional pack keep separate durable receipts:
   capabilities, install time, and smoke-test result, so a valid compatible pack
   is reused rather than downloaded again.
 
-Native fresh setup requests only packs proven to run in the targetSdk 36 app
-sandbox. Android Bionic executables can run from the app-private managed
-directory; dynamic packs also require `.openclaw/lib` in `LD_LIBRARY_PATH`.
+Native fresh setup requests only packs proven in the targetSdk 36 app sandbox.
+SELinux does not permit the app process to `execve` downloaded ELF files
+directly from app data. Verified Android Bionic executables are therefore
+launched through `/system/bin/linker64`; this remains native execution and does
+not involve a shell, Linux rootfs, or PRoot. Dynamic packs also receive
+`.openclaw/lib` in `LD_LIBRARY_PATH`.
 The current native setup set is:
 
 - `android-whisper-runtime`;
@@ -347,7 +350,10 @@ The current native setup set is:
 Each payload is downloaded after the official Gateway is healthy, checked
 against signed metadata and per-file hashes, installed, smoked, and receipted.
 Setup fails without being marked complete if a requested pack fails. Retrying
-reuses valid receipts and downloads only missing or invalid packs.
+reuses valid receipts and downloads only missing or invalid packs. A
+hash-verified archive is retained only across a failed install/smoke so a fixed
+APK can retry without spending the same data again; it is removed after the
+successful receipt is committed.
 
 `android-agent-cli-pack` is deliberately quarantined from automatic setup even
 though it is published: its current executable attempts to create the

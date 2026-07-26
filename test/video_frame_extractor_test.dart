@@ -15,6 +15,8 @@ void main() {
     expect(activity, contains('"runManagedFfmpeg"'));
     expect(activity, contains('native-home/.openclaw/bin'));
     expect(activity, contains('"ffmpeg"'));
+    expect(activity, contains('managedNativeElfCommand(ffmpeg, args)'));
+    expect(activity, contains('File("/system/bin/linker64")'));
     expect(activity, contains('ProcessBuilder(command)'));
     expect(activity, contains('readProcessStreamBounded(process.inputStream'));
     expect(activity, contains('64 * 1024'));
