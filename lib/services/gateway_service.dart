@@ -5167,6 +5167,17 @@ HEARTBEAT_OK.
     if (normalized.isEmpty || normalized.toLowerCase() == 'null') {
       return 'Gateway/provider returned an empty error payload.';
     }
+    final lower = normalized.toLowerCase();
+    if (lower.contains('request schema') ||
+        lower.contains('tool payload') ||
+        lower.contains('schema or tool')) {
+      final selectedModel = model?.trim();
+      return '$normalized'
+          '${selectedModel == null || selectedModel.isEmpty ? '' : '\n\nSelected model: $selectedModel.'} '
+          'The provider rejected this turn before generation. Retry once; if '
+          'it persists, choose another model that supports tool calling. '
+          'Plawie keeps the official Gateway/tool lane enabled.';
+    }
     return normalized;
   }
 

@@ -80,7 +80,7 @@
 
         const IS_MOBILE_RENDERER = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
         const MAX_RENDER_PIXEL_RATIO = IS_MOBILE_RENDERER
-            ? Math.min(window.devicePixelRatio || 1, 2.0)
+            ? Math.min(window.devicePixelRatio || 1, 1.5)
             : Math.min(window.devicePixelRatio || 1, 1.75);
         const TARGET_FRAME_MS = IS_MOBILE_RENDERER ? 1000 / 30 : 1000 / 60;
 
@@ -91,8 +91,8 @@
 
         const renderer = new THREE.WebGLRenderer({
             alpha: true,
-            antialias: true,
-            powerPreference: IS_MOBILE_RENDERER ? "default" : "high-performance"
+            antialias: !IS_MOBILE_RENDERER,
+            powerPreference: IS_MOBILE_RENDERER ? "low-power" : "high-performance"
         });
         renderer.setPixelRatio(MAX_RENDER_PIXEL_RATIO);
         renderer.setSize(window.innerWidth, window.innerHeight, false);
@@ -546,20 +546,6 @@
                 }
             );
         };
-
-        (function sendReady() {
-            if (window.PlawieBridge) {
-                window.PlawieBridge.postMessage('READY');
-                window.PlawieBridge.postMessage(
-                    'LOG: [JS] Renderer profile mobile=' + IS_MOBILE_RENDERER +
-                    ' pixelRatio=' + MAX_RENDER_PIXEL_RATIO +
-                    ' targetFps=' + Math.round(1000 / TARGET_FRAME_MS) +
-                    ' deviceDpr=' + (window.devicePixelRatio || 1)
-                );
-            } else {
-                setTimeout(sendReady, 50);
-            }
-        })();
 
         // ── Sparkle Manager (tap fireworks) ──────────────────────────────────
         class SparkleManager {
@@ -1545,6 +1531,25 @@
             currentVrm.update(delta);
             renderer.render(scene, camera);
         }
+        // Publish readiness only after every Dart-callable module API above has
+        // been assigned. The classic bridge probe must never claim readiness
+        // while this module is still evaluating.
+        window._plawieModuleReady = true;
+        (function sendModuleReady() {
+            if (window.PlawieBridge) {
+                window._moduleReadySent = true;
+                window.PlawieBridge.postMessage('MODULE_READY');
+                window.PlawieBridge.postMessage(
+                    'LOG: [JS] Renderer profile mobile=' + IS_MOBILE_RENDERER +
+                    ' pixelRatio=' + MAX_RENDER_PIXEL_RATIO +
+                    ' targetFps=' + Math.round(1000 / TARGET_FRAME_MS) +
+                    ' deviceDpr=' + (window.devicePixelRatio || 1)
+                );
+            } else {
+                setTimeout(sendModuleReady, 50);
+            }
+        })();
+
         animate();
     </script>
 </body>

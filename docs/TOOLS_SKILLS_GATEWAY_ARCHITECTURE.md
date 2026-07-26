@@ -554,6 +554,19 @@ OpenClaw `2026.7.1` rejects `primaryModel` in `sessions.patch`. The app must
 wait for the patch response and must not tear down a healthy WebSocket merely
 to apply the supported live-session field.
 
+## Device Health Cost And Freshness
+
+`device.health` includes filesystem skill parity and dependency-pack planning,
+so an uncached call is intentionally more expensive than `device.status`.
+Plawie coalesces concurrent health calls and caches successful results for 15
+seconds. The response includes `healthCache.hit`, `generatedAt`, `ageMs`, and
+`ttlMs`.
+
+Callers that have just changed skills, configuration, or dependency packs can
+request a fresh audit with `{"refresh": true}`. The loopback HTTP equivalent is
+`GET /device/health?refresh=true`. A forced refresh bypasses the cache; ordinary
+polling must use the cache to avoid repeatedly rescanning the native runtime.
+
 ## Android Node Commands
 
 Device capabilities belong in node command policy, for example:

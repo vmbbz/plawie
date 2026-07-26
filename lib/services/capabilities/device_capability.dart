@@ -10,6 +10,11 @@ import '../skill_provisioning_service.dart';
 import 'capability_handler.dart';
 
 class DeviceCapability extends CapabilityHandler {
+  static const Duration _healthCacheTtl = Duration(seconds: 15);
+  static NodeFrame? _cachedHealth;
+  static DateTime? _cachedHealthAt;
+  static Future<NodeFrame>? _healthInFlight;
+
   @override
   String get name => 'device';
 
@@ -29,7 +34,11 @@ class DeviceCapability extends CapabilityHandler {
       case 'device.info':
         return _status();
       case 'device.health':
-        return _health();
+        return _health(
+          forceRefresh: _isTruthy(params['refresh']) ||
+              _isTruthy(params['forceRefresh']) ||
+              _isTruthy(params['fresh']),
+        );
       case 'device.permissions':
         return _permissions();
       default:
@@ -65,7 +74,42 @@ class DeviceCapability extends CapabilityHandler {
     }
   }
 
-  Future<NodeFrame> _health() async {
+  Future<NodeFrame> _health({bool forceRefresh = false}) {
+    final now = DateTime.now();
+    final cached = _cachedHealth;
+    final cachedAt = _cachedHealthAt;
+    if (!forceRefresh &&
+        cached != null &&
+        cachedAt != null &&
+        now.difference(cachedAt) < _healthCacheTtl) {
+      return Future.value(_withHealthCacheMetadata(
+        cached,
+        cachedAt: cachedAt,
+        cacheHit: true,
+      ));
+    }
+
+    final pending = _healthInFlight;
+    if (!forceRefresh && pending != null) return pending;
+
+    final future = _computeHealth();
+    if (!forceRefresh) _healthInFlight = future;
+    return future.then((frame) {
+      if (frame.isOk) {
+        _cachedHealth = frame;
+        _cachedHealthAt = DateTime.now();
+      }
+      return _withHealthCacheMetadata(
+        frame,
+        cachedAt: _cachedHealthAt,
+        cacheHit: false,
+      );
+    }).whenComplete(() {
+      if (identical(_healthInFlight, future)) _healthInFlight = null;
+    });
+  }
+
+  Future<NodeFrame> _computeHealth() async {
     try {
       final status = await _status();
       final permissions = await _permissions();
@@ -97,6 +141,43 @@ class DeviceCapability extends CapabilityHandler {
         'message': '$e',
       });
     }
+  }
+
+  static bool _isTruthy(Object? value) {
+    if (value == true) return true;
+    final normalized = value?.toString().trim().toLowerCase();
+    return normalized == '1' ||
+        normalized == 'true' ||
+        normalized == 'yes' ||
+        normalized == 'on';
+  }
+
+  static NodeFrame _withHealthCacheMetadata(
+    NodeFrame frame, {
+    required DateTime? cachedAt,
+    required bool cacheHit,
+  }) {
+    final payload = frame.payload;
+    if (payload == null) return frame;
+    return NodeFrame(
+      type: frame.type,
+      id: frame.id,
+      method: frame.method,
+      params: frame.params,
+      ok: frame.ok,
+      payload: <String, dynamic>{
+        ...payload,
+        'healthCache': <String, dynamic>{
+          'hit': cacheHit,
+          if (cachedAt != null) 'generatedAt': cachedAt.toIso8601String(),
+          if (cachedAt != null)
+            'ageMs': DateTime.now().difference(cachedAt).inMilliseconds,
+          'ttlMs': _healthCacheTtl.inMilliseconds,
+        },
+      },
+      error: frame.error,
+      event: frame.event,
+    );
   }
 
   Future<NodeFrame> _permissions() async {

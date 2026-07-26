@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
@@ -83,8 +84,8 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
   int _gestureSequence = 0;
   final Map<String, Completer<Map<String, dynamic>>> _gestureCompleters = {};
   final List<Map<String, dynamic>> _deferredGestureCommands = [];
-  // Fallback timer: re-nudges the JS to send READY if the first attempt was
-  // missed due to a PlawieBridge injection race on some Android WebView versions.
+  // Fallback timer: re-nudges the module to publish MODULE_READY if the first
+  // bridge post was missed on an Android WebView.
   Timer? _readyFallbackTimer;
 
   @override
@@ -107,13 +108,12 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
       ..addJavaScriptChannel(
         'PlawieBridge',
         onMessageReceived: (JavaScriptMessage message) {
-          if (message.message == 'READY') {
+          if (message.message == 'MODULE_READY') {
             if (mounted) {
-              // Cancel fallback timer — JS bridge is confirmed working
+              // MODULE_READY is emitted only after all JS APIs are installed.
               _readyFallbackTimer?.cancel();
               setState(() => _isReady = true);
-              _controller.runJavaScript(
-                  "window.loadVrmAvatar('${widget.avatarFileName}');");
+              _loadAvatar(widget.avatarFileName);
               _syncState();
               _flushDeferredGestureCommands();
             }
@@ -131,7 +131,11 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
           }
           // Propagate all logs to parent
           if (widget.onLog != null) {
-            widget.onLog!(message.message);
+            // Preserve the widget's public READY event while using the stricter
+            // MODULE_READY bridge contract internally.
+            widget.onLog!(
+              message.message == 'MODULE_READY' ? 'READY' : message.message,
+            );
           }
         },
       )
@@ -147,25 +151,29 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
       final androidController =
           _controller.platform as AndroidWebViewController;
       androidController.setMediaPlaybackRequiresUserGesture(false);
-      // ignore: invalid_use_of_visible_for_testing_member
-      AndroidWebViewController.enableDebugging(true);
+      if (kDebugMode) {
+        // ignore: invalid_use_of_visible_for_testing_member
+        AndroidWebViewController.enableDebugging(true);
+      }
     }
 
     // Start the local HTTP server, then load the HTML from it
     _startServerAndLoad();
 
-    // Fallback: if READY isn't received within 5 s, nudge the JS to retry.
-    // Handles edge cases where the PlawieBridge polling in HTML misses the window.
+    // Fallback: if module readiness isn't received, ask the fully initialized
+    // module to repeat the event. Never synthesize readiness before its APIs
+    // exist.
     _readyFallbackTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
       if (!mounted || _isReady) {
         timer.cancel();
         return;
       }
-      // Ask JS to re-send READY if the bridge is now available
+      // Ask JS to re-send MODULE_READY only after module initialization.
       _controller.runJavaScript('''
-        if (window.PlawieBridge && !window._readySent) {
-          window._readySent = true;
-          window.PlawieBridge.postMessage('READY');
+        if (window.PlawieBridge && window._plawieModuleReady &&
+            !window._moduleReadySent) {
+          window._moduleReadySent = true;
+          window.PlawieBridge.postMessage('MODULE_READY');
         }
       ''');
     });
@@ -261,8 +269,7 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
     }
 
     if (oldWidget.avatarFileName != widget.avatarFileName) {
-      _controller
-          .runJavaScript("window.loadVrmAvatar('${widget.avatarFileName}');");
+      _loadAvatar(widget.avatarFileName);
     }
 
     if (oldWidget.isThinking != widget.isThinking ||
@@ -286,6 +293,19 @@ class _VrmAvatarWidgetState extends State<VrmAvatarWidget>
       if (window.setPipMode) window.setPipMode(${widget.isPip});
       $modeJs
     ''');
+  }
+
+  void _loadAvatar(String avatarFileName) {
+    final encodedName = jsonEncode(avatarFileName);
+    unawaited(_controller.runJavaScript('''
+      if (typeof window.loadVrmAvatar === 'function') {
+        window.loadVrmAvatar($encodedName);
+      } else if (window.ConsoleLog) {
+        window.ConsoleLog.postMessage(
+          'Avatar load deferred: module API unavailable'
+        );
+      }
+    ''').catchError((_) {}));
   }
 
   Future<Map<String, dynamic>> _playGestureCommand(

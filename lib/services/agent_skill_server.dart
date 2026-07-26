@@ -1510,7 +1510,10 @@ class AgentSkillServer {
     HttpRequest request,
     String action,
   ) async {
-    await _processDeviceControl({'action': action}, request);
+    await _processDeviceControl({
+      'action': action,
+      ...request.uri.queryParameters,
+    }, request);
   }
 
   Future<void> _handleLegacyWeather(HttpRequest request) async {
@@ -3194,10 +3197,9 @@ class AgentSkillServer {
         final level = await const MethodChannel('com.openclaw.plawie/native')
                 .invokeMethod<int>('getBatteryLevel') ??
             -1;
-        final charging =
-            await const MethodChannel('com.openclaw.plawie/native')
-                    .invokeMethod<bool>('isCharging') ??
-                false;
+        final charging = await const MethodChannel('com.openclaw.plawie/native')
+                .invokeMethod<bool>('isCharging') ??
+            false;
         _sendJson(request, {'level': level, 'isCharging': charging});
 
       case 'device_health':
