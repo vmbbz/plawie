@@ -3985,6 +3985,37 @@ HEARTBEAT_OK.
     ));
   }
 
+  /// Refresh both Plawie's dependency readiness snapshot and OpenClaw's
+  /// `skills.status` discovery after verified dependency files change.
+  ///
+  /// Dependency packs are intentionally installed after the Gateway is
+  /// interactive. Refreshing discovery is sufficient because the managed bin
+  /// directory is already on the native Gateway PATH; restarting the Gateway
+  /// here would interrupt setup and local node pairing.
+  Future<void> refreshSkillsAfterDependencyInstall({
+    String reason = 'verified dependency packs installed',
+  }) async {
+    refreshRpcDiscovery();
+    await _auditNativeSkillParity(
+      reason: reason,
+      bypassCooldown: true,
+    );
+
+    // A timer health tick may already be active. Give it a bounded chance to
+    // finish so this call can immediately re-query skills.status; otherwise
+    // the next regular tick observes _rpcDiscoveryDone=false and performs it.
+    for (var attempt = 0; attempt < 4; attempt += 1) {
+      if (!_healthCheckInFlight) {
+        await _checkHealth();
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    _addActivity(
+      '[SKILLS] Dependency readiness refreshed; skills.status queued for the next health tick.',
+    );
+  }
+
   Future<void> stop() async {
     if (_isStopping) return;
     _isStopping = true;

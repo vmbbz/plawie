@@ -52,12 +52,24 @@ void main() {
       () async {
     final bootstrap =
         await File('lib/services/bootstrap_service.dart').readAsString();
+    final gateway =
+        await File('lib/services/gateway_service.dart').readAsString();
     final provisioning = await File(
       'lib/services/skill_provisioning_service.dart',
     ).readAsString();
 
     expect(bootstrap, contains('final packsReady ='));
     expect(bootstrap, contains('if (!packsReady)'));
+    expect(
+      bootstrap,
+      contains('gateway.refreshSkillsAfterDependencyInstall('),
+    );
+    expect(
+      gateway,
+      contains('Future<void> refreshSkillsAfterDependencyInstall('),
+    );
+    expect(gateway, contains('refreshRpcDiscovery();'));
+    expect(gateway, contains('bypassCooldown: true'));
     expect(provisioning, contains('onProgress(pack.id, 1.0);'));
   });
 
@@ -465,7 +477,6 @@ void main() {
       gateway.substring(freshStart, runtimeStart),
       isNot(contains('_auditNativeSkillParity')),
     );
-    expect(gateway, isNot(contains('bypassCooldown: true')));
     expect(
       gateway,
       contains('node.connect(gatewayAlreadyReady: true)'),

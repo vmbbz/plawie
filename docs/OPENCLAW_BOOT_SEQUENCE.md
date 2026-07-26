@@ -1,6 +1,6 @@
 # OpenClaw Boot Sequence
 
-Last updated: 2026-07-18
+Last updated: 2026-07-26
 
 This is the production startup contract for Plawie on Android.
 
@@ -36,19 +36,22 @@ The old PRoot setup/repair sequence remains only for emergency rollback:
 Fresh setup is ordered so the native Gateway becomes healthy before optional
 dependency packs are downloaded:
 
-1. Prepare the PRoot rootfs as an explicit rollback/staging environment.
-2. Install Node `22.22.3`, which satisfies the pinned OpenClaw `2026.7.1`
-   engine range.
-3. Remove stale npm launchers, install the pinned OpenClaw package, and verify
-   its package version and entry point.
+1. Resolve the latest stable release metadata from official
+   `openclaw/openclaw` GitHub.
+2. Download and integrity/provenance-check that release's official npm
+   tarball, then install it into app-private native storage with embedded
+   Android Node.
+3. Verify the installed OpenClaw package version and entry point.
 4. Start the native embedded Gateway on `18789` and complete health/pairing
    checks.
-5. Download and smoke-test the signed remote dependency packs.
-6. Mark setup complete only after all required dependency packs verify.
+5. Download and smoke-test the separate signed Plawie dependency packs.
+6. Refresh local dependency readiness and Gateway `skills.status` without
+   restarting the healthy Gateway.
+7. Mark setup complete only after all required dependency packs verify.
 
-PRoot does not become the production Gateway owner during this flow. It remains
-available for explicit rollback and is also the current package staging source
-for the native full-Gateway workspace.
+PRoot is neither started nor used as a package staging source during this flow.
+It is provisioned only when the user explicitly requests emergency rollback.
+The APK does not bundle an OpenClaw Gateway archive.
 
 Setup collects:
 
@@ -66,7 +69,8 @@ Pre-start hardening writes:
 - `gateway.mode = local`
 - local persistent Gateway auth token
 - local dashboard allowed origins
-- bounded Android tool policy
+- wildcard OpenClaw tool access, retained after exact provider-payload
+  compatibility probes so native mobile/node tools are not silently narrowed
 - model provider defaults from `ModelProviderCatalog`
 - safe model `contextWindow` and `maxTokens` values
 - schema cleanup for legacy invalid keys

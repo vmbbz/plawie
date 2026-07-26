@@ -504,6 +504,18 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
             'with valid receipts will be skipped.',
           );
         }
+
+        _emitProgress(
+          onProgress,
+          SetupStep.downloadingPacks,
+          1.0,
+          'Refreshing native skill readiness...',
+          100,
+          subMessage: 'Verified packs • no gateway restart',
+        );
+        await gateway.refreshSkillsAfterDependencyInstall(
+          reason: 'native setup dependency packs installed',
+        );
       }
 
       await NativeBridge.markBootstrapComplete();
@@ -935,6 +947,10 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
             'Setup was not marked complete; retry when the network is available.',
           );
         }
+
+        await gateway.refreshSkillsAfterDependencyInstall(
+          reason: 'rollback setup dependency packs installed',
+        );
 
         _emitProgress(
             onProgress, SetupStep.complete, 1.0, 'Setup complete!', 100,
