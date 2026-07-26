@@ -1277,7 +1277,8 @@ Code hardening now applied:
   total, accept-to-complete, and first-output-to-complete timings;
 - `GatewayService` exposes the official `node.pair.approve` RPC approval path
   to `NodeService` for node command snapshots; operator/dashboard device
-  pairing remains a separate `device.pair.approve` path;
+  pairing and first-time node device identity remain a separate
+  `device.pair.approve` path;
 - `NodeService` reads `.openclaw` state from the active owner first, using the
   native embedded home while native owns and PRoot rootfs while PRoot owns;
 - native-owner node pairing approval now uses Gateway RPC instead of silently

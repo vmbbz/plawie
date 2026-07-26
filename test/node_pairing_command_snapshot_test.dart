@@ -12,6 +12,11 @@ void main() {
         await File('lib/services/node_service.dart').readAsString();
 
     expect(gatewaySource, contains("invoke('node.pair.approve'"));
+    expect(gatewaySource, contains("invoke('device.pair.approve'"));
+    expect(
+      gatewaySource,
+      contains('approveNodeCommandPairingRequestViaGateway'),
+    );
     expect(
       nodeSource,
       contains('Gateway approved the complete node command snapshot'),
@@ -21,7 +26,9 @@ void main() {
       contains('if (await _pairedNodeCommandsCoverDeclared())'),
     );
     expect(nodeSource, isNot(contains('_nativeStoredContractAlreadyAccepted')));
-    expect(nodeSource, contains("return 'v6:"));
+    expect(nodeSource, contains("return 'v7:"));
+    expect(nodeSource, contains("'devices/pending.json'"));
+    expect(nodeSource, contains("record['nodeId']?.toString()"));
   });
 
   test('advertised mobile command contract includes every avatar command', () {

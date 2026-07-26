@@ -712,7 +712,9 @@ unnecessary provider latency.
 The Gateway's paired-node record is authoritative for command approval. A
 healthy node WebSocket is not enough: command upgrades must be accepted through
 `node.pair.approve`, and the app must re-read the paired store before persisting
-the command-contract hash.
+the command-contract hash. First-time node device identity remains a separate
+`device.pair.approve` operation; the two request types are never sent to the
+other RPC.
 
 ## Gateway Talk timeout fallback
 

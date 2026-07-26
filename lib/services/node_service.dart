@@ -39,6 +39,8 @@ class NodeService {
   final Map<String, Future<NodeFrame> Function(String, Map<String, dynamic>)>
       _capabilityHandlers = {};
   Future<bool> Function(String requestId)? approvePairingRequestViaGateway;
+  Future<bool> Function(String requestId)?
+      approveNodeCommandPairingRequestViaGateway;
   String? _gatewayAuthToken;
   String? _liveNativeCommandContractHash;
   Completer<String?>? _challengeCompleter;
@@ -318,6 +320,7 @@ class NodeService {
     var removed = false;
     for (final relativePath in const [
       'devices/paired.json',
+      'devices/pending.json',
       'nodes/paired.json',
       'nodes/pending.json',
     ]) {
@@ -347,10 +350,7 @@ class NodeService {
       final value = map[key];
       if (value is Map) {
         final child = Map<String, dynamic>.from(value);
-        final mentionsDevice = _containsStringValue(child, deviceId);
-        final mentionsNodeRole =
-            _containsStringValue(child, AppConstants.nodeRole);
-        if (mentionsDevice && mentionsNodeRole) {
+        if (_isNodeRecordForDevice(child, deviceId)) {
           map.remove(key);
           removed = true;
           continue;
@@ -364,10 +364,7 @@ class NodeService {
         for (final child in value) {
           if (child is Map) {
             final childMap = Map<String, dynamic>.from(child);
-            final mentionsDevice = _containsStringValue(childMap, deviceId);
-            final mentionsNodeRole =
-                _containsStringValue(childMap, AppConstants.nodeRole);
-            if (mentionsDevice && mentionsNodeRole) {
+            if (_isNodeRecordForDevice(childMap, deviceId)) {
               removed = true;
               continue;
             }
@@ -385,6 +382,19 @@ class NodeService {
       }
     }
     return removed;
+  }
+
+  bool _isNodeRecordForDevice(
+    Map<String, dynamic> record,
+    String deviceId,
+  ) {
+    final directDeviceId = record['deviceId']?.toString();
+    final directNodeId = record['nodeId']?.toString();
+    final directMatch = directDeviceId == deviceId || directNodeId == deviceId;
+    if (!directMatch) return false;
+    return directNodeId == deviceId ||
+        _recordHasRole(record, AppConstants.nodeRole) ||
+        record['commands'] is List;
   }
 
   Future<bool> _pairedNodeSnapshotNeedsCommandRepair() async {
@@ -480,7 +490,8 @@ class NodeService {
     if (await _nativeOwnerSelected()) {
       log('[NODE] Native owner: approving pending node command snapshot $requestId via Gateway RPC...');
       final approved =
-          await approvePairingRequestViaGateway?.call(requestId) ?? false;
+          await approveNodeCommandPairingRequestViaGateway?.call(requestId) ??
+              false;
       if (!approved) {
         log('[NODE] Native owner: Gateway RPC approval unavailable for pending node snapshot');
         return false;
@@ -604,9 +615,9 @@ class NodeService {
   String _declaredCommandContractSignature() {
     final commands = _capabilityHandlers.keys.toList()..sort();
     // Bump this when the gateway-visible node snapshot shape changes, not only
-    // when the command names change. v6 requires authoritative node.pair
-    // approval instead of accepting a locally cached contract hash.
-    return 'v6:${commands.join('|')}';
+    // when the command names change. v7 separates first-time device pairing
+    // from subsequent node command-snapshot approval.
+    return 'v7:${commands.join('|')}';
   }
 
   String _capFamilyForCommand(String command) {

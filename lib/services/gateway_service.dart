@@ -209,7 +209,9 @@ class GatewayService {
   factory GatewayService() => _instance;
   GatewayService._internal() {
     NodeService().approvePairingRequestViaGateway =
-        _approvePairingViaRpcForNode;
+        _approveDevicePairingViaRpcForNode;
+    NodeService().approveNodeCommandPairingRequestViaGateway =
+        _approveNodeCommandPairingViaRpcForNode;
     OpenClawCommandService.registerActiveOwnerReloadHandler(
       applyActiveOwnerConfigChange,
     );
@@ -4405,7 +4407,11 @@ HEARTBEAT_OK.
     return false;
   }
 
-  Future<bool> _approvePairingViaRpcForNode(String requestId) {
+  Future<bool> _approveDevicePairingViaRpcForNode(String requestId) {
+    return _tryApprovePairingViaRpc(requestId);
+  }
+
+  Future<bool> _approveNodeCommandPairingViaRpcForNode(String requestId) {
     return _tryApproveNodePairingViaRpc(requestId);
   }
 
@@ -4424,11 +4430,18 @@ HEARTBEAT_OK.
       if (payload is Map && (payload['ok'] == true || payload['node'] is Map)) {
         return true;
       }
+      _addActivity(
+        '[NODE] node.pair.approve rejected request $requestId: '
+        '${_rawGatewayErrorText(frame)}',
+      );
       final missingScope = _missingOperatorApprovalScope(frame);
       if (missingScope != null) {
         await _recoverOperatorScopeForPairing(missingScope);
       }
     } catch (e) {
+      _addActivity(
+        '[NODE] node.pair.approve failed for request $requestId: $e',
+      );
       final missingScope = _missingOperatorApprovalScope(e);
       if (missingScope != null) {
         await _recoverOperatorScopeForPairing(missingScope);
