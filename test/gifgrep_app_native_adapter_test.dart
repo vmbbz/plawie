@@ -55,7 +55,7 @@ void main() {
     expect(calls.single['bin'], 'gifgrep');
     expect(
       calls.single['args'],
-      ['search', '--json', '--source', 'giphy', '--max', '10', 'happy'],
+      ['search', 'happy', '--json', '--source', 'giphy', '--max', '10'],
     );
     expect(calls.single['env'], {'GIPHY_API_KEY': 'test-giphy-key'});
     expect(calls.single['timeout'], 25);

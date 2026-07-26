@@ -157,12 +157,12 @@ class GifgrepCapability extends CapabilityHandler {
     };
     final args = [
       'search',
+      query,
       '--json',
       '--source',
       source,
       '--max',
       '$maxResults',
-      query,
     ];
     final startedAt = DateTime.now();
     final result = await _runner(
