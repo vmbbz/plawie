@@ -684,33 +684,52 @@ class GatewayConnection {
     return controller.stream;
   }
 
-  /// Update session metadata (e.g. primaryModel, contextWindow) in-memory.
-  /// Prevents the need for a 10-minute gateway restart on model switch.
+  /// Build the OpenClaw `sessions.patch` request for a live session.
+  ///
+  /// OpenClaw 2026.7.1 accepts patch fields directly in `params`. In
+  /// particular, the model field is named `model` (not `primaryModel`).
+  static Map<String, dynamic> buildSessionPatchRequest(
+    Map<String, dynamic> metadata, {
+    required String sessionKey,
+  }) {
+    return <String, dynamic>{
+      'method': 'sessions.patch',
+      'params': <String, dynamic>{
+        'key': sessionKey,
+        ...metadata,
+      },
+    };
+  }
+
+  /// Update supported session metadata in-memory and wait for Gateway ACK.
+  ///
+  /// Waiting for the response is important: fire-and-forget patches made an
+  /// invalid model field look successful and allowed the following chat turn
+  /// to run with stale session metadata.
   Future<void> patchSessionMetadata(
     Map<String, dynamic> metadata, {
     String? sessionKey,
   }) async {
-    if (_state != GatewayConnectionState.connected) return;
+    if (_state != GatewayConnectionState.connected || _channel == null) {
+      throw StateError('Gateway WebSocket is not connected');
+    }
 
     // Gateway schema: params must have 'key' (not 'sessionKey'), no 'patch' wrapper.
     // Metadata fields go directly alongside 'key' in params.
     final key = (sessionKey != null && sessionKey.trim().isNotEmpty)
         ? sessionKey.trim()
         : mainSessionKey ?? 'main';
-    final payload = {
-      'type': 'req',
-      'method': 'sessions.patch',
-      'id': const Uuid().v4(),
-      'params': {
-        'key': key,
-        ...metadata,
-      },
-    };
+    final response = await sendRequest(
+      buildSessionPatchRequest(metadata, sessionKey: key),
+    ).first.timeout(const Duration(seconds: 10));
 
-    // Fire-and-forget via direct sink — avoids registering a pending request controller
-    // that would never be cleaned up (no listener → onCancel never fires), which would
-    // otherwise receive and buffer every streaming chunk from subsequent chat.send calls.
-    _channel!.sink.add(jsonEncode(payload));
+    if (response['type'] == 'res' && response['ok'] == true) return;
+
+    final error = response['error'] ?? response['payload'] ?? response;
+    final message = error is Map
+        ? error['message']?.toString() ?? error.toString()
+        : error.toString();
+    throw StateError('sessions.patch rejected: $message');
   }
 
   void _cleanup() {

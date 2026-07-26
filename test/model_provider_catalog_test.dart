@@ -33,6 +33,20 @@ void main() {
         ModelExecutionPolicy.standardOutputTokens);
   });
 
+  test('OpenRouter free router remains the user-selected gateway model', () {
+    expect(
+      ModelProviderCatalog.canonicalizeModelId(
+        'openrouter/openrouter/free',
+      ),
+      'openrouter/openrouter/free',
+    );
+    expect(
+      ModelProviderCatalog.modelById('openrouter/openrouter/free')
+          ?.providerModelId,
+      'openrouter/free',
+    );
+  });
+
   test('Groq routes are marked variable and compact by default', () {
     final groq70b =
         ModelProviderCatalog.modelById('groq/llama-3.3-70b-versatile');

@@ -270,7 +270,6 @@ class GatewayService {
       Duration(seconds: 8);
   static const Duration _gatewayConfigReloadSettle = Duration(seconds: 8);
   static const Duration _gatewayConfigSoftSettle = Duration(seconds: 3);
-  static const Duration _gatewaySessionPatchSettle = Duration(seconds: 5);
   static const Duration _gatewayChatLaneSettleTimeout = Duration(seconds: 300);
   static const Duration _prootGatewayChatLaneExtraSettle =
       Duration(seconds: 75);
@@ -17091,7 +17090,9 @@ ${lines.join('\n')}
       await _writeConfig(config);
       _addActivity('[MODEL] syncToConfig: $canonical');
 
-      changedMetadata['primaryModel'] = canonical;
+      // OpenClaw SessionsPatchParamsSchema uses `model`. `primaryModel` is not
+      // a supported session field and is rejected as an additional property.
+      changedMetadata['model'] = canonical;
     }
 
     return changedMetadata;
@@ -17102,10 +17103,6 @@ ${lines.join('\n')}
     String sessionKey = 'main',
   }) async {
     if (changedMetadata.isEmpty || _connection == null) return;
-    _beginGatewayConfigTransition(
-      'active gateway session patch',
-      minimumSettle: _gatewaySessionPatchSettle,
-    );
     try {
       await _connection!.patchSessionMetadata(
         changedMetadata,
@@ -17118,8 +17115,6 @@ ${lines.join('\n')}
     } catch (e) {
       _addActivity('[MODEL] active session model patch skipped: $e');
     }
-    disconnectWebSocket();
-    await Future.delayed(_gatewaySessionPatchSettle);
   }
 
   /// Resolves the intended model ID, falling back to preferences then
@@ -17140,17 +17135,6 @@ ${lines.join('\n')}
     }
     m = ModelProviderCatalog.canonicalizeModelId(m);
 
-    if (_isVariableOpenRouterRouterModel(m)) {
-      final fallback = ModelProviderCatalog.defaultCloudFallbackModel;
-      if (m != fallback) {
-        _addActivity(
-          '[MODEL] Replacing variable OpenRouter router model "$m" with '
-          '"$fallback" for Gateway chat/tool reliability.',
-        );
-      }
-      m = fallback;
-    }
-
     // Force cloud/gateway lane unless the user explicitly enabled local chat
     // from the Local LLM page.
     if (ModelProviderCatalog.isDirectLocalModelId(m) &&
@@ -17166,13 +17150,6 @@ ${lines.join('\n')}
       }
     }
     return m;
-  }
-
-  bool _isVariableOpenRouterRouterModel(String model) {
-    final normalized = model.trim().toLowerCase();
-    return normalized == 'openrouter/auto' ||
-        normalized == 'openrouter/free' ||
-        normalized == 'openrouter/openrouter/free';
   }
 
   /// Disconnect the persistent WS connection so the next sendMessage() opens a

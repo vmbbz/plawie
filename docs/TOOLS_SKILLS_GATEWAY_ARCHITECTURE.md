@@ -482,26 +482,42 @@ real `songsee` binary into the audio-runtime provisioning root.
 `tools.allow` is a strict Gateway allowlist. OpenClaw applies `tools.profile`
 first, then narrows with `allow` and `deny`.
 
-Plawie's current mobile default:
+Plawie's current native-mobile default:
 
 ```text
 profile: full
 allow:
-  group:nodes
-  group:runtime
-  group:sessions
-  group:automation
-  group:messaging
-  group:fs
-  group:web
-  image
+  "*"
 ```
 
 Why this shape:
 
 - `minimal` exposes too little for the mobile agent lane.
-- An unrestricted/full wildcard can add too much provider context on phones.
-- Guessed skill slugs can cause Gateway warnings and hide the tools we need.
+- Group-only allowlists can remove the callable `nodes` tool even while the
+  Android node is paired and its commands are healthy.
+- The Android command security boundary remains
+  `gateway.nodes.allowCommands`; wildcard Gateway tools do not bypass it.
+- Guessed skill slugs still do not belong in `tools.allow`.
+
+The wildcard is a deliberate compatibility contract, not an unmeasured
+fallback. On 2026-07-26 the installed official OpenClaw `2026.7.1` request was
+captured and replayed against OpenRouter with its full system prompt, all 39
+real Gateway tool schemas (including `nodes`), `tool_choice: auto`, streaming
+usage, and the full configured output budget. The 101 KB request returned HTTP
+200. A bounded-group policy must therefore not replace wildcard as a generic
+response to a provider 4xx. First replay the exact wildcard request and isolate
+the rejected envelope field or model/provider route.
+
+The observed 39-tool surface was:
+
+```text
+agents_list, apply_patch, browser, canvas, create_goal, cron, dir_fetch,
+dir_list, edit, exec, file_fetch, file_write, gateway, get_goal, image,
+image_generate, memory_get, memory_search, message, music_generate, nodes,
+pdf, process, read, session_status, sessions_history, sessions_list,
+sessions_send, sessions_spawn, sessions_yield, skill_workshop, subagents,
+tts, update_goal, update_plan, video_generate, web_fetch, web_search, write
+```
 
 ## IDs That Must Not Go Into `tools.allow`
 
@@ -512,7 +528,31 @@ Why this shape:
 | local NDK helper names | `LocalLlmService` direct local tool schemas |
 
 If Gateway logs `tools.allow allowlist contains unknown entries`, treat the
-config as poisoned and let the hardener restore the bounded mobile policy.
+config as poisoned and let the hardener restore the wildcard native-mobile
+policy. Do not replace it with guessed skill IDs or group-only entries.
+
+## Live Model Switching
+
+The user-selected model is authoritative. Plawie must not silently replace
+OpenRouter router IDs such as `openrouter/openrouter/free` or
+`openrouter/auto` with a fixed model.
+
+Persist the canonical model under `agents.defaults.model.primary`, then patch
+the active session with:
+
+```json
+{
+  "method": "sessions.patch",
+  "params": {
+    "key": "main",
+    "model": "openrouter/openrouter/free"
+  }
+}
+```
+
+OpenClaw `2026.7.1` rejects `primaryModel` in `sessions.patch`. The app must
+wait for the patch response and must not tear down a healthy WebSocket merely
+to apply the supported live-session field.
 
 ## Android Node Commands
 
