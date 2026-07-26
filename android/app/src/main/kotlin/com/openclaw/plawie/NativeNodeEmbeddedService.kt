@@ -1194,6 +1194,7 @@ class NativeNodeEmbeddedService : Service() {
             const nativeTmp = $nativeTmp;
             const nativeCache = $nativeCache;
             const nativeManagedBin = path.join(nativeStateDir, "bin");
+            const nativeManagedLib = path.join(nativeStateDir, "lib");
             const nativeRuntimeRoot = path.join(nativeStateDir, "runtimes");
             const nativePythonRoot = path.join(nativeRuntimeRoot, "python");
             const nativePythonBin = path.join(nativePythonRoot, "bin");
@@ -1209,6 +1210,7 @@ class NativeNodeEmbeddedService : Service() {
               nativeHome,
               nativeStateDir,
               nativeManagedBin,
+              nativeManagedLib,
               nativeRuntimeRoot,
               nativePythonRoot,
               nativePythonBin,
@@ -1364,12 +1366,17 @@ class NativeNodeEmbeddedService : Service() {
               process.env.PATH || "",
               "/system/bin"
             ].filter(Boolean).join(":");
+            process.env.LD_LIBRARY_PATH = [
+              nativeManagedLib,
+              process.env.LD_LIBRARY_PATH || ""
+            ].filter(Boolean).join(":");
             process.env.PYTHONHOME = nativePythonRoot;
             process.env.PYTHONPATH = [
               nativePythonSitePackages,
               process.env.PYTHONPATH || ""
             ].filter(Boolean).join(":");
             process.env.OPENCLAW_NATIVE_MANAGED_BIN = nativeManagedBin;
+            process.env.OPENCLAW_NATIVE_MANAGED_LIB = nativeManagedLib;
             process.env.OPENCLAW_NATIVE_PYTHON_HOME = nativePythonRoot;
             process.env.OPENCLAW_NATIVE_PYTHON_SITE_PACKAGES =
               nativePythonSitePackages;
@@ -1774,6 +1781,7 @@ class NativeNodeEmbeddedService : Service() {
                   nativeConfigStatus,
                   nativeManagedPaths: {
                     bin: nativeManagedBin,
+                    lib: nativeManagedLib,
                     pythonHome: nativePythonRoot,
                     pythonBin: nativePythonBin,
                     pythonSitePackages: nativePythonSitePackages,

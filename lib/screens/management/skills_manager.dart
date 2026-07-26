@@ -2995,19 +2995,28 @@ class _SkillProvisioningBadgeData {
       label: override.label,
       detail: override.detail,
       color: switch (override.status) {
-        'app_native_ready' => AppColors.statusGreen,
-        'needs_user_config' => AppColors.statusAmber,
+        'app_native_ready' || 'instruction_only_ready' => AppColors.statusGreen,
+        'needs_user_config' ||
+        'native_release_pack_required' ||
+        'native_bundled_pack_required' =>
+          AppColors.statusAmber,
         'unsupported_on_android' ||
         'manual_proot_compat' ||
+        'native_pack_gap' ||
         'hidden_desktop_only' =>
           Colors.white54,
         _ => Colors.white54,
       },
       icon: switch (override.status) {
-        'app_native_ready' => Icons.check_circle_rounded,
+        'app_native_ready' ||
+        'instruction_only_ready' =>
+          Icons.check_circle_rounded,
         'needs_user_config' => Icons.tune_rounded,
+        'native_release_pack_required' ||
+        'native_bundled_pack_required' =>
+          Icons.download_for_offline_rounded,
         'unsupported_on_android' => Icons.remove_circle_outline_rounded,
-        'manual_proot_compat' => Icons.alt_route_rounded,
+        'manual_proot_compat' || 'native_pack_gap' => Icons.alt_route_rounded,
         'hidden_desktop_only' => Icons.desktop_windows_rounded,
         _ => Icons.info_outline_rounded,
       },

@@ -56,16 +56,20 @@ void main() {
     expect(override.detail, contains('desktop-only'));
   });
 
-  test('leaves unresolved Android-relevant skills to provisioning status', () {
+  test('classifies published Android-native release packs', () {
     final override = classifyAndroidSkillProvisioningBadge({
       'skillId': 'spotify-player',
       'androidSupport': 'needs_pack',
+      'packDelivery': 'native_release',
       'runtimeStatus': 'missing_binary',
       'provisioningStatus': 'missing_binary',
       'ready': false,
     });
 
-    expect(override, isNull);
+    expect(override, isNotNull);
+    expect(override!.status, 'native_release_pack_required');
+    expect(override.label, 'DOWNLOAD PACK');
+    expect(override.detail, contains('Plawie releases'));
   });
 
   test('config-only rows are shown as config gates, not missing deps', () {
@@ -100,16 +104,15 @@ void main() {
     }
   });
 
-  test('true runtime pack rows still fall through as missing deps', () {
+  test('published runtime packs do not appear as generic missing deps', () {
     for (final skillId in const [
-      'sherpa-onnx-tts',
-      'coding-agent',
-      'node-inspect-debugger',
       'openai-whisper',
+      'tmux',
     ]) {
       final override = classifyAndroidSkillProvisioningBadge({
         'skillId': skillId,
         'androidSupport': 'needs_pack',
+        'packDelivery': 'native_release',
         'runtimeStatus': 'missing_dependency',
         'provisioningStatus': 'missing_dependency',
         'requiredPacks': ['runtime-pack-for-$skillId'],
@@ -117,8 +120,59 @@ void main() {
         'ready': false,
       });
 
-      expect(override, isNull, reason: skillId);
+      expect(override, isNotNull, reason: skillId);
+      expect(override!.status, 'native_release_pack_required', reason: skillId);
+      expect(override.label, 'DOWNLOAD PACK', reason: skillId);
     }
+  });
+
+  test('bundled native packs expose an install action', () {
+    final override = classifyAndroidSkillProvisioningBadge({
+      'skillId': 'python-debugpy',
+      'androidSupport': 'needs_pack',
+      'packDelivery': 'native_bundled',
+      'runtimeStatus': 'missing_dependency',
+      'ready': false,
+    });
+
+    expect(override, isNotNull);
+    expect(override!.status, 'native_bundled_pack_required');
+    expect(override.label, 'INSTALL PACK');
+  });
+
+  test('unpublished native pack gaps stay distinct from PRoot fallback', () {
+    for (final skillId in const [
+      'coding-agent',
+      'node-inspect-debugger',
+      'sherpa-onnx-tts',
+    ]) {
+      final override = classifyAndroidSkillProvisioningBadge({
+        'skillId': skillId,
+        'androidSupport': 'needs_pack',
+        'packDelivery': 'native_gap',
+        'runtimeStatus': 'missing_dependency',
+        'ready': false,
+      });
+
+      expect(override, isNotNull, reason: skillId);
+      expect(override!.status, 'native_pack_gap', reason: skillId);
+      expect(override.label, 'NATIVE GAP', reason: skillId);
+      expect(override.detail, contains('user-opt-in'), reason: skillId);
+    }
+  });
+
+  test('instruction-only skills ignore prose command examples', () {
+    final override = classifyAndroidSkillProvisioningBadge({
+      'skillId': 'skill-creator',
+      'androidSupport': 'ready_required',
+      'runtimeStatus': 'instruction_only_ready',
+      'provisioningStatus': 'instruction_only_not_required',
+      'ready': true,
+    });
+
+    expect(override, isNotNull);
+    expect(override!.status, 'instruction_only_ready');
+    expect(override.label, 'READY');
   });
 
   // --- NEW live readiness oracle tests (Workstream D / GTM plan fidelity) ---

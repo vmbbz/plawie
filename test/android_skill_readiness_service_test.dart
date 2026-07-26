@@ -141,6 +141,30 @@ void main() {
     );
   });
 
+  test('instruction-only launch skills ignore commands shown in prose', () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([
+        missingEntry('skill-creator', 'missing_native_bin'),
+      ]),
+      provisioning: provisioningWith([
+        missingBinaryResult('skill-creator'),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        instructionOnlyManifestEntry('skill-creator'),
+      ]),
+    );
+
+    final skill = summary.skills.single;
+    expect(summary.releaseGatePass, isTrue);
+    expect(summary.readyRequiredReady, 1);
+    expect(skill['runtimeStatus'], 'instruction_only_ready');
+    expect(skill['provisioningStatus'], 'instruction_only_not_required');
+    expect(skill['ready'], isTrue);
+    expect(skill.containsKey('primaryGate'), isFalse);
+    expect(skill.containsKey('gates'), isFalse);
+    expect(skill.containsKey('missingBins'), isFalse);
+  });
+
   test('app-native config-gated skills stay blocked until config is satisfied',
       () {
     final summary = AndroidSkillReadinessService.instance.summarize(
@@ -586,6 +610,17 @@ AndroidSkillSupportEntry appNativeManifestEntry(String skillId) {
     status: AndroidSkillSupportStatus.readyRequired,
     ownerLayer: AndroidSkillOwnerLayer.appNativeCapability,
     executionMode: AndroidSkillExecutionMode.appNativeTool,
+    smokePrompt: 'smoke $skillId',
+    launchCritical: true,
+  );
+}
+
+AndroidSkillSupportEntry instructionOnlyManifestEntry(String skillId) {
+  return AndroidSkillSupportEntry(
+    skillId: skillId,
+    status: AndroidSkillSupportStatus.readyRequired,
+    ownerLayer: AndroidSkillOwnerLayer.openclawSkill,
+    executionMode: AndroidSkillExecutionMode.instructionOnly,
     smokePrompt: 'smoke $skillId',
     launchCritical: true,
   );

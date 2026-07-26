@@ -445,9 +445,9 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
         onProgress,
         SetupStep.downloadingPacks,
         0.0,
-        'Verifying optional pack catalog...',
+        'Loading signed dependency catalog...',
         82,
-        subMessage: 'Signed metadata only • no pack payload download',
+        subMessage: 'Metadata first • SHA-256 + Ed25519 verification',
       );
       var catalogPackCount = 0;
       try {
@@ -491,15 +491,17 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
               onProgress,
               SetupStep.downloadingPacks,
               fraction,
-              'Downloading compatible optional packs (${completedPackIds.length} / $totalPacks)',
+              'Downloading native dependency packs (${completedPackIds.length} / $totalPacks)',
               82 + (fraction * 18).round(),
               subMessage: packId,
             );
           },
         );
         if (!packsReady) {
-          _log(
-            '[SETUP] Optional native-compatible packs need retry; core gateway setup will continue.',
+          throw StateError(
+            'One or more native dependency packs failed verification or smoke '
+            'testing. Setup was not marked complete. Retry to resume; packs '
+            'with valid receipts will be skipped.',
           );
         }
       }

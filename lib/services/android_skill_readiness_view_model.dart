@@ -96,15 +96,16 @@ class AndroidSkillReadinessViewModel {
     final counts = _intMap(readiness['countsByClass']);
     final readyRequired = _mapValue(readiness['readyRequired']);
     final skills = _mapList(readiness['skills']);
-    final excluded = _count(counts, 'unsupported_on_android') +
+    final manifestTotal = _intValue(readiness['totalManifestSkills']);
+    final staticExcluded = _count(counts, 'unsupported_on_android') +
         _count(counts, 'manual_proot_compat') +
         _count(counts, 'hidden_desktop_only');
-    final manifestTotal = _intValue(readiness['totalManifestSkills']);
-    final androidRelevantTotal = (manifestTotal - excluded).clamp(0, 1000000);
+    final androidRelevantTotal =
+        (manifestTotal - staticExcluded).clamp(0, 1000000);
 
     final androidRelevantReady = skills.where((skill) {
       if (skill['ready'] != true) return false;
-      return !_excludedAndroidSupport(skill['androidSupport']?.toString());
+      return !_excludedAndroidSkill(skill);
     }).length;
 
     return AndroidSkillReadinessViewModel(
@@ -190,6 +191,10 @@ class AndroidSkillReadinessViewModel {
         support == 'manual_proot_compat' ||
         support == 'hidden_desktop_only';
   }
+
+  static bool _excludedAndroidSkill(Map<String, dynamic> skill) {
+    return _excludedAndroidSupport(skill['androidSupport']?.toString());
+  }
 }
 
 class AndroidSkillGateSummary {
@@ -259,6 +264,7 @@ String _packLabel(String packId) {
     case 'android-cli-core-pack':
       return 'Android CLI core pack';
     case 'android-vision-media-runtime':
+    case 'android-vision-media-pack':
       return 'Android vision media runtime';
     case 'android-python-debug-runtime':
       return 'Android Python debug runtime';
@@ -275,6 +281,7 @@ String _packLabel(String packId) {
     case 'android-tts-runtime':
       return 'Android TTS runtime';
     case 'android-audio-runtime':
+    case 'android-audio-runtime-pack':
       return 'Android audio runtime';
   }
   return packId.trim().replaceAll('-', ' ');

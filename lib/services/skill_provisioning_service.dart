@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:cryptography/cryptography.dart';
@@ -31,17 +32,17 @@ class SkillProvisioningService {
     'android-vision-media-pack',
     'android-audio-runtime-pack',
     'android-terminal-pack',
-    'android-agent-cli-pack',
   ];
 
-  /// Packs safe to install during the native-first setup transaction.
+  /// Device-verified Android arm64-v8a packs installed by native-first setup.
   ///
-  /// Current remote packs contain executable ELF command binaries. Android
-  /// denies execution from app-writable storage, so downloading them during a
-  /// native setup only wastes data and guarantees a smoke-test failure. Add an
-  /// ID here only after its payload runs through a verified Android-native
-  /// loader (for example APK/JNI, JS through embedded libnode, or data-only).
-  static const List<String> nativeSetupWizardPackIds = <String>[];
+  /// These are Bionic-native release assets, not PRoot payloads. Installation
+  /// is receipt-backed and idempotent, so an already verified pack is skipped.
+  ///
+  /// The agent pack remains catalogued for future repair, but is quarantined
+  /// from every automatic setup path because its current executable attempts
+  /// to create `/tmp`, which is read-only in the Android app sandbox.
+  static const List<String> nativeSetupWizardPackIds = setupWizardPackIds;
 
   /// Refreshes the signed optional-pack catalog without downloading payloads.
   ///
@@ -92,10 +93,18 @@ class SkillProvisioningService {
         await layout.dependencyReceiptDir.create(recursive: true);
         await layout.dependencyTmpDir.create(recursive: true);
         try {
-          await _downloadAndExtractPack(layout, pack);
+          await _downloadAndExtractPack(
+            layout,
+            pack,
+            onProgress: (progress) {
+              onProgress(pack.id, progress * 0.82);
+            },
+          );
           await _verifyDependencyPackFiles(layout, pack);
+          onProgress(pack.id, 0.87);
           await _applyDependencyPackFileModes(layout, pack);
           await _copyBundledWhisperRuntimeLibraries(layout);
+          onProgress(pack.id, 0.92);
 
           final smoke = await _runDependencyPackSmoke(layout, pack);
           if (!smoke.ok) {
@@ -108,6 +117,7 @@ class SkillProvisioningService {
             failCount++;
             continue;
           }
+          onProgress(pack.id, 0.97);
           await _writeDependencyReceipt(layout, pack, smokePassed: true);
           onProgress(pack.id, 1.0);
         } catch (e) {
@@ -165,7 +175,15 @@ class SkillProvisioningService {
   static const _androidNodeExecutablePackBins = <String>{
     'node',
   };
-  // android-agent-cli-pack (opencode) is fully remote — see android-arm64-v8a.json.
+  static const _dependencyPackBinAliases = <String, Map<String, String>>{
+    // The signed release file is named coding-agent, while the official
+    // OpenClaw skill accepts claude/codex/opencode. This binary is opencode.
+    'android-agent-cli-pack': <String, String>{
+      'opencode': 'coding-agent',
+    },
+  };
+  // android-agent-cli-pack is remote but quarantined from automatic setup until
+  // its opencode executable no longer writes to Android's read-only /tmp.
   static const _defaultPythonWheelIndexes = <String>[
     'https://chaquo.com/pypi-13.1/',
     'https://pypi.org/simple/',
@@ -3448,14 +3466,19 @@ class SkillProvisioningService {
 
   static Future<void> _downloadAndExtractPack(
     _SkillProvisioningLayout layout,
-    _DependencyPack pack,
-  ) async {
+    _DependencyPack pack, {
+    void Function(double progress)? onProgress,
+  }) async {
     final url = pack.url;
     if (url == null || url.isEmpty) {
       throw StateError('Pack ${pack.id} does not include a download URL.');
     }
     await layout.dependencyTmpDir.create(recursive: true);
-    final bytes = await _readDependencyPackBytes(url);
+    final bytes = await _readDependencyPackBytes(
+      url,
+      maxBytes: pack.maxBytes,
+      onProgress: onProgress,
+    );
     if (pack.maxBytes != null && bytes.length > pack.maxBytes!) {
       throw StateError('Pack ${pack.id} exceeds maxBytes=${pack.maxBytes}.');
     }
@@ -3526,16 +3549,46 @@ class SkillProvisioningService {
     return null;
   }
 
-  static Future<List<int>> _readDependencyPackBytes(String url) async {
+  static Future<List<int>> _readDependencyPackBytes(
+    String url, {
+    int? maxBytes,
+    void Function(double progress)? onProgress,
+  }) async {
     final uri = Uri.parse(url);
     if (uri.scheme == 'file') {
-      return File.fromUri(uri).readAsBytes();
+      final bytes = await File.fromUri(uri).readAsBytes();
+      onProgress?.call(1.0);
+      return bytes;
     }
-    final response = await http.get(uri).timeout(const Duration(minutes: 4));
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError('HTTP ${response.statusCode} while downloading $url');
+    final client = http.Client();
+    try {
+      final response = await client
+          .send(http.Request('GET', uri))
+          .timeout(const Duration(minutes: 4));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('HTTP ${response.statusCode} while downloading $url');
+      }
+      final expectedBytes = response.contentLength;
+      final output = BytesBuilder(copy: false);
+      var receivedBytes = 0;
+      await for (final chunk
+          in response.stream.timeout(const Duration(minutes: 4))) {
+        receivedBytes += chunk.length;
+        if (maxBytes != null && receivedBytes > maxBytes) {
+          throw StateError('Dependency pack exceeds maxBytes=$maxBytes.');
+        }
+        output.add(chunk);
+        if (expectedBytes != null && expectedBytes > 0) {
+          onProgress?.call(
+            (receivedBytes / expectedBytes).clamp(0.0, 1.0).toDouble(),
+          );
+        }
+      }
+      onProgress?.call(1.0);
+      return output.takeBytes();
+    } finally {
+      client.close();
     }
-    return response.bodyBytes;
   }
 
   static Future<List<int>> _readPythonWheelCandidateBytes(
@@ -3600,7 +3653,8 @@ class SkillProvisioningService {
       final managedBinDir = layout.nativeManagedBinDir;
       await managedBinDir.create(recursive: true);
       for (final bin in pack.providesBins) {
-        final packBin = await _findFileInDirectory(installDir, bin);
+        final sourceName = _dependencyPackBinAliases[pack.id]?[bin] ?? bin;
+        final packBin = await _findFileInDirectory(installDir, sourceName);
         if (packBin == null) continue;
         final target = File(path.join(managedBinDir.path, bin));
         try {
@@ -3809,9 +3863,16 @@ class SkillProvisioningService {
 
     await Directory(layout.nativeStateRoot).create(recursive: true);
     try {
+      // The immutable v4 manifest used `tmux --help`, which tmux treats as an
+      // unknown option and exits 1 after printing usage. Keep signature
+      // verification intact and normalize only this known smoke invocation.
+      final smokeArgs =
+          pack.id == _androidTerminalPackId && normalizedCommand == 'tmux'
+              ? const <String>['-V']
+              : command.args;
       final result = await NativeBridge.runManagedCli(
         normalizedCommand,
-        command.args,
+        smokeArgs,
         timeoutSeconds: 15,
       );
       final stdout = result.stdout.trim();
@@ -5155,6 +5216,11 @@ class _DependencyPack {
     final provides = json['provides'] is Map
         ? Map<String, dynamic>.from(json['provides'] as Map)
         : <String, dynamic>{};
+    final providesBins = _stringSet(provides['bins'])
+      ..addAll(
+        SkillProvisioningService._dependencyPackBinAliases[id]?.keys ??
+            const <String>[],
+      );
     final sourceName = json['source']?.toString().toLowerCase();
     final source = sourceName == 'apk'
         ? _DependencyPackSource.apk
@@ -5171,11 +5237,12 @@ class _DependencyPack {
       source: source,
       url: json['url']?.toString(),
       sha256: json['sha256']?.toString().toLowerCase() ?? '',
-      maxBytes: (json['maxBytes'] as num?)?.toInt(),
+      maxBytes: (json['maxBytes'] as num?)?.toInt() ??
+          (json['sizeBytes'] as num?)?.toInt(),
       archiveType: json['archiveType']?.toString(),
       installPath: json['installPath']?.toString(),
       providesRuntimes: _stringSet(provides['runtimes']),
-      providesBins: _stringSet(provides['bins']),
+      providesBins: providesBins,
       providesPythonPackages: _stringSet(provides['pythonPackages']),
       smokeImports: _stringList(json['smokeImports']),
       files: json['files'] is List

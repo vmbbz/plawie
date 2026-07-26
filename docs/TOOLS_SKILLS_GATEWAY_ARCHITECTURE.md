@@ -1,6 +1,6 @@
 # Tools, Skills, And Gateway Intelligence Architecture
 
-Last updated: 2026-06-08
+Last updated: 2026-07-26
 
 Engineers touching `gateway_service.dart`, `openclaw_service.dart`,
 `model_provider_catalog.dart`, `local_llm_service.dart`, or the Skills Manager
@@ -419,6 +419,36 @@ Gemini CLI and auth/config truth. `coding-agent` remains behind
 such as `claude`, `codex`, `opencode`, or `pi`, plus auth/config truth. The
 embedded `libnode.so` Native Gateway lane is architecturally valuable, but it
 is not a managed shell `node` binary and does not satisfy those pack gates.
+
+### 2026-07-26 remote-pack native verification
+
+The OpenClaw core and Plawie dependency packs are separate delivery lanes.
+Fresh setup resolves and verifies the latest stable core from the official
+`openclaw/openclaw` release. Plawie releases carry only signed Android
+dependency packs; they are not Gateway mirrors.
+
+Live app-sandbox probes verified the release-matching `wacli`, `ffmpeg`,
+`songsee`, Whisper, Sherpa executable runtime, and `tmux` payloads as native
+Android arm64 binaries. Dynamic pack launchers inherit `.openclaw/lib` through
+`LD_LIBRARY_PATH`. The signed terminal manifest's `tmux --help` smoke is
+normalized to `tmux -V`, because tmux prints help but exits 1 for the former.
+
+Native setup installs the six verified Whisper, TTS-runtime, CLI-core,
+vision-media, audio-runtime, and terminal packs. SHA-256/Ed25519 verification,
+per-file checks, native smoke, and a durable receipt form one transaction.
+Retries skip valid receipts instead of spending data twice.
+
+Three cards must remain honest native gaps:
+
+- `coding-agent`: the published executable currently writes to Android's
+  read-only `/tmp` and fails before its CLI can start;
+- `node-inspect-debugger`: requires a standalone `node` executable pack;
+- `sherpa-onnx-tts`: the Sherpa executable is native, but the official skill
+  also requires the same standalone `node` host.
+
+`skill-creator` is instruction-only and has no executable dependency.
+`python-debugpy` uses the bundled Chaquopy/debugpy native bridge and is not
+blocked by a standalone Python shell executable.
 
 The `android-audio-runtime` lane is APK-local and currently `songsee` only.
 Phase 5I audited the remaining blockers and chose `songsee` because it can be

@@ -22,6 +22,7 @@ AndroidSkillProvisioningBadgeOverride? classifyAndroidSkillProvisioningBadge(
   final androidSupport = skill['androidSupport']?.toString() ?? '';
   final runtimeStatus = skill['runtimeStatus']?.toString() ?? '';
   final provisioningStatus = skill['provisioningStatus']?.toString() ?? '';
+  final packDelivery = skill['packDelivery']?.toString() ?? '';
   final unsupportedReason = skill['unsupportedReason']?.toString().trim() ?? '';
   final isLiveReady = (runtimeStatus == 'ready') &&
       (provisioningStatus == 'ready' || skill['ready'] == true);
@@ -42,6 +43,14 @@ AndroidSkillProvisioningBadgeOverride? classifyAndroidSkillProvisioningBadge(
       status: 'app_native_ready',
       label: 'READY',
       detail: 'Android app-native path ready',
+    );
+  }
+
+  if (skill['ready'] == true && runtimeStatus == 'instruction_only_ready') {
+    return const AndroidSkillProvisioningBadgeOverride(
+      status: 'instruction_only_ready',
+      label: 'READY',
+      detail: 'Instruction-only skill ready',
     );
   }
 
@@ -78,6 +87,26 @@ AndroidSkillProvisioningBadgeOverride? classifyAndroidSkillProvisioningBadge(
         detail: unsupportedReason.isNotEmpty
             ? unsupportedReason
             : 'desktop-only skill hidden from the Android GTM lane.',
+      ),
+    'needs_pack' when packDelivery == 'native_release' =>
+      const AndroidSkillProvisioningBadgeOverride(
+        status: 'native_release_pack_required',
+        label: 'DOWNLOAD PACK',
+        detail:
+            'Verified Android arm64 dependency pack is available from Plawie releases.',
+      ),
+    'needs_pack' when packDelivery == 'native_bundled' =>
+      const AndroidSkillProvisioningBadgeOverride(
+        status: 'native_bundled_pack_required',
+        label: 'INSTALL PACK',
+        detail: 'Bundled Android-native dependency is ready to install.',
+      ),
+    'needs_pack' when packDelivery == 'native_gap' =>
+      const AndroidSkillProvisioningBadgeOverride(
+        status: 'native_pack_gap',
+        label: 'NATIVE GAP',
+        detail:
+            'A complete verified native runtime path is not available; PRoot remains user-opt-in fallback only.',
       ),
     _ => null,
   };

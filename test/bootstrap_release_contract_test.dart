@@ -181,7 +181,7 @@ void main() {
         contains('fun ensureNotificationChannel(context: Context)'));
   });
 
-  test('native first setup reports official progress and skips raw Linux packs',
+  test('native first setup reports official progress and verified native packs',
       () async {
     final bootstrap =
         await File('lib/services/bootstrap_service.dart').readAsString();
@@ -223,19 +223,39 @@ void main() {
     );
     expect(
       freshSetup,
-      contains('Signed metadata only • no pack payload download'),
+      contains('Metadata first • SHA-256 + Ed25519 verification'),
     );
     expect(
       freshSetup,
-      contains('Native setup downloaded 0 executable packs.'),
+      contains('Downloading native dependency packs'),
     );
     expect(
-      freshSetup,
-      isNot(contains('SkillProvisioningService.setupWizardPackIds')),
+      packs,
+      contains('nativeSetupWizardPackIds = setupWizardPackIds'),
     );
-    expect(packs, contains('nativeSetupWizardPackIds = <String>[]'));
+    for (final packId in const [
+      'android-whisper-runtime',
+      'android-tts-runtime',
+      'android-cli-core-pack',
+      'android-vision-media-pack',
+      'android-audio-runtime-pack',
+      'android-terminal-pack',
+    ]) {
+      expect(packs, contains("'$packId'"));
+    }
+    final setupPackListStart =
+        packs.indexOf('static const List<String> setupWizardPackIds = [');
+    final setupPackListEnd = packs.indexOf('];', setupPackListStart);
+    final setupPackList = packs.substring(setupPackListStart, setupPackListEnd);
+    expect(setupPackList, isNot(contains('android-agent-cli-pack')));
+    expect(packs, contains('progress * 0.82'));
+    expect(packs, contains("const <String>['-V']"));
     expect(packs, contains('_dependencyPackManifestCacheTtl'));
     expect(packs, contains('_writeJsonAtomically('));
+    expect(mainActivity, contains('environment()["LD_LIBRARY_PATH"]'));
+    expect(mainActivity, contains('managedLib.absolutePath'));
+    expect(nativeRuntime, contains('process.env.LD_LIBRARY_PATH = ['));
+    expect(nativeRuntime, contains('OPENCLAW_NATIVE_MANAGED_LIB'));
     expect(provisioner, contains('onBytesCopied'));
     expect(provisioner, contains('markIsolatedProvisionProgress'));
     expect(installer, contains('markIsolatedProvisionProgress'));

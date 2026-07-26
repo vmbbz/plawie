@@ -44,12 +44,29 @@ enum AndroidSkillExecutionMode {
   unsupported,
 }
 
+enum AndroidSkillPackDelivery {
+  nativeRelease,
+  nativeBundled,
+  nativeGap,
+}
+
+extension AndroidSkillPackDeliveryWireName on AndroidSkillPackDelivery {
+  String get wireName {
+    return switch (this) {
+      AndroidSkillPackDelivery.nativeRelease => 'native_release',
+      AndroidSkillPackDelivery.nativeBundled => 'native_bundled',
+      AndroidSkillPackDelivery.nativeGap => 'native_gap',
+    };
+  }
+}
+
 class AndroidSkillSupportEntry {
   final String skillId;
   final AndroidSkillSupportStatus status;
   final AndroidSkillOwnerLayer ownerLayer;
   final AndroidSkillExecutionMode executionMode;
   final List<String> requiredPacks;
+  final AndroidSkillPackDelivery? packDelivery;
   final List<String> requiredConfig;
   final String? unsupportedReason;
   final String smokePrompt;
@@ -61,6 +78,7 @@ class AndroidSkillSupportEntry {
     required this.ownerLayer,
     required this.executionMode,
     this.requiredPacks = const <String>[],
+    this.packDelivery,
     this.requiredConfig = const <String>[],
     this.unsupportedReason,
     required this.smokePrompt,
@@ -74,6 +92,7 @@ class AndroidSkillSupportEntry {
         'executionMode': executionMode.name,
         'launchCritical': launchCritical,
         if (requiredPacks.isNotEmpty) 'requiredPacks': requiredPacks,
+        if (packDelivery != null) 'packDelivery': packDelivery!.wireName,
         if (requiredConfig.isNotEmpty) 'requiredConfig': requiredConfig,
         if (unsupportedReason != null && unsupportedReason!.isNotEmpty)
           'unsupportedReason': unsupportedReason,
@@ -208,8 +227,9 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsPack(
     'coding-agent',
     packs: ['android-agent-cli-pack'],
+    delivery: AndroidSkillPackDelivery.nativeGap,
     smoke:
-        'Run a dry coding-agent command with a verified Android-safe agent CLI.',
+        'Run a dry coding-agent command after the Android pack no longer writes to the read-only /tmp path.',
   ),
   _readyOptional(
     'diagram-maker',
@@ -248,8 +268,9 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _needsPack(
     'gifgrep',
-    packs: ['android-vision-media-runtime'],
-    smoke: 'Search for a GIF pattern in a small test fixture through the vision-media runtime.',
+    packs: ['android-vision-media-pack'],
+    smoke:
+        'Search for a GIF pattern in a small test fixture through the vision-media runtime.',
   ),
   _needsConfig(
     'github',
@@ -318,6 +339,7 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsPack(
     'node-inspect-debugger',
     packs: ['android-node-executable-pack'],
+    delivery: AndroidSkillPackDelivery.nativeGap,
     smoke:
         'Run standalone node inspector discovery against a local debug fixture.',
   ),
@@ -367,6 +389,7 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsPack(
     'python-debugpy',
     packs: ['android-python-debug-runtime'],
+    delivery: AndroidSkillPackDelivery.nativeBundled,
     smoke: 'Start and stop a debugpy smoke session in the Android runtime.',
   ),
   _needsConfig(
@@ -391,6 +414,7 @@ final List<AndroidSkillSupportEntry> _entries =
   _needsPack(
     'sherpa-onnx-tts',
     packs: ['android-tts-runtime', 'android-node-executable-pack'],
+    delivery: AndroidSkillPackDelivery.nativeGap,
     smoke:
         'Synthesize a short phrase only after the Sherpa ONNX runtime/model pack and standalone Node execution host are verified.',
   ),
@@ -410,7 +434,7 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _needsPack(
     'songsee',
-    packs: ['android-audio-runtime'],
+    packs: ['android-audio-runtime-pack'],
     smoke: 'Analyze a tiny bundled audio fixture through the audio pack.',
   ),
   _needsPack(
@@ -475,7 +499,7 @@ final List<AndroidSkillSupportEntry> _entries =
   ),
   _needsPack(
     'video-frames',
-    packs: ['android-vision-media-runtime'],
+    packs: ['android-vision-media-pack'],
     smoke: 'Extract frames from a tiny bundled video fixture.',
   ),
   _needsConfig(
@@ -557,6 +581,7 @@ AndroidSkillSupportEntry _readyOptional(
 AndroidSkillSupportEntry _needsPack(
   String id, {
   required List<String> packs,
+  AndroidSkillPackDelivery delivery = AndroidSkillPackDelivery.nativeRelease,
   required String smoke,
 }) {
   return AndroidSkillSupportEntry(
@@ -565,6 +590,7 @@ AndroidSkillSupportEntry _needsPack(
     ownerLayer: AndroidSkillOwnerLayer.openclawSkill,
     executionMode: AndroidSkillExecutionMode.dependencyPack,
     requiredPacks: List.unmodifiable(packs),
+    packDelivery: delivery,
     smokePrompt: smoke,
   );
 }

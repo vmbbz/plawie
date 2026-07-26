@@ -90,7 +90,8 @@ class MainActivity : FlutterActivity() {
         "whisper",
         "sherpa-onnx",
         "tmux",
-        "coding-agent"
+        "coding-agent",
+        "opencode"
     )
 
     // Wake word EventChannel sink — receives "wake_word_detected" events from HotwordService
@@ -1148,6 +1149,10 @@ class MainActivity : FlutterActivity() {
             filesDir,
             "native-node-embedded/native-home/.openclaw/bin"
         ).canonicalFile
+        val managedLib = File(
+            filesDir,
+            "native-node-embedded/native-home/.openclaw/lib"
+        ).canonicalFile
         val ffmpeg = File(managedBin, "ffmpeg").canonicalFile
         if (!ffmpeg.path.startsWith(managedBin.path + File.separator)) {
             throw IllegalStateException("Resolved ffmpeg path escaped managed bin.")
@@ -1169,7 +1174,12 @@ class MainActivity : FlutterActivity() {
             .directory(cacheDir)
             .redirectErrorStream(false)
             .apply {
-                environment()["PATH"] = managedBin.absolutePath
+                val inheritedPath = System.getenv("PATH") ?: "/system/bin:/system/xbin"
+                val inheritedLdPath = System.getenv("LD_LIBRARY_PATH").orEmpty()
+                environment()["PATH"] = "${managedBin.absolutePath}:$inheritedPath"
+                environment()["LD_LIBRARY_PATH"] =
+                    if (inheritedLdPath.isBlank()) managedLib.absolutePath
+                    else "${managedLib.absolutePath}:$inheritedLdPath"
                 environment()["OPENCLAW_NATIVE_MANAGED_BIN"] = managedBin.absolutePath
                 environment()["TMPDIR"] = cacheDir.absolutePath
             }
@@ -1231,6 +1241,7 @@ class MainActivity : FlutterActivity() {
 
         val nativeHome = File(filesDir, "native-node-embedded/native-home").canonicalFile
         val managedBin = File(nativeHome, ".openclaw/bin").canonicalFile
+        val managedLib = File(nativeHome, ".openclaw/lib").canonicalFile
         val binary = File(managedBin, safeBin).canonicalFile
         if (!binary.path.startsWith(managedBin.path + File.separator)) {
             throw IllegalStateException("Resolved managed CLI path escaped managed bin.")
@@ -1252,12 +1263,23 @@ class MainActivity : FlutterActivity() {
             .directory(nativeHome)
             .redirectErrorStream(false)
             .apply {
-                environment()["PATH"] = managedBin.absolutePath
+                val inheritedPath = System.getenv("PATH") ?: "/system/bin:/system/xbin"
+                val inheritedLdPath = System.getenv("LD_LIBRARY_PATH").orEmpty()
+                environment()["PATH"] = "${managedBin.absolutePath}:$inheritedPath"
+                environment()["LD_LIBRARY_PATH"] =
+                    if (inheritedLdPath.isBlank()) managedLib.absolutePath
+                    else "${managedLib.absolutePath}:$inheritedLdPath"
                 environment()["HOME"] = nativeHome.absolutePath
                 environment()["XDG_CONFIG_HOME"] = File(nativeHome, ".config").absolutePath
                 environment()["OPENCLAW_HOME"] = File(nativeHome, ".openclaw").absolutePath
                 environment()["OPENCLAW_NATIVE_MANAGED_BIN"] = managedBin.absolutePath
                 environment()["TMPDIR"] = cacheDir.absolutePath
+                if (safeBin == "coding-agent" || safeBin == "opencode") {
+                    val tagFix = File(managedLib, "libtagfix.so")
+                    if (tagFix.exists()) {
+                        environment()["LD_PRELOAD"] = tagFix.absolutePath
+                    }
+                }
                 env.forEach { (key, value) -> environment()[key] = value }
             }
             .start()

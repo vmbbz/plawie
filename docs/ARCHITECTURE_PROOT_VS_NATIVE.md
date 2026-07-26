@@ -332,15 +332,30 @@ The core and every optional pack keep separate durable receipts:
   capabilities, install time, and smoke-test result, so a valid compatible pack
   is reused rather than downloaded again.
 
-Native fresh setup may request only packs that are genuinely runnable through a
-verified Android-native loader: APK/JNI libraries, JavaScript executed by the
-embedded libnode runtime, or data-only assets. The current remote command packs
-contain raw ELF executables, and stock Android denies execution from
-app-writable storage. They are therefore deliberately excluded from native
-first-run setup instead of spending data on a guaranteed failed smoke test.
-Setup refreshes and caches only the signed catalog metadata, then reports the
-number of catalogued packs and explicitly reports that zero executable payloads
-were downloaded by native setup.
+Native fresh setup requests only packs proven to run in the targetSdk 36 app
+sandbox. Android Bionic executables can run from the app-private managed
+directory; dynamic packs also require `.openclaw/lib` in `LD_LIBRARY_PATH`.
+The current native setup set is:
+
+- `android-whisper-runtime`;
+- `android-tts-runtime`;
+- `android-cli-core-pack`;
+- `android-vision-media-pack`;
+- `android-audio-runtime-pack`;
+- `android-terminal-pack`.
+
+Each payload is downloaded after the official Gateway is healthy, checked
+against signed metadata and per-file hashes, installed, smoked, and receipted.
+Setup fails without being marked complete if a requested pack fails. Retrying
+reuses valid receipts and downloads only missing or invalid packs.
+
+`android-agent-cli-pack` is deliberately quarantined from automatic setup even
+though it is published: its current executable attempts to create the
+read-only `/tmp` path in the Android app sandbox. `node-inspect-debugger` and
+the complete `sherpa-onnx-tts` skill remain native gaps because no standalone
+`android-node-executable-pack` is published. Embedded `libnode.so` runs the
+Gateway but is not a general shell `node` executable. PRoot remains an explicit
+user-selected fallback and is never entered automatically for these gaps.
 
 The signed catalog cache has a 24-hour freshness window. A fresh cache prevents
 repeated GitHub requests during startup and skill audits. After that window the
@@ -349,9 +364,9 @@ unavailable, previously signature-verified entries remain available as a stale
 fallback. Payload receipts remain independent, and only a valid receipt can
 suppress a requested compatible-runtime pack download.
 
-Linux command packs remain available only behind the explicit PRoot rollback
-choice. Native setup must never download, extract, or start PRoot to make an
-optional pack work.
+Linux-only or failed-native command packs remain available only behind the
+explicit PRoot rollback choice. Native setup must never download, extract, or
+start PRoot to make an optional pack work.
 
 The setup UI receives durable micro-progress from the isolated official
 installer: release validation, exact tarball bytes, pinned npm bootstrap, npm

@@ -43,8 +43,8 @@ class AndroidSkillReadinessService {
       final ready = _isReady(entry, snapshot, matrixEntry, provisioningResult);
       final releaseRelevant =
           entry.status == AndroidSkillSupportStatus.readyRequired;
-      final appNativeOwned = _isAppNativeOwned(entry);
-      final dependencyGateDetails = appNativeOwned
+      final runtimeIndependent = _isRuntimeIndependent(entry);
+      final dependencyGateDetails = runtimeIndependent
           ? const <String, dynamic>{}
           : _dependencyGateDetails(provisioningResult);
       final liveRequiredEnv = _requiredEnv(entry, matrixEntry);
@@ -62,13 +62,13 @@ class AndroidSkillReadinessService {
         ...entry.toJson(),
         'runtimeStatus':
             _runtimeStatus(entry, snapshot, matrixEntry, provisioningResult),
-        if (!appNativeOwned && matrixEntry?.primaryGate != null)
+        if (!runtimeIndependent && matrixEntry?.primaryGate != null)
           'primaryGate': matrixEntry!.primaryGate,
-        if (!appNativeOwned &&
+        if (!runtimeIndependent &&
             matrixEntry != null &&
             matrixEntry.gates.isNotEmpty)
           'gates': matrixEntry.gates,
-        if (!appNativeOwned &&
+        if (!runtimeIndependent &&
             matrixEntry != null &&
             matrixEntry.requiredAnyBins.isNotEmpty)
           'requiredAnyBins': matrixEntry.requiredAnyBins,
@@ -122,6 +122,7 @@ class AndroidSkillReadinessService {
         _ => false,
       };
     }
+    if (_isInstructionOnlyReady(manifestEntry)) return true;
     if (_isAppNativeOwned(manifestEntry)) return true;
     if (matrixEntry?.status == SkillExecutionStatus.ready) return true;
     return switch (provisioningResult?.status) {
@@ -148,6 +149,9 @@ class AndroidSkillReadinessService {
       }
       return 'needs_config';
     }
+    if (_isInstructionOnlyReady(manifestEntry)) {
+      return 'instruction_only_ready';
+    }
     if (_isAppNativeOwned(manifestEntry)) return 'app_native_ready';
     if (matrixEntry == null) return 'not_installed';
     return _executionStatusWireName(matrixEntry.status);
@@ -160,6 +164,9 @@ class AndroidSkillReadinessService {
   ) {
     final appNativeOwned = _isAppNativeOwned(manifestEntry);
     final appNativeConfigGated = _isAppNativeConfigGated(manifestEntry);
+    if (_isInstructionOnlyReady(manifestEntry)) {
+      return 'instruction_only_not_required';
+    }
     if (appNativeOwned && !appNativeConfigGated) {
       return 'app_native_not_required';
     }
@@ -266,6 +273,23 @@ class AndroidSkillReadinessService {
         manifestEntry.ownerLayer ==
             AndroidSkillOwnerLayer.appNativeCapability ||
         manifestEntry.ownerLayer == AndroidSkillOwnerLayer.clawhubSkill;
+  }
+
+  static bool _isInstructionOnlyReady(
+    AndroidSkillSupportEntry manifestEntry,
+  ) {
+    final readyClass =
+        manifestEntry.status == AndroidSkillSupportStatus.readyRequired ||
+            manifestEntry.status == AndroidSkillSupportStatus.readyOptional;
+    return readyClass &&
+        manifestEntry.ownerLayer == AndroidSkillOwnerLayer.openclawSkill &&
+        manifestEntry.executionMode ==
+            AndroidSkillExecutionMode.instructionOnly;
+  }
+
+  static bool _isRuntimeIndependent(AndroidSkillSupportEntry manifestEntry) {
+    return _isAppNativeOwned(manifestEntry) ||
+        _isInstructionOnlyReady(manifestEntry);
   }
 
   static bool _isAppNativeConfigGated(

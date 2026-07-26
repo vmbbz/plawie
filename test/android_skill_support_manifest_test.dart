@@ -131,8 +131,32 @@ void main() {
       ['android-agent-cli-pack'],
     );
     expect(
+      manifest.entryFor('coding-agent')!.packDelivery,
+      AndroidSkillPackDelivery.nativeGap,
+    );
+    expect(
+      manifest.entryFor('python-debugpy')!.packDelivery,
+      AndroidSkillPackDelivery.nativeBundled,
+    );
+    expect(
+      manifest.entryFor('node-inspect-debugger')!.packDelivery,
+      AndroidSkillPackDelivery.nativeGap,
+    );
+    expect(
       manifest.entryFor('sherpa-onnx-tts')!.requiredPacks,
       ['android-tts-runtime', 'android-node-executable-pack'],
+    );
+    expect(
+      manifest.entryFor('sherpa-onnx-tts')!.packDelivery,
+      AndroidSkillPackDelivery.nativeGap,
+    );
+    expect(
+      manifest.entryFor('video-frames')!.requiredPacks,
+      ['android-vision-media-pack'],
+    );
+    expect(
+      manifest.entryFor('songsee')!.requiredPacks,
+      ['android-audio-runtime-pack'],
     );
     expect(manifest.entryFor('xurl')!.toJson(), {
       'skillId': 'xurl',
