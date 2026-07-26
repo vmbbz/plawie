@@ -211,46 +211,33 @@ smoke removes installed pack files and prevents the dependency receipt from
 being written. Python package packs keep the Native Python bridge/import smoke
 path instead of trying to execute the shell `python3` shim directly.
 
-Pack selection covers runtimes, Python packages, and managed binaries. APK-local
-binary resolvers are intentionally conservative: `android-cli-core-pack`,
-`android-vision-media-runtime`, and `android-audio-runtime` are advertised only
-when the installed APK already has matching bundled executable files.
-Provisioning copies those files into `.openclaw/bin`, writes a receipt, and
-treats a stale receipt as invalid if any advertised managed binary is missing.
-Remote executable pack distribution remains blocked behind hash, signature,
-smoke, rollback, and policy review.
+Pack selection covers runtimes, Python packages, and managed binaries. Current
+native executable packs are remote, signed release artifacts. Setup downloads
+only the six required pack IDs, verifies the cached manifest signature and
+archive/file hashes, runs native smoke, installs into app-private
+`.openclaw/bin` and `.openclaw/lib`, and writes a durable receipt. A receipt is
+invalid if its version, archive integrity, smoke result, or required managed
+files no longer match.
 
-APK-provided CLI-core payloads are loaded from
-`assets/openclaw/cli-core/bin/`. During full Native Gateway bootstrap,
-`NativeNodeEmbeddedService` copies non-dot asset files from that directory into
-`filesDir/native-node-embedded/provisioning/bin` and marks them executable. The
-directory can exist without real payload; in that case no binary pack is
-advertised because the Dart resolver only sees actual copied CLI files.
-For CLI-core, payload file names must be executable names from each bundled
-`SKILL.md`, not necessarily skill IDs: for example `blucli` requires `blu`,
-and `sonoscli` requires `sonos`.
+The current signed lanes are:
 
-APK-provided vision-media payloads use the parallel lane
-`assets/openclaw/vision-media/bin/`, copied into the same
-`filesDir/native-node-embedded/provisioning/bin` staging directory during full
-Native Gateway bootstrap. The current resolver advertises exact per-binary
-payloads only when they exist after APK extraction. An empty directory or
-`.gitkeep` does not advertise a pack. `ffmpeg` satisfies `video-frames` after
-payload smoke/device proof; `gifgrep` satisfies local GIF processing after its
-own payload smoke/device proof. One vision-media binary must not satisfy a
-different binary gate.
+```text
+android-whisper-runtime: whisper
+android-tts-runtime: sherpa-onnx
+android-cli-core-pack: blu, eightctl, himalaya, openhue, sonos, wacli
+android-vision-media-pack: ffmpeg, gifgrep
+android-audio-runtime-pack: songsee
+android-terminal-pack: tmux plus required shared libraries
+```
 
-APK-provided audio-runtime payloads use
-`assets/openclaw/audio-runtime/bin/`, copied into
-`filesDir/native-node-embedded/provisioning/audio-runtime/bin` during full
-Native Gateway bootstrap. The current resolver advertises only `songsee`, and
-only when that exact payload exists after APK extraction. An empty directory or
-`.gitkeep` does not advertise a pack. `songsee` can satisfy `songsee` after
-payload smoke/device proof; it does not satisfy `spotify-player`, whose real
-binary gate remains `spogo` or `spotify_player`.
+Pack filenames follow executable requirements from official `SKILL.md` files,
+not necessarily skill IDs: `blucli` requires `blu`, `sonoscli` requires
+`sonos`, and `video-frames` requires `ffmpeg`. One advertised executable must
+never satisfy an unrelated gate: `songsee` does not satisfy `spotify-player`,
+whose real binary gate remains `spogo` or `spotify_player`.
 
-When a known CLI-core executable is required but no APK payload or validated
-pack advertises it, provisioning emits an `android-cli-core-pack:<bin>`
+When a known CLI-core executable is required but no validated pack advertises
+it, provisioning emits an `android-cli-core-pack:<bin>`
 missing-pack action. Android readiness copies this into `/device/health` as
 `dependencyGateStatus`, `missingPacks`, `missingBins`, and
 `dependencyGateMessage`, so the Skills page can explain the exact missing
@@ -258,20 +245,19 @@ payload without pretending the skill is runnable.
 
 The same missing-pack behavior applies to known vision-media executables. If
 `video-frames` requires `ffmpeg` or `gifgrep` requires `gifgrep` and no exact
-payload is present, provisioning emits `android-vision-media-runtime:<bin>` with
-remediation pointing at `assets/openclaw/vision-media/bin/<bin>` or a future
-signed arm64-v8a dependency pack.
+payload is present, provisioning emits an
+`android-vision-media-pack:<bin>` remediation that identifies the signed
+arm64-v8a dependency pack.
 
 The same missing-pack behavior applies to known audio-runtime executables. If
 `songsee` requires `songsee` and no payload is present, provisioning emits
-`android-audio-runtime:songsee` with remediation pointing at
-`assets/openclaw/audio-runtime/bin/songsee` or a future signed arm64-v8a
-dependency pack. The resolver intentionally advertises only the payloads that
-actually exist, so bundling `songsee` does not move `spotify-player`.
+`android-audio-runtime-pack:songsee` with signed-pack remediation. The resolver
+intentionally advertises only validated payloads, so installing `songsee` does
+not move `spotify-player`.
 
 The readiness scorecard distinguishes static taxonomy from unresolved gates.
 `countsByClass.needs_pack` remains the number of manifest entries whose product
-class depends on a pack, even after an APK-local payload satisfies some of
+class depends on a pack, even after a validated payload satisfies some of
 those entries. The Skills page therefore displays `PACK BLOCKERS` from
 unready `needs_pack` entries, not the raw taxonomy total. The same rule applies
 to `CONFIG BLOCKERS` for unready `needs_config` entries.
@@ -286,7 +272,7 @@ requirement. High-confidence Python command examples such as
 `python3 -m debugpy` and `python3 -c "import debugpy"` create Python package
 gates; a Python bridge alone is not enough to mark `python-debugpy` ready.
 
-Current APK-local CLI-core payloads are `openhue`, built from OpenHue CLI commit
+Current remote CLI-core payloads are `openhue`, built from OpenHue CLI commit
 `08e940a9cd1c49c2da0a714dc8bb07ee60e9cd21`; `eightctl`, built from
 `steipete/eightctl` commit `2f2c73f0a529e9138707a237135fcaadfe56617e`;
 `himalaya`, built from `pimalaya/himalaya` commit
@@ -306,11 +292,11 @@ Their provenance and deterministic rebuild commands are recorded in
 `docs/CLI_CORE_HIMALAYA_ANDROID_PAYLOAD.md`,
 `docs/CLI_CORE_SONOS_ANDROID_PAYLOAD.md`, and
 `docs/CLI_CORE_BLU_ANDROID_PAYLOAD.md`, and
-`docs/CLI_CORE_WACLI_ANDROID_PAYLOAD.md`. The currently audited
-`android-cli-core-pack` executable set is fully APK-local; future CLI-core tools
-stay pack-gated until real Android arm64 binaries are produced and verified.
+`docs/CLI_CORE_WACLI_ANDROID_PAYLOAD.md`. The audited executable set ships in
+the signed `android-cli-core-pack` release artifact; future CLI-core tools stay
+pack-gated until real Android arm64 binaries are produced and verified.
 
-Current APK-local vision-media payloads:
+Current remote vision-media payloads:
 
 ```text
 ffmpeg: Android arm64 ELF, FFmpeg 8.1.1, LGPL-only build
@@ -325,20 +311,17 @@ provenance: docs/ANDROID_VISION_MEDIA_GIFGREP_PAYLOAD.md
 notice: docs/THIRD_PARTY_NOTICES_GIFGREP.md
 ```
 
-The `android-vision-media-runtime` asset lane and resolver now have a real
-device-proven FFmpeg payload. On the 2026-06-09 debug APK smoke, the app copied
-`ffmpeg` into provisioning bin, provisioned it into managed `.openclaw/bin`,
-ran `ffmpeg -version`, extracted a JPEG from a tiny MP4 fixture, and reported
+The `android-vision-media-pack` release lane and resolver have a real
+device-proven FFmpeg payload. The app verifies the signed pack, provisions
+`ffmpeg` into managed `.openclaw/bin`, runs `ffmpeg -version`, and reports
 `video-frames` ready through `/device/health`.
 
-The same lane now has a real device-proven Gifgrep payload. On the 2026-06-10
-debug APK smoke, the app copied `gifgrep` into provisioning bin, provisioned it
-into managed `.openclaw/bin`, ran `gifgrep --version`, rendered local GIF
-`still` and `sheet` PNG outputs, and reported `gifgrep` ready through
-`/device/health`. Provider search keys remain mode-specific config and are not
-hard gates for local GIF processing.
+The same lane has a real device-proven Gifgrep payload. Its version and local
+GIF rendering smokes must pass before the receipt is written. Provider search
+keys remain mode-specific config and are not hard gates for local GIF
+processing.
 
-Current APK-local audio-runtime payloads:
+Current remote audio-runtime payload:
 
 ```text
 songsee: Android arm64 ELF, built from steipete/songsee
@@ -348,12 +331,10 @@ provenance: docs/ANDROID_AUDIO_RUNTIME_SONGSEE_PAYLOAD.md
 notice: docs/THIRD_PARTY_NOTICES_SONGSEE.md
 ```
 
-The `android-audio-runtime` asset lane and resolver now have a real
-device-proven Songsee payload. On the 2026-06-10 debug APK smoke, the app
-copied `songsee` into provisioning, provisioned it into managed `.openclaw/bin`,
-ran `songsee --version`, rendered a tiny WAV into a PNG image, and reported
-`songsee` ready through `/device/health`. `spotify-player` remains blocked; it
-is not satisfied by `songsee`.
+The signed `android-audio-runtime-pack` lane has a device-proven Songsee
+payload. Setup provisions it into managed `.openclaw/bin`, runs native smoke,
+and reports `songsee` ready through `/device/health`. `spotify-player` remains
+blocked; it is not satisfied by `songsee`.
 
 Current APK-local Python debug payloads:
 
@@ -372,26 +353,18 @@ wheel receipts. On the 2026-06-09 debug APK smoke, the installed app copied the
 into Native Python site-packages, imported it through `/api/python/exec` via the
 Chaquopy bridge, and reported `python-debugpy` ready through `/device/health`.
 
-Current APK-local terminal payload lane:
+Current remote terminal payload lane:
 
 ```text
-asset roots:
-  assets/openclaw/terminal/bin/
-  assets/openclaw/terminal/lib/
-bootstrap copy roots:
-  provisioning/terminal/bin/
-  provisioning/terminal/lib/
 managed install roots:
   .openclaw/bin
   .openclaw/lib
-first advertised pack:
+signed pack:
   android-terminal-pack, tmux only
 status:
   device-proven tmux payload
 pack version:
-  termux-tmux-3.6b-apk-v1
-payload:
-  assets/openclaw/terminal/bin/tmux
+  terminal-v1-2026
 libraries:
   libandroid-glob.so
   libandroid-support.so
@@ -406,9 +379,9 @@ shared libraries. Provisioning copies terminal libraries into managed
 `.openclaw/lib`, and dependency-pack smoke commands receive
 `OPENCLAW_NATIVE_LIB` plus an `LD_LIBRARY_PATH` that includes that directory.
 `tmux` is now backed by pinned Termux aarch64 package artifacts documented in
-`docs/ANDROID_TERMINAL_TMUX_PAYLOAD.md` and is ready only after the APK copies
-the binary/libs, provisioning installs them into `.openclaw`, and `tmux -V`
-passes on device.
+`docs/ANDROID_TERMINAL_TMUX_PAYLOAD.md` and is ready only after signed-pack
+verification installs the binary/libs into `.openclaw` and `tmux -V` passes on
+device.
 
 Node-family pack gates are split by runnable artifact, not by ecosystem label.
 A future standalone `node` executable belongs to
@@ -454,28 +427,14 @@ Three cards must remain honest native gaps:
 `python-debugpy` uses the bundled Chaquopy/debugpy native bridge and is not
 blocked by a standalone Python shell executable.
 
-The `android-audio-runtime` lane is APK-local and currently `songsee` only.
+The `android-audio-runtime-pack` release lane is currently `songsee` only.
 Phase 5I audited the remaining blockers and chose `songsee` because it can be
 proven offline with a tiny local audio fixture and does not require user
 account auth, provider API keys, a large ML model, or standalone Node. The audio
-runtime resolver advertises only bins that exist in the APK-copied provisioning
-roots. The landed `songsee` payload must not satisfy `spotify-player`; Spotify
-remains blocked until either `spogo` cookies or `spotify_player` auth/config are
+runtime resolver advertises only bins from accepted signed catalog entries.
+The `songsee` payload must not satisfy `spotify-player`; Spotify remains
+blocked until either `spogo` cookies or `spotify_player` auth/config are
 represented truthfully in the UI and runtime audit.
-
-The first `android-audio-runtime` plumbing slice is APK-local and songsee-only:
-
-```text
-asset root: assets/openclaw/audio-runtime/bin/
-bootstrap root: filesDir/native-node-embedded/provisioning/audio-runtime/bin
-managed install root: .openclaw/bin
-first advertised bin: songsee
-blocked by design: spotify-player
-```
-
-An empty directory or `.gitkeep` does not advertise the pack. The Dart resolver
-only advertises `android-audio-runtime` after the installed APK has copied a
-real `songsee` binary into the audio-runtime provisioning root.
 
 ## Gateway `tools.allow`
 
