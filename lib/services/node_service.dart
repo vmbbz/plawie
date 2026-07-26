@@ -634,7 +634,19 @@ class NodeService {
     return family;
   }
 
-  Future<void> connect({String? host, int? port}) async {
+  bool _isLoopbackGatewayHost(String host) {
+    final normalized = host.trim().toLowerCase();
+    return normalized.isEmpty ||
+        normalized == '127.0.0.1' ||
+        normalized == 'localhost' ||
+        normalized == '::1';
+  }
+
+  Future<void> connect({
+    String? host,
+    int? port,
+    bool gatewayAlreadyReady = false,
+  }) async {
     if (_capabilityHandlers.isEmpty) {
       log('[NODE] Connect deferred: no device capabilities registered yet');
       return;
@@ -686,27 +698,48 @@ class NodeService {
     }
     _connectInFlight = true;
     try {
-      // STRONGER guard: wait for bootstrap OR gateway startup.
-      // We MUST allow the node to connect while bootstrap is still in progress
-      // so that the Gateway generates a pairing request for _approveLocalNodeIfNeeded to find.
-      while (!await NativeBridge.isBootstrapComplete() &&
-          !await NativeBridge.isGatewayRunning()) {
-        log('[NODE] Waiting for Gateway to start...');
-        await Future.delayed(const Duration(seconds: 2));
-      }
-
       final prefs = PreferencesService();
       await prefs.init();
+      final targetHost =
+          host ?? prefs.nodeGatewayHost ?? AppConstants.gatewayHost;
+      final targetPort =
+          port ?? prefs.nodeGatewayPort ?? AppConstants.gatewayPort;
+      final localGateway = _isLoopbackGatewayHost(targetHost);
+
+      // GatewayProvider and GatewayService only release local node pairing
+      // after HTTP, WebSocket, RPC and tool discovery are interactive. Trust
+      // that stronger signal instead of re-probing Android process state and
+      // stalling first setup. Independent local callers retain a bounded
+      // fallback; remote gateways never wait on this device's bootstrap.
+      if (localGateway && gatewayAlreadyReady) {
+        log(
+          '[NODE] Gateway already interactive; starting node handshake immediately',
+        );
+      } else if (localGateway) {
+        final deadline = DateTime.now().add(const Duration(minutes: 3));
+        var nextProgressLog = DateTime.fromMillisecondsSinceEpoch(0);
+        while (!await NativeBridge.isBootstrapComplete() &&
+            !await NativeBridge.isGatewayRunning()) {
+          final now = DateTime.now();
+          if (!now.isBefore(deadline)) {
+            throw TimeoutException(
+              'Local Gateway did not become ready for node pairing within 180 seconds.',
+              const Duration(minutes: 3),
+            );
+          }
+          if (!now.isBefore(nextProgressLog)) {
+            log('[NODE] Waiting for local Gateway readiness...');
+            nextProgressLog = now.add(const Duration(seconds: 10));
+          }
+          await Future.delayed(const Duration(seconds: 2));
+        }
+      }
+
       await _ensurePairingMatchesDeclaredCommands(prefs);
       if (needsSnapshotRepair ||
           await _pairedNodeSnapshotNeedsCommandRepair()) {
         await _repairPairedNodeSnapshot(prefs);
       }
-
-      final targetHost =
-          host ?? prefs.nodeGatewayHost ?? AppConstants.gatewayHost;
-      final targetPort =
-          port ?? prefs.nodeGatewayPort ?? AppConstants.gatewayPort;
 
       _updateState(_state.copyWith(
         status: NodeStatus.connecting,

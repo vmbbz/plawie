@@ -5154,7 +5154,7 @@ HEARTBEAT_OK.
       } catch (_) {
         await NativeBridge.startNodeService();
       }
-      await node.connect();
+      await node.connect(gatewayAlreadyReady: true);
     } catch (e) {
       _addActivity('[NODE] Auto-connect deferred: $e');
     } finally {

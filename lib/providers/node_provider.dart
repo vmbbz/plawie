@@ -391,7 +391,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
           _state.status != NodeStatus.paired &&
           _state.status != NodeStatus.pairing) {
         _nodeService.log('[NODE] Auto-connect starting handshake');
-        await _nodeService.connect();
+        await _nodeService.connect(gatewayAlreadyReady: true);
       }
       _startWatchdog();
     }

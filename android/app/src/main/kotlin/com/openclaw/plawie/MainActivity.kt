@@ -474,12 +474,17 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "isGatewayRunning" -> {
-                    val running = if (SetupGuards.isNativeGatewayOwner(this)) {
-                        nativeNodeSmokeProcess.isFullGatewayProductionRunning()
-                    } else {
-                        processManager.isGatewayRunning()
-                    }
-                    result.success(running)
+                    // Native health probes open a loopback HTTP connection and
+                    // inspect process state. Keep that work off Android's UI
+                    // thread so node readiness polling cannot stall Flutter.
+                    Thread {
+                        val running = if (SetupGuards.isNativeGatewayOwner(this)) {
+                            nativeNodeSmokeProcess.isFullGatewayProductionRunning()
+                        } else {
+                            processManager.isGatewayRunning()
+                        }
+                        runOnUiThread { result.success(running) }
+                    }.start()
                 }
                 "getGatewayLogs" -> {
                     result.success(processManager.getRecentLogs())

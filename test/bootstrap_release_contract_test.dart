@@ -418,11 +418,17 @@ void main() {
     final nativeProcess = await File(
       'android/app/src/main/kotlin/com/openclaw/plawie/NativeNodeSmokeProcess.kt',
     ).readAsString();
+    final mainActivity = await File(
+      'android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt',
+    ).readAsString();
     final nativeRuntime = await File(
       'android/app/src/main/kotlin/com/openclaw/plawie/NativeNodeEmbeddedService.kt',
     ).readAsString();
     final gateway =
         await File('lib/services/gateway_service.dart').readAsString();
+    final node = await File('lib/services/node_service.dart').readAsString();
+    final nodeProvider =
+        await File('lib/providers/node_provider.dart').readAsString();
     final provisioning = await File(
       'lib/services/skill_provisioning_service.dart',
     ).readAsString();
@@ -433,6 +439,14 @@ void main() {
     );
     expect(nativeRuntime, isNot(contains('countExistingFiles')));
     expect(nativeRuntime, isNot(contains('walkTopDown().count')));
+    expect(
+      mainActivity,
+      contains(
+        'Thread {\n'
+        '                        val running = if '
+        '(SetupGuards.isNativeGatewayOwner(this))',
+      ),
+    );
     expect(
       nativeRuntime,
       contains('"verificationMode", "activated-receipt-and-required-files"'),
@@ -452,6 +466,23 @@ void main() {
       isNot(contains('_auditNativeSkillParity')),
     );
     expect(gateway, isNot(contains('bypassCooldown: true')));
+    expect(
+      gateway,
+      contains('node.connect(gatewayAlreadyReady: true)'),
+    );
+    expect(
+      nodeProvider,
+      contains('_nodeService.connect(gatewayAlreadyReady: true)'),
+    );
+    expect(node, contains('bool gatewayAlreadyReady = false'));
+    expect(node, contains('if (localGateway && gatewayAlreadyReady)'));
+    expect(node, contains('!await NativeBridge.isGatewayRunning()'));
+    expect(
+      node,
+      contains(
+        'Local Gateway did not become ready for node pairing within 180 seconds.',
+      ),
+    );
 
     expect(provisioning, contains('receipt.id == pack.id'));
     expect(provisioning, contains('receipt.version == pack.version'));
