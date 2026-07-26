@@ -32,6 +32,7 @@ class NodeService {
   bool _pairingSnapshotRepairInFlight = false;
   int _preferredConnectProtocol = AppConstants.wsProtocolMaxVersion;
   DateTime? _pairingRetryNotBefore;
+  DateTime? _lastHealthyConnectionNoOpLogAt;
   int _pairingApprovalFailureCount = 0;
 
   NodeState _state = const NodeState();
@@ -642,7 +643,15 @@ class NodeService {
     if (_state.status == NodeStatus.paired) {
       if (!needsSnapshotRepair) {
         if (_ws.isConnected && !_ws.isStale) {
-          log('[NODE] Already paired and connected with correct command snapshot');
+          final now = DateTime.now();
+          final lastLogAt = _lastHealthyConnectionNoOpLogAt;
+          if (lastLogAt == null ||
+              now.difference(lastLogAt) >= const Duration(minutes: 10)) {
+            _lastHealthyConnectionNoOpLogAt = now;
+            log(
+              '[NODE] Already paired and connected with correct command snapshot',
+            );
+          }
           return;
         }
         if (!_ws.isConnected) {

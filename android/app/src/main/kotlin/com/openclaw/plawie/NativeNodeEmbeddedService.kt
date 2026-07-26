@@ -157,10 +157,15 @@ class NativeNodeEmbeddedService : Service() {
         } else {
             GATEWAY_NOTIFICATION_ID
         }
-        val startupText = if (intent?.action == ACTION_STOP) {
-            "Stopping OpenClaw gateway…"
-        } else {
-            "Starting OpenClaw gateway…"
+        val runtimeAlreadyRunning =
+            intent.action == ACTION_START && NativeNodeBridge.running()
+        val startupText = when {
+            intent.action == ACTION_STOP -> "Stopping OpenClaw gateway…"
+            runtimeAlreadyRunning &&
+                activeCanaryMode == FULL_GATEWAY_BOOTSTRAP_MODE ->
+                "OpenClaw gateway running"
+            runtimeAlreadyRunning -> "Native OpenClaw diagnostics running"
+            else -> "Starting OpenClaw gateway…"
         }
         lastNotificationText = startupText
         startForeground(foregroundNotificationId, buildNotification(startupText))

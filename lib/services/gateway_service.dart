@@ -224,6 +224,7 @@ class GatewayService {
   DateTime? _lastLocalInferenceHealthSkipAt;
   DateTime? _lastHungGatewayRestartAt;
   DateTime? _lastStartupHealthKickAt;
+  DateTime? _lastNativeListenerFallbackLogAt;
   DateTime? _gatewayConfigTransitionUntil;
   String? _gatewayConfigTransitionReason;
   int _consecutiveProcessValidationMisses = 0;
@@ -1457,10 +1458,16 @@ class GatewayService {
               await NativeBridge.isNativeNodeIsolatedProcessAlive()
                   .timeout(const Duration(seconds: 2), onTimeout: () => false);
           if (nativeProcessAlive) {
-            _addActivity(
-              '[RUNTIME] Accepting native listener on ${AppConstants.gatewayPort}: '
-              'health omitted runtime but native isolated process is alive.',
-            );
+            final now = DateTime.now();
+            final lastLogAt = _lastNativeListenerFallbackLogAt;
+            if (lastLogAt == null ||
+                now.difference(lastLogAt) >= const Duration(minutes: 10)) {
+              _lastNativeListenerFallbackLogAt = now;
+              _addActivity(
+                '[RUNTIME] Accepting native listener on ${AppConstants.gatewayPort}: '
+                'health omitted runtime but native isolated process is alive.',
+              );
+            }
             return true;
           }
         } catch (_) {}

@@ -219,9 +219,23 @@ void main() {
     );
     expect(
       freshSetup,
+      contains('SkillProvisioningService.refreshRemotePackCatalog()'),
+    );
+    expect(
+      freshSetup,
+      contains('Signed metadata only • no pack payload download'),
+    );
+    expect(
+      freshSetup,
+      contains('Native setup downloaded 0 executable packs.'),
+    );
+    expect(
+      freshSetup,
       isNot(contains('SkillProvisioningService.setupWizardPackIds')),
     );
     expect(packs, contains('nativeSetupWizardPackIds = <String>[]'));
+    expect(packs, contains('_dependencyPackManifestCacheTtl'));
+    expect(packs, contains('_writeJsonAtomically('));
     expect(provisioner, contains('onBytesCopied'));
     expect(provisioner, contains('markIsolatedProvisionProgress'));
     expect(installer, contains('markIsolatedProvisionProgress'));
@@ -321,6 +335,17 @@ void main() {
     expect(nodeService, contains('stopForeground(false)'));
     expect(nodeService, contains('if (lastNotificationText == text)'));
     expect(nativeRuntime, contains('if (lastNotificationText == text)'));
+    expect(
+      nativeRuntime,
+      contains(
+        'intent.action == ACTION_START && NativeNodeBridge.running()',
+      ),
+    );
+    expect(
+      nativeRuntime,
+      contains(
+          'runtimeAlreadyRunning -> "Native OpenClaw diagnostics running"'),
+    );
     expect(
       gateway,
       isNot(

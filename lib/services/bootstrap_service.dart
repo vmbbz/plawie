@@ -445,20 +445,32 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
         onProgress,
         SetupStep.downloadingPacks,
         0.0,
-        'Checking optional Plawie packs...',
+        'Verifying optional pack catalog...',
         82,
-        subMessage: 'Only Android-native compatible packs are eligible',
+        subMessage: 'Signed metadata only • no pack payload download',
       );
+      var catalogPackCount = 0;
+      try {
+        catalogPackCount =
+            await SkillProvisioningService.refreshRemotePackCatalog();
+      } catch (error) {
+        _log(
+          '[SETUP] Optional pack catalog unavailable; native core remains ready',
+          error: error,
+        );
+      }
       final nativePackIds = SkillProvisioningService.nativeSetupWizardPackIds;
       if (nativePackIds.isEmpty) {
         _emitProgress(
           onProgress,
           SetupStep.downloadingPacks,
           1.0,
-          'No native-compatible optional packs are required.',
+          'Native setup downloaded 0 executable packs.',
           100,
-          subMessage:
-              'Gateway core is ready • Linux command packs stay opt-in via PRoot',
+          subMessage: catalogPackCount > 0
+              ? '$catalogPackCount signed optional packs catalogued • '
+                  'explicit PRoot compatibility mode only'
+              : 'Gateway core is ready • optional catalog can retry from Skills',
         );
       } else {
         final totalPacks = nativePackIds.length;

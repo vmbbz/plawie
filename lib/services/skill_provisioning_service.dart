@@ -17,6 +17,9 @@ import 'skill_parity_audit_service.dart';
 class SkillProvisioningService {
   SkillProvisioningService._();
   static final SkillProvisioningService instance = SkillProvisioningService._();
+  static const Duration _dependencyPackManifestCacheTtl = Duration(hours: 24);
+  static const Duration _dependencyPackManifestFetchTimeout =
+      Duration(seconds: 5);
   static const _pythonRuntimeVersion = '3.11';
   static const _pythonTag = 'cp311';
   static const _pythonAbiTag = 'cp311';
@@ -39,6 +42,23 @@ class SkillProvisioningService {
   /// ID here only after its payload runs through a verified Android-native
   /// loader (for example APK/JNI, JS through embedded libnode, or data-only).
   static const List<String> nativeSetupWizardPackIds = <String>[];
+
+  /// Refreshes the signed optional-pack catalog without downloading payloads.
+  ///
+  /// Native setup calls this so the Skills UI can explain which capabilities
+  /// are available only through an explicitly selected compatible runtime.
+  /// A verified stale cache remains usable during a transient network outage.
+  static Future<int> refreshRemotePackCatalog() async {
+    final filesDir = await NativeBridge.getFilesDir();
+    final layout = _SkillProvisioningLayout(filesDir);
+    final packs = await _loadDependencyPackCatalog(
+      layout,
+      forceRemoteRefresh: true,
+    );
+    return packs
+        .where((pack) => pack.source == _DependencyPackSource.remote)
+        .length;
+  }
 
   /// Installs all remote dependency packs from the manifest.
   /// Used by an explicit compatible-runtime setup path to pre-download packs.
@@ -1828,8 +1848,9 @@ class SkillProvisioningService {
   }
 
   static Future<List<_DependencyPack>> _loadDependencyPackCatalog(
-    _SkillProvisioningLayout layout,
-  ) async {
+    _SkillProvisioningLayout layout, {
+    bool forceRemoteRefresh = false,
+  }) async {
     final packs = <_DependencyPack>[
       _DependencyPack.apk(
         id: 'python-core',
@@ -1858,10 +1879,13 @@ class SkillProvisioningService {
     // the APK. It is fetched on demand via the remote manifest exactly like
     // android-whisper-runtime and android-tts-runtime.
 
-    Future<void> mergeManifest(Map<String, dynamic>? manifest) async {
-      if (manifest == null) return;
+    Future<List<Map<String, dynamic>>> mergeManifest(
+      Map<String, dynamic>? manifest,
+    ) async {
+      final acceptedEntries = <Map<String, dynamic>>[];
+      if (manifest == null) return acceptedEntries;
       final rawPacks = manifest['packs'] ?? manifest['items'];
-      if (rawPacks is! List) return;
+      if (rawPacks is! List) return acceptedEntries;
       for (final item in rawPacks) {
         if (item is! Map) continue;
         final json = Map<String, dynamic>.from(item);
@@ -1882,14 +1906,33 @@ class SkillProvisioningService {
           );
           continue;
         }
+        acceptedEntries.add(json);
         final pack = _DependencyPack.fromJson(json);
         if (pack != null && !packs.any((existing) => existing.id == pack.id)) {
           packs.add(pack);
         }
       }
+      return acceptedEntries;
     }
 
-    await mergeManifest(await _readJson(layout.dependencyPackManifestFile));
+    final manifestFile = layout.dependencyPackManifestFile;
+    final cachedManifest = await _readJson(manifestFile);
+    var cacheIsFresh = false;
+    if (cachedManifest != null && await manifestFile.exists()) {
+      try {
+        final age =
+            DateTime.now().difference((await manifestFile.stat()).modified);
+        cacheIsFresh =
+            !age.isNegative && age <= _dependencyPackManifestCacheTtl;
+      } catch (_) {}
+    }
+
+    if (cacheIsFresh && !forceRemoteRefresh) {
+      await mergeManifest(cachedManifest);
+      return packs;
+    }
+
+    var remoteAccepted = false;
     try {
       final uri = Uri.parse(
         const String.fromEnvironment(
@@ -1898,18 +1941,77 @@ class SkillProvisioningService {
               'https://raw.githubusercontent.com/vmbbz/plawie/native-node-gateway-research/android-arm64-v8a.json',
         ),
       );
-      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+      final response =
+          await http.get(uri).timeout(_dependencyPackManifestFetchTimeout);
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final decoded = jsonDecode(response.body);
         if (decoded is Map) {
-          await mergeManifest(Map<String, dynamic>.from(decoded));
+          final manifest = Map<String, dynamic>.from(decoded);
+          final acceptedEntries = await mergeManifest(manifest);
+          if (acceptedEntries.isNotEmpty) {
+            remoteAccepted = true;
+            await _writeJsonAtomically(
+              manifestFile,
+              <String, dynamic>{
+                if (manifest['schemaVersion'] != null)
+                  'schemaVersion': manifest['schemaVersion'],
+                'cachedAt': DateTime.now().toUtc().toIso8601String(),
+                'packs': acceptedEntries,
+              },
+            );
+          }
         }
+      } else {
+        debugPrint(
+          '[DEPS] dependency catalog refresh returned HTTP '
+          '${response.statusCode}; using verified cache when available',
+        );
       }
     } catch (error) {
-      debugPrint('[DEPS] remote dependency manifest unavailable: $error');
+      debugPrint(
+        '[DEPS] dependency catalog refresh unavailable; '
+        'using verified cache when available: $error',
+      );
+    }
+
+    if (!remoteAccepted && cachedManifest != null) {
+      final acceptedCached = await mergeManifest(cachedManifest);
+      if (acceptedCached.isNotEmpty) {
+        debugPrint(
+          '[DEPS] using ${acceptedCached.length} cached signed dependency packs',
+        );
+      }
     }
 
     return packs;
+  }
+
+  static Future<void> _writeJsonAtomically(
+    File target,
+    Map<String, dynamic> value,
+  ) async {
+    await target.parent.create(recursive: true);
+    final staged = File(
+      '${target.path}.tmp-${DateTime.now().microsecondsSinceEpoch}',
+    );
+    try {
+      await staged.writeAsString(
+        '${const JsonEncoder.withIndent('  ').convert(value)}\n',
+        flush: true,
+      );
+      try {
+        await staged.rename(target.path);
+      } on FileSystemException {
+        if (await target.exists()) {
+          await target.delete();
+        }
+        await staged.rename(target.path);
+      }
+    } finally {
+      if (await staged.exists()) {
+        await staged.delete();
+      }
+    }
   }
 
   static Future<bool> _verifyDependencyPackSignature(

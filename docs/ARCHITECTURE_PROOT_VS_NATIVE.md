@@ -337,8 +337,17 @@ verified Android-native loader: APK/JNI libraries, JavaScript executed by the
 embedded libnode runtime, or data-only assets. The current remote command packs
 contain raw ELF executables, and stock Android denies execution from
 app-writable storage. They are therefore deliberately excluded from native
-first-run setup; the app records that no native-compatible optional pack is
-required instead of spending data on a guaranteed failed smoke test.
+first-run setup instead of spending data on a guaranteed failed smoke test.
+Setup refreshes and caches only the signed catalog metadata, then reports the
+number of catalogued packs and explicitly reports that zero executable payloads
+were downloaded by native setup.
+
+The signed catalog cache has a 24-hour freshness window. A fresh cache prevents
+repeated GitHub requests during startup and skill audits. After that window the
+app refreshes it with a bounded request; if DNS or GitHub is temporarily
+unavailable, previously signature-verified entries remain available as a stale
+fallback. Payload receipts remain independent, and only a valid receipt can
+suppress a requested compatible-runtime pack download.
 
 Linux command packs remain available only behind the explicit PRoot rollback
 choice. Native setup must never download, extract, or start PRoot to make an
@@ -352,6 +361,11 @@ same persisted status for the in-app micro-updates without rewriting the phone
 notification. Notification updates are coalesced, while the first and terminal
 states are always published. This is status-only telemetry and contains no
 credentials.
+
+The long-running native Gateway and Android node services intentionally share
+one Gateway notification record. A repeated start request against an already
+running embedded runtime republishes a running state, never a startup state, so
+one late idempotent attach cannot leave the phone panel stuck on "Starting".
 
 Native provider configuration is allowlisted. An external upstream provider
 such as Groq is not written into the native Gateway config until a verified
