@@ -264,6 +264,8 @@ void main() {
     expect(packs, contains('_readOrDownloadDependencyPackBytes'));
     expect(packs, contains('using verified archive cache'));
     expect(packs, contains('dependencyArchiveCacheDir'));
+    expect(packs, contains('_isSharedObjectPath'));
+    expect(packs, contains(r'\.so(?:\.\d+)*$'));
     expect(provisioner, contains('onBytesCopied'));
     expect(provisioner, contains('markIsolatedProvisionProgress'));
     expect(installer, contains('markIsolatedProvisionProgress'));

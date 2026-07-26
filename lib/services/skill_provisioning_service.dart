@@ -3785,8 +3785,9 @@ class SkillProvisioningService {
     // Copy shared library files from pack lib to managed lib dir.
     final managedLibDir = layout.nativeManagedLibDir;
     await managedLibDir.create(recursive: true);
-    for (final file in pack.files
-        .where((f) => !f.executable && f.pathValue.endsWith('.so'))) {
+    for (final file in pack.files.where(
+      (file) => !file.executable && _isSharedObjectPath(file.pathValue),
+    )) {
       final packLib =
           _dependencyPackInstalledFile(layout, pack, file.pathValue);
       if (packLib == null || !await packLib.exists()) continue;
@@ -3840,6 +3841,25 @@ class SkillProvisioningService {
       } catch (error) {
         debugPrint(
           '[DEPS] failed rollback managed bin pack=${pack.id} bin=$bin: $error',
+        );
+      }
+    }
+
+    for (final file in pack.files.where(
+      (file) => !file.executable && _isSharedObjectPath(file.pathValue),
+    )) {
+      final managedLib = File(
+        path.join(
+          layout.nativeManagedLibDir.path,
+          path.basename(file.pathValue),
+        ),
+      );
+      try {
+        if (await managedLib.exists()) await managedLib.delete();
+      } catch (error) {
+        debugPrint(
+          '[DEPS] failed rollback managed lib pack=${pack.id} '
+          'file=${path.basename(file.pathValue)}: $error',
         );
       }
     }
@@ -4127,6 +4147,10 @@ class SkillProvisioningService {
 
   static String _normalizeDependencyName(String value) =>
       value.trim().toLowerCase().replaceAll('_', '-');
+
+  static bool _isSharedObjectPath(String value) {
+    return RegExp(r'\.so(?:\.\d+)*$').hasMatch(path.basename(value));
+  }
 
   static String _normalizeBinRequirement(String value) =>
       _normalizeDependencyName(path.basename(value));
