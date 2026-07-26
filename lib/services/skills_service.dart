@@ -1754,7 +1754,7 @@ class SkillsService {
         return {
           'name': skill.id,
           'description':
-              'Speak text aloud or inspect voice status. Gateway Talk handles speech; Android system TTS is a narrow fallback when talk.speak is unavailable.',
+              'Speak text aloud or inspect voice status. Gateway Talk handles speech; Android system TTS is a narrow fallback when talk.speak is unavailable or temporarily fails.',
           'input_schema': {
             'type': 'object',
             'properties': {

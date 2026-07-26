@@ -1118,7 +1118,7 @@ class _ChatScreenState extends State<ChatScreen>
         _setGatewayTtsHealth(_GatewayTtsHealth.normal, notify: false);
       }
       if (!playback.played && playback.allowNativeFallback) {
-        // Official fallback path: only when talk.speak is unavailable on this gateway.
+        // Resilient fallback path for unavailable or transient Gateway Talk.
         _setGatewayTtsHealth(
           _GatewayTtsHealth.degraded,
           message: playback.displayMessage ??

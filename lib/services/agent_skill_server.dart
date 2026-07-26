@@ -2446,6 +2446,10 @@ class AgentSkillServer {
       case 'flash.off':
       case 'flash.toggle':
       case 'flash.status':
+      case 'gifgrep.status':
+      case 'gifgrep.search':
+      case 'gifgrep.still':
+      case 'gifgrep.sheet':
       case 'location.get':
       case 'screen.record':
       case 'sensor.read':
@@ -2506,6 +2510,8 @@ class AgentSkillServer {
         return 'VibrationCapability';
       case 'location':
         return 'LocationCapability';
+      case 'gifgrep':
+        return 'GifgrepCapability';
       case 'mcporter':
         return 'McPorterCapability';
       case 'meme-maker':

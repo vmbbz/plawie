@@ -86,6 +86,7 @@ class MainActivity : FlutterActivity() {
         "sonos",
         "wacli",
         "songsee",
+        "gifgrep",
         "ffmpeg",
         "whisper",
         "sherpa-onnx",

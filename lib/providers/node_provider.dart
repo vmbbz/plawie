@@ -21,6 +21,7 @@ import '../services/capabilities/flash_capability.dart';
 import '../services/capabilities/vibration_capability.dart';
 import '../services/capabilities/sensor_capability.dart';
 import '../services/capabilities/device_capability.dart';
+import '../services/capabilities/gifgrep_capability.dart';
 import '../services/capabilities/weather_capability.dart';
 
 class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
@@ -45,6 +46,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final _sensorCapability = SensorCapability();
   final _vibrationCapability = VibrationCapability();
   final _deviceCapability = DeviceCapability();
+  final _gifgrepCapability = GifgrepCapability();
   final _weatherCapability = WeatherCapability();
 
   NodeState get state => _state;
@@ -265,6 +267,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       (cmd, params) => _deviceCapability.handle(cmd, params),
     );
     _registerCapabilityAliases(
+      _gifgrepCapability,
+      (cmd, params) => _gifgrepCapability.handle(cmd, params),
+    );
+    _registerCapabilityAliases(
       _weatherCapability,
       (cmd, params) => _weatherCapability.handle(cmd, params),
     );
@@ -320,6 +326,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
           'camera.list',
           'clawhub.search',
           'clawhub.info',
+          'gifgrep.status',
+          'gifgrep.search',
+          'gifgrep.still',
+          'gifgrep.sheet',
           'meme-maker.create',
           'location.get',
           'sensor.read',

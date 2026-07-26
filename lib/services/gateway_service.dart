@@ -5366,6 +5366,7 @@ HEARTBEAT_OK.
   Future<String> _decorateMessageWithMobileNodeContext(
     String message, {
     String? userMessage,
+    bool requiredToolAlreadyExecuted = false,
   }) async {
     final routingMessage = userMessage ?? message;
     final nodeHandle = await _resolveMobileNodeHandleForToolRouting();
@@ -5379,10 +5380,11 @@ HEARTBEAT_OK.
     _addActivity('[CHAT] Mobile node tool context attached ($nodeHandle)');
 
     final lower = routingMessage.toLowerCase();
-    final requiredNodeTarget =
-        AppNativeChatToolRouter.instance.requiredGatewayNodeTarget(
-      routingMessage,
-    );
+    final requiredNodeTarget = requiredToolAlreadyExecuted
+        ? null
+        : AppNativeChatToolRouter.instance.requiredGatewayNodeTarget(
+            routingMessage,
+          );
     final requiredNodeCallInput =
         requiredNodeTarget == null || requiredNodeTarget['nodesInput'] is! Map
             ? null
@@ -5441,8 +5443,9 @@ For "where are we" or "tell me where I am" requests, call location_get first and
 For weather requests with a city or coordinates, use action="invoke" with invokeCommand="weather.current" or "weather.forecast" and invokeParamsJson like {"city":"Johannesburg"}. Do not use PRoot or a desktop weather binary for Android weather.
 For ClawHub registry metadata requests, use action="invoke" with invokeCommand="clawhub.search" or "clawhub.info" and invokeParamsJson like {"query":"weather"} or {"slug":"weather"}. Do not use npm, npx, or PRoot for read-only ClawHub metadata on Android.
 For simple meme image requests, use action="invoke" with invokeCommand="meme-maker.create" and invokeParamsJson like {"topText":"Native Android","bottomText":"No PRoot needed"}. This produces a PNG through the Android app-native renderer; do not use Node canvas, sharp, npm, or PRoot for this Android path.
+For gifgrep on Android, the managed binary is already installed when device.health marks the skill ready. Never suggest Homebrew, Go, npm, PRoot, chmod, or reinstalling gifgrep. Use action="invoke" with invokeCommand="gifgrep.search" and invokeParamsJson like {"query":"happy","max":5,"source":"auto"}; online search may return GIFGREP_PROVIDER_CONFIG_REQUIRED until the user configures GIPHY_API_KEY or KLIPY_API_KEY. Local key-free operations use gifgrep.still or gifgrep.sheet with an app-owned inputPath.
 For healthcheck requests, call device_health or action="invoke" with invokeCommand="device.health" and summarize the result.
-For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.sequence, avatar.mode, avatar.model, avatar.status, device.health, device.status, device.permissions, canvas.navigate, canvas.eval, canvas.snapshot, canvas.present, canvas.hide, weather.current, weather.forecast, clawhub.search, clawhub.info, meme-maker.create, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list. For canvas.present, put HTML content under ~/.openclaw/canvas/ and construct the URL as http://<gateway-host>:18789/__openclaw__/canvas/<file>.html. For generated content like SVG or HTML, write it to a file in ~/.openclaw/canvas/ first then present that file URL. IMPORTANT: Do NOT pass a "target" parameter to canvas.present or canvas.navigate — the gateway auto-routes to the connected device. Passing target="node" causes a URI parse error. Just pass the "url" parameter. CRITICAL RULE for canvas HTML: You MUST generate pure inline SVG (from a .html file) for any visualization request like "draw a flower", "illustrate X", "show me a diagram", etc. Do NOT write JavaScript that calls any external API — not OpenRouter, not OpenAI, not any API — because the WebView has no network API keys. Pure SVG embedded directly in the HTML is self-contained, works perfectly, and never needs API calls. If you MUST use JavaScript, use ONLY browser-native APIs (Canvas2D, WebGL, Web Audio) — never fetch() or XMLHttpRequest to external URLs.
+For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.sequence, avatar.mode, avatar.model, avatar.status, device.health, device.status, device.permissions, canvas.navigate, canvas.eval, canvas.snapshot, canvas.present, canvas.hide, weather.current, weather.forecast, clawhub.search, clawhub.info, gifgrep.status, gifgrep.search, gifgrep.still, gifgrep.sheet, meme-maker.create, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list. For canvas.present, put HTML content under ~/.openclaw/canvas/ and construct the URL as http://<gateway-host>:18789/__openclaw__/canvas/<file>.html. For generated content like SVG or HTML, write it to a file in ~/.openclaw/canvas/ first then present that file URL. IMPORTANT: Do NOT pass a "target" parameter to canvas.present or canvas.navigate — the gateway auto-routes to the connected device. Passing target="node" causes a URI parse error. Just pass the "url" parameter. CRITICAL RULE for canvas HTML: You MUST generate pure inline SVG (from a .html file) for any visualization request like "draw a flower", "illustrate X", "show me a diagram", etc. Do NOT write JavaScript that calls any external API — not OpenRouter, not OpenAI, not any API — because the WebView has no network API keys. Pure SVG embedded directly in the HTML is self-contained, works perfectly, and never needs API calls. If you MUST use JavaScript, use ONLY browser-native APIs (Canvas2D, WebGL, Web Audio) — never fetch() or XMLHttpRequest to external URLs.
 Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
 Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.sequence","invokeParamsJson":"{\\"interruptCurrent\\":true,\\"steps\\":[{\\"gesture\\":\\"cross leg sit\\",\\"durationMs\\":30000},{\\"gesture\\":\\"bowing 2\\"}]}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
 If a tool plan would use node=auto, replace it with node="$nodeHandle" before calling the tool.
@@ -5760,11 +5763,16 @@ ${lines.join('\n')}
     };
   }
 
-  Future<String> _decorateMessageWithRuntimeContext(String message) async {
+  Future<String> _decorateMessageWithRuntimeContext(
+    String message, {
+    String? originalUserMessage,
+    bool requiredToolAlreadyExecuted = false,
+  }) async {
     final withSkills = await _decorateMessageWithGatewaySkillContext(message);
     return _decorateMessageWithMobileNodeContext(
       withSkills,
-      userMessage: message,
+      userMessage: originalUserMessage ?? message,
+      requiredToolAlreadyExecuted: requiredToolAlreadyExecuted,
     );
   }
 
@@ -5812,12 +5820,13 @@ ${lines.join('\n')}
     String message,
   ) async {
     final node = NodeService();
+    final requiredCommand =
+        AppNativeChatToolRouter.instance.requiredToolCommandForTesting(message);
+    final nodeIndependent = requiredCommand?.startsWith('gifgrep.') == true;
     final nodeReady =
         node.state.isPaired && node.isConnected && !node.isConnectionStale;
-    if (!nodeReady) {
-      if (AppNativeChatToolRouter.instance
-              .requiredToolCommandForTesting(message) !=
-          null) {
+    if (!nodeReady && !nodeIndependent) {
+      if (requiredCommand != null) {
         _addActivity(
           '[TOOLS] Required mobile command detected, but Android node is not ready '
           '(paired=${node.state.isPaired}, connected=${node.isConnected}, '
@@ -15588,8 +15597,11 @@ ${lines.join('\n')}
 
     final outboundUserMessage =
         requiredToolContinuation?.continuationMessage(message) ?? message;
-    final outboundMessage =
-        await _decorateMessageWithRuntimeContext(outboundUserMessage);
+    final outboundMessage = await _decorateMessageWithRuntimeContext(
+      outboundUserMessage,
+      originalUserMessage: message,
+      requiredToolAlreadyExecuted: requiredToolContinuation != null,
+    );
 
     final chatSendFrame = <String, dynamic>{
       'type': 'req',
@@ -16132,7 +16144,18 @@ ${lines.join('\n')}
 
   /// Invoke a generic RPC method on the gateway.
   Future<Map<String, dynamic>> invoke(String method,
-      [Map<String, dynamic>? params]) async {
+          [Map<String, dynamic>? params]) =>
+      _invokeWithTimeout(
+        method,
+        params,
+        timeout: const Duration(seconds: 30),
+      );
+
+  Future<Map<String, dynamic>> _invokeWithTimeout(
+    String method,
+    Map<String, dynamic>? params, {
+    required Duration timeout,
+  }) async {
     if (_connection == null ||
         _connection!.state != GatewayConnectionState.connected) {
       // Need token to connect
@@ -16161,7 +16184,7 @@ ${lines.join('\n')}
         .firstWhere(
           (f) => f['type'] == 'res' || f['type'] == 'error',
         )
-        .timeout(const Duration(seconds: 30));
+        .timeout(timeout);
     return frame;
   }
 
@@ -16237,8 +16260,8 @@ ${lines.join('\n')}
   ///
   /// Policy:
   /// - Cloud/Gateway mode should use Talk voice as the primary path.
-  /// - Native fallback is allowed only when `talk.speak` is unavailable on this
-  ///   gateway version (method unavailable / unknown method).
+  /// - Native fallback is allowed when `talk.speak` is unavailable or its
+  ///   provider has a transient timeout/network failure.
   Future<TalkSpeakPlayback> speakTextViaTalk(String text) async {
     final input = text.trim();
     if (input.isEmpty) {
@@ -16272,22 +16295,20 @@ ${lines.join('\n')}
     final hasSpeedOverride = prefs.hasTtsSpeedOverride;
 
     try {
-      final frame = await invoke('talk.speak', {
-        'text': input,
-        'outputFormat': 'mp3',
-        if (hasSpeedOverride && (speed - 1.0).abs() > 0.01) 'speed': speed,
-        if (selectedVoiceId.isNotEmpty) 'voiceId': selectedVoiceId,
-      });
+      final frame = await _invokeWithTimeout(
+        'talk.speak',
+        {
+          'text': input,
+          'outputFormat': 'mp3',
+          if (hasSpeedOverride && (speed - 1.0).abs() > 0.01) 'speed': speed,
+          if (selectedVoiceId.isNotEmpty) 'voiceId': selectedVoiceId,
+        },
+        timeout: const Duration(seconds: 20),
+      );
       final payload = _extractTalkSpeakPayload(frame);
       final audioBase64 = payload['audioBase64'] as String?;
       if (audioBase64 == null || audioBase64.isEmpty) {
-        return const TalkSpeakPlayback(
-          played: false,
-          allowNativeFallback: false,
-          status: 'empty_audio',
-          message: 'talk.speak returned empty audio payload.',
-          errorMessage: 'talk.speak returned empty audio payload.',
-        );
+        throw StateError('talk.speak returned empty audio payload.');
       }
       final audioBytes = base64Decode(audioBase64);
       await TtsService().speakBytes(audioBytes);
@@ -16301,8 +16322,8 @@ ${lines.join('\n')}
     } catch (e) {
       final err = e.toString();
       final lower = err.toLowerCase();
-      if (lower.contains('talk_unconfigured') ||
-          lower.contains('talk provider not configured')) {
+      final failureClass = _classifyTalkSpeakFailure(lower);
+      if (failureClass == 'configuration') {
         const message =
             'Gateway Talk provider is not configured. Configure an OpenClaw Talk/TTS provider before testing Gateway Voice.';
         _talkSpeakUnavailableUntil =
@@ -16319,10 +16340,7 @@ ${lines.join('\n')}
           backoffUntil: _talkSpeakUnavailableUntil,
         );
       }
-      final methodUnavailable = lower.contains('unknown method') ||
-          lower.contains('method unavailable') ||
-          lower.contains('reason=method_unavailable');
-      if (methodUnavailable) {
+      if (failureClass == 'method_unavailable') {
         _talkSpeakUnavailableUntil =
             DateTime.now().add(_talkSpeakUnavailableBackoff);
         _talkSpeakBackoffAllowsNativeFallback = true;
@@ -16338,14 +16356,7 @@ ${lines.join('\n')}
           backoffUntil: _talkSpeakUnavailableUntil,
         );
       }
-      final providerBillingOrQuotaError = lower.contains('http 402') ||
-          lower.contains('insufficient credits') ||
-          lower.contains('insufficient balance') ||
-          lower.contains('billing') ||
-          lower.contains('credit') ||
-          lower.contains('quota') ||
-          lower.contains('rate limit');
-      if (providerBillingOrQuotaError) {
+      if (failureClass == 'provider_account') {
         _talkSpeakUnavailableUntil =
             DateTime.now().add(_talkSpeakUnavailableBackoff);
         _talkSpeakBackoffAllowsNativeFallback = false;
@@ -16364,6 +16375,25 @@ ${lines.join('\n')}
           backoffUntil: _talkSpeakUnavailableUntil,
         );
       }
+      if (failureClass == 'transient') {
+        _talkSpeakUnavailableUntil =
+            DateTime.now().add(_talkSpeakUnavailableBackoff);
+        _talkSpeakBackoffAllowsNativeFallback = true;
+        _talkSpeakBackoffMessage =
+            'Gateway voice timed out or is temporarily unavailable; using local system TTS.';
+        final compactError =
+            err.length > 240 ? '${err.substring(0, 240)}...' : err;
+        _addActivity(
+            '[TTS] talk.speak transient failure; using local fallback and suppressing retries for ${_talkSpeakUnavailableBackoff.inMinutes}m: $compactError');
+        return TalkSpeakPlayback(
+          played: false,
+          allowNativeFallback: true,
+          status: 'transient_fallback',
+          message: _talkSpeakBackoffMessage,
+          errorMessage: err,
+          backoffUntil: _talkSpeakUnavailableUntil,
+        );
+      }
       _addActivity('[TTS] talk.speak failed: $e');
       return TalkSpeakPlayback(
         played: false,
@@ -16373,6 +16403,43 @@ ${lines.join('\n')}
         errorMessage: err,
       );
     }
+  }
+
+  String debugTalkSpeakFailureClassForTesting(Object error) =>
+      _classifyTalkSpeakFailure(error.toString().toLowerCase());
+
+  static String _classifyTalkSpeakFailure(String lower) {
+    if (lower.contains('talk_unconfigured') ||
+        lower.contains('talk provider not configured')) {
+      return 'configuration';
+    }
+    if (lower.contains('unknown method') ||
+        lower.contains('method unavailable') ||
+        lower.contains('reason=method_unavailable')) {
+      return 'method_unavailable';
+    }
+    if (lower.contains('http 402') ||
+        lower.contains('insufficient credits') ||
+        lower.contains('insufficient balance') ||
+        lower.contains('billing') ||
+        lower.contains('credit') ||
+        lower.contains('quota') ||
+        lower.contains('rate limit')) {
+      return 'provider_account';
+    }
+    if (lower.contains('timeout') ||
+        lower.contains('timed out') ||
+        lower.contains('temporarily unavailable') ||
+        lower.contains('temporary failure') ||
+        lower.contains('connection reset') ||
+        lower.contains('connection refused') ||
+        lower.contains('network is unreachable') ||
+        lower.contains('socketexception') ||
+        lower.contains('unavailable tts conversion failed') ||
+        lower.contains('empty audio payload')) {
+      return 'transient';
+    }
+    return 'other';
   }
 
   Map<String, dynamic> _extractTalkSpeakPayload(Map<String, dynamic> frame) {

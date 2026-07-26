@@ -684,6 +684,33 @@ Two classes of regressions have broken tool access before:
 The invariant is simple: sanitize config writes, keep layers separate, and test
 with a real tool-call prompt after every tool-policy change.
 
+## Managed Android CLI adapters
+
+Verified dependency-pack ELF files in app data are not general shell commands.
+Android may permit reading and locating them while denying direct
+`execute_no_trans`. A supported managed CLI therefore needs all three layers:
+
+1. an exact `gateway.nodes.allowCommands` dotted command;
+2. a bounded Dart `CapabilityHandler`;
+3. an allowlisted `NativeBridge.runManagedCli` launch through
+   `/system/bin/linker64`.
+
+`gifgrep` uses `gifgrep.status`, `gifgrep.search`, `gifgrep.still`, and
+`gifgrep.sheet`. Explicit chat requests are pre-executed by the required-tool
+router and continued through Gateway with authoritative tool frames. Once that
+pre-execution succeeds or returns a precise configuration gate, prompt
+decoration must not add a conflicting second required node call.
+
+## Gateway Talk timeout fallback
+
+Gateway Talk remains the primary cloud-model speech path. A method-unavailable
+or transient timeout/network failure enables Android system TTS and starts a
+five-minute Talk retry cooldown. Talk synthesis has a dedicated 20-second
+client budget. This prevents a queued response from creating one abandoned
+generic RPC timeout per sentence while the remote provider
+continues toward its own longer timeout. Provider configuration and
+billing/quota failures remain distinct diagnostics.
+
 ## Required Smoke Tests
 
 1. Cloud model: "List the phone tools you can use right now. Do not invent tools."
@@ -696,6 +723,11 @@ with a real tool-call prompt after every tool-policy change.
 8. NDK bridge: "Try to vibrate the phone once, then answer from the tool result."
 9. After a real vision-media payload is added: managed-bin `ffmpeg -version`
    and a `video-frames` extraction smoke against a tiny fixture.
+10. Explicit gifgrep request: verify one `gifgrep.search` required-tool frame,
+    no npm/Go/Brew/PRoot attempt, and either results or the exact optional
+    provider-key gate.
+11. Force one Gateway Talk timeout: verify one timeout, immediate Android TTS,
+    then cooldown responses rather than repeated Gateway requests per sentence.
 
 For bridge failures, record whether the local model produced valid `tool_calls`
 before blaming Gateway.

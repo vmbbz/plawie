@@ -52,6 +52,31 @@ Those keys are not hard launch gates for local GIF processing. The Skills UI and
 gateway configuration lanes should continue to treat provider keys as optional
 mode-specific configuration instead of making the whole skill unavailable.
 
+## Android execution contract
+
+The managed binary must not be launched by the Gateway shell. Android SELinux
+rejects direct `execute_no_trans` for downloaded ELF files in app data even when
+the executable bit is present. Plawie exposes only these bounded Android node
+commands:
+
+```text
+gifgrep.status
+gifgrep.search
+gifgrep.still
+gifgrep.sheet
+```
+
+They execute through `NativeBridge.runManagedCli`, which validates the binary
+allowlist and launches the verified arm64 ELF through `/system/bin/linker64`.
+The space-delimited command `gifgrep search` remains intentionally disallowed.
+The required-tool router runs explicit gifgrep requests before model inference,
+so the agent must not attempt npm, Go, Homebrew, chmod, or PRoot installation.
+
+`gifgrep.search` reports `GIFGREP_PROVIDER_CONFIG_REQUIRED` when neither
+provider key is configured. That means the runtime is installed but an optional
+online-search mode needs user configuration. `gifgrep.still` and
+`gifgrep.sheet` remain key-free and constrain files to app-owned storage.
+
 Debug APK packaging proof on 2026-06-10:
 
 ```text

@@ -1526,7 +1526,7 @@ const _customSkills = <_CustomSkillInfo>[
     id: 'tts-voice',
     label: 'TTS Voice Control',
     description:
-        'Speak text, stop playback, inspect voice status, or save a Gateway voice preference. Wired to Gateway Talk with Android system TTS fallback only when talk.speak is unavailable.',
+        'Speak text, stop playback, inspect voice status, or save a Gateway voice preference. Wired to Gateway Talk with Android system TTS fallback when talk.speak is unavailable or temporarily fails.',
     icon: Icons.record_voice_over_rounded,
     actions: ['set_engine', 'set_voice', 'speak', 'stop', 'get_status'],
   ),

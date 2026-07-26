@@ -10,6 +10,7 @@ import 'capabilities/device_capability.dart';
 import 'capabilities/discord_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/github_capability.dart';
+import 'capabilities/gifgrep_capability.dart';
 import 'capabilities/goplaces_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
@@ -67,6 +68,7 @@ class AppNativeChatToolRouter {
     BlogWatcherCapability? blogWatcher,
     DiscordCapability? discord,
     GitHubCapability? github,
+    GifgrepCapability? gifgrep,
     GoPlacesCapability? goplaces,
     McPorterCapability? mcporter,
     NotionCapability? notion,
@@ -77,6 +79,7 @@ class AppNativeChatToolRouter {
   })  : _blogWatcher = blogWatcher ?? BlogWatcherCapability(),
         _discord = discord ?? DiscordCapability(),
         _github = github ?? GitHubCapability(),
+        _gifgrep = gifgrep ?? GifgrepCapability(),
         _goplaces = goplaces ?? GoPlacesCapability(),
         _mcporter = mcporter ?? McPorterCapability(),
         _notion = notion ?? NotionCapability(),
@@ -89,6 +92,7 @@ class AppNativeChatToolRouter {
     BlogWatcherCapability? blogWatcher,
     DiscordCapability? discord,
     GitHubCapability? github,
+    GifgrepCapability? gifgrep,
     GoPlacesCapability? goplaces,
     McPorterCapability? mcporter,
     NotionCapability? notion,
@@ -101,6 +105,7 @@ class AppNativeChatToolRouter {
         blogWatcher: blogWatcher,
         discord: discord,
         github: github,
+        gifgrep: gifgrep,
         goplaces: goplaces,
         mcporter: mcporter,
         notion: notion,
@@ -118,6 +123,7 @@ class AppNativeChatToolRouter {
   final DiscordCapability _discord;
   final FlashCapability _flash = FlashCapability();
   final GitHubCapability _github;
+  final GifgrepCapability _gifgrep;
   final GoPlacesCapability _goplaces;
   final LocationCapability _location = LocationCapability();
   final MemeMakerCapability _memeMaker = MemeMakerCapability();
@@ -240,6 +246,10 @@ class AppNativeChatToolRouter {
       'github.user' ||
       'gh-issues.list' ||
       'goplaces.search' ||
+      'gifgrep.status' ||
+      'gifgrep.search' ||
+      'gifgrep.still' ||
+      'gifgrep.sheet' ||
       'mcporter.health' ||
       'notion.search' ||
       'meme-maker.create' ||
@@ -297,6 +307,10 @@ class AppNativeChatToolRouter {
       case 'github.user':
       case 'gh-issues.list':
       case 'goplaces.search':
+      case 'gifgrep.status':
+      case 'gifgrep.search':
+      case 'gifgrep.still':
+      case 'gifgrep.sheet':
       case 'notion.search':
       case 'nano-pdf.extract':
       case 'session-logs.query':
@@ -504,6 +518,9 @@ class AppNativeChatToolRouter {
       );
     }
 
+    final gifgrepPlan = _gifgrepPlan(trimmed);
+    if (gifgrepPlan != null) return gifgrepPlan;
+
     final blogWatcherPlan = _blogWatcherPlan(trimmed);
     if (blogWatcherPlan != null) return blogWatcherPlan;
 
@@ -642,6 +659,14 @@ class AppNativeChatToolRouter {
           ));
         case 'goplaces.search':
           return _frameToMap(await _goplaces.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'gifgrep.status':
+        case 'gifgrep.search':
+        case 'gifgrep.still':
+        case 'gifgrep.sheet':
+          return _frameToMap(await _gifgrep.handle(
             plan.command,
             plan.input,
           ));
@@ -863,6 +888,13 @@ class AppNativeChatToolRouter {
         final query = result['query']?.toString().trim();
         final count = result['count'] ?? 0;
         return 'Google Places search${query?.isNotEmpty == true ? ' for $query' : ''}: $count place(s).';
+      case 'gifgrep.status':
+        return 'gifgrep is installed and ready (${result['version'] ?? 'version available'}).';
+      case 'gifgrep.search':
+        return 'gifgrep found ${result['count'] ?? 0} result(s) for ${result['query'] ?? plan.input['query']}.';
+      case 'gifgrep.still':
+      case 'gifgrep.sheet':
+        return 'gifgrep created ${result['outputPath'] ?? 'a PNG output'}.';
       case 'mcporter.health':
         final status = result['status']?.toString().trim();
         return status?.isNotEmpty == true
@@ -1710,6 +1742,98 @@ class AppNativeChatToolRouter {
         'source': 'app-native-chat-router',
         if (top != null && top.isNotEmpty) 'topText': top,
         'bottomText': bottom?.isNotEmpty == true ? bottom : fallback,
+      },
+    );
+  }
+
+  _AppNativeToolPlan? _gifgrepPlan(String message) {
+    final lower = message.toLowerCase();
+    if (!RegExp(r'\bgifgrep\b').hasMatch(lower)) return null;
+
+    final localAction = lower.contains(RegExp(r'\bstill\b'))
+        ? 'still'
+        : lower.contains(RegExp(r'\bsheet\b'))
+            ? 'sheet'
+            : null;
+    if (localAction != null) {
+      final quotedPath =
+          RegExp(r'''["']([^"']+\.gif)["']''', caseSensitive: false)
+              .firstMatch(message)
+              ?.group(1);
+      final plainPath = RegExp(
+        r'''((?:~?/|/)[^\s"'<>]+\.gif)''',
+        caseSensitive: false,
+      ).firstMatch(message)?.group(1);
+      final inputPath = (quotedPath ?? plainPath)?.trim();
+      if (inputPath == null || inputPath.isEmpty) {
+        return _AppNativeToolPlan(
+          toolName: 'gifgrep',
+          command: 'gifgrep.$localAction',
+          input: const {},
+        );
+      }
+      return _AppNativeToolPlan(
+        toolName: 'gifgrep',
+        command: 'gifgrep.$localAction',
+        input: {
+          'inputPath': inputPath,
+          'source': 'app-native-chat-router',
+        },
+      );
+    }
+
+    final statusIntent = _containsAny(lower, const [
+      'installed',
+      'installation',
+      'dependency',
+      'dependencies',
+      'ready',
+      'status',
+      'version',
+      'available',
+    ]);
+    if (statusIntent &&
+        !_containsAny(lower, const ['search', 'find', 'look for'])) {
+      return const _AppNativeToolPlan(
+        toolName: 'gifgrep',
+        command: 'gifgrep.status',
+        input: {'source': 'app-native-chat-router'},
+      );
+    }
+
+    var query = RegExp(
+          r'\b(?:search(?:\s+for)?|find|look\s+for)\s+(.+)$',
+          caseSensitive: false,
+        ).firstMatch(message)?.group(1) ??
+        message;
+    query = query
+        .replaceAll(
+          RegExp(
+            r'\b(?:using|with)\s+(?:the\s+)?gifgrep(?:\s+skill)?\b.*$',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceAll(RegExp(r'\bgifgrep\b', caseSensitive: false), ' ')
+        .replaceAll(
+            RegExp(r'\b(?:use|run|skill|please|me)\b', caseSensitive: false),
+            ' ')
+        .replaceAll(
+            RegExp(r'\b(?:a|some)\s+gifs?\b', caseSensitive: false), ' ')
+        .replaceAll(RegExp(r'\bgifs?\b$', caseSensitive: false), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'[?.!]+$'), '')
+        .trim();
+    query = query
+        .replaceFirst(RegExp(r'^(?:a|an|some)\s+', caseSensitive: false), '')
+        .trim();
+    return _AppNativeToolPlan(
+      toolName: 'gifgrep',
+      command: query.isEmpty ? 'gifgrep.status' : 'gifgrep.search',
+      input: {
+        if (query.isNotEmpty) 'query': query,
+        'max': 5,
+        'source': 'auto',
       },
     );
   }
