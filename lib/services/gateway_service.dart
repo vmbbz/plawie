@@ -85,6 +85,12 @@ class _RequiredToolContinuation {
     required this.source,
   });
 
+  // gifgrep has a bounded, deterministic app-native response. Sending its
+  // completed result through a provider model only invites duplicate
+  // narration or leaked reasoning and adds avoidable latency/cost.
+  bool get completeWithoutGateway =>
+      source == 'app-native' && toolName == 'gifgrep';
+
   factory _RequiredToolContinuation.fromNativeClawHub(
     NativeClawHubSkillExecution execution,
   ) {
@@ -147,6 +153,38 @@ ${_boundedText(visibleText)}
     if (trimmed.length <= _maxVisibleFallbackChars) return trimmed;
     return '${trimmed.substring(0, _maxVisibleFallbackChars)}...[truncated]';
   }
+}
+
+class _AssistantStreamAccumulator {
+  String _delivered = '';
+
+  String add(String text) {
+    if (text.isEmpty) return '';
+    if (_delivered.isEmpty) {
+      _delivered = text;
+      return text;
+    }
+
+    // Gateway versions/providers may alternate between cumulative snapshots
+    // and raw deltas. Never emit a snapshot or replay already delivered.
+    if (text == _delivered || _delivered.endsWith(text)) return '';
+    if (text.startsWith(_delivered)) {
+      final delta = text.substring(_delivered.length);
+      _delivered = text;
+      return delta;
+    }
+    if (_delivered.startsWith(text)) return '';
+
+    // A genuine new segment (including post-tool assistant text).
+    _delivered += text;
+    return text;
+  }
+}
+
+@visibleForTesting
+String mergeAssistantStreamChunksForTesting(Iterable<String> chunks) {
+  final accumulator = _AssistantStreamAccumulator();
+  return chunks.map(accumulator.add).join();
 }
 
 class GatewayService {
@@ -4368,7 +4406,35 @@ HEARTBEAT_OK.
   }
 
   Future<bool> _approvePairingViaRpcForNode(String requestId) {
-    return _tryApprovePairingViaRpc(requestId);
+    return _tryApproveNodePairingViaRpc(requestId);
+  }
+
+  Future<bool> _tryApproveNodePairingViaRpc(String requestId) async {
+    final conn = _connection;
+    if (conn == null || conn.state != GatewayConnectionState.connected) {
+      return false;
+    }
+
+    try {
+      final frame = await invoke('node.pair.approve', {
+        'requestId': requestId,
+      }).timeout(const Duration(seconds: 10));
+      if (frame['ok'] == true) return true;
+      final payload = frame['payload'];
+      if (payload is Map && (payload['ok'] == true || payload['node'] is Map)) {
+        return true;
+      }
+      final missingScope = _missingOperatorApprovalScope(frame);
+      if (missingScope != null) {
+        await _recoverOperatorScopeForPairing(missingScope);
+      }
+    } catch (e) {
+      final missingScope = _missingOperatorApprovalScope(e);
+      if (missingScope != null) {
+        await _recoverOperatorScopeForPairing(missingScope);
+      }
+    }
+    return false;
   }
 
   String? _missingOperatorApprovalScope(Object? value) {
@@ -15465,6 +15531,14 @@ ${lines.join('\n')}
         );
         yield requiredToolContinuation.toolUseChunk;
         yield requiredToolContinuation.toolResultChunk;
+        if (requiredToolContinuation.completeWithoutGateway) {
+          _addActivity(
+            '[TOOLS] Completed ${requiredToolContinuation.toolName} '
+            'deterministically without a second model pass.',
+          );
+          yield requiredToolContinuation.visibleText;
+          return;
+        }
       }
 
       // HOT-SWITCHING: If user changed model, update gateway config
@@ -15499,6 +15573,14 @@ ${lines.join('\n')}
         );
         yield requiredToolContinuation.toolUseChunk;
         yield requiredToolContinuation.toolResultChunk;
+        if (requiredToolContinuation.completeWithoutGateway) {
+          _addActivity(
+            '[TOOLS] Completed ${requiredToolContinuation.toolName} '
+            'deterministically after WebSocket repair.',
+          );
+          yield requiredToolContinuation.visibleText;
+          return;
+        }
       }
 
       final changes = await _syncModelToConfig(model);
@@ -15635,44 +15717,9 @@ ${lines.join('\n')}
     // (which may complete after our Flutter timeout) cannot close the next request's
     // stream before any content arrives.
     bool runStarted = false;
-    var assistantSnapshot = '';
+    final assistantStream = _AssistantStreamAccumulator();
     bool isActiveRunFrame(String? agentRun) {
       return activeRunId == null || agentRun == null || agentRun == activeRunId;
-    }
-
-    String assistantDelta(String text) {
-      if (text.isEmpty) return '';
-      if (assistantSnapshot.isEmpty) {
-        assistantSnapshot = text;
-        return text;
-      }
-      if (text == assistantSnapshot || assistantSnapshot.endsWith(text)) {
-        return '';
-      }
-      if (text.startsWith(assistantSnapshot)) {
-        final delta = text.substring(assistantSnapshot.length);
-        assistantSnapshot = text;
-        return delta;
-      }
-
-      // If the new text is a true delta (the gateway appended new content onto
-      // what it previously sent), treat it as a delta and keep the snapshot
-      // growing.
-      if (text.length < assistantSnapshot.length &&
-          !assistantSnapshot.endsWith(text)) {
-        assistantSnapshot += text;
-        return text;
-      }
-
-      // --- New segment heuristic ---
-      // The text doesn't overlap with the snapshot at all. This happens when:
-      //   1. The model emits text after a tool call but the gateway didn't send
-      //      a tool_use/tool_result event (stream=item not handled).
-      //   2. The model emits non-<think> reasoning that's unrelated to the
-      //      previous text.
-      // In these cases, the text is a fresh segment — reset the snapshot.
-      assistantSnapshot = text;
-      return text;
     }
 
     inactivityWatchdog = Timer.periodic(const Duration(seconds: 10), (timer) {
@@ -15853,7 +15900,7 @@ ${lines.join('\n')}
                   frame['text']) as String?;
               if (text != null && text.isNotEmpty) {
                 markVisibleChatOutput();
-                final delta = assistantDelta(text);
+                final delta = assistantStream.add(text);
                 if (delta.isEmpty) return;
                 assistantTextOutputSeen = true;
                 if (firstToken) {
@@ -15873,8 +15920,6 @@ ${lines.join('\n')}
                 return;
               }
               markRelevantGatewayActivity();
-              assistantSnapshot =
-                  ''; // Reset snapshot on tool use so next assistant turn gets correctly de-duplicated
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -15890,8 +15935,6 @@ ${lines.join('\n')}
                 return;
               }
               markRelevantGatewayActivity();
-              assistantSnapshot =
-                  ''; // Reset snapshot on tool result so next assistant turn gets correctly de-duplicated
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -15941,7 +15984,6 @@ ${lines.join('\n')}
                   (innerData?['type'] ?? payload?['type'] ?? '') as String?;
               if (itemType == 'tool_use') {
                 markRelevantGatewayActivity();
-                assistantSnapshot = '';
                 final name = (innerData?['name'] ??
                         payload?['name'] ??
                         frame['name']) as String? ??
@@ -15954,7 +15996,6 @@ ${lines.join('\n')}
                 }
               } else if (itemType == 'tool_result') {
                 markRelevantGatewayActivity();
-                assistantSnapshot = '';
                 final name = (innerData?['name'] ??
                         payload?['name'] ??
                         frame['name']) as String? ??
@@ -15991,7 +16032,6 @@ ${lines.join('\n')}
                 // Capture the real run ID from the first phase=start we see after our ACK.
                 if (agentRun != null) activeRunId = agentRun;
                 runStarted = true;
-                assistantSnapshot = '';
                 markRelevantGatewayActivity();
               } else if (phase == 'error') {
                 if (!isActiveRunFrame(agentRun)) {

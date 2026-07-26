@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as image;
 import 'package:path/path.dart' as path;
 
 import '../../models/node_frame.dart';
@@ -18,20 +20,41 @@ typedef GifgrepRunner = Future<NativeManagedCliRunResult> Function(
   required int timeoutSeconds,
 });
 
+typedef GifgrepFilesDirProvider = Future<String> Function();
+
+typedef GifgrepLocalRenderer = Future<Map<String, dynamic>> Function(
+  Uint8List bytes, {
+  required String action,
+  required int atMs,
+  required int frames,
+  required int cols,
+});
+
 /// Bounded app-native execution adapter for the managed Android gifgrep binary.
 ///
 /// Android cannot execute downloaded app-data ELF files through a normal shell.
 /// [NativeBridge.runManagedCli] launches the verified binary through linker64,
-/// keeping this path native-first without PRoot, Go, Homebrew, or node-pty.
+/// keeping online search native-first without PRoot, Go, Homebrew, or node-pty.
+/// The upstream 0.3.0 CLI only implements search despite its skill document
+/// advertising still/sheet commands, so those local operations are rendered
+/// in a bounded Dart isolate from app-owned GIF files.
 class GifgrepCapability extends CapabilityHandler {
   GifgrepCapability({
     GifgrepCredentialsProvider? credentialsProvider,
     GifgrepRunner? runner,
+    GifgrepFilesDirProvider? filesDirProvider,
+    GifgrepLocalRenderer? localRenderer,
   })  : _credentialsProvider = credentialsProvider ?? _readGifgrepCredentials,
-        _runner = runner ?? NativeBridge.runManagedCli;
+        _runner = runner ?? NativeBridge.runManagedCli,
+        _filesDirProvider = filesDirProvider ?? NativeBridge.getFilesDir,
+        _localRenderer = localRenderer ?? _renderGifLocally;
 
   final GifgrepCredentialsProvider _credentialsProvider;
   final GifgrepRunner _runner;
+  final GifgrepFilesDirProvider _filesDirProvider;
+  final GifgrepLocalRenderer _localRenderer;
+
+  static const int _maxInputBytes = 20 * 1024 * 1024;
 
   @override
   String get name => 'gifgrep';
@@ -91,6 +114,7 @@ class GifgrepCapability extends CapabilityHandler {
       'version': result.stdout.trim(),
       'searchConfiguration': 'optional_provider_key',
       'localOperations': const ['still', 'sheet'],
+      'localOperationsRuntime': 'app-native-dart-gif',
     });
   }
 
@@ -210,7 +234,7 @@ class GifgrepCapability extends CapabilityHandler {
       });
     }
 
-    final filesDir = await NativeBridge.getFilesDir();
+    final filesDir = await _filesDirProvider();
     final nativeHome =
         path.join(filesDir, 'native-node-embedded', 'native-home');
     final input = await _resolveExistingAppFile(
@@ -249,44 +273,59 @@ class GifgrepCapability extends CapabilityHandler {
     }
     await Directory(path.dirname(output)).create(recursive: true);
 
-    final args = action == 'still'
-        ? [
-            'still',
-            input,
-            '--at',
-            _safeDuration(params['at']?.toString()),
-            '-o',
-            output,
-            '--quiet',
-          ]
-        : [
-            'sheet',
-            input,
-            '--frames',
-            '${_intValue(params['frames'], fallback: 12).clamp(1, 24)}',
-            '--cols',
-            '${_intValue(params['cols'], fallback: 4).clamp(1, 8)}',
-            '-o',
-            output,
-            '--quiet',
-          ];
-    final result = await _runner(
-      'gifgrep',
-      args,
-      env: const {},
-      timeoutSeconds: 25,
-    );
-    if (!result.ok) return _failure(result, args);
+    final inputFile = File(input);
+    final inputBytes = await inputFile.length();
+    if (inputBytes > _maxInputBytes) {
+      return NodeFrame.response('', error: {
+        'code': 'GIFGREP_INPUT_TOO_LARGE',
+        'message': 'Local GIF operations are limited to 20 MB inputs.',
+        'inputBytes': inputBytes,
+      });
+    }
+
+    final requestedFrames =
+        _intValue(params['frames'], fallback: 12).clamp(1, 24);
+    final requestedCols = _intValue(params['cols'], fallback: 4).clamp(1, 8);
+    final atMs = _durationMs(params['at']?.toString());
+    late final Map<String, dynamic> rendered;
+    try {
+      rendered = await _localRenderer(
+        await inputFile.readAsBytes(),
+        action: action,
+        atMs: atMs,
+        frames: requestedFrames,
+        cols: requestedCols,
+      ).timeout(const Duration(seconds: 25));
+    } on TimeoutException {
+      return NodeFrame.response('', error: {
+        'code': 'GIFGREP_TIMEOUT',
+        'message': 'Local GIF rendering timed out after 25 seconds.',
+      });
+    } catch (error) {
+      return NodeFrame.response('', error: {
+        'code': 'GIFGREP_LOCAL_RENDER_ERROR',
+        'message': error.toString(),
+      });
+    }
+
+    final pngBytes = rendered['pngBytes'];
+    if (pngBytes is! Uint8List || pngBytes.isEmpty) {
+      return NodeFrame.response('', error: {
+        'code': 'GIFGREP_INVALID_OUTPUT',
+        'message': 'Local GIF rendering did not produce a valid PNG payload.',
+      });
+    }
 
     final outputFile = File(output);
+    await outputFile.writeAsBytes(pngBytes, flush: true);
     if (!await outputFile.exists()) {
       return NodeFrame.response('', error: {
         'code': 'GIFGREP_OUTPUT_MISSING',
-        'message': 'gifgrep completed without producing the expected PNG.',
+        'message': 'Local GIF rendering completed without the expected PNG.',
       });
     }
     return NodeFrame.response('', payload: {
-      'runtime': 'app-native-gifgrep-cli',
+      'runtime': 'app-native-dart-gif',
       'ready': true,
       'status': 'READY',
       'action': action,
@@ -294,6 +333,13 @@ class GifgrepCapability extends CapabilityHandler {
       'outputPath': output,
       'mimeType': 'image/png',
       'bytes': await outputFile.length(),
+      'sourceFrames': rendered['sourceFrames'],
+      'renderedFrames': rendered['renderedFrames'],
+      if (action == 'still') 'atMs': atMs,
+      if (action == 'sheet') ...{
+        'requestedFrames': requestedFrames,
+        'columns': requestedCols,
+      },
     });
   }
 
@@ -328,11 +374,18 @@ class GifgrepCapability extends CapabilityHandler {
   static int _intValue(Object? value, {required int fallback}) =>
       value is num ? value.toInt() : int.tryParse('$value') ?? fallback;
 
-  static String _safeDuration(String? value) {
-    final candidate = value?.trim() ?? '0s';
-    return RegExp(r'^\d+(?:\.\d{1,3})?(?:ms|s|m)$').hasMatch(candidate)
-        ? candidate
-        : '0s';
+  static int _durationMs(String? value) {
+    final candidate = value?.trim().toLowerCase() ?? '0s';
+    final match =
+        RegExp(r'^(\d+(?:\.\d{1,3})?)(ms|s|m)$').firstMatch(candidate);
+    if (match == null) return 0;
+    final amount = double.tryParse(match.group(1)!) ?? 0;
+    final multiplier = switch (match.group(2)) {
+      'm' => 60000,
+      's' => 1000,
+      _ => 1,
+    };
+    return (amount * multiplier).round().clamp(0, 10 * 60 * 1000);
   }
 
   static Future<String?> _resolveExistingAppFile(
@@ -366,4 +419,133 @@ class GifgrepCapability extends CapabilityHandler {
     }
     return path.isAbsolute(value) ? value : path.join(nativeHome, value);
   }
+}
+
+Future<Map<String, dynamic>> _renderGifLocally(
+  Uint8List bytes, {
+  required String action,
+  required int atMs,
+  required int frames,
+  required int cols,
+}) {
+  return compute(_renderGifPayload, <String, dynamic>{
+    'bytes': bytes,
+    'action': action,
+    'atMs': atMs,
+    'frames': frames,
+    'cols': cols,
+  });
+}
+
+@visibleForTesting
+Map<String, dynamic> renderGifPayloadForTesting(Map<String, dynamic> payload) =>
+    _renderGifPayload(payload);
+
+Map<String, dynamic> _renderGifPayload(Map<String, dynamic> payload) {
+  final bytes = payload['bytes'];
+  if (bytes is! Uint8List || bytes.isEmpty) {
+    throw const FormatException('Input is not a GIF payload.');
+  }
+  final action = payload['action']?.toString();
+  if (action != 'still' && action != 'sheet') {
+    throw ArgumentError.value(action, 'action', 'must be still or sheet');
+  }
+
+  final decoder = image.GifDecoder();
+  final info = decoder.startDecode(bytes);
+  if (info == null || info.width <= 0 || info.height <= 0) {
+    throw const FormatException('Input is not a valid GIF image.');
+  }
+  if (info.width > 4096 || info.height > 4096) {
+    throw const FormatException('GIF dimensions exceed the 4096px limit.');
+  }
+  if (info.numFrames <= 0 || info.numFrames > 300) {
+    throw const FormatException('GIF frame count must be between 1 and 300.');
+  }
+  final decodePixels = info.width * info.height * info.numFrames;
+  if (decodePixels > 24000000) {
+    throw const FormatException(
+      'GIF decode workload exceeds the 24-million-pixel safety limit.',
+    );
+  }
+
+  final decoded = decoder.decode(bytes);
+  if (decoded == null || decoded.numFrames == 0) {
+    throw const FormatException('GIF frames could not be decoded.');
+  }
+
+  if (action == 'still') {
+    final requestedAtMs = (payload['atMs'] as num?)?.toInt() ?? 0;
+    var elapsedMs = 0;
+    var selectedIndex = decoded.numFrames - 1;
+    for (var index = 0; index < decoded.numFrames; index++) {
+      final frame = decoded.getFrame(index);
+      final durationMs = frame.frameDuration > 0 ? frame.frameDuration : 100;
+      if (requestedAtMs < elapsedMs + durationMs) {
+        selectedIndex = index;
+        break;
+      }
+      elapsedMs += durationMs;
+    }
+    final still =
+        image.Image.from(decoded.getFrame(selectedIndex), noAnimation: true);
+    return <String, dynamic>{
+      'pngBytes': image.encodePng(still),
+      'sourceFrames': decoded.numFrames,
+      'renderedFrames': 1,
+      'selectedFrame': selectedIndex,
+    };
+  }
+
+  final requestedFrames =
+      ((payload['frames'] as num?)?.toInt() ?? 12).clamp(1, 24);
+  final columns =
+      ((payload['cols'] as num?)?.toInt() ?? 4).clamp(1, requestedFrames);
+  final sampleCount = requestedFrames.clamp(1, decoded.numFrames);
+  final indices = <int>[];
+  for (var sample = 0; sample < sampleCount; sample++) {
+    final index = sampleCount == 1
+        ? 0
+        : ((decoded.numFrames - 1) * sample / (sampleCount - 1)).round();
+    if (indices.isEmpty || indices.last != index) indices.add(index);
+  }
+
+  final cellWidth = info.width.clamp(1, 320);
+  final cellHeight =
+      (cellWidth * info.height / info.width).round().clamp(1, 320);
+  const padding = 4;
+  final rows = (indices.length / columns).ceil();
+  final sheet = image.Image(
+    width: columns * cellWidth + (columns + 1) * padding,
+    height: rows * cellHeight + (rows + 1) * padding,
+    numChannels: 4,
+  );
+  image.fill(
+    sheet,
+    color: image.ColorRgba8(16, 20, 24, 255),
+  );
+  for (var sample = 0; sample < indices.length; sample++) {
+    final source = image.Image.from(
+      decoded.getFrame(indices[sample]),
+      noAnimation: true,
+    );
+    final frame = image.copyResize(
+      source,
+      width: cellWidth,
+      height: cellHeight,
+    );
+    final column = sample % columns;
+    final row = sample ~/ columns;
+    image.compositeImage(
+      sheet,
+      frame,
+      dstX: padding + column * (cellWidth + padding),
+      dstY: padding + row * (cellHeight + padding),
+    );
+  }
+  return <String, dynamic>{
+    'pngBytes': image.encodePng(sheet),
+    'sourceFrames': decoded.numFrames,
+    'renderedFrames': indices.length,
+  };
 }

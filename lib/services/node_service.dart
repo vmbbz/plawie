@@ -192,21 +192,17 @@ class NodeService {
     final signature = _declaredCommandContractSignature();
     final previousSignature = prefs.nodeCommandContractHash;
 
-    if (previousSignature == signature) {
-      return;
-    }
-
     if (await _pairedNodeCommandsCoverDeclared()) {
       prefs.nodeCommandContractHash = signature;
       return;
     }
 
-    prefs.nodeCommandContractHash = signature;
+    prefs.nodeCommandContractHash = null;
 
     // OpenClaw stores command allow/deny expectations at pairing time. When we
     // change the declared command surface, the old node token can stay "paired"
-    // while invoke calls are rejected. Force a clean re-pair once per contract
-    // revision so the gateway refreshes the command snapshot.
+    // while invoke calls are rejected. The Gateway paired-node store—not a
+    // cached local hash—is the authoritative command approval surface.
     prefs.nodeDeviceToken = null;
     _gatewayAuthToken = null;
 
@@ -215,7 +211,9 @@ class NodeService {
       return;
     }
 
-    log('[NODE] Command contract changed; refreshing gateway pairing snapshot.');
+    log(previousSignature == signature
+        ? '[NODE] Stored command contract lacks an approved Gateway snapshot; refreshing pairing.'
+        : '[NODE] Command contract changed; refreshing gateway pairing snapshot.');
     await _removePairedGatewayDevice(
       deviceId,
       successLog:
@@ -321,6 +319,7 @@ class NodeService {
     for (final relativePath in const [
       'devices/paired.json',
       'nodes/paired.json',
+      'nodes/pending.json',
     ]) {
       final file = (await _openClawStoreFiles(relativePath)).first;
       try {
@@ -397,11 +396,6 @@ class NodeService {
       return false;
     }
 
-    if (await _nativeOwnerSelected() &&
-        await _nativeStoredContractAlreadyAccepted()) {
-      return false;
-    }
-
     try {
       if (await _pairedNodeCommandsCoverDeclared()) return false;
       if (await _readPendingNodePairingRequestIdFromStore() != null) {
@@ -430,19 +424,6 @@ class NodeService {
     if (_state.status != NodeStatus.paired || !_ws.isConnected) return false;
     return _liveNativeCommandContractHash ==
         _declaredCommandContractSignature();
-  }
-
-  Future<bool> _nativeStoredContractAlreadyAccepted() async {
-    try {
-      final prefs = PreferencesService();
-      await prefs.init();
-      final token = prefs.nodeDeviceToken?.trim() ?? '';
-      if (token.isEmpty) return false;
-      return prefs.nodeCommandContractHash ==
-          _declaredCommandContractSignature();
-    } catch (_) {
-      return false;
-    }
   }
 
   Future<bool> _pairedNodeCommandsCoverDeclared() async {
@@ -623,8 +604,9 @@ class NodeService {
   String _declaredCommandContractSignature() {
     final commands = _capabilityHandlers.keys.toList()..sort();
     // Bump this when the gateway-visible node snapshot shape changes, not only
-    // when the command names change. v5 adds avatar node commands.
-    return 'v5:${commands.join('|')}';
+    // when the command names change. v6 requires authoritative node.pair
+    // approval instead of accepting a locally cached contract hash.
+    return 'v6:${commands.join('|')}';
   }
 
   String _capFamilyForCommand(String command) {
@@ -1092,8 +1074,18 @@ class NodeService {
       }
       if (await _nativeOwnerSelected()) {
         final signature = _declaredCommandContractSignature();
-        _liveNativeCommandContractHash = signature;
-        prefs.nodeCommandContractHash = signature;
+        if (await _pairedNodeCommandsCoverDeclared()) {
+          _liveNativeCommandContractHash = signature;
+          prefs.nodeCommandContractHash = signature;
+          log('[NODE] Gateway approved the complete node command snapshot');
+        } else {
+          _liveNativeCommandContractHash = null;
+          prefs.nodeCommandContractHash = null;
+          log(
+            '[NODE] Connected, but the Gateway command snapshot is still '
+            'incomplete; leaving contract unaccepted for repair',
+          );
+        }
       }
     } else if (response.isError) {
       final errPayload = response.payload ?? response.error ?? {};

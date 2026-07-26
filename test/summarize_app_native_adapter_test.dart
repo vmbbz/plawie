@@ -78,7 +78,10 @@ void main() {
     expect(execution, isNotNull);
     expect(execution!.toolName, 'summarize');
     expect(execution.input['text'], contains('Battery bridge'));
-    expect(execution.input['source'], 'gateway-required-tool-intent');
+    expect(
+      execution.input['routingSource'],
+      'gateway-required-tool-intent',
+    );
     expect(execution.ok, isTrue);
     expect(execution.result['runtime'], 'app-native-extractive-summary');
     expect(execution.toolUseChunk, startsWith('\x00TOOL_USE:summarize:'));

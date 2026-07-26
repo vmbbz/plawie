@@ -1275,8 +1275,9 @@ Code hardening now applied:
 
 - chat lifecycle logs now include send-to-accept, accept-to-first-token,
   total, accept-to-complete, and first-output-to-complete timings;
-- `GatewayService` exposes the existing `device.pair.approve` RPC approval path
-  to `NodeService`;
+- `GatewayService` exposes the official `node.pair.approve` RPC approval path
+  to `NodeService` for node command snapshots; operator/dashboard device
+  pairing remains a separate `device.pair.approve` path;
 - `NodeService` reads `.openclaw` state from the active owner first, using the
   native embedded home while native owns and PRoot rootfs while PRoot owns;
 - native-owner node pairing approval now uses Gateway RPC instead of silently
@@ -1325,12 +1326,13 @@ logic was over-trusting stale `.openclaw` pending/snapshot files.
 
 Code hardening now applied in `lib/services/node_service.dart`:
 
-- native-owner successful connect stamps the accepted command-contract hash;
-- while native is paired on a live WebSocket with the current command contract,
-  stale persisted snapshots no longer trigger repair;
-- when native has a stored node token and matching accepted command-contract
-  hash, stale pending files are ignored until the actual connect response says
-  pairing is required;
+- native-owner successful connect stamps the accepted command-contract hash
+  only after the Gateway paired-node store contains every declared command;
+- a live WebSocket alone never suppresses repair of an empty or incomplete
+  persisted command snapshot;
+- cached node tokens and command-contract hashes never override an empty
+  Gateway command snapshot; pending command upgrades are approved or stale
+  pairing records are replaced;
 - PRoot owner keeps the older persistent-snapshot repair path.
 
 Device evidence from the rebuilt public rollback APK:

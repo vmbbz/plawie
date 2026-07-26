@@ -56,7 +56,10 @@ void main() {
     expect(execution, isNotNull);
     expect(execution!.toolName, 'device-node');
     expect(execution.input['action'], 'device_health');
-    expect(execution.input['source'], 'gateway-required-tool-intent');
+    expect(
+      execution.input['routingSource'],
+      'gateway-required-tool-intent',
+    );
     expect(execution.toolUseChunk, startsWith('\x00TOOL_USE:device-node:'));
     expect(
       execution.toolResultChunk,

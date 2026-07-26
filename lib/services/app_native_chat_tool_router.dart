@@ -208,7 +208,9 @@ class AppNativeChatToolRouter {
     if (plan == null || !_isRequiredMobileCommand(plan)) return null;
     final input = <String, dynamic>{
       ...plan.input,
-      'source': 'gateway-required-tool-intent',
+      // Keep routing provenance separate from semantic capability fields such
+      // as gifgrep's source=auto|giphy|klipy.
+      'routingSource': 'gateway-required-tool-intent',
     };
     return _AppNativeToolPlan(
       toolName: plan.toolName,
@@ -891,7 +893,32 @@ class AppNativeChatToolRouter {
       case 'gifgrep.status':
         return 'gifgrep is installed and ready (${result['version'] ?? 'version available'}).';
       case 'gifgrep.search':
-        return 'gifgrep found ${result['count'] ?? 0} result(s) for ${result['query'] ?? plan.input['query']}.';
+        final matches = result['results'];
+        final lines = <String>[];
+        if (matches is List) {
+          for (final match in matches.take(10)) {
+            if (match is! Map) continue;
+            final title = (match['title'] ?? match['name'])
+                ?.toString()
+                .replaceAll(RegExp(r'\s+'), ' ')
+                .trim();
+            final url = (match['url'] ??
+                    match['mediaUrl'] ??
+                    match['gifUrl'] ??
+                    match['webUrl'])
+                ?.toString()
+                .trim();
+            if (url?.isNotEmpty != true) continue;
+            lines.add(
+              '${lines.length + 1}. '
+              '${title?.isNotEmpty == true ? '$title — ' : ''}$url',
+            );
+          }
+        }
+        final summary =
+            'gifgrep found ${result['count'] ?? lines.length} result(s) for '
+            '${result['query'] ?? plan.input['query']}.';
+        return lines.isEmpty ? summary : '$summary\n\n${lines.join('\n')}';
       case 'gifgrep.still':
       case 'gifgrep.sheet':
         return 'gifgrep created ${result['outputPath'] ?? 'a PNG output'}.';
@@ -1748,7 +1775,9 @@ class AppNativeChatToolRouter {
 
   _AppNativeToolPlan? _gifgrepPlan(String message) {
     final lower = message.toLowerCase();
-    if (!RegExp(r'\bgifgrep\b').hasMatch(lower)) return null;
+    if (!RegExp(r'\b(?:gifgrep|gigrep|gif\s+grep)\b').hasMatch(lower)) {
+      return null;
+    }
 
     final localAction = lower.contains(RegExp(r'\bstill\b'))
         ? 'still'
@@ -1815,6 +1844,8 @@ class AppNativeChatToolRouter {
           '',
         )
         .replaceAll(RegExp(r'\bgifgrep\b', caseSensitive: false), ' ')
+        .replaceAll(
+            RegExp(r'\b(?:gigrep|gif\s+grep)\b', caseSensitive: false), ' ')
         .replaceAll(
             RegExp(r'\b(?:use|run|skill|please|me)\b', caseSensitive: false),
             ' ')

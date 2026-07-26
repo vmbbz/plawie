@@ -6,6 +6,7 @@ import 'package:clawa/services/capabilities/gifgrep_capability.dart';
 import 'package:clawa/services/gateway_tool_catalog.dart';
 import 'package:clawa/services/native_bridge.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as image;
 
 void main() {
   test('gifgrep search runs through bounded managed CLI adapter', () async {
@@ -109,6 +110,72 @@ void main() {
         ));
   });
 
+  test('required gifgrep route preserves provider source and accepts typo',
+      () async {
+    final router = AppNativeChatToolRouter.forTesting(
+      gifgrep: GifgrepCapability(
+        credentialsProvider: () async => {
+          'GIPHY_API_KEY': null,
+          'KLIPY_API_KEY': null,
+        },
+      ),
+    );
+
+    final execution = await router.tryExecuteRequiredToolIntent(
+      'Use gigrep to find a happy gif',
+    );
+
+    expect(execution, isNotNull);
+    expect(execution!.toolName, 'gifgrep');
+    expect(execution.input['source'], 'auto');
+    expect(
+      execution.input['routingSource'],
+      'gateway-required-tool-intent',
+    );
+    expect(
+      (execution.result['error'] as Map)['code'],
+      'GIFGREP_PROVIDER_CONFIG_REQUIRED',
+    );
+    expect(execution.visibleText, contains('no reinstall is needed'));
+  });
+
+  test('local GIF still and sheet rendering produces bounded PNGs', () {
+    final first = image.Image(width: 2, height: 2, numChannels: 4)
+      ..clear(image.ColorRgba8(255, 0, 0, 255))
+      ..frameDuration = 100;
+    final second = image.Image(width: 2, height: 2, numChannels: 4)
+      ..clear(image.ColorRgba8(0, 255, 0, 255))
+      ..frameDuration = 100;
+    first.addFrame(second);
+    final gifBytes = image.encodeGif(first);
+
+    final still = renderGifPayloadForTesting({
+      'bytes': gifBytes,
+      'action': 'still',
+      'atMs': 150,
+      'frames': 1,
+      'cols': 1,
+    });
+    expect(still['sourceFrames'], 2);
+    expect(still['renderedFrames'], 1);
+    expect(still['selectedFrame'], 1);
+    expect(image.decodePng(still['pngBytes']), isNotNull);
+
+    final sheet = renderGifPayloadForTesting({
+      'bytes': gifBytes,
+      'action': 'sheet',
+      'atMs': 0,
+      'frames': 2,
+      'cols': 2,
+    });
+    expect(sheet['sourceFrames'], 2);
+    expect(sheet['renderedFrames'], 2);
+    final decodedSheet = image.decodePng(sheet['pngBytes']);
+    expect(decodedSheet, isNotNull);
+    expect(decodedSheet!.width, 16);
+    expect(decodedSheet.height, 10);
+  });
+
   test('gifgrep commands are declared but broad shell command is not', () {
     expect(
       GatewayToolCatalog.mobileNodeAllowCommands,
@@ -149,6 +216,11 @@ void main() {
       contains(
         'final requiredNodeTarget = requiredToolAlreadyExecuted',
       ),
+    );
+    expect(source, contains('bool get completeWithoutGateway'));
+    expect(
+      source,
+      contains('deterministically without a second model pass.'),
     );
   });
 }

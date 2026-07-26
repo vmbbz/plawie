@@ -36,10 +36,17 @@ the APK asset path when `-InstallAsset` is supplied.
 
 ## Current Limits
 
-This payload can raise `gifgrep` for local GIF operations because the Android
-APK now carries a real `gifgrep` binary. The release smoke should use local GIF
-input such as `gifgrep still` and `gifgrep sheet`; those commands do not require
-network provider API keys.
+The real Android binary supplies `gifgrep --version` and provider-backed online
+search. Device forensics on 2026-07-26 found that the shipped upstream 0.3.0
+binary does **not** implement the `still` or `sheet` subcommands described by
+the installed OpenClaw skill document: both invocations are parsed as search
+and reject their image flags.
+
+Plawie keeps the skill contract truthful by implementing local `still` and
+`sheet` in the app's Dart image runtime. They decode in a worker isolate, accept
+only GIFs in app-owned storage, enforce byte/dimension/frame/pixel limits, and
+write PNG outputs back inside app-owned storage. Those local operations do not
+require network provider API keys.
 
 Provider search is separate user configuration:
 
@@ -66,11 +73,14 @@ gifgrep.still
 gifgrep.sheet
 ```
 
-They execute through `NativeBridge.runManagedCli`, which validates the binary
-allowlist and launches the verified arm64 ELF through `/system/bin/linker64`.
+`gifgrep.status` and `gifgrep.search` execute through
+`NativeBridge.runManagedCli`, which validates the binary allowlist and launches
+the verified arm64 ELF through `/system/bin/linker64`. `gifgrep.still` and
+`gifgrep.sheet` execute in the bounded app-native Dart image adapter instead.
 The space-delimited command `gifgrep search` remains intentionally disallowed.
-The required-tool router runs explicit gifgrep requests before model inference,
-so the agent must not attempt npm, Go, Homebrew, chmod, or PRoot installation.
+The required-tool router runs explicit gifgrep requests before model inference
+and returns the deterministic result directly, so the agent must not attempt
+npm, Go, Homebrew, chmod, PRoot installation, or a second node invocation.
 
 `gifgrep.search` reports `GIFGREP_PROVIDER_CONFIG_REQUIRED` when neither
 provider key is configured. That means the runtime is installed but an optional
@@ -86,7 +96,8 @@ entry bytes: 8782177
 entry sha256: 431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
 ```
 
-Device proof on 2026-06-10 with `RZCX30KA9AW` / Samsung `SM-A556E`:
+Historical device proof recorded on 2026-06-10 with `RZCX30KA9AW` / Samsung
+`SM-A556E`:
 
 ```text
 adb install -r -d build/app/outputs/flutter-apk/app-debug.apk: Success
@@ -106,7 +117,7 @@ managed .openclaw/bin/gifgrep --version:
 gifgrep 0.3.0
 
 managed .openclaw/bin/gifgrep --help:
-commands include search, tui, still, and sheet
+reported as including search, tui, still, and sheet
 
 managed .openclaw/bin/gifgrep sha256:
 431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
@@ -114,7 +125,7 @@ managed .openclaw/bin/gifgrep sha256:
 provisioning/bin/gifgrep sha256:
 431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
 
-local GIF-to-PNG smoke:
+historically reported local GIF-to-PNG smoke:
 input: animexample2.gif, 2145 bytes
 command: gifgrep still --at=0s input.gif -o still.png --quiet
 output: still.png, 772 bytes
@@ -122,6 +133,11 @@ command: gifgrep sheet input.gif --frames=4 --cols=2 -o sheet.png --quiet
 output: sheet.png, 2573 bytes
 PNG header for both outputs: 89 50 4e 47 0d 0a 1a 0a
 ```
+
+The 2026-07-26 audit supersedes the historical interpretation above: direct
+device execution proved that `still --at` and `sheet --frames` are not accepted
+by the actual 0.3.0 CLI. Current release proof must exercise the Dart-backed
+node commands, not claim those PNGs came from CLI subcommands.
 
 ## License Posture
 
@@ -136,8 +152,10 @@ Before final release, repeat on the signed release APK:
 ```text
 .openclaw/bin/gifgrep --version
 .openclaw/bin/gifgrep --help
-.openclaw/bin/gifgrep still tiny.gif --at 0s -o still.png
-.openclaw/bin/gifgrep sheet tiny.gif --frames 4 --cols 2 -o sheet.png
+gifgrep.status through the Android node
+gifgrep.search through the Android node (result or exact provider-key gate)
+gifgrep.still against an app-owned tiny.gif (Dart runtime)
+gifgrep.sheet against an app-owned tiny.gif (Dart runtime)
 /device/health: gifgrep ready
 /device/health: video-frames still ready
 ```

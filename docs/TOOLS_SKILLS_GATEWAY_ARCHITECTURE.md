@@ -696,10 +696,23 @@ Android may permit reading and locating them while denying direct
    `/system/bin/linker64`.
 
 `gifgrep` uses `gifgrep.status`, `gifgrep.search`, `gifgrep.still`, and
-`gifgrep.sheet`. Explicit chat requests are pre-executed by the required-tool
-router and continued through Gateway with authoritative tool frames. Once that
-pre-execution succeeds or returns a precise configuration gate, prompt
-decoration must not add a conflicting second required node call.
+`gifgrep.sheet`. The verified upstream 0.3.0 Android CLI backs online search.
+Although its bundled OpenClaw skill document describes `still` and `sheet`,
+the shipped CLI does not implement those subcommands. Plawie therefore renders
+those two key-free operations with the Dart image runtime in a worker isolate,
+accepting only bounded GIF files under app-owned storage and writing PNGs under
+the same storage boundary.
+
+Explicit chat requests are pre-executed by the required-tool router and emit
+authoritative tool frames. Their bounded visible result is returned directly,
+without a second provider-model narration pass. This prevents duplicate
+explanations, leaked model reasoning, a conflicting second node call, and
+unnecessary provider latency.
+
+The Gateway's paired-node record is authoritative for command approval. A
+healthy node WebSocket is not enough: command upgrades must be accepted through
+`node.pair.approve`, and the app must re-read the paired store before persisting
+the command-contract hash.
 
 ## Gateway Talk timeout fallback
 
@@ -724,8 +737,9 @@ billing/quota failures remain distinct diagnostics.
 9. After a real vision-media payload is added: managed-bin `ffmpeg -version`
    and a `video-frames` extraction smoke against a tiny fixture.
 10. Explicit gifgrep request: verify one `gifgrep.search` required-tool frame,
-    no npm/Go/Brew/PRoot attempt, and either results or the exact optional
-    provider-key gate.
+    one direct visible response, no provider-model continuation, no
+    npm/Go/Brew/PRoot attempt, and either results or the exact optional
+    provider-key gate. Also verify local still/sheet PNGs from an app-owned GIF.
 11. Force one Gateway Talk timeout: verify one timeout, immediate Android TTS,
     then cooldown responses rather than repeated Gateway requests per sentence.
 

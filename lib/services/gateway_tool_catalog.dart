@@ -16,10 +16,12 @@ class GatewayToolCatalog {
 
   static const mobileNodeAllowCommands = <String>[
     'avatar.gesture',
+    'avatar.sequence',
     'avatar.mode',
     'avatar.model',
     'avatar.status',
     'avatar_gesture',
+    'avatar_sequence',
     'avatar_mode',
     'avatar_model',
     'avatar_status',

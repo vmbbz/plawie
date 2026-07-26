@@ -37,7 +37,10 @@ void main() {
     expect(execution!.toolName, 'xurl');
     expect(execution.input['url'], target);
     expect(execution.input['method'], 'GET');
-    expect(execution.input['source'], 'gateway-required-tool-intent');
+    expect(
+      execution.input['routingSource'],
+      'gateway-required-tool-intent',
+    );
     expect(execution.ok, isTrue);
     expect(execution.result['statusCode'], 200);
     expect(execution.result['bodyPreview'], contains('"skill":"xurl"'));
