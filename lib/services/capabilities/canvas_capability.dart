@@ -36,11 +36,28 @@ class CanvasCapability extends CapabilityHandler {
     _controller = controller;
     _controller!.setNavigationDelegate(NavigationDelegate(
       onPageFinished: (_) {
-        _pageLoadCompleter?.complete();
+        final completer = _pageLoadCompleter;
+        if (completer != null && !completer.isCompleted) {
+          completer.complete();
+        }
         _blockExternalApiCalls();
       },
-      onWebResourceError: (err) =>
-          _pageLoadCompleter?.completeError(err.description),
+      onHttpError: (err) {
+        final statusCode = err.response?.statusCode;
+        if (statusCode == null || statusCode < 400) return;
+        final completer = _pageLoadCompleter;
+        if (completer != null && !completer.isCompleted) {
+          completer.completeError(
+            'Canvas HTTP error $statusCode${statusCode == 401 ? ' (Unauthorized)' : ''}',
+          );
+        }
+      },
+      onWebResourceError: (err) {
+        final completer = _pageLoadCompleter;
+        if (completer != null && !completer.isCompleted) {
+          completer.completeError(err.description);
+        }
+      },
     ));
   }
 
@@ -347,7 +364,10 @@ class CanvasCapability extends CapabilityHandler {
 
     final surfaceUri = _pluginSurfaceUri;
     if (surfaceUri == null) {
-      return _absoluteUri(parsed);
+      throw StateError(
+        'Canvas plugin surface is unavailable. Reconnect the Android node '
+        'to refresh its scoped canvas URL.',
+      );
     }
 
     final surfacePath = surfaceUri.path.replaceFirst(RegExp(r'/+$'), '');

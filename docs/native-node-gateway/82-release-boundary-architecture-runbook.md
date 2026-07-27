@@ -335,6 +335,10 @@ advertised by the node connect handshake, then append the
 `/__openclaw__/canvas/...` file path. Do not construct ad hoc token query
 strings for canvas WebView navigation; those can drift from the Gateway's
 plugin auth boundary and surface as WebView `Unauthorized` responses.
+Scoped URLs are short-lived in current OpenClaw releases. The Android node
+refreshes the canvas surface with `node.pluginSurface.refresh` before each
+canvas operation, and the WebView treats HTTP 4xx/5xx responses as invocation
+failures instead of reporting an error page as successfully presented.
 
 Release rule:
 

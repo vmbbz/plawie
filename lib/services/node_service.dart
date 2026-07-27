@@ -30,6 +30,7 @@ class NodeService {
   bool _connectInFlight = false;
   bool _pendingReconnectHandshake = false;
   bool _pairingSnapshotRepairInFlight = false;
+  Future<void>? _canvasSurfaceRefreshInFlight;
   int _preferredConnectProtocol = AppConstants.wsProtocolMaxVersion;
   DateTime? _pairingRetryNotBefore;
   DateTime? _lastHealthyConnectionNoOpLogAt;
@@ -1266,10 +1267,11 @@ class NodeService {
   }
 
   void _onConnected(NodeFrame frame) {
-    final pluginSurfaceUrls = frame.payload?['pluginSurfaceUrls'];
-    CanvasCapability().setPluginSurfaceUrl(
-      pluginSurfaceUrls is Map ? pluginSurfaceUrls['canvas']?.toString() : null,
-    );
+    final canvasSurfaceUrl = _canvasSurfaceUrlFromPayload(frame.payload);
+    CanvasCapability().setPluginSurfaceUrl(canvasSurfaceUrl);
+    log(canvasSurfaceUrl != null
+        ? '[NODE] Canvas plugin surface advertised'
+        : '[NODE] Canvas plugin surface not included; refresh will be requested on demand');
     _pairingRetryNotBefore = null;
     _pairingApprovalFailureCount = 0;
     _cachedChallengeNonce = null;
@@ -1281,6 +1283,63 @@ class NodeService {
       clearError: true,
     ));
     log('[NODE] Paired and connected');
+  }
+
+  String? _canvasSurfaceUrlFromPayload(dynamic payload) {
+    if (payload is! Map) return null;
+    final urls = payload['pluginSurfaceUrls'];
+    final canvas = urls is Map ? urls['canvas'] : null;
+    if (canvas is String && canvas.trim().isNotEmpty) return canvas.trim();
+    if (canvas is Map) {
+      final nested = canvas['url'] ?? canvas['href'];
+      if (nested is String && nested.trim().isNotEmpty) return nested.trim();
+    }
+    final direct = payload['url'];
+    return direct is String && direct.trim().isNotEmpty ? direct.trim() : null;
+  }
+
+  Future<void> _refreshCanvasPluginSurface() async {
+    final inFlight = _canvasSurfaceRefreshInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+    final refresh = _refreshCanvasPluginSurfaceOnce();
+    _canvasSurfaceRefreshInFlight = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (identical(_canvasSurfaceRefreshInFlight, refresh)) {
+        _canvasSurfaceRefreshInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _refreshCanvasPluginSurfaceOnce() async {
+    if (!_ws.isConnected) return;
+    try {
+      final response = await _ws
+          .sendRequest(NodeFrame.request('node.pluginSurface.refresh', {
+            'surface': 'canvas',
+          }))
+          .timeout(const Duration(seconds: 10));
+      if (!response.isOk) {
+        final message = response.error?['message']?.toString() ??
+            response.payload?['message']?.toString() ??
+            'Gateway rejected canvas surface refresh';
+        log('[NODE] Canvas plugin surface refresh rejected: $message');
+        return;
+      }
+      final url = _canvasSurfaceUrlFromPayload(response.payload);
+      if (url == null) {
+        log('[NODE] Canvas plugin surface refresh returned no scoped URL');
+        return;
+      }
+      CanvasCapability().setPluginSurfaceUrl(url);
+      log('[NODE] Canvas plugin surface refreshed');
+    } catch (e) {
+      log('[NODE] Canvas plugin surface refresh failed: $e');
+    }
   }
 
   /// Handle a node.invoke.request event from the gateway.
@@ -1326,6 +1385,12 @@ class NodeService {
     }
 
     try {
+      if (command.startsWith('canvas.')) {
+        // Scoped canvas URLs are intentionally short-lived. Refresh before
+        // every canvas operation so a long-lived node connection cannot hand
+        // WebView an expired URL and render an Unauthorized page.
+        await _refreshCanvasPluginSurface();
+      }
       final result = await handler(command, commandParams);
       final resultPayload = <String, dynamic>{
         'id': requestId,

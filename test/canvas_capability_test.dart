@@ -43,4 +43,16 @@ void main() {
 
     expect(resolved.toString(), 'https://example.com/app');
   });
+
+  test('rejects an unscoped local canvas URL instead of loading Unauthorized',
+      () {
+    final capability = CanvasCapability();
+
+    expect(
+      () => capability.resolveCanvasUrl(
+        'http://localhost:18789/__openclaw__/canvas/tree.html',
+      ),
+      throwsStateError,
+    );
+  });
 }
