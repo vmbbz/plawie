@@ -9,7 +9,7 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #55 `tmux`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: #57 `vibrate`. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -68,7 +68,7 @@ Next live smoke: #55 `tmux`. The Android bridge smokes for `avatar_forge` and
 | 52 | taskflow | [x] contract-pass | Instruction-only adapter tests |
 | 53 | taskflow-inbox-triage | [x] contract-pass | Instruction-only adapter tests |
 | 54 | things-mac | [-] outside GTM | macOS Things integration |
-| 55 | tmux | [ ] pending | Terminal pack smoke |
+| 55 | tmux | [x] live-pass / managed smoke | Verified `android-terminal-pack` receipt; the app-managed pack smoke passed. Raw shell execution without the managed library path is intentionally not the app execution path. |
 | 56 | trello | [-] config | Requires Trello credentials |
 | 57 | vibrate | [ ] pending | Android bridge smoke |
 | 58 | video-frames | [ ] pending | Vision-media pack smoke |
@@ -122,6 +122,9 @@ Next live smoke: #55 `tmux`. The Android bridge smokes for `avatar_forge` and
   `smokePassed: true`; ARM64 version output was `v0.1.1-10-g41d27ea` and help
   output exposed the bounded audio-to-image command. No audio fixture was
   available for a non-destructive image-generation smoke.
+- `tmux` device evidence: `android-terminal-pack.json` reports
+  `smokePassed: true`; the pack contains the verified ARM64 binary and its
+  shared libraries, which are loaded through the app-managed native launcher.
 
 ## Dependency repair UI
 
