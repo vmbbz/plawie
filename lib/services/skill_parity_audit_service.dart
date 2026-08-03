@@ -1325,9 +1325,29 @@ class SkillParityAuditService {
     }
     final cached = _embeddedPythonPackageCache[nativeStateRoot];
     if (cached != null) return cached;
-    final future = _scanEmbeddedPythonPackages(nativeStateRoot);
-    _embeddedPythonPackageCache[nativeStateRoot] = future;
-    return future;
+    // The bridge marker is written before the local Gateway/Chaquopy runner
+    // is necessarily ready to answer. Do not cache that transient empty
+    // result: otherwise the first startup audit permanently hides packages
+    // which become available milliseconds later and the Skills page flips to
+    // missing_dependency until the app process is restarted.
+    final result = await _scanEmbeddedPythonPackagesWithRetry(nativeStateRoot);
+    if (result.isNotEmpty) {
+      _embeddedPythonPackageCache[nativeStateRoot] = Future.value(result);
+    }
+    return result;
+  }
+
+  static Future<Map<String, String>> _scanEmbeddedPythonPackagesWithRetry(
+    String nativeStateRoot,
+  ) async {
+    for (var attempt = 0; attempt < 3; attempt += 1) {
+      final result = await _scanEmbeddedPythonPackages(nativeStateRoot);
+      if (result.isNotEmpty) return result;
+      if (attempt < 2) {
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+      }
+    }
+    return const <String, String>{};
   }
 
   /// Chaquopy packages installed at APK build time live inside the embedded
