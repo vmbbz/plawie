@@ -24,6 +24,8 @@ Future<bool> showSkillDetailSheet(
   String installLabel = 'Install',
   Future<void> Function(String slug, String name)? onInstall,
   VoidCallback? onEdit,
+  VoidCallback? onConfigure,
+  Future<void> Function()? onRepairDependencies,
   VoidCallback? onOpen,
 }) async {
   final result = await showModalBottomSheet<bool>(
@@ -40,6 +42,8 @@ Future<bool> showSkillDetailSheet(
       installLabel: installLabel,
       onInstall: onInstall,
       onEdit: onEdit,
+      onConfigure: onConfigure,
+      onRepairDependencies: onRepairDependencies,
       onOpen: onOpen,
     ),
   );
@@ -60,6 +64,8 @@ class _SkillDetailSheet extends StatefulWidget {
   final String installLabel;
   final Future<void> Function(String slug, String name)? onInstall;
   final VoidCallback? onEdit;
+  final VoidCallback? onConfigure;
+  final Future<void> Function()? onRepairDependencies;
   final VoidCallback? onOpen;
 
   const _SkillDetailSheet({
@@ -72,6 +78,8 @@ class _SkillDetailSheet extends StatefulWidget {
     this.installLabel = 'Install',
     this.onInstall,
     this.onEdit,
+    this.onConfigure,
+    this.onRepairDependencies,
     this.onOpen,
   });
 
@@ -83,6 +91,7 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
   ClawHubSkill? _skill;
   bool _fetchingStats = true;
   bool _installing = false;
+  bool _repairingDependencies = false;
 
   @override
   void initState() {
@@ -132,6 +141,26 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
   void _openOnClawHub() {
     final url = Uri.parse('https://clawhub.ai/skills/${widget.slug}');
     launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _repairDependencies() async {
+    final repair = widget.onRepairDependencies;
+    if (repair == null || _repairingDependencies) return;
+    setState(() => _repairingDependencies = true);
+    try {
+      await repair();
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _repairingDependencies = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Dependency repair failed: $error'),
+            backgroundColor: AppColors.statusRed,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -381,9 +410,11 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
             const SizedBox(height: 20),
 
             // ── Action buttons ────────────────────────────────────────────
+            // Keep the primary row compact, then give configuration and
+            // dependency repair their own full-width actions. This avoids
+            // squeezing four actions into one row on a phone.
             Row(
               children: [
-                // View on ClawHub
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: _openOnClawHub,
@@ -399,32 +430,9 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
                     ),
                   ),
                 ),
-                if (widget.onEdit != null) ...[
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        widget.onEdit!();
-                      },
-                      icon: const Icon(Icons.edit_rounded, size: 15),
-                      label: const Text('Edit'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white60,
-                        side: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.15)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16)),
-                      ),
-                    ),
-                  ),
-                ],
-                // "Open" — shown when installed and a dedicated page exists.
                 if (widget.isInstalled && widget.onOpen != null) ...[
                   const SizedBox(width: 10),
                   Expanded(
-                    flex: 2,
                     child: ElevatedButton.icon(
                       onPressed: () {
                         Navigator.of(context).pop();
@@ -443,11 +451,9 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
                     ),
                   ),
                 ],
-                // "Install" — shown when not yet installed.
                 if (!widget.isInstalled && widget.onInstall != null) ...[
                   const SizedBox(width: 10),
                   Expanded(
-                    flex: 2,
                     child: ElevatedButton.icon(
                       onPressed: _installing ? null : _install,
                       icon: _installing
@@ -474,6 +480,57 @@ class _SkillDetailSheetState extends State<_SkillDetailSheet> {
                 ],
               ],
             ),
+            if (widget.onConfigure != null) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    widget.onConfigure!();
+                  },
+                  icon: const Icon(Icons.tune_rounded, size: 16),
+                  label: const Text('Configure credentials & settings'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.statusAmber,
+                    side: BorderSide(
+                        color: AppColors.statusAmber.withValues(alpha: 0.35)),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+              ),
+            ],
+            if (widget.onRepairDependencies != null) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed:
+                      _repairingDependencies ? null : _repairDependencies,
+                  icon: _repairingDependencies
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_for_offline_rounded,
+                          size: 16),
+                  label: Text(_repairingDependencies
+                      ? 'Resolving dependencies…'
+                      : 'Resolve native dependencies'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.cyanAccent,
+                    side: BorderSide(
+                        color: Colors.cyanAccent.withValues(alpha: 0.35)),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

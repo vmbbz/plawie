@@ -23,6 +23,7 @@ import '../../services/node_service.dart';
 import '../../services/openclaw_service.dart';
 import '../../services/preferences_service.dart';
 import '../../services/skills_service.dart';
+import '../../services/skill_provisioning_service.dart';
 import 'skills/agent_wallet_page.dart';
 import 'skills/agent_work_page.dart';
 import 'skills/agent_credit_page.dart';
@@ -704,6 +705,40 @@ class _MySkillsTabState extends State<_MySkillsTab> {
     if (mounted) setState(() => _offlineInstalledIds = ids);
   }
 
+  Future<void> _repairAndroidSkill(
+    BuildContext context,
+    String skillId,
+  ) async {
+    final gateway = context.read<GatewayProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Resolving native dependencies for $skillId…'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    final report = await gateway.configureAndroidDefaultSkill(skillId: skillId);
+    final result = report.results.isEmpty ? null : report.results.first;
+    if (!context.mounted) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          result == null
+              ? 'Dependency resolution completed; refresh the skill status.'
+              : result.status == SkillProvisioningStatus.ready ||
+                      result.status == SkillProvisioningStatus.satisfied
+                  ? '$skillId dependencies are ready.'
+                  : '$skillId still needs ${result.primaryGate ?? result.status.wireName}.',
+        ),
+        backgroundColor: result == null ||
+                result.status == SkillProvisioningStatus.ready ||
+                result.status == SkillProvisioningStatus.satisfied
+            ? AppColors.statusGreen
+            : AppColors.statusAmber,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final gatewayState = context.watch<GatewayProvider>().state;
@@ -849,48 +884,69 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                       runSpacing: 14,
                       children: [
                         for (final skill in mergedSkills)
-                          SizedBox(
-                            width: cardW,
-                            height: cardH,
-                            child: _ServiceCard(
-                              skill: skill,
-                              isInstalled: installedIds.contains(skill.id) ||
-                                  installedIds.any((id) =>
-                                      id.contains(skill.id) ||
-                                      id.contains(
-                                          skill.id.replaceAll('-', '_'))),
-                              provisioning:
-                                  _provisioningFor(provisioningById, skill.id),
-                              onTap: () {
-                                final installed =
-                                    installedIds.contains(skill.id) ||
-                                        installedIds.any((id) =>
-                                            id.contains(skill.id) ||
-                                            id.contains(
-                                                skill.id.replaceAll('-', '_')));
-                                // Always open detail sheet first — shows live
-                                // stats. Sheet has Open / Install CTA.
-                                showSkillDetailSheet(
-                                  context,
-                                  slug: skill.id,
-                                  initialName: skill.title,
-                                  initialDescription: skill.description,
+                          Builder(
+                            builder: (context) {
+                              final installed =
+                                  installedIds.contains(skill.id) ||
+                                      installedIds.any((id) =>
+                                          id.contains(skill.id) ||
+                                          id.contains(
+                                              skill.id.replaceAll('-', '_')));
+                              final provisioning =
+                                  _provisioningFor(provisioningById, skill.id);
+                              final configModel = androidReadiness == null
+                                  ? null
+                                  : AndroidSkillConfigFormModel.fromReadiness(
+                                      androidReadiness, skill.id);
+                              final canConfigure = installed &&
+                                  configModel != null &&
+                                  configModel.hasFields;
+                              final canRepairDependencies = installed &&
+                                  _shouldOfferDependencyRepair(provisioning);
+
+                              return SizedBox(
+                                width: cardW,
+                                height: cardH,
+                                child: _ServiceCard(
+                                  skill: skill,
                                   isInstalled: installed,
-                                  accentColor: skill.color,
-                                  icon: skill.icon,
-                                  // Partner skills install first; account/device
-                                  // linking happens inside the dedicated page.
-                                  installLabel: 'Install',
-                                  onOpen: (skill.hasPage && installed)
-                                      ? () => widget.onNavigate(skill.id)
-                                      : null,
-                                  onInstall: installed
-                                      ? null
-                                      : (slug, name) async =>
-                                          widget.onShowPrompt(skill),
-                                );
-                              },
-                            ),
+                                  provisioning: provisioning,
+                                  onTap: () {
+                                    // Always open detail first so the user can
+                                    // see the skill context before acting.
+                                    showSkillDetailSheet(
+                                      context,
+                                      slug: skill.id,
+                                      initialName: skill.title,
+                                      initialDescription: skill.description,
+                                      isInstalled: installed,
+                                      accentColor: skill.color,
+                                      icon: skill.icon,
+                                      installLabel: 'Install',
+                                      onConfigure: canConfigure
+                                          ? () => _showAndroidSkillConfigSheet(
+                                                context,
+                                                androidReadiness!,
+                                                skill.id,
+                                              )
+                                          : null,
+                                      onRepairDependencies:
+                                          canRepairDependencies
+                                              ? () => _repairAndroidSkill(
+                                                  context, skill.id)
+                                              : null,
+                                      onOpen: (skill.hasPage && installed)
+                                          ? () => widget.onNavigate(skill.id)
+                                          : null,
+                                      onInstall: installed
+                                          ? null
+                                          : (slug, name) async =>
+                                              widget.onShowPrompt(skill),
+                                    );
+                                  },
+                                ),
+                              );
+                            },
                           ),
                       ],
                     );
@@ -930,6 +986,28 @@ class _MySkillsTabState extends State<_MySkillsTab> {
         ),
       ],
     );
+  }
+
+  bool _shouldOfferDependencyRepair(
+    _SkillProvisioningBadgeData? provisioning,
+  ) {
+    if (provisioning == null) return false;
+    final status = provisioning.status.trim().toLowerCase();
+    if (status == 'downloading' ||
+        status == 'ready' ||
+        status == 'satisfied' ||
+        status == 'needs_user_config' ||
+        status == 'unsupported_native' ||
+        status == 'unsupported_on_android' ||
+        status == 'manual_proot_compat' ||
+        status == 'hidden_desktop_only' ||
+        status == 'native_pack_gap') {
+      return false;
+    }
+    return provisioning.label == 'MISSING DEPS' ||
+        provisioning.label == 'DEPS FAILED' ||
+        provisioning.label == 'DOWNLOAD PACK' ||
+        provisioning.label == 'INSTALL PACK';
   }
 
   Widget _buildWorkspaceList(
