@@ -9,7 +9,7 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #23 `himalaya`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: #33 `openai-whisper`. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -36,7 +36,7 @@ Next live smoke: #23 `himalaya`. The Android bridge smokes for `avatar_forge` an
 | 20 | gog | [-] outside GTM | Desktop/Google Workspace workflow |
 | 21 | goplaces | [-] config | Requires Places API key |
 | 22 | healthcheck | [x] contract-pass | Android readiness tests |
-| 23 | himalaya | [ ] pending | CLI-core pack smoke |
+| 23 | himalaya | [x] live-pass / config gate | Verified CLI-core receipt and ARM64 `himalaya --version`/`--help`; account discovery reached the expected missing-config gate without a TTY or credentials. |
 | 24 | imsg | [-] outside GTM | macOS Messages integration |
 | 25 | mcporter | [-] config | Requires endpoint/token |
 | 26 | meme-maker | [x] contract-pass | Native renderer tests |
@@ -105,6 +105,10 @@ Next live smoke: #23 `himalaya`. The Android bridge smokes for `avatar_forge` an
   `status/search/still/sheet` actions, live status returned v0.3.0, and search
   returned `GIFGREP_PROVIDER_CONFIG_REQUIRED` with `runtimeReady: true` and
   `installationRequired: false` when no provider key was configured.
+- `himalaya` device evidence: the shared `android-cli-core-pack.json` receipt
+  reports `smokePassed: true`; ARM64 version output was v1.2.0 with IMAP/SMTP
+  support, and `account list` reached the expected missing
+  `~/.config/himalaya/config.toml` gate because no mail account was configured.
 
 ## Dependency repair UI
 
