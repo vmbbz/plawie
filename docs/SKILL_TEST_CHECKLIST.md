@@ -9,7 +9,7 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #46 `songsee`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: #60 `wacli`. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -71,7 +71,7 @@ Next live smoke: #46 `songsee`. The Android bridge smokes for `avatar_forge` and
 | 55 | tmux | [x] live-pass / managed smoke | Verified `android-terminal-pack` receipt; the app-managed pack smoke passed. Raw shell execution without the managed library path is intentionally not the app execution path. |
 | 56 | trello | [-] config | Requires Trello credentials |
 | 57 | vibrate | [x] live-pass | Native `device-node` vibrated for 100 ms and returned success; battery bridge remained healthy at level 77 while charging. |
-| 58 | video-frames | [ ] pending | Vision-media pack smoke |
+| 58 | video-frames | [~] pack-pass / video fixture pending | Verified the shared vision-media receipt and ARM64 FFmpeg 8.1.1 `-version`; no app-owned MP4/MOV fixture was present for a frame-extraction smoke. |
 | 59 | voice-call | [-] config | Requires provider/account/plugin config |
 | 60 | wacli | [ ] pending | CLI-core pack smoke |
 | 61 | weather | [x] contract-pass | Native HTTP adapter tests |
@@ -133,6 +133,10 @@ Next live smoke: #46 `songsee`. The Android bridge smokes for `avatar_forge` and
   non-secret first-run configuration message instead of a missing-binary error.
 - `sensors` device evidence: `/api/tools/execute` listed four Android sensors;
   the accelerometer read returned x=0.263, y=-0.141, z=9.857 and accuracy 3.
+- `video-frames` device evidence: `android-vision-media-pack.json` reports
+  `smokePassed: true`; managed `ffmpeg -version` reports FFmpeg 8.1.1 with the
+  bounded file-only video demux/decode configuration. No video fixture was
+  available for a non-destructive JPEG-frame proof.
 
 ## Dependency repair UI
 
