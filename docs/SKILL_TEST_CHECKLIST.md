@@ -86,3 +86,20 @@ advancing to #5 `battery`.
   workspace.
 - Live device smokes must record the prompt, output, and relevant dependency
   receipt before a row is marked live-pass.
+
+## Dependency repair UI
+
+Installed skills with a repairable Native dependency gate expose **Resolve
+native dependencies** from the skill detail sheet. The action opens a live
+progress panel backed by `SkillProvisioningProgressEvent` events and shows:
+
+- the exact dependency pack being audited or downloaded;
+- download progress where the source provides a content length;
+- file verification and smoke-test stages; and
+- whether an existing or newly written receipt is verified.
+
+Verified receipts remain idempotent: a current receipt is shown as verified and
+the payload is skipped. Manual PRoot, desktop-only, unsupported, and Native-gap
+states do not expose this action. The repair panel must be captured as part of
+the live evidence when a pending CLI, Python, audio, vision, or terminal skill
+is advanced to a live smoke.
