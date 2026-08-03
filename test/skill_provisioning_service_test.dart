@@ -9,6 +9,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
+  test('dependency progress events expose safe receipt state', () {
+    final event = SkillProvisioningProgressEvent(
+      skillId: 'stocks',
+      key: 'python-core',
+      type: SkillProvisioningActionType.dependencyPack,
+      status: SkillProvisioningActionStatus.ready,
+      progress: 1,
+      message: 'Verified receipt is current; no download required.',
+      receiptVerified: true,
+      timestamp: DateTime.utc(2026, 8, 3),
+    );
+
+    expect(event.toJson(), containsPair('skillId', 'stocks'));
+    expect(event.toJson(), containsPair('key', 'python-core'));
+    expect(event.toJson(), containsPair('receiptVerified', true));
+    expect(event.toJson(), isNot(contains('password')));
+    expect(event.toJson(), isNot(contains('apiKey')));
+  });
+
   test('provisioning plans concrete native gates without PRoot auto fallback',
       () async {
     final temp = await Directory.systemTemp.createTemp('skill_provision_');
@@ -960,9 +979,11 @@ requests>=2.28.0
       repairNativeFromProot: false,
       cacheTtl: Duration.zero,
     );
+    final firstEvents = <SkillProvisioningProgressEvent>[];
     final first = await SkillProvisioningService.instance.provisionSnapshot(
       before,
       skillId: 'stocks',
+      onProgress: firstEvents.add,
     );
 
     expect(first.changed, isTrue);
@@ -974,6 +995,19 @@ requests>=2.28.0
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
       containsAll(['python-core', 'python-stocks-test']),
+    );
+    expect(
+      firstEvents
+          .where((event) =>
+              event.type == SkillProvisioningActionType.dependencyPack)
+          .map((event) => event.key),
+      containsAll(['python-core', 'python-stocks-test']),
+    );
+    expect(
+      firstEvents
+          .where((event) => event.key == 'python-stocks-test')
+          .any((event) => event.receiptVerified),
+      isTrue,
     );
     expect(
       await File(path.join(nativeRoot, 'runtimes', 'python', 'bridge.json'))

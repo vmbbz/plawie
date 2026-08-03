@@ -16,6 +16,47 @@ import 'signing_keys.dart';
 import 'skill_execution_descriptor.dart';
 import 'skill_parity_audit_service.dart';
 
+typedef SkillProvisioningProgressCallback = void Function(
+  SkillProvisioningProgressEvent event,
+);
+
+/// Live, non-secret progress emitted while a native skill dependency repair is
+/// auditing, downloading, verifying, smoke-testing, and receipt-committing a
+/// dependency. The event deliberately contains identifiers and safe messages,
+/// never credentials or archive contents.
+class SkillProvisioningProgressEvent {
+  final String skillId;
+  final String key;
+  final SkillProvisioningActionType type;
+  final SkillProvisioningActionStatus status;
+  final double? progress;
+  final String message;
+  final bool receiptVerified;
+  final DateTime timestamp;
+
+  const SkillProvisioningProgressEvent({
+    required this.skillId,
+    required this.key,
+    required this.type,
+    required this.status,
+    required this.progress,
+    required this.message,
+    this.receiptVerified = false,
+    required this.timestamp,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'skillId': skillId,
+        'key': key,
+        'type': type.wireName,
+        'status': status.wireName,
+        if (progress != null) 'progress': progress,
+        'message': message,
+        'receiptVerified': receiptVerified,
+        'timestamp': timestamp.toIso8601String(),
+      };
+}
+
 class SkillProvisioningService {
   SkillProvisioningService._();
   static final SkillProvisioningService instance = SkillProvisioningService._();
@@ -220,6 +261,7 @@ class SkillProvisioningService {
     bool applyValues = true,
     bool installBundledBinaries = true,
     bool installDependencyPacks = true,
+    SkillProvisioningProgressCallback? onProgress,
   }) {
     return _evaluateSnapshot(
       snapshot,
@@ -229,6 +271,7 @@ class SkillProvisioningService {
       applyValues: applyValues,
       installBundledBinaries: installBundledBinaries,
       installDependencyPacks: installDependencyPacks,
+      onProgress: onProgress,
     );
   }
 
@@ -241,6 +284,7 @@ class SkillProvisioningService {
     bool applyValues = true,
     bool installBundledBinaries = true,
     bool installDependencyPacks = true,
+    SkillProvisioningProgressCallback? onProgress,
   }) async {
     final snapshot = await SkillParityAuditService.instance.audit(
       filesDir: filesDir ?? await NativeBridge.getFilesDir(),
@@ -255,6 +299,7 @@ class SkillProvisioningService {
       applyValues: applyValues,
       installBundledBinaries: installBundledBinaries,
       installDependencyPacks: installDependencyPacks,
+      onProgress: onProgress,
     );
   }
 
@@ -266,7 +311,17 @@ class SkillProvisioningService {
     required bool applyValues,
     required bool installBundledBinaries,
     required bool installDependencyPacks,
+    SkillProvisioningProgressCallback? onProgress,
   }) async {
+    onProgress?.call(SkillProvisioningProgressEvent(
+      skillId: skillId ?? 'all-skills',
+      key: skillId ?? 'audit',
+      type: SkillProvisioningActionType.none,
+      status: SkillProvisioningActionStatus.downloading,
+      progress: 0,
+      message: 'Auditing Native skill dependencies and verified receipts.',
+      timestamp: DateTime.now(),
+    ));
     final targetSkill = _normalizeSkillId(skillId);
     final layout = _SkillProvisioningLayout(snapshot.filesDir);
     final entries = snapshot.executionMatrix.where((entry) {
@@ -309,6 +364,7 @@ class SkillProvisioningService {
         applyValues: applyValues,
         installBundledBinaries: installBundledBinaries,
         installDependencyPacks: installDependencyPacks,
+        onProgress: onProgress,
       );
       results.add(result);
       changed = changed || result.changed;
@@ -427,6 +483,7 @@ class SkillProvisioningService {
     required bool applyValues,
     required bool installBundledBinaries,
     required bool installDependencyPacks,
+    SkillProvisioningProgressCallback? onProgress,
   }) async {
     final actions = <SkillProvisioningAction>[];
     final missingEnv = _gateValues(
@@ -603,6 +660,7 @@ class SkillProvisioningService {
         requiredPythonRequirements: entry.requiredPythonRequirements,
         dependencyPackCatalogLoader: dependencyPackCatalogLoader,
         apply: applyValues && installDependencyPacks,
+        onProgress: onProgress,
       );
       actions.addAll(dependencyResult.actions);
       changed = changed || dependencyResult.changed;
@@ -871,6 +929,7 @@ class SkillProvisioningService {
     required Future<List<_DependencyPack>> Function()
         dependencyPackCatalogLoader,
     required bool apply,
+    SkillProvisioningProgressCallback? onProgress,
   }) async {
     final actions = <SkillProvisioningAction>[];
     final satisfiedBins = <String>{};
@@ -891,6 +950,25 @@ class SkillProvisioningService {
       requiredRuntimes: requiredRuntimes,
       requiredPythonPackages: requiredPackages,
     );
+    void emitPack(
+      _DependencyPack pack,
+      SkillProvisioningActionStatus status,
+      double? progress,
+      String message, {
+      bool receiptVerified = false,
+    }) {
+      onProgress?.call(SkillProvisioningProgressEvent(
+        skillId: entry.skillId,
+        key: pack.id,
+        type: SkillProvisioningActionType.dependencyPack,
+        status: status,
+        progress: progress,
+        message: message,
+        receiptVerified: receiptVerified,
+        timestamp: DateTime.now(),
+      ));
+    }
+
     final needsNativePython = requiredRuntimes.contains('python') ||
         requiredPackages.isNotEmpty ||
         requiredPythonRequirements.isNotEmpty;
@@ -972,6 +1050,13 @@ class SkillProvisioningService {
         satisfiedBins.addAll(pack.providesBins);
         satisfiedRuntimes.addAll(pack.providesRuntimes);
         satisfiedPythonPackages.addAll(packSatisfiedPackages);
+        emitPack(
+          pack,
+          SkillProvisioningActionStatus.ready,
+          1,
+          'Verified receipt is current; no download required.',
+          receiptVerified: true,
+        );
         continue;
       }
 
@@ -982,6 +1067,12 @@ class SkillProvisioningService {
           status: SkillProvisioningActionStatus.missingDependency,
           message: 'Dependency pack ${pack.id} can satisfy this skill.',
         ));
+        emitPack(
+          pack,
+          SkillProvisioningActionStatus.missingDependency,
+          null,
+          'Dependency pack is available and ready to resolve.',
+        );
         continue;
       }
 
@@ -994,9 +1085,31 @@ class SkillProvisioningService {
             : 'Downloading dependency pack ${pack.id}.',
       ));
       debugPrint('[DEPS] requested pack=${pack.id} skill=${entry.skillId}');
+      emitPack(
+        pack,
+        SkillProvisioningActionStatus.downloading,
+        0,
+        pack.source == _DependencyPackSource.apk
+            ? 'Installing APK-provided dependency pack.'
+            : 'Downloading signed dependency pack.',
+      );
 
-      final install = await _installDependencyPack(layout, pack, entry);
+      final install = await _installDependencyPack(
+        layout,
+        pack,
+        entry,
+        onProgress: (progress, status, message) {
+          emitPack(pack, status, progress, message);
+        },
+      );
       actions.add(install.action);
+      emitPack(
+        pack,
+        install.action.status,
+        install.ok ? 1 : null,
+        install.action.message,
+        receiptVerified: install.ok,
+      );
       if (install.ok) {
         changed = true;
         reloadRecommended = true;
@@ -2107,22 +2220,52 @@ class SkillProvisioningService {
   static Future<_DependencyPackInstallResult> _installDependencyPack(
     _SkillProvisioningLayout layout,
     _DependencyPack pack,
-    SkillExecutionMatrixEntry entry,
-  ) async {
+    SkillExecutionMatrixEntry entry, {
+    void Function(
+      double progress,
+      SkillProvisioningActionStatus status,
+      String message,
+    )? onProgress,
+  }) async {
     try {
       await layout.dependencyReceiptDir.create(recursive: true);
       await layout.nativePythonBinDir.create(recursive: true);
       await layout.nativePythonSitePackagesDir.create(recursive: true);
 
       if (pack.source == _DependencyPackSource.apk) {
+        onProgress?.call(
+          0.12,
+          SkillProvisioningActionStatus.installed,
+          'Installing APK-provided files.',
+        );
         await _installApkProvidedPack(layout, pack, entry);
       } else {
-        await _downloadAndExtractPack(layout, pack);
+        await _downloadAndExtractPack(
+          layout,
+          pack,
+          onProgress: (progress) {
+            onProgress?.call(
+              progress.clamp(0.0, 0.82).toDouble(),
+              SkillProvisioningActionStatus.downloading,
+              'Downloading ${pack.id} (${(progress * 100).round()}%).',
+            );
+          },
+        );
       }
+      onProgress?.call(
+        0.84,
+        SkillProvisioningActionStatus.verified,
+        'Archive downloaded; verifying signed files.',
+      );
       await _verifyDependencyPackFiles(layout, pack);
       await _applyDependencyPackFileModes(layout, pack);
       await _copyBundledWhisperRuntimeLibraries(layout);
 
+      onProgress?.call(
+        0.92,
+        SkillProvisioningActionStatus.verified,
+        'Files verified; running dependency smoke test.',
+      );
       final smoke = await _runDependencyPackSmoke(layout, pack);
       if (!smoke.ok) {
         await _rollbackDependencyPackInstall(layout, pack);
@@ -2141,6 +2284,11 @@ class SkillProvisioningService {
           ),
         );
       }
+      onProgress?.call(
+        0.98,
+        SkillProvisioningActionStatus.verified,
+        'Smoke test passed; writing verified receipt.',
+      );
       await _writeDependencyReceipt(layout, pack, smokePassed: true);
       debugPrint('[DEPS] installed pack=${pack.id} skill=${entry.skillId}');
       return _DependencyPackInstallResult(

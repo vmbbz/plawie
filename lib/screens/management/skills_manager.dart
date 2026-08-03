@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -711,15 +712,40 @@ class _MySkillsTabState extends State<_MySkillsTab> {
   ) async {
     final gateway = context.read<GatewayProvider>();
     final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Resolving native dependencies for $skillId…'),
-        duration: const Duration(seconds: 2),
+    final progress = ValueNotifier<_DependencyRepairProgress>(
+      _DependencyRepairProgress(skillId: skillId),
+    );
+    final operation = _runDependencyRepair(
+      gateway,
+      skillId,
+      progress,
+    );
+    final outcome = await showModalBottomSheet<_DependencyRepairOutcome>(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DependencyRepairSheet(
+        progress: progress,
+        operation: operation,
       ),
     );
-    final report = await gateway.configureAndroidDefaultSkill(skillId: skillId);
-    final result = report.results.isEmpty ? null : report.results.first;
+    progress.dispose();
+    final resolved = outcome ?? await operation;
     if (!context.mounted) return;
+    if (resolved.error != null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Dependency repair failed: ${resolved.error}'),
+          backgroundColor: AppColors.statusRed,
+        ),
+      );
+      return;
+    }
+    final report = resolved.report;
+    final result =
+        report == null || report.results.isEmpty ? null : report.results.first;
     messenger.showSnackBar(
       SnackBar(
         content: Text(
@@ -737,6 +763,59 @@ class _MySkillsTabState extends State<_MySkillsTab> {
             : AppColors.statusAmber,
       ),
     );
+  }
+
+  Future<_DependencyRepairOutcome> _runDependencyRepair(
+    GatewayProvider gateway,
+    String skillId,
+    ValueNotifier<_DependencyRepairProgress> progress,
+  ) async {
+    try {
+      final report = await gateway.configureAndroidDefaultSkill(
+        skillId: skillId,
+        onProgress: (event) {
+          progress.value = progress.value.withEvent(event);
+        },
+      );
+      final result = report.results.isEmpty ? null : report.results.first;
+      progress.value = progress.value.withEvent(
+        SkillProvisioningProgressEvent(
+          skillId: skillId,
+          key: 'result',
+          type: SkillProvisioningActionType.none,
+          status: result == null ||
+                  result.status == SkillProvisioningStatus.ready ||
+                  result.status == SkillProvisioningStatus.satisfied
+              ? SkillProvisioningActionStatus.ready
+              : SkillProvisioningActionStatus.missingDependency,
+          progress: 1,
+          message: result == null
+              ? 'Dependency audit completed without a skill result.'
+              : result.status == SkillProvisioningStatus.ready ||
+                      result.status == SkillProvisioningStatus.satisfied
+                  ? 'Native dependencies are ready; receipt state is current.'
+                  : 'Repair completed with a remaining gate: ${result.primaryGate ?? result.status.wireName}.',
+          receiptVerified: result != null &&
+              (result.status == SkillProvisioningStatus.ready ||
+                  result.status == SkillProvisioningStatus.satisfied),
+          timestamp: DateTime.now(),
+        ),
+      );
+      return _DependencyRepairOutcome(report: report);
+    } catch (error) {
+      progress.value = progress.value.withEvent(
+        SkillProvisioningProgressEvent(
+          skillId: skillId,
+          key: 'result',
+          type: SkillProvisioningActionType.none,
+          status: SkillProvisioningActionStatus.missingDependency,
+          progress: null,
+          message: 'Repair failed: $error',
+          timestamp: DateTime.now(),
+        ),
+      );
+      return _DependencyRepairOutcome(error: error.toString());
+    }
   }
 
   @override
@@ -1009,171 +1088,520 @@ class _MySkillsTabState extends State<_MySkillsTab> {
         provisioning.label == 'DOWNLOAD PACK' ||
         provisioning.label == 'INSTALL PACK';
   }
+}
 
-  Widget _buildWorkspaceList(
-    List<Map<String, dynamic>> rawSkills,
-    bool isLoading,
-    Map<String, _SkillProvisioningBadgeData> provisioningById,
-  ) {
-    if (isLoading) {
-      return const SliverToBoxAdapter(
-        child: Center(
-            child: Padding(
-          padding: EdgeInsets.all(20),
-          child: CircularProgressIndicator(),
-        )),
-      );
+class _DependencyRepairOutcome {
+  final SkillProvisioningReport? report;
+  final String? error;
+
+  const _DependencyRepairOutcome({this.report, this.error});
+}
+
+class _DependencyRepairProgress {
+  final String skillId;
+  final List<SkillProvisioningProgressEvent> events;
+
+  const _DependencyRepairProgress({
+    required this.skillId,
+    this.events = const <SkillProvisioningProgressEvent>[],
+  });
+
+  _DependencyRepairProgress withEvent(SkillProvisioningProgressEvent event) {
+    final next = [...events];
+    final index = next.indexWhere((item) => item.key == event.key);
+    if (index >= 0) {
+      next[index] = event;
+    } else {
+      next.add(event);
     }
-    if (rawSkills.isEmpty) {
-      return SliverToBoxAdapter(
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.03),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-          ),
-          child: const Center(
-            child: Text(
-              'No active skills detected on gateway.',
-              style: TextStyle(color: AppColors.statusGrey, fontSize: 12),
-            ),
-          ),
+    return _DependencyRepairProgress(skillId: skillId, events: next);
+  }
+}
+
+class _DependencyRepairSheet extends StatefulWidget {
+  final ValueListenable<_DependencyRepairProgress> progress;
+  final Future<_DependencyRepairOutcome> operation;
+
+  const _DependencyRepairSheet({
+    required this.progress,
+    required this.operation,
+  });
+
+  @override
+  State<_DependencyRepairSheet> createState() => _DependencyRepairSheetState();
+}
+
+class _DependencyRepairSheetState extends State<_DependencyRepairSheet> {
+  @override
+  void initState() {
+    super.initState();
+    widget.operation.then((outcome) {
+      if (mounted) Navigator.of(context).pop(outcome);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        constraints: const BoxConstraints(maxHeight: 680),
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F1117),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-      );
-    }
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, i) {
-          final skill = rawSkills[i];
-          final skillId = (skill['id'] ?? skill['name'] ?? skill['skillId'])
-                  ?.toString()
-                  .toLowerCase() ??
-              '';
-          final skillTitle =
-              (skill['title'] ?? skill['name'] ?? skillId).toString();
-          final skillDesc =
-              (skill['description'] ?? 'SKILL.yaml Workspace Binding')
-                  .toString();
-          final isPremium = _premiumSkills.any((s) => s.id == skillId);
-          final provisioning = _provisioningFor(provisioningById, skillId);
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.03),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              child: ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: (isPremium ? AppColors.statusGreen : Colors.blueGrey)
-                        .withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    isPremium
-                        ? Icons.verified_rounded
-                        : Icons.extension_rounded,
-                    color: isPremium
-                        ? AppColors.statusGreen
-                        : AppColors.statusGrey,
-                    size: 18,
-                  ),
-                ),
-                title: Text(
-                  skillTitle,
-                  style: GoogleFonts.outfit(
-                      fontSize: 13, fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(
-                  skillDesc,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 10, color: Colors.white.withValues(alpha: 0.4)),
-                ),
-                // Tap → detail sheet with edit shortcut
-                onTap: () => showSkillDetailSheet(
-                  context,
-                  slug: skillId,
-                  initialName: skillTitle,
-                  initialDescription: skillDesc,
-                  isInstalled: true,
-                  accentColor:
-                      isPremium ? AppColors.statusGreen : Colors.blueGrey,
-                  icon: isPremium
-                      ? Icons.verified_rounded
-                      : Icons.extension_rounded,
-                  onEdit: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => SkillConfigEditor(skillId: skillId)),
-                  ),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (provisioning != null) ...[
-                      _ProvisioningChip(data: provisioning),
-                      const SizedBox(width: 6),
-                    ],
-                    // Info chip
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.info_outline_rounded,
-                          size: 14, color: Colors.white54),
+        child: ValueListenableBuilder<_DependencyRepairProgress>(
+          valueListenable: widget.progress,
+          builder: (context, state, _) {
+            final events = state.events;
+            final current = events.isEmpty ? null : events.last;
+            return ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+              children: [
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    const SizedBox(width: 6),
-                    // Edit chip
-                    GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                SkillConfigEditor(skillId: skillId)),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.cyanAccent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.cyanAccent.withValues(alpha: 0.28),
+                        ),
                       ),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.edit_document,
-                                size: 13, color: Colors.white70),
-                            SizedBox(width: 5),
-                            Text('EDIT',
-                                style: TextStyle(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.white70)),
-                          ],
-                        ),
+                      child: const Icon(
+                        Icons.downloading_rounded,
+                        color: Colors.cyanAccent,
+                        size: 21,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Resolving native dependencies',
+                            style: GoogleFonts.outfit(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${state.skillId}  ·  signed packs and receipts',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.52),
+                              fontSize: 10.5,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ),
-            ),
-          );
-        },
-        childCount: rawSkills.length,
+                const SizedBox(height: 16),
+                if (current != null) ...[
+                  _DependencyProgressNotice(event: current),
+                  const SizedBox(height: 14),
+                ],
+                if (events.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 30),
+                    child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else ...[
+                  Text(
+                    'PACKS AND RECEIPTS',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.48),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  for (final event in events)
+                    _DependencyProgressRow(event: event),
+                ],
+                const SizedBox(height: 12),
+                Text(
+                  'Already verified packs are skipped. A receipt is written only after file hash verification and the pack smoke test pass.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.42),
+                    fontSize: 10,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
+}
+
+class _DependencyProgressNotice extends StatelessWidget {
+  final SkillProvisioningProgressEvent event;
+
+  const _DependencyProgressNotice({required this.event});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _dependencyProgressColor(event);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_dependencyProgressIcon(event), size: 16, color: color),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  event.key,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.88),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                event.receiptVerified
+                    ? 'RECEIPT VERIFIED'
+                    : _dependencyProgressLabel(event),
+                style: TextStyle(
+                  color: color,
+                  fontSize: 8,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            event.message,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.62),
+              fontSize: 10.5,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 9),
+          LinearProgressIndicator(
+            value: event.progress,
+            minHeight: 4,
+            backgroundColor: Colors.white.withValues(alpha: 0.08),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DependencyProgressRow extends StatelessWidget {
+  final SkillProvisioningProgressEvent event;
+
+  const _DependencyProgressRow({required this.event});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _dependencyProgressColor(event);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.035),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        children: [
+          Icon(_dependencyProgressIcon(event), size: 15, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  event.key,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  event.receiptVerified
+                      ? 'Verified receipt · no further download needed'
+                      : event.message,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.45),
+                    fontSize: 9.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            event.receiptVerified
+                ? 'VERIFIED'
+                : _dependencyProgressLabel(event),
+            style: TextStyle(
+              color: color,
+              fontSize: 8,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Color _dependencyProgressColor(SkillProvisioningProgressEvent event) {
+  if (event.receiptVerified ||
+      event.status == SkillProvisioningActionStatus.ready ||
+      event.status == SkillProvisioningActionStatus.satisfied ||
+      event.status == SkillProvisioningActionStatus.verified ||
+      event.status == SkillProvisioningActionStatus.installed) {
+    return AppColors.statusGreen;
+  }
+  if (event.status == SkillProvisioningActionStatus.failedVerification ||
+      event.status == SkillProvisioningActionStatus.failedSmoke) {
+    return AppColors.statusRed;
+  }
+  if (event.status == SkillProvisioningActionStatus.downloading) {
+    return Colors.cyanAccent;
+  }
+  return AppColors.statusAmber;
+}
+
+IconData _dependencyProgressIcon(SkillProvisioningProgressEvent event) {
+  if (event.receiptVerified ||
+      event.status == SkillProvisioningActionStatus.ready ||
+      event.status == SkillProvisioningActionStatus.satisfied) {
+    return Icons.verified_rounded;
+  }
+  if (event.status == SkillProvisioningActionStatus.failedVerification ||
+      event.status == SkillProvisioningActionStatus.failedSmoke) {
+    return Icons.error_outline_rounded;
+  }
+  if (event.status == SkillProvisioningActionStatus.downloading) {
+    return Icons.downloading_rounded;
+  }
+  return Icons.hourglass_top_rounded;
+}
+
+String _dependencyProgressLabel(SkillProvisioningProgressEvent event) {
+  return switch (event.status) {
+    SkillProvisioningActionStatus.downloading => 'WORKING',
+    SkillProvisioningActionStatus.verified => 'VERIFYING',
+    SkillProvisioningActionStatus.installed => 'INSTALLED',
+    SkillProvisioningActionStatus.ready ||
+    SkillProvisioningActionStatus.satisfied =>
+      'READY',
+    SkillProvisioningActionStatus.failedVerification ||
+    SkillProvisioningActionStatus.failedSmoke =>
+      'FAILED',
+    _ => 'WAITING',
+  };
+}
+
+Widget _buildWorkspaceList(
+  List<Map<String, dynamic>> rawSkills,
+  bool isLoading,
+  Map<String, _SkillProvisioningBadgeData> provisioningById,
+) {
+  if (isLoading) {
+    return const SliverToBoxAdapter(
+      child: Center(
+          child: Padding(
+        padding: EdgeInsets.all(20),
+        child: CircularProgressIndicator(),
+      )),
+    );
+  }
+  if (rawSkills.isEmpty) {
+    return SliverToBoxAdapter(
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        ),
+        child: const Center(
+          child: Text(
+            'No active skills detected on gateway.',
+            style: TextStyle(color: AppColors.statusGrey, fontSize: 12),
+          ),
+        ),
+      ),
+    );
+  }
+  return SliverList(
+    delegate: SliverChildBuilderDelegate(
+      (context, i) {
+        final skill = rawSkills[i];
+        final skillId = (skill['id'] ?? skill['name'] ?? skill['skillId'])
+                ?.toString()
+                .toLowerCase() ??
+            '';
+        final skillTitle =
+            (skill['title'] ?? skill['name'] ?? skillId).toString();
+        final skillDesc =
+            (skill['description'] ?? 'SKILL.yaml Workspace Binding').toString();
+        final isPremium = _premiumSkills.any((s) => s.id == skillId);
+        final provisioning = _provisioningFor(provisioningById, skillId);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            child: ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (isPremium ? AppColors.statusGreen : Colors.blueGrey)
+                      .withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  isPremium ? Icons.verified_rounded : Icons.extension_rounded,
+                  color:
+                      isPremium ? AppColors.statusGreen : AppColors.statusGrey,
+                  size: 18,
+                ),
+              ),
+              title: Text(
+                skillTitle,
+                style: GoogleFonts.outfit(
+                    fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                skillDesc,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 10, color: Colors.white.withValues(alpha: 0.4)),
+              ),
+              // Tap → detail sheet with edit shortcut
+              onTap: () => showSkillDetailSheet(
+                context,
+                slug: skillId,
+                initialName: skillTitle,
+                initialDescription: skillDesc,
+                isInstalled: true,
+                accentColor:
+                    isPremium ? AppColors.statusGreen : Colors.blueGrey,
+                icon: isPremium
+                    ? Icons.verified_rounded
+                    : Icons.extension_rounded,
+                onEdit: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => SkillConfigEditor(skillId: skillId)),
+                ),
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (provisioning != null) ...[
+                    _ProvisioningChip(data: provisioning),
+                    const SizedBox(width: 6),
+                  ],
+                  // Info chip
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.info_outline_rounded,
+                        size: 14, color: Colors.white54),
+                  ),
+                  const SizedBox(width: 6),
+                  // Edit chip
+                  GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => SkillConfigEditor(skillId: skillId)),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.edit_document,
+                              size: 13, color: Colors.white70),
+                          SizedBox(width: 5),
+                          Text('EDIT',
+                              style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white70)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      childCount: rawSkills.length,
+    ),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

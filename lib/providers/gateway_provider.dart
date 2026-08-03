@@ -140,11 +140,13 @@ class GatewayProvider extends ChangeNotifier {
     required String skillId,
     Map<String, String> envValues = const <String, String>{},
     Map<String, dynamic> configValues = const <String, dynamic>{},
+    SkillProvisioningProgressCallback? onProgress,
   }) async {
     final report = await SkillProvisioningService.instance.auditAndProvision(
       skillId: skillId,
       envValues: envValues,
       configValues: configValues,
+      onProgress: onProgress,
     );
     if (report.reloadRecommended) {
       await _gatewayService.applyActiveOwnerConfigChange(
