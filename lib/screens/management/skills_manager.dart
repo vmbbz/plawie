@@ -838,7 +838,12 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final cardW = (constraints.maxWidth - 14) / 2;
-                    final cardH = cardW / 1.05;
+                    // Keep enough vertical budget for the two-line names used
+                    // by skills such as node-inspect-debugger and
+                    // taskflow-inbox-triage. The old aspect-ratio height was
+                    // tuned for one-line names and could overflow by a pixel
+                    // or more once the live status/detail row was present.
+                    final cardH = cardW / 1.05 + 16;
                     return Wrap(
                       spacing: 14,
                       runSpacing: 14,
@@ -3138,12 +3143,18 @@ class _ServiceCard extends StatelessWidget {
                       child: Icon(skill.icon, color: skill.color, size: 20),
                     ),
                     const Spacer(),
-                    Text(
-                      skill.title,
-                      style: GoogleFonts.outfit(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: Colors.white),
+                    SizedBox(
+                      height: 36,
+                      child: Text(
+                        skill.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            height: 1.1,
+                            color: Colors.white),
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -3192,28 +3203,34 @@ class _ServiceCard extends StatelessWidget {
               ),
               Positioned(
                 top: 12,
+                left: 72,
                 right: 12,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: isInstalled
-                        ? badgeColor.withValues(alpha: 0.15)
-                        : Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
                       color: isInstalled
-                          ? badgeColor.withValues(alpha: 0.4)
-                          : Colors.white.withValues(alpha: 0.2),
+                          ? badgeColor.withValues(alpha: 0.15)
+                          : Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isInstalled
+                            ? badgeColor.withValues(alpha: 0.4)
+                            : Colors.white.withValues(alpha: 0.2),
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    badgeLabel,
-                    style: TextStyle(
-                      color: badgeColor,
-                      fontSize: 8,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.5,
+                    child: Text(
+                      badgeLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: badgeColor,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
                     ),
                   ),
                 ),
