@@ -9,7 +9,7 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #33 `openai-whisper`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: #39 `python-debugpy`. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -46,7 +46,7 @@ Next live smoke: #33 `openai-whisper`. The Android bridge smokes for `avatar_for
 | 30 | node-inspect-debugger | [-] native gap | Node executable pack not production-ready |
 | 31 | notion | [-] config | Requires Notion token |
 | 32 | obsidian | [-] outside GTM | Desktop vault workflow |
-| 33 | openai-whisper | [ ] pending | Whisper pack smoke |
+| 33 | openai-whisper | [~] pack-pass / transcription pending | Verified `android-whisper-runtime` receipt and managed launcher smoke; direct shell execution without the managed `LD_LIBRARY_PATH` correctly fails to load `libomp.so`. A real local transcription fixture is still required before full live-pass. |
 | 34 | openai-whisper-api | [-] config | Requires OpenAI API key |
 | 35 | openhue | [ ] pending | CLI-core pack smoke |
 | 36 | oracle | [-] PRoot-only | Manual compatibility mode |
@@ -109,6 +109,11 @@ Next live smoke: #33 `openai-whisper`. The Android bridge smokes for `avatar_for
   reports `smokePassed: true`; ARM64 version output was v1.2.0 with IMAP/SMTP
   support, and `account list` reached the expected missing
   `~/.config/himalaya/config.toml` gate because no mail account was configured.
+- `openai-whisper` device evidence: `android-whisper-runtime.json` reports
+  `smokePassed: true` and includes `libomp.so`; the managed native launcher owns
+  the library path, while a raw shell launch is intentionally not a valid app
+  smoke. No audio/model fixture was available for a transcription proof, so the
+  row remains partial rather than being overstated as fully live.
 
 ## Dependency repair UI
 
