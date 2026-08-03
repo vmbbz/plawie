@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
+import 'android_python_compatibility.dart';
 import 'native_bridge.dart';
 import 'dependency_pack_manifest.dart';
 import 'signing_keys.dart';
@@ -2185,6 +2186,19 @@ class SkillProvisioningService {
     }
   }
 
+  static String _applyNativePythonConstraint(
+    String skillId,
+    String packageName,
+    String requirement,
+  ) {
+    final androidRequirement = AndroidPythonCompatibility.requirementFor(
+      skillId: skillId,
+      packageName: packageName,
+      requirement: requirement,
+    );
+    return _applyChaquopyConstraint(packageName, androidRequirement);
+  }
+
   static Future<_DependencyProvisioningResult> _provisionPythonWheels(
     SkillExecutionMatrixEntry entry,
     _SkillProvisioningLayout layout, {
@@ -2201,18 +2215,26 @@ class SkillProvisioningService {
     final rootPackages =
         requiredPythonRequirements.keys.map(_normalizeDependencyName).toSet();
     final queue = <_PythonRequirementRequest>[
-      for (final entry in requiredPythonRequirements.entries)
+      for (final requirementEntry in requiredPythonRequirements.entries)
         _PythonRequirementRequest.fromRaw(
-              _applyChaquopyConstraint(entry.key, entry.value),
-              fallbackName: entry.key,
+              _applyNativePythonConstraint(
+                entry.skillId,
+                requirementEntry.key,
+                requirementEntry.value,
+              ),
+              fallbackName: requirementEntry.key,
               root: true,
-              rootPackage: _normalizeDependencyName(entry.key),
+              rootPackage: _normalizeDependencyName(requirementEntry.key),
             ) ??
             _PythonRequirementRequest(
-              name: _normalizeDependencyName(entry.key),
-              raw: _applyChaquopyConstraint(entry.key, entry.value),
+              name: _normalizeDependencyName(requirementEntry.key),
+              raw: _applyNativePythonConstraint(
+                entry.skillId,
+                requirementEntry.key,
+                requirementEntry.value,
+              ),
               root: true,
-              rootPackage: _normalizeDependencyName(entry.key),
+              rootPackage: _normalizeDependencyName(requirementEntry.key),
             ),
     ];
     final processed = <String>{};

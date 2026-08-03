@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
 
+import 'android_python_compatibility.dart';
 import 'gateway_tool_catalog.dart';
 import 'native_bridge.dart';
 import 'skill_execution_descriptor.dart';
@@ -209,6 +210,14 @@ class SkillParityAuditService {
                   .pythonRequirements[_normalizePythonPackageName(package)] ??
               package,
       };
+      final effectivePythonRequirements = {
+        for (final requirement in requiredPythonRequirements.entries)
+          requirement.key: AndroidPythonCompatibility.requirementFor(
+            skillId: skill.id,
+            packageName: requirement.key,
+            requirement: requirement.value,
+          ),
+      };
       final requiredNodePackages = {
         ...requirements.nodePackages,
         ...?descriptorDependencies?.nodePackages.map(
@@ -301,7 +310,7 @@ class SkillParityAuditService {
                 'python3 is required for requirements.txt but was not found in Native runtime paths.',
           ));
         }
-        for (final requirement in requiredPythonRequirements.entries) {
+        for (final requirement in effectivePythonRequirements.entries) {
           final package = requirement.key;
           final installedVersion = nativePythonPackages[package];
           if (installedVersion == null) {
