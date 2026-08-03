@@ -1365,7 +1365,14 @@ class AppNativeChatToolRouter {
     final url = _cleanXurlUrl(
       explicitCommand?.group(1) ?? naturalPrompt?.group(1),
     );
-    if (url == null) return null;
+    if (url == null) {
+      final lower = message.toLowerCase();
+      final isBlogwatcherIntent =
+          RegExp(r'\b(?:use|run|test|check|watch|monitor|read)\b')
+                  .hasMatch(lower) &&
+              lower.contains('blogwatcher');
+      if (!isBlogwatcherIntent) return null;
+    }
     final limitMatch = RegExp(
       r'\blimit\s+(\d{1,2})\b',
       caseSensitive: false,
@@ -1375,7 +1382,7 @@ class AppNativeChatToolRouter {
       toolName: 'blogwatcher',
       command: 'blogwatcher.check',
       input: {
-        'url': url,
+        if (url != null) 'url': url,
         'source': 'app-native-chat-router',
         if (limit != null) 'limit': limit,
       },

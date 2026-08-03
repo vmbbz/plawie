@@ -157,6 +157,18 @@ void main() {
     expect(execution.ok, isTrue);
   });
 
+  test('blogwatcher without a URL returns native guidance instead of Go error',
+      () async {
+    final router = AppNativeChatToolRouter.forTesting();
+
+    final execution =
+        await router.tryExecuteRequiredToolIntent('Please test blogwatcher');
+
+    expect(execution, isNotNull);
+    expect(execution!.ok, isFalse);
+    expect(execution.visibleText, contains('absolute http or https URL'));
+  });
+
   test('AgentSkillServer routes blogwatcher execution to BlogWatcherCapability',
       () async {
     final source =
