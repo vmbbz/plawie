@@ -21,6 +21,7 @@ import 'capabilities/eightctl_capability.dart';
 import 'capabilities/flash_capability.dart';
 import 'capabilities/gemini_capability.dart';
 import 'capabilities/github_capability.dart';
+import 'capabilities/gifgrep_capability.dart';
 import 'capabilities/goplaces_capability.dart';
 import 'capabilities/location_capability.dart';
 import 'capabilities/meme_maker_capability.dart';
@@ -94,6 +95,7 @@ class AgentSkillServer {
   final FlashCapability _flashCapability = FlashCapability();
   final GeminiCapability _geminiCapability = GeminiCapability();
   final GitHubCapability _githubCapability = GitHubCapability();
+  final GifgrepCapability _gifgrepCapability = GifgrepCapability();
   final GoPlacesCapability _goPlacesCapability = GoPlacesCapability();
   final LocationCapability _locationCapability = LocationCapability();
   final McPorterCapability _mcPorterCapability = McPorterCapability();
@@ -2844,6 +2846,22 @@ class AgentSkillServer {
         case 'xurl_request':
         case 'xurl.request':
           final frame = await _xurlCapability.handle('xurl.request', input);
+          _sendNodeFrame(request, frame, fallback: input);
+        case 'gifgrep':
+        case 'gifgrep.status':
+        case 'gifgrep.search':
+        case 'gifgrep.still':
+        case 'gifgrep.sheet':
+          final action = name == 'gifgrep'
+              ? (input['action']?.toString().trim().toLowerCase() ?? 'status')
+              : name.substring('gifgrep.'.length);
+          if (!const {'status', 'search', 'still', 'sheet'}.contains(action)) {
+            return _sendError(request, 'Unknown gifgrep action: $action');
+          }
+          final frame = await _gifgrepCapability.handle(
+            'gifgrep.$action',
+            input,
+          );
           _sendNodeFrame(request, frame, fallback: input);
         default:
           final result =

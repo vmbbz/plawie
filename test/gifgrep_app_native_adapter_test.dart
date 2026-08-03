@@ -5,10 +5,14 @@ import 'package:clawa/services/app_native_chat_tool_router.dart';
 import 'package:clawa/services/capabilities/gifgrep_capability.dart';
 import 'package:clawa/services/gateway_tool_catalog.dart';
 import 'package:clawa/services/native_bridge.dart';
+import 'package:clawa/services/skills_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as image;
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('gifgrep search runs through bounded managed CLI adapter', () async {
     final calls = <Map<String, Object?>>[];
     final capability = GifgrepCapability(
@@ -190,6 +194,30 @@ void main() {
       GatewayToolCatalog.mobileNodeAllowCommands,
       isNot(contains('gifgrep search')),
     );
+  });
+
+  test('gifgrep is advertised in the native tools catalog', () async {
+    SharedPreferences.setMockInitialValues({});
+    await SkillsService().initialize();
+    final catalog = SkillsService().getToolsCatalog();
+    final tool = catalog.firstWhere((entry) => entry['name'] == 'gifgrep');
+    final schema = tool['input_schema'] as Map<String, dynamic>;
+    final properties = schema['properties'] as Map<String, dynamic>;
+    expect(properties['action'], isNotNull);
+    expect(properties['inputPath'], isNotNull);
+    expect(schema['required'], contains('action'));
+  });
+
+  test('generic native executor keeps gifgrep actions bounded', () async {
+    final source = await File(
+      'lib/services/agent_skill_server.dart',
+    ).readAsString();
+    expect(source, contains("case 'gifgrep':"));
+    expect(source, contains("'gifgrep.status'"));
+    expect(source, contains("'gifgrep.search'"));
+    expect(source, contains("'gifgrep.still'"));
+    expect(source, contains("'gifgrep.sheet'"));
+    expect(source, contains("Unknown gifgrep action"));
   });
 
   test('Android managed CLI allowlist contains verified gifgrep binary',

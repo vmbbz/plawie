@@ -247,6 +247,7 @@ class SkillsService {
       _createTtsVoiceSkill(),
       _createDeviceNodeSkill(),
       _createBlogWatcherSkill(),
+      _createGifgrepSkill(),
       _createDiscordSkill(),
       _createEightCtlSkill(),
       _createSlackSkill(),
@@ -318,6 +319,8 @@ class SkillsService {
         return await _executeTtsVoiceSkill(skill, params, ctx);
       case 'feed':
         return await _executeBlogWatcherSkill(skill, params, ctx);
+      case 'gifgrep':
+        return await _executeGifgrepSkill(skill, params, ctx);
       case 'discord':
         return await _executeDiscordSkill(skill, params, ctx);
       case 'eightctl':
@@ -744,6 +747,23 @@ class SkillsService {
       return SkillResult.error('Blogwatcher fail: ${resp.statusCode}');
     } catch (e) {
       return SkillResult.error('Blogwatcher unreachable: $e');
+    }
+  }
+
+  Future<SkillResult> _executeGifgrepSkill(
+      Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    try {
+      final resp = await http
+          .post(Uri.parse('http://127.0.0.1:8765/api/tools/execute'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'name': s.id, 'input': p}))
+          .timeout(const Duration(seconds: 30));
+      if (resp.statusCode == 200) {
+        return SkillResult.success(jsonDecode(resp.body));
+      }
+      return SkillResult.error('Gifgrep fail: ${resp.statusCode}');
+    } catch (e) {
+      return SkillResult.error('Gifgrep unreachable: $e');
     }
   }
 
@@ -1364,6 +1384,18 @@ class SkillsService {
       source: 'bundled',
       createdAt: DateTime.now(),
       enabled: true);
+  Skill _createGifgrepSkill() => Skill(
+      id: 'gifgrep',
+      name: 'gifgrep',
+      description:
+          'Search GIFs through the verified Android CLI or render local GIF stills and sheets without a provider key.',
+      version: '0.3.0',
+      author: 'OpenClaw',
+      category: 'gifgrep',
+      tags: ['gif', 'search', 'image', 'cli'],
+      source: 'bundled',
+      createdAt: DateTime.now(),
+      enabled: true);
   Skill _createDiscordSkill() => Skill(
       id: 'discord',
       name: 'discord',
@@ -1852,6 +1884,41 @@ class SkillsService {
               },
             },
             'required': ['url'],
+          },
+        };
+      case 'gifgrep':
+        return {
+          'name': skill.id,
+          'description': skill.description,
+          'input_schema': {
+            'type': 'object',
+            'properties': {
+              'action': {
+                'type': 'string',
+                'enum': ['status', 'search', 'still', 'sheet'],
+                'description':
+                    'Use status for readiness, search for provider-backed GIF search, or still/sheet for app-owned local GIFs.',
+              },
+              'query': {'type': 'string'},
+              'source': {
+                'type': 'string',
+                'enum': ['auto', 'giphy', 'klipy', 'tenor'],
+              },
+              'max': {'type': 'integer', 'minimum': 1, 'maximum': 10},
+              'limit': {'type': 'integer', 'minimum': 1, 'maximum': 10},
+              'inputPath': {
+                'type': 'string',
+                'description': 'Existing GIF inside app-owned storage.',
+              },
+              'outputPath': {
+                'type': 'string',
+                'description': 'Optional PNG path inside app-owned storage.',
+              },
+              'atMs': {'type': 'integer', 'minimum': 0},
+              'frames': {'type': 'integer', 'minimum': 1, 'maximum': 12},
+              'cols': {'type': 'integer', 'minimum': 1, 'maximum': 8},
+            },
+            'required': ['action'],
           },
         };
       case 'discord':
