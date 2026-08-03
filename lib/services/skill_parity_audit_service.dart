@@ -326,6 +326,12 @@ class SkillParityAuditService {
           final package = requirement.key;
           final installedVersion = nativePythonPackages[package];
           if (installedVersion == null) {
+            debugPrint(
+              '[SkillParity] Python gate skill=${skill.id} '
+              'package=$package installed=none '
+              'requirement=${requirement.value} '
+              'embedded=${embeddedPythonPackages.containsKey(package)}',
+            );
             skillGates.add(SkillParityGate(
               skillId: skill.id,
               gate: 'missing_native_python_package',
@@ -343,6 +349,12 @@ class SkillParityAuditService {
                 requirement.value,
                 installedVersion,
               )) {
+            debugPrint(
+              '[SkillParity] Python gate skill=${skill.id} '
+              'package=$package installed=$installedVersion '
+              'requirement=${requirement.value} '
+              'embedded=${embeddedPythonPackages.containsKey(package)}',
+            );
             skillGates.add(SkillParityGate(
               skillId: skill.id,
               gate: 'missing_native_python_package',
