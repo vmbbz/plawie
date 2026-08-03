@@ -26,6 +26,7 @@ import 'skill_parity_audit_service.dart';
 import 'skill_provisioning_service.dart';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
+import 'gifgrep_contract.dart';
 import 'openclaw_service.dart';
 import 'diagnostic_service.dart';
 import 'node_service.dart';
@@ -5528,7 +5529,7 @@ For "where are we" or "tell me where I am" requests, call location_get first and
 For weather requests with a city or coordinates, use action="invoke" with invokeCommand="weather.current" or "weather.forecast" and invokeParamsJson like {"city":"Johannesburg"}. Do not use PRoot or a desktop weather binary for Android weather.
 For ClawHub registry metadata requests, use action="invoke" with invokeCommand="clawhub.search" or "clawhub.info" and invokeParamsJson like {"query":"weather"} or {"slug":"weather"}. Do not use npm, npx, or PRoot for read-only ClawHub metadata on Android.
 For simple meme image requests, use action="invoke" with invokeCommand="meme-maker.create" and invokeParamsJson like {"topText":"Native Android","bottomText":"No PRoot needed"}. This produces a PNG through the Android app-native renderer; do not use Node canvas, sharp, npm, or PRoot for this Android path.
-For gifgrep on Android, the managed binary is already installed when device.health marks the skill ready. Never suggest Homebrew, Go, npm, PRoot, chmod, or reinstalling gifgrep. Use action="invoke" with invokeCommand="gifgrep.search" and invokeParamsJson like {"query":"happy","max":5,"source":"auto"}; online search may return GIFGREP_PROVIDER_CONFIG_REQUIRED until the user configures GIPHY_API_KEY or KLIPY_API_KEY. Local key-free operations use gifgrep.still or gifgrep.sheet with an app-owned inputPath.
+${GifgrepContract.mobileGuidance}
 For healthcheck requests, call device_health or action="invoke" with invokeCommand="device.health" and summarize the result.
 For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.sequence, avatar.mode, avatar.model, avatar.status, device.health, device.status, device.permissions, canvas.navigate, canvas.eval, canvas.snapshot, canvas.present, canvas.hide, weather.current, weather.forecast, clawhub.search, clawhub.info, gifgrep.status, gifgrep.search, gifgrep.still, gifgrep.sheet, meme-maker.create, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list. For canvas.present, put HTML content under ~/.openclaw/canvas/ and construct the URL as http://<gateway-host>:18789/__openclaw__/canvas/<file>.html. For generated content like SVG or HTML, write it to a file in ~/.openclaw/canvas/ first then present that file URL. IMPORTANT: Do NOT pass a "target" parameter to canvas.present or canvas.navigate — the gateway auto-routes to the connected device. Passing target="node" causes a URI parse error. Just pass the "url" parameter. CRITICAL RULE for canvas HTML: You MUST generate pure inline SVG (from a .html file) for any visualization request like "draw a flower", "illustrate X", "show me a diagram", etc. Do NOT write JavaScript that calls any external API — not OpenRouter, not OpenAI, not any API — because the WebView has no network API keys. Pure SVG embedded directly in the HTML is self-contained, works perfectly, and never needs API calls. If you MUST use JavaScript, use ONLY browser-native APIs (Canvas2D, WebGL, Web Audio) — never fetch() or XMLHttpRequest to external URLs.
 Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
@@ -5673,6 +5674,22 @@ $message''';
         : _appNativeSkillsRegisteredWithGateway
             ? 'registered with Gateway callback http://127.0.0.1:8765 (status: $_appNativeSkillBridgeStatus)'
             : 'not registered as direct app-native tool names in this session (status: $_appNativeSkillBridgeStatus${appNativeBridgeDetail.isEmpty ? '' : '; $appNativeBridgeDetail'}). This is separate from OpenClaw active skills.';
+    final appNativeContractLines = appNativeCatalog
+        .where((tool) =>
+            _privatePromptText(tool['name'] ?? tool['id'], maxChars: 64)
+                .toLowerCase() ==
+            'gifgrep')
+        .map((tool) {
+          final schema = tool['input_schema'];
+          if (schema is! Map) return '';
+          final encoded = jsonEncode(schema);
+          final bounded = encoded.length <= 2200
+              ? encoded
+              : '${encoded.substring(0, 2200)}...[truncated]';
+          return '- gifgrep contract: $bounded';
+        })
+        .where((line) => line.isNotEmpty)
+        .join('\n');
 
     _addActivity('[CHAT] Skill capability context attached '
         '(skills=${activeSkills.length}, tools=${primitiveTools.length}, appNative=$_appNativeSkillCatalogCount/$_appNativeSkillBridgeStatus)');
@@ -5707,6 +5724,7 @@ $toolLine
 App-native local catalog (${appNativeCatalog.length}):
 Bridge status: $appNativeBridgeLine
 ${appNativeSkillLines.isEmpty ? '- none reported by Flutter' : appNativeSkillLines.join('\n')}$appNativeCountSuffix
+${appNativeContractLines.isEmpty ? '' : 'Fallback app-native contracts (use when direct Gateway registration is unavailable):\n$appNativeContractLines'}
 
 ${parityBlock.isEmpty ? '' : parityBlock}
 ${targetedGateBlock.isEmpty ? '' : targetedGateBlock}
@@ -5910,8 +5928,7 @@ ${lines.join('\n')}
     // App-local HTTP adapters execute inside Plawie and do not need a paired
     // Android node. Keep the node requirement for hardware-backed commands,
     // while allowing feed checks to work during node reconnects.
-    final nodeIndependent =
-        requiredCommand?.startsWith('gifgrep.') == true ||
+    final nodeIndependent = requiredCommand?.startsWith('gifgrep.') == true ||
         requiredCommand == 'blogwatcher.check';
     final nodeReady =
         node.state.isPaired && node.isConnected && !node.isConnectionStale;

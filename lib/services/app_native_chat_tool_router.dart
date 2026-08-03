@@ -25,6 +25,8 @@ import 'capabilities/trello_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
 import 'capabilities/xurl_capability.dart';
+import 'gifgrep_contract.dart';
+import 'gifgrep_media_store.dart';
 import 'skills_service.dart';
 
 class AppNativeChatToolExecution {
@@ -828,6 +830,10 @@ class AppNativeChatToolRouter {
       return _avatarGestureVisibleText(plan, result, ok);
     }
     if (!ok) {
+      final gifgrepError = _gifgrepConfigurationError(result);
+      if (plan.toolName == 'gifgrep' && gifgrepError != null) {
+        return gifgrepError;
+      }
       final message = _errorMessageFromResult(result);
       return 'I tried to use ${plan.toolName}, but it failed: $message';
     }
@@ -1043,6 +1049,22 @@ class AppNativeChatToolRouter {
       if (value != null && value.isNotEmpty) return value;
     }
     return 'Unknown error';
+  }
+
+  String? _gifgrepConfigurationError(Map<String, dynamic> result) {
+    final error = result['error'];
+    final code =
+        error is Map ? error['code']?.toString() : result['code']?.toString();
+    if (code == 'GIFGREP_PROVIDER_CONFIG_REQUIRED') {
+      return 'gifgrep is installed and ready; no reinstall is needed. Online GIF search needs a GIPHY or KLIPY provider key. I opened the gifgrep configuration panel; local still/sheet operations remain available without a key.';
+    }
+    if (code == 'GIFGREP_INPUT_REQUIRED') {
+      return 'gifgrep needs an imported app-owned GIF for this local operation. Use the chat ⋯ menu → Import GIF, then ask for a still frame or contact sheet.';
+    }
+    if (code == 'GIFGREP_INPUT_INVALID') {
+      return 'That GIF path is not inside Plawie app storage. Use the app-provided imported GIF path; local gifgrep operations never read arbitrary device paths.';
+    }
+    return null;
   }
 
   String _locationVisibleText(Map<String, dynamic> result) {
@@ -1792,11 +1814,7 @@ class AppNativeChatToolRouter {
       return null;
     }
 
-    final localAction = lower.contains(RegExp(r'\bstill\b'))
-        ? 'still'
-        : lower.contains(RegExp(r'\bsheet\b'))
-            ? 'sheet'
-            : null;
+    final localAction = GifgrepContract.localActionForMessage(message);
     if (localAction != null) {
       final quotedPath =
           RegExp(r'''["']([^"']+\.gif)["']''', caseSensitive: false)
@@ -1806,7 +1824,8 @@ class AppNativeChatToolRouter {
         r'''((?:~?/|/)[^\s"'<>]+\.gif)''',
         caseSensitive: false,
       ).firstMatch(message)?.group(1);
-      final inputPath = (quotedPath ?? plainPath)?.trim();
+      final inputPath = (quotedPath ?? plainPath)?.trim() ??
+          GifgrepMediaStore.latestPath?.trim();
       if (inputPath == null || inputPath.isEmpty) {
         return _AppNativeToolPlan(
           toolName: 'gifgrep',

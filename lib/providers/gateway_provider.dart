@@ -158,6 +158,27 @@ class GatewayProvider extends ChangeNotifier {
     return report;
   }
 
+  Future<SkillProvisioningReport> configureOptionalNativeEnvironment({
+    required String skillId,
+    Map<String, String> values = const <String, String>{},
+    List<String> clearKeys = const <String>[],
+  }) async {
+    final report =
+        await SkillProvisioningService.instance.applyOptionalNativeEnvironment(
+      skillId: skillId,
+      values: values,
+      clearKeys: clearKeys,
+    );
+    if (report.reloadRecommended) {
+      await _gatewayService.applyActiveOwnerConfigChange(
+        'Optional Native skill config: $skillId',
+      );
+    }
+    _gatewayService.refreshRpcDiscovery();
+    unawaited(_gatewayService.checkHealth());
+    return report;
+  }
+
   /// Retrieve the authenticated Dashboard URL containing the ?token= query parameter.
   Future<String?> fetchAuthenticatedDashboardUrl() {
     return _gatewayService.fetchAuthenticatedDashboardUrl();

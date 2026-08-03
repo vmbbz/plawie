@@ -34,6 +34,7 @@ import 'local_llm_screen.dart';
 import 'skills/agent_base_page.dart';
 import 'bot_method_explorer.dart';
 import 'skills/android_skill_config_sheet.dart';
+import 'skills/gifgrep_config_sheet.dart';
 import 'skills/skill_config_editor.dart';
 import 'skills/skill_detail_sheet.dart';
 
@@ -978,8 +979,9 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                                   : AndroidSkillConfigFormModel.fromReadiness(
                                       androidReadiness, skill.id);
                               final canConfigure = installed &&
-                                  configModel != null &&
-                                  configModel.hasFields;
+                                  (skill.id == 'gifgrep' ||
+                                      (configModel != null &&
+                                          configModel.hasFields));
                               final canRepairDependencies = installed &&
                                   _shouldOfferDependencyRepair(provisioning);
 
@@ -1003,9 +1005,9 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                                       icon: skill.icon,
                                       installLabel: 'Install',
                                       onConfigure: canConfigure
-                                          ? () => _showAndroidSkillConfigSheet(
+                                          ? () => _showSkillConfiguration(
                                                 context,
-                                                androidReadiness!,
+                                                androidReadiness,
                                                 skill.id,
                                               )
                                           : null,
@@ -1066,9 +1068,9 @@ class _MySkillsTabState extends State<_MySkillsTab> {
             isLoading,
             provisioningById,
             androidReadiness: androidReadiness,
-            onConfigure: (skillId) => _showAndroidSkillConfigSheet(
+            onConfigure: (skillId) => _showSkillConfiguration(
               context,
-              androidReadiness!,
+              androidReadiness,
               skillId,
             ),
             onRepairDependencies: (skillId) =>
@@ -1514,7 +1516,8 @@ Widget _buildWorkspaceList(
                 androidReadiness,
                 skillId,
               );
-        final canConfigure = configModel?.hasFields == true;
+        final canConfigure =
+            skillId == 'gifgrep' || configModel?.hasFields == true;
         final canRepairDependencies =
             shouldOfferDependencyRepair?.call(provisioning) == true;
         return Padding(
@@ -2922,6 +2925,27 @@ class _RateLimitBanner extends StatelessWidget {
 }
 
 // ── Android default readiness helpers ───────────────────────────────────────
+
+void _showSkillConfiguration(
+  BuildContext context,
+  Map<String, dynamic>? readiness,
+  String skillId,
+) {
+  if (skillId.trim().toLowerCase() == 'gifgrep') {
+    showGifgrepConfigSheet(context);
+    return;
+  }
+  if (readiness == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Skill readiness is still loading.'),
+        backgroundColor: AppColors.statusAmber,
+      ),
+    );
+    return;
+  }
+  _showAndroidSkillConfigSheet(context, readiness, skillId);
+}
 
 void _showAndroidSkillConfigSheet(
   BuildContext context,

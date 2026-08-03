@@ -48,6 +48,11 @@ only GIFs in app-owned storage, enforce byte/dimension/frame/pixel limits, and
 write PNG outputs back inside app-owned storage. Those local operations do not
 require network provider API keys.
 
+Chat users can import a GIF through the chat `⋯` menu. Android copies it into
+the bounded app-owned gifgrep storage area (20 MB maximum), records the latest
+imported path, and the deterministic router supplies that path when the user
+asks for a still frame, thumbnail, storyboard, montage, or contact sheet.
+
 Provider search is separate user configuration:
 
 ```text
@@ -86,6 +91,17 @@ npm, Go, Homebrew, chmod, PRoot installation, or a second node invocation.
 provider key is configured. That means the runtime is installed but an optional
 online-search mode needs user configuration. `gifgrep.still` and
 `gifgrep.sheet` remain key-free and constrain files to app-owned storage.
+
+The Android-facing contract is defined in
+`lib/services/gifgrep_contract.dart`. It is used for the registered tool schema,
+mobile prompt guidance, and deterministic chat intent aliases. A missing
+provider key is a configuration event, not an installation failure: chat opens
+the gifgrep provider configuration sheet, and Bot Management > Skills exposes
+the same optional configuration action. Saving keys updates only the Native
+OpenClaw `.env`; local still/sheet work remains available when both keys are
+empty. Generated still/sheet PNGs are published through the app media bus so
+the chat UI can attach and render them rather than only displaying an internal
+path.
 
 Debug APK packaging proof on 2026-06-10:
 

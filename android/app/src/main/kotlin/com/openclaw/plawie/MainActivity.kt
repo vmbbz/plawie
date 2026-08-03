@@ -2,6 +2,7 @@ package com.openclaw.plawie
 
 import android.util.Log
 import java.io.File
+import java.io.FileOutputStream
 import android.os.Environment
 
 import android.app.Notification
@@ -65,12 +66,14 @@ class MainActivity : FlutterActivity() {
         const val URL_CHANNEL_ID = "openclaw_urls"
         const val NOTIFICATION_PERMISSION_REQUEST = 1001
         const val SCREEN_CAPTURE_REQUEST = 1002
+        const val GIF_IMPORT_REQUEST = 1003
     }
 
     private lateinit var bootstrapManager: BootstrapManager
     private lateinit var processManager: ProcessManager
     private lateinit var nativeNodeSmokeProcess: NativeNodeSmokeProcess
     private var screenCaptureResult: MethodChannel.Result? = null
+    private var gifImportResult: MethodChannel.Result? = null
     private var screenCaptureDurationMs: Long = 5000L
     private var wakeLock: PowerManager.WakeLock? = null
     private var pipMethodChannel: MethodChannel? = null
@@ -226,6 +229,18 @@ class MainActivity : FlutterActivity() {
                 }
                 "getFilesDir" -> {
                     result.success(filesDir)
+                }
+                "pickGif" -> {
+                    if (gifImportResult != null) {
+                        result.error("GIF_PICKER_BUSY", "A GIF picker request is already active.", null)
+                    } else {
+                        gifImportResult = result
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "image/gif"
+                        }
+                        startActivityForResult(intent, GIF_IMPORT_REQUEST)
+                    }
                 }
                 "getNativeLibDir" -> {
                     result.success(nativeLibDir)
@@ -1470,6 +1485,54 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == GIF_IMPORT_REQUEST) {
+            val callback = gifImportResult
+            gifImportResult = null
+            if (callback == null) return
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                callback.success(null)
+                return
+            }
+            val uri = data.data!!
+            Thread {
+                var target: File? = null
+                try {
+                    val mime = contentResolver.getType(uri)
+                    if (mime != null && mime != "image/gif") {
+                        throw IllegalArgumentException("Selected file is not a GIF.")
+                    }
+                    val targetDir = File(
+                        filesDir,
+                        "native-node-embedded/native-home/.openclaw/canvas/gifgrep/imported"
+                    )
+                    targetDir.mkdirs()
+                    target = File(targetDir, "gif-${System.currentTimeMillis()}.gif")
+                    var total = 0L
+                    val buffer = ByteArray(32 * 1024)
+                    contentResolver.openInputStream(uri).use { input ->
+                        if (input == null) throw IllegalStateException("Could not read selected GIF.")
+                        FileOutputStream(target!!).use { output ->
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count <= 0) break
+                                total += count
+                                if (total > 20L * 1024L * 1024L) {
+                                    throw IllegalArgumentException("GIF is larger than the 20 MB limit.")
+                                }
+                                output.write(buffer, 0, count)
+                            }
+                        }
+                    }
+                    runOnUiThread { callback.success(target.absolutePath) }
+                } catch (error: Exception) {
+                    target?.delete()
+                    runOnUiThread {
+                        callback.error("GIF_IMPORT_ERROR", error.message, null)
+                    }
+                }
+            }.start()
+            return
+        }
         if (requestCode == SCREEN_CAPTURE_REQUEST) {
             if (resultCode == Activity.RESULT_OK && data != null) {
                 val intent = Intent(applicationContext, ScreenCaptureService::class.java).apply {

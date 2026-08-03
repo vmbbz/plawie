@@ -303,6 +303,74 @@ class SkillProvisioningService {
     );
   }
 
+  /// Applies optional provider credentials without turning them into a
+  /// readiness blocker. Some native skills, such as gifgrep, have useful
+  /// key-free operations and only need credentials for an optional online
+  /// mode. Those keys must still use the same Native .env lane as required
+  /// configuration so the active Native gateway sees them consistently.
+  Future<SkillProvisioningReport> applyOptionalNativeEnvironment({
+    required String skillId,
+    Map<String, String> values = const <String, String>{},
+    List<String> clearKeys = const <String>[],
+  }) async {
+    final now = DateTime.now();
+    final filesDir = await NativeBridge.getFilesDir();
+    final layout = _SkillProvisioningLayout(filesDir);
+    final requested = <String, String?>{
+      for (final entry in values.entries) entry.key: entry.value.trim(),
+      for (final key in clearKeys) key: null,
+    };
+    final actions = <SkillProvisioningAction>[];
+    var changed = false;
+    var unsupported = false;
+
+    for (final entry in requested.entries) {
+      if (!_envKeyLooksSafe(entry.key)) {
+        unsupported = true;
+        actions.add(SkillProvisioningAction(
+          type: SkillProvisioningActionType.env,
+          key: entry.key,
+          status: SkillProvisioningActionStatus.unsupportedNative,
+          message: 'Native .env key rejected as unsafe.',
+        ));
+        continue;
+      }
+      await _writeDotEnvValuesNullable(
+          layout.nativeEnvFile, {entry.key: entry.value});
+      changed = true;
+      actions.add(SkillProvisioningAction(
+        type: SkillProvisioningActionType.env,
+        key: entry.key,
+        status: SkillProvisioningActionStatus.satisfied,
+        message: entry.value == null || entry.value!.isEmpty
+            ? 'Optional Native .env value cleared.'
+            : 'Optional Native .env value applied.',
+        changed: true,
+      ));
+    }
+
+    final result = SkillProvisioningSkillResult(
+      skillId: skillId,
+      readiness: 'optional_config',
+      status: unsupported
+          ? SkillProvisioningStatus.unsupportedNative
+          : SkillProvisioningStatus.satisfied,
+      primaryGate: null,
+      actions: actions,
+      changed: changed,
+      reloadRecommended: changed,
+    );
+    return SkillProvisioningReport(
+      filesDir: filesDir,
+      skillId: skillId,
+      auditedAt: now,
+      generatedAt: DateTime.now(),
+      results: [result],
+      changed: changed,
+      reloadRecommended: changed,
+    );
+  }
+
   Future<SkillProvisioningReport> _evaluateSnapshot(
     SkillParitySnapshot snapshot, {
     String? skillId,
@@ -4622,22 +4690,35 @@ class SkillProvisioningService {
     File file,
     Map<String, String> values,
   ) async {
+    await _writeDotEnvValuesNullable(file, values);
+  }
+
+  static Future<void> _writeDotEnvValuesNullable(
+    File file,
+    Map<String, String?> values,
+  ) async {
     await file.parent.create(recursive: true);
     final lines =
         await file.exists() ? await file.readAsLines() : const <String>[];
-    final pending = Map<String, String>.from(values);
+    final pending = Map<String, String?>.from(values);
     final updated = <String>[];
     for (final line in lines) {
       final match = RegExp(r'^\s*([A-Z][A-Z0-9_]{1,80})\s*=').firstMatch(line);
       final key = match?.group(1);
       if (key != null && pending.containsKey(key)) {
-        updated.add('$key=${_formatDotEnvValue(pending.remove(key)!)}');
+        final value = pending.remove(key);
+        if (value != null && value.isNotEmpty) {
+          updated.add('$key=${_formatDotEnvValue(value)}');
+        }
       } else {
         updated.add(line);
       }
     }
     for (final entry in pending.entries) {
-      updated.add('${entry.key}=${_formatDotEnvValue(entry.value)}');
+      final value = entry.value;
+      if (value != null && value.isNotEmpty) {
+        updated.add('${entry.key}=${_formatDotEnvValue(value)}');
+      }
     }
     await file.writeAsString('${updated.join('\n')}\n', flush: true);
   }

@@ -16,6 +16,7 @@ import 'avatar_gesture_catalog.dart';
 import 'clawhub_service.dart';
 import '../constants/openclaw_paths.dart';
 import 'native_clawhub_skill_installer.dart';
+import 'gifgrep_contract.dart';
 
 /// Skills System — Thin UI + Native Bridge architecture.
 /// This service acts as the UI manager and execution router for on-device native
@@ -1890,36 +1891,7 @@ class SkillsService {
         return {
           'name': skill.id,
           'description': skill.description,
-          'input_schema': {
-            'type': 'object',
-            'properties': {
-              'action': {
-                'type': 'string',
-                'enum': ['status', 'search', 'still', 'sheet'],
-                'description':
-                    'Use status for readiness, search for provider-backed GIF search, or still/sheet for app-owned local GIFs.',
-              },
-              'query': {'type': 'string'},
-              'source': {
-                'type': 'string',
-                'enum': ['auto', 'giphy', 'klipy', 'tenor'],
-              },
-              'max': {'type': 'integer', 'minimum': 1, 'maximum': 10},
-              'limit': {'type': 'integer', 'minimum': 1, 'maximum': 10},
-              'inputPath': {
-                'type': 'string',
-                'description': 'Existing GIF inside app-owned storage.',
-              },
-              'outputPath': {
-                'type': 'string',
-                'description': 'Optional PNG path inside app-owned storage.',
-              },
-              'atMs': {'type': 'integer', 'minimum': 0},
-              'frames': {'type': 'integer', 'minimum': 1, 'maximum': 12},
-              'cols': {'type': 'integer', 'minimum': 1, 'maximum': 8},
-            },
-            'required': ['action'],
-          },
+          'input_schema': GifgrepContract.inputSchema(),
         };
       case 'discord':
         return {

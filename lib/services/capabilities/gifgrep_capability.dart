@@ -10,6 +10,8 @@ import '../../models/node_frame.dart';
 import '../native_bridge.dart';
 import 'capability_handler.dart';
 import 'native_env.dart';
+import '../gifgrep_contract.dart';
+import '../tool_media_event_bus.dart';
 
 typedef GifgrepCredentialsProvider = Future<Map<String, String?>> Function();
 
@@ -60,7 +62,7 @@ class GifgrepCapability extends CapabilityHandler {
   String get name => 'gifgrep';
 
   @override
-  List<String> get commands => const ['status', 'search', 'still', 'sheet'];
+  List<String> get commands => GifgrepContract.actions;
 
   @override
   Future<bool> checkPermission() async => true;
@@ -225,8 +227,11 @@ class GifgrepCapability extends CapabilityHandler {
     String action,
     Map<String, dynamic> params,
   ) async {
-    final rawInput =
-        (params['inputPath'] ?? params['path'] ?? params['gif'])?.toString();
+    final rawInput = (params['inputPath'] ??
+            params['mediaPath'] ??
+            params['path'] ??
+            params['gif'])
+        ?.toString();
     if (rawInput == null || rawInput.trim().isEmpty) {
       return NodeFrame.response('', error: {
         'code': 'GIFGREP_INPUT_REQUIRED',
@@ -286,7 +291,10 @@ class GifgrepCapability extends CapabilityHandler {
     final requestedFrames =
         _intValue(params['frames'], fallback: 12).clamp(1, 24);
     final requestedCols = _intValue(params['cols'], fallback: 4).clamp(1, 8);
-    final atMs = _durationMs(params['at']?.toString());
+    final rawAtMs = params['atMs'];
+    final atMs = rawAtMs is num
+        ? rawAtMs.toInt().clamp(0, 10 * 60 * 1000).toInt()
+        : _durationMs(params['at']?.toString());
     late final Map<String, dynamic> rendered;
     try {
       rendered = await _localRenderer(
@@ -324,6 +332,12 @@ class GifgrepCapability extends CapabilityHandler {
         'message': 'Local GIF rendering completed without the expected PNG.',
       });
     }
+    final base64 = base64Encode(pngBytes);
+    ToolMediaEventBus.instance.publish(ToolMediaEvent(
+      source: 'gifgrep.$action',
+      base64: base64,
+      mimeType: 'image/png',
+    ));
     return NodeFrame.response('', payload: {
       'runtime': 'app-native-dart-gif',
       'ready': true,
@@ -332,6 +346,9 @@ class GifgrepCapability extends CapabilityHandler {
       'inputPath': input,
       'outputPath': output,
       'mimeType': 'image/png',
+      'base64': base64,
+      'base64Bytes': base64.length,
+      'attachedImage': true,
       'bytes': await outputFile.length(),
       'sourceFrames': rendered['sourceFrames'],
       'renderedFrames': rendered['renderedFrames'],

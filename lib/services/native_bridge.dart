@@ -50,6 +50,11 @@ class NativeBridge {
     return await _channel.invokeMethod('getFilesDir');
   }
 
+  static Future<String?> pickGif() async {
+    final result = await _channel.invokeMethod<String?>('pickGif');
+    return result?.trim().isEmpty == true ? null : result?.trim();
+  }
+
   static Future<String> getNativeLibDir() async {
     return await _channel.invokeMethod('getNativeLibDir');
   }

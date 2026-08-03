@@ -35,7 +35,9 @@ import '../services/avatar_gesture_catalog.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../services/capabilities/canvas_capability.dart';
 import '../services/chat_runtime_service.dart';
+import '../services/gifgrep_media_store.dart';
 import '../services/hologram_service.dart';
+import 'management/skills/gifgrep_config_sheet.dart';
 import '../services/tool_media_event_bus.dart';
 import '../widgets/hologram_overlay.dart';
 import 'management/local_llm_screen.dart';
@@ -143,6 +145,7 @@ class _ChatScreenState extends State<ChatScreen>
   StreamSubscription<String>? _gatewayActivitySub;
   // Skills event bus — tracks executing/executed/error states
   StreamSubscription? _skillsSub;
+  StreamSubscription<ChatConfigurationRequest>? _configurationRequestSub;
   StreamSubscription<ToolMediaEvent>? _toolMediaSub;
 
   // Latest camera.snap base64 captured by AI tool call — attached to bot message after stream ends
@@ -166,6 +169,9 @@ class _ChatScreenState extends State<ChatScreen>
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_handleChatScroll);
     _chatRuntime.addListener(_syncChatRuntimeState);
+    _configurationRequestSub =
+        _chatRuntime.configurationRequests.listen(_handleConfigurationRequest);
+    unawaited(GifgrepMediaStore.initialize());
     // Wire AgentSkillServer callbacks so agent-controlled avatar changes
     // reflect immediately in the live chat UI (singleton shares state with main()).
     AgentSkillServer.instance.onAvatarChanged = (file) {
@@ -1417,6 +1423,46 @@ class _ChatScreenState extends State<ChatScreen>
       imageBase64: imageBase64,
       videoBase64: videoBase64,
     ));
+  }
+
+  bool _gifgrepConfigSheetOpen = false;
+
+  Future<void> _handleConfigurationRequest(
+    ChatConfigurationRequest request,
+  ) async {
+    if (!mounted || request.skillId != 'gifgrep' || _gifgrepConfigSheetOpen) {
+      return;
+    }
+    _gifgrepConfigSheetOpen = true;
+    try {
+      await showGifgrepConfigSheet(context);
+    } finally {
+      _gifgrepConfigSheetOpen = false;
+    }
+  }
+
+  Future<void> _importGif() async {
+    try {
+      final path = await GifgrepMediaStore.importGif();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(path == null
+              ? 'GIF import cancelled.'
+              : 'GIF imported. Ask gifgrep for a still or contact sheet.'),
+          backgroundColor:
+              path == null ? AppColors.statusAmber : AppColors.statusGreen,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('GIF import failed: $error'),
+          backgroundColor: AppColors.statusRed,
+        ),
+      );
+    }
   }
 
   // ignore: unused_element
@@ -2813,6 +2859,7 @@ class _ChatScreenState extends State<ChatScreen>
     _toolMediaSub?.cancel();
     _talkAudioStreamSub?.cancel();
     _talkEventSub?.cancel();
+    _configurationRequestSub?.cancel();
     _chatRuntime.removeListener(_syncChatRuntimeState);
     _scrollController.removeListener(_handleChatScroll);
     final talkSessionId = _talkRelaySessionId;
@@ -4060,6 +4107,9 @@ class _ChatScreenState extends State<ChatScreen>
                                                       if (value == 'voice') {
                                                         _toggleListening();
                                                       }
+                                                      if (value == 'gif') {
+                                                        _importGif();
+                                                      }
                                                       if (value == 'clear') {
                                                         setState(() {
                                                           _pendingImageBase64 =
@@ -4149,6 +4199,27 @@ class _ChatScreenState extends State<ChatScreen>
                                                                         .white,
                                                                     fontSize:
                                                                         13)),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      const PopupMenuItem(
+                                                        value: 'gif',
+                                                        child: Row(
+                                                          children: [
+                                                            Icon(
+                                                                Icons
+                                                                    .gif_box_outlined,
+                                                                color: Colors
+                                                                    .white70,
+                                                                size: 20),
+                                                            SizedBox(width: 12),
+                                                            Text(
+                                                              'Import GIF for gifgrep',
+                                                              style: TextStyle(
+                                                                  color: Colors
+                                                                      .white,
+                                                                  fontSize: 13),
+                                                            ),
                                                           ],
                                                         ),
                                                       ),

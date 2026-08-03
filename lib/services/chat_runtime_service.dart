@@ -21,6 +21,18 @@ enum ChatRuntimeTtsHealth {
   failed,
 }
 
+class ChatConfigurationRequest {
+  final String skillId;
+  final String title;
+  final String message;
+
+  const ChatConfigurationRequest({
+    required this.skillId,
+    required this.title,
+    required this.message,
+  });
+}
+
 class ChatRuntimeService extends ChangeNotifier {
   static const Duration _chatTurnSilenceNotice = Duration(minutes: 6);
 
@@ -40,6 +52,9 @@ class ChatRuntimeService extends ChangeNotifier {
   final List<ChatMessage> _messages = [];
   final List<String> _diagnostics = [];
   final List<String> _ttsQueue = [];
+  final StreamController<ChatConfigurationRequest>
+      _configurationRequestController =
+      StreamController<ChatConfigurationRequest>.broadcast();
 
   bool _initialized = false;
   Future<void>? _initFuture;
@@ -65,6 +80,8 @@ class ChatRuntimeService extends ChangeNotifier {
   bool get isTtsSpeaking => _isTtsSpeaking || _tts.isSpeaking;
   ChatRuntimeTtsHealth get ttsHealth => _ttsHealth;
   String? get ttsHealthMessage => _ttsHealthMessage;
+  Stream<ChatConfigurationRequest> get configurationRequests =>
+      _configurationRequestController.stream;
 
   Future<void> init() {
     if (_initialized) return Future<void>.value();
@@ -445,6 +462,11 @@ class ChatRuntimeService extends ChangeNotifier {
               pendingMediaMetadata: _pendingAiSnapMetadata,
             );
             final decodedResult = _tryDecodeJsonMap(resultJson);
+            final configurationRequest =
+                _configurationRequestFromToolResult(name, decodedResult);
+            if (configurationRequest != null) {
+              _configurationRequestController.add(configurationRequest);
+            }
             if ((_isLocationToolName(name) ||
                     _looksLikeLocationResult(decodedResult)) &&
                 decodedResult != null) {
@@ -577,6 +599,30 @@ class ChatRuntimeService extends ChangeNotifier {
       if (decoded is Map) return Map<String, dynamic>.from(decoded);
     } catch (_) {}
     return null;
+  }
+
+  ChatConfigurationRequest? _configurationRequestFromToolResult(
+    String toolName,
+    Map<String, dynamic>? result,
+  ) {
+    if (result == null ||
+        (toolName != 'gifgrep' && !toolName.startsWith('gifgrep.'))) {
+      return null;
+    }
+    final error = result['error'];
+    final code =
+        error is Map ? error['code']?.toString() : result['code']?.toString();
+    if (code != 'GIFGREP_PROVIDER_CONFIG_REQUIRED') return null;
+    final message = error is Map
+        ? error['message']?.toString()
+        : result['message']?.toString();
+    return ChatConfigurationRequest(
+      skillId: 'gifgrep',
+      title: 'Configure gifgrep search',
+      message: message?.trim().isNotEmpty == true
+          ? message!.trim()
+          : 'Online GIF search needs a provider key.',
+    );
   }
 
   String _sanitizeToolResultJson(
@@ -923,6 +969,7 @@ class ChatRuntimeService extends ChangeNotifier {
   @override
   void dispose() {
     _mediaSubscription.cancel();
+    _configurationRequestController.close();
     super.dispose();
   }
 }

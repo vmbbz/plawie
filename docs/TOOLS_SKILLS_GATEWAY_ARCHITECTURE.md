@@ -714,6 +714,14 @@ without a second provider-model narration pass. This prevents duplicate
 explanations, leaked model reasoning, a conflicting second node call, and
 unnecessary provider latency.
 
+The canonical gifgrep action/schema contract lives in
+`lib/services/gifgrep_contract.dart`. Provider keys are optional configuration
+for online search, so a `GIFGREP_PROVIDER_CONFIG_REQUIRED` result opens the
+same Native credential sheet used from Bot Management > Skills. The Native
+`.env` update is isolated from readiness and dependency provisioning; clearing
+both keys never disables key-free local still/sheet operations. Local PNG
+results are published through the app media bus for inline chat rendering.
+
 The Gateway's paired-node record is authoritative for command approval. A
 healthy node WebSocket is not enough: command upgrades must be accepted through
 `node.pair.approve`, and the app must re-read the paired store before persisting
