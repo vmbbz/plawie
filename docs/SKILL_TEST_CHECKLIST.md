@@ -21,9 +21,9 @@ advancing to #5 `battery`.
 | 4 | avatar_forge | [ ] pending | Android bridge smoke |
 | 5 | battery | [ ] pending | Android bridge smoke |
 | 6 | bear-notes | [-] outside GTM | macOS/iOS integration |
-| 7 | blogwatcher | [x] contract-pass | App-native HTTP adapter tests |
+| 7 | blogwatcher | [~] live partial | Native adapter is exposed; device smoke reached the bounded feed guard but public feeds exceeded the 200 KB cap or timed out/DNS-failed. Retry on a connected device/network before live-pass. |
 | 8 | blucli | [ ] pending | CLI-core pack smoke |
-| 9 | camsnap | [x] contract-pass | App-native camera adapter tests |
+| 9 | camsnap | [x] live-pass | `/api/tools/execute` captured a real back-camera JPEG on-device: 480x720, 159,460 bytes. |
 | 10 | canvas | [~] partial | Layout tests pass; live agent tool call blocked upstream |
 | 11 | clawhub | [x] contract-pass | Native ClawHub adapter tests |
 | 12 | coding-agent | [-] native gap | Released pack quarantined until `/tmp` issue is fixed |
@@ -77,6 +77,7 @@ advancing to #5 `battery`.
 | 60 | wacli | [ ] pending | CLI-core pack smoke |
 | 61 | weather | [x] contract-pass | Native HTTP adapter tests |
 | 62 | xurl | [x] contract-pass | Native HTTP adapter tests |
+| 63 | browser-automation | [~] native unavailable | Explicit `/api/tools/execute` probe returned HTTP 400 because the native AgentSkillServer catalog does not register this tool; requires the separate browser/desktop lane. |
 
 ## Evidence baseline
 
@@ -86,6 +87,12 @@ advancing to #5 `battery`.
   workspace.
 - Live device smokes must record the prompt, output, and relevant dependency
   receipt before a row is marked live-pass.
+- 2026-08-03 device evidence: `camsnap` completed through the native execute
+  endpoint and returned a real JPEG. `blogwatcher` was dispatchable but the
+  connected device network returned bounded feed-size/timeout/DNS errors.
+  `browser-automation` is not registered in the native Android tool catalog.
+  The device disconnected before the next `avatar_forge` smoke, so it remains
+  pending rather than being inferred from contract coverage.
 
 ## Dependency repair UI
 
