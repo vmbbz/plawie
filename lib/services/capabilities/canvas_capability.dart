@@ -35,10 +35,13 @@ class CanvasCapability extends CapabilityHandler {
   void setController(WebViewController controller) {
     _controller = controller;
     _controller!.setNavigationDelegate(NavigationDelegate(
-      onPageFinished: (_) {
+      onPageFinished: (url) {
         final completer = _pageLoadCompleter;
         if (completer != null && !completer.isCompleted) {
           completer.complete();
+        }
+        if (isCanvasSurfaceUrl(url)) {
+          unawaited(_centerCanvasVisual());
         }
         _blockExternalApiCalls();
       },
@@ -94,6 +97,83 @@ class CanvasCapability extends CapabilityHandler {
         })();
       ''');
     } catch (_) {}
+  }
+
+  /// Canvas tool pages commonly contain one SVG/image/canvas as their entire
+  /// body. Browser defaults place that element at (0, 0), which is correct for
+  /// a document but not for a presentation surface. Apply this only to the
+  /// protected local canvas surface; external navigations must retain their
+  /// own layout and interaction model.
+  Future<void> _centerCanvasVisual() async {
+    try {
+      await _controller!.runJavaScript(canvasVisualCenteringScript);
+    } catch (_) {
+      // Layout enhancement must never turn a successfully loaded canvas into
+      // a tool error.
+    }
+  }
+
+  /// Kept as a public getter so the DOM contract is covered without requiring
+  /// a platform WebView in unit tests.
+  String get canvasVisualCenteringScript => _canvasVisualCenteringScript;
+
+  static const _canvasVisualCenteringScript = r'''
+    (function() {
+      var body = document.body;
+      if (!body) return;
+      var children = Array.prototype.filter.call(
+        body.children,
+        function(child) {
+          var tag = (child.tagName || '').toLowerCase();
+          return tag !== 'script' && tag !== 'style' && tag !== 'link';
+        }
+      );
+      if (children.length !== 1) return;
+
+      var root = children[0];
+      var target = root;
+      var rootTag = (root.tagName || '').toLowerCase();
+      if (root.children.length === 1) {
+        var nestedTag = (root.firstElementChild.tagName || '').toLowerCase();
+        if (['svg', 'img', 'canvas', 'video'].indexOf(nestedTag) !== -1) {
+          target = root.firstElementChild;
+        }
+      }
+      var targetTag = (target.tagName || '').toLowerCase();
+      if (['svg', 'img', 'canvas', 'video'].indexOf(targetTag) === -1) return;
+
+      var html = document.documentElement;
+      html.style.width = '100%';
+      html.style.height = '100%';
+      html.style.margin = '0';
+      body.style.width = '100%';
+      body.style.minHeight = '100vh';
+      body.style.margin = '0';
+      body.style.boxSizing = 'border-box';
+      body.style.display = 'flex';
+      body.style.alignItems = 'center';
+      body.style.justifyContent = 'center';
+      body.style.overflow = 'auto';
+      root.style.maxWidth = '100%';
+      root.style.maxHeight = '100%';
+      if (rootTag === 'div') {
+        root.style.display = 'flex';
+        root.style.alignItems = 'center';
+        root.style.justifyContent = 'center';
+      }
+      target.style.maxWidth = '100%';
+      target.style.maxHeight = '100%';
+      target.style.objectFit = 'contain';
+      target.style.margin = 'auto';
+    })();
+  ''';
+
+  bool isCanvasSurfaceUrl(String url) {
+    final parsed = Uri.tryParse(url);
+    if (parsed == null) return false;
+    return _isCanvasPath(parsed.path) ||
+        parsed.path.contains(_canvasHostPath) ||
+        _isPluginScopedPath(parsed.path);
   }
 
   /// Set the platform view ID for PixelCopy screenshot capture.

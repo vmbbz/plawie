@@ -189,6 +189,14 @@ class SkillProvisioningService {
     'https://pypi.org/simple/',
     'https://pypi.flet.dev/',
   ];
+  // Android wheels often have a large version history while their exact
+  // pinned transitive dependencies are not published for Android. Walking
+  // every historical candidate makes a skill install outlive its UI timeout
+  // and leaves an invisible resolver running in the background. A few newest
+  // candidates are enough to distinguish a usable wheel from an unavailable
+  // dependency closure; unresolved requirements are then reported as a
+  // provisioning gate and can be retried after a pack/catalog update.
+  static const _maxPinnedDependencyCandidates = 3;
 
   Future<SkillProvisioningReport> planSnapshot(
     SkillParitySnapshot snapshot, {
@@ -2455,7 +2463,10 @@ class SkillProvisioningService {
     if (!validatePinnedDependencies) {
       return compatible.isEmpty ? null : compatible.first;
     }
+    var pinnedCandidatesChecked = 0;
     for (final candidate in compatible) {
+      if (pinnedCandidatesChecked >= _maxPinnedDependencyCandidates) break;
+      pinnedCandidatesChecked += 1;
       if (usingCompatibilityFallback) {
         debugPrint(
           '[DEPS] Android compatibility wheel selected package=${request.name} '

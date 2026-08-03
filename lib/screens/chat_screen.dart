@@ -186,6 +186,11 @@ class _ChatScreenState extends State<ChatScreen>
     CanvasCapability.onActivationRequested = _ensureCanvasController;
     CanvasCapability.onVisibilityChanged = (visible) async {
       if (visible) {
+        // Canvas is presented above the chat tray. Do not leave the IME open
+        // underneath it: resizeToAvoidBottomInset is intentionally disabled
+        // for the avatar/WebView, so an open keyboard makes the panel overlap
+        // the app bar and steals the close-button hit area.
+        FocusManager.instance.primaryFocus?.unfocus();
         await _ensureCanvasController();
       }
       if (mounted) setState(() => _canvasVisible = visible);
@@ -1396,6 +1401,7 @@ class _ChatScreenState extends State<ChatScreen>
 
     final imageBase64 = _pendingImageBase64;
     final videoBase64 = _pendingVideoBase64;
+    FocusManager.instance.primaryFocus?.unfocus();
     _textController.clear();
     setState(() {
       _pendingImageBase64 = null;
@@ -3285,6 +3291,22 @@ class _ChatScreenState extends State<ChatScreen>
             viewportHeight * 0.46,
             viewportHeight - keyboardHeight - 118.0)
         : orderedClamp(chatTrayTopY - 18.0, 112.0, viewportHeight - 96.0);
+    final canvasBottom = barHeight + (_isChatCollapsed ? 40.0 : 0.0) + 16.0;
+    final canvasMaxHeight = math.max(
+      180.0,
+      viewportHeight -
+          MediaQuery.paddingOf(context).top -
+          MediaQuery.paddingOf(context).bottom -
+          canvasBottom -
+          16.0,
+    );
+    // Keep the presentation window comfortably below the status/app bar even
+    // on a tall phone. The old 45% height was especially problematic while
+    // the IME was visible because the Scaffold does not resize for the VRM.
+    final canvasHeight = math.min(
+      canvasMaxHeight,
+      math.max(220.0, math.min(300.0, viewportHeight * 0.34)),
+    );
 
     Widget avatarSafeBackdrop({
       required Widget child,
@@ -4305,8 +4327,8 @@ class _ChatScreenState extends State<ChatScreen>
             Positioned(
               left: 16,
               right: 16,
-              bottom: barHeight + (_isChatCollapsed ? 40 : 0) + 16,
-              height: size.height * 0.45,
+              bottom: canvasBottom,
+              height: canvasHeight,
               child: Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(24),
@@ -4330,27 +4352,34 @@ class _ChatScreenState extends State<ChatScreen>
                       Positioned(
                         top: 8,
                         right: 8,
-                        child: GestureDetector(
-                          onTap: () {
-                            final controller = _canvasController;
-                            setState(() {
-                              _canvasVisible = false;
-                              _canvasController = null;
-                            });
-                            CanvasCapability().clearController();
-                            unawaited(controller
-                                    ?.loadRequest(Uri.parse('about:blank'))
-                                    .catchError((_) {}) ??
-                                Future<void>.value());
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.6),
-                              shape: BoxShape.circle,
+                        child: Semantics(
+                          button: true,
+                          label: 'Close canvas',
+                          child: Material(
+                            color: Colors.black.withValues(alpha: 0.72),
+                            shape: const CircleBorder(),
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () {
+                                final controller = _canvasController;
+                                setState(() {
+                                  _canvasVisible = false;
+                                  _canvasController = null;
+                                });
+                                CanvasCapability().clearController();
+                                unawaited(controller
+                                        ?.loadRequest(Uri.parse('about:blank'))
+                                        .catchError((_) {}) ??
+                                    Future<void>.value());
+                              },
+                              child: const SizedBox(
+                                width: 48,
+                                height: 48,
+                                child: Icon(Icons.close,
+                                    color: Colors.white, size: 24),
+                              ),
                             ),
-                            child: const Icon(Icons.close,
-                                color: Colors.white, size: 20),
                           ),
                         ),
                       ),

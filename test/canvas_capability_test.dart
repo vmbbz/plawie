@@ -55,4 +55,30 @@ void main() {
       throwsStateError,
     );
   });
+
+  test('centering contract only targets the canvas presentation visual', () {
+    final capability = CanvasCapability();
+    final script = capability.canvasVisualCenteringScript;
+
+    expect(script, contains("body.style.display = 'flex'"));
+    expect(script, contains("body.style.alignItems = 'center'"));
+    expect(script, contains("body.style.justifyContent = 'center'"));
+    expect(script, contains("target.style.objectFit = 'contain'"));
+    expect(script, contains("children.length !== 1"));
+  });
+
+  test('canvas surface detection excludes ordinary external pages', () {
+    final capability = CanvasCapability();
+
+    expect(
+      capability.isCanvasSurfaceUrl(
+        'http://127.0.0.1:18789/__openclaw__/canvas/tree.html',
+      ),
+      isTrue,
+    );
+    expect(
+      capability.isCanvasSurfaceUrl('https://example.com/app'),
+      isFalse,
+    );
+  });
 }
