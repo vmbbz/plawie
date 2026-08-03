@@ -2,16 +2,21 @@
 
 This is the persistent checklist for the Skills page's top-to-bottom order.
 `contract-pass` means the native adapter/readiness contract is covered by
-automated tests; it does not claim a live provider call has completed. Live
-rows are updated only after an actual device smoke through the app.
+automated tests; it does not claim a live provider call has completed.
+`device-pass` means a real Android bridge, managed binary, or app-native
+adapter was exercised on the phone. It is not a UI/user-flow pass. `ui-pass`
+requires opening the relevant Skills card, resolving any dependency/config
+gate in the app, invoking the skill from its intended user surface, and
+verifying the rendered result. No row receives `ui-pass` from an HTTP bridge
+probe alone.
 
 Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: none in the current eligible set; review the partial fixture
-rows (`songsee`, `video-frames`, `openai-whisper`) or configure authenticated
-skills before the final checklist pass. The Android bridge smokes for `avatar_forge` and
+Next device smoke: none in the current eligible set. The next phase is UI/user
+flow verification for the device-pass rows, plus fixture/config completion for
+the partial rows (`songsee`, `video-frames`, `openai-whisper`). The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -19,12 +24,12 @@ skills before the final checklist pass. The Android bridge smokes for `avatar_fo
 | 1 | 1password | [-] config | Requires Connect host/token |
 | 2 | apple-notes | [-] outside GTM | macOS integration |
 | 3 | apple-reminders | [-] outside GTM | macOS integration |
-| 4 | avatar_forge | [x] live-pass | Native `avatar-control` set the avatar emotion to `happy` through `/api/tools/execute`. |
-| 5 | battery | [x] live-pass | Native `device-node` returned level 66 and `isCharging: true`. |
+| 4 | avatar_forge | [x] device-pass / UI pending | Native `avatar-control` set the avatar emotion to `happy` through `/api/tools/execute`; user-surface verification remains pending. |
+| 5 | battery | [x] device-pass / UI pending | Native `device-node` returned level 66 and `isCharging: true`; user-surface verification remains pending. |
 | 6 | bear-notes | [-] outside GTM | macOS/iOS integration |
-| 7 | blogwatcher | [x] live-pass | Native feed checks returned two parsed items from GitHub releases and Hacker News; natural chat wording now stays on the native adapter instead of falling through to the Go CLI. |
-| 8 | blucli | [x] live-pass | Verified `android-cli-core-pack` receipt and `blu --help`/`--version` on ARM64; `blu --json devices` returned an empty list, so no BluOS player was available for network control smoke. |
-| 9 | camsnap | [x] live-pass | `/api/tools/execute` captured a real back-camera JPEG on-device: 480x720, 159,460 bytes. |
+| 7 | blogwatcher | [x] device-pass / UI pending | Native feed checks returned two parsed items from GitHub releases and Hacker News; natural chat wording now stays on the native adapter instead of falling through to the Go CLI. |
+| 8 | blucli | [x] device-pass / UI pending | Verified `android-cli-core-pack` receipt and `blu --help`/`--version` on ARM64; `blu --json devices` returned an empty list, so no BluOS player was available for network control smoke. |
+| 9 | camsnap | [x] device-pass / UI pending | `/api/tools/execute` captured a real back-camera JPEG on-device: 480x720, 159,460 bytes. |
 | 10 | canvas | [~] partial | Layout tests pass; live agent tool call blocked upstream |
 | 11 | clawhub | [x] contract-pass | Native ClawHub adapter tests |
 | 12 | coding-agent | [-] native gap | Released pack quarantined until `/tmp` issue is fixed |
@@ -33,12 +38,12 @@ skills before the final checklist pass. The Android bridge smokes for `avatar_fo
 | 15 | eightctl | [-] config | Requires CLI pack plus credentials |
 | 16 | gemini | [-] config | Requires API key |
 | 17 | gh-issues | [-] config | Requires GitHub token |
-| 18 | gifgrep | [x] live-pass | Verified vision-media receipt and live `gifgrep` status (v0.3.0) through the generic native executor; provider-backed search returned the expected key/config gate without claiming reinstall. |
+| 18 | gifgrep | [~] device-pass / UI pending | Verified vision-media receipt and live `gifgrep` status (v0.3.0) through the generic native executor; provider-backed search returned the expected key/config gate. Local still/sheet and full user-flow verification remain pending. |
 | 19 | github | [-] config | Requires GitHub token |
 | 20 | gog | [-] outside GTM | Desktop/Google Workspace workflow |
 | 21 | goplaces | [-] config | Requires Places API key |
 | 22 | healthcheck | [x] contract-pass | Android readiness tests |
-| 23 | himalaya | [x] live-pass / config gate | Verified CLI-core receipt and ARM64 `himalaya --version`/`--help`; account discovery reached the expected missing-config gate without a TTY or credentials. |
+| 23 | himalaya | [x] device-pass / config gate / UI pending | Verified CLI-core receipt and ARM64 `himalaya --version`/`--help`; account discovery reached the expected missing-config gate without a TTY or credentials. |
 | 24 | imsg | [-] outside GTM | macOS Messages integration |
 | 25 | mcporter | [-] config | Requires endpoint/token |
 | 26 | meme-maker | [x] contract-pass | Native renderer tests |
@@ -56,7 +61,7 @@ skills before the final checklist pass. The Android bridge smokes for `avatar_fo
 | 38 | peekaboo | [-] outside GTM | macOS screen automation |
 | 39 | python-debugpy | [~] not installed | No current user skill/card or `android-python-debug-runtime` receipt exists on this fresh app state; the native bridge correctly returned `ModuleNotFoundError` for a direct import probe. |
 | 40 | sag | [-] config | Requires ElevenLabs API key |
-| 41 | sensors | [x] live-pass | Native `device-node` listed accelerometer, gyroscope, magnetometer, and barometer; an accelerometer read returned valid x/y/z values and accuracy 3. |
+| 41 | sensors | [x] device-pass / UI pending | Native `device-node` listed accelerometer, gyroscope, magnetometer, and barometer; an accelerometer read returned valid x/y/z values and accuracy 3. |
 | 42 | session-logs | [x] contract-pass | App-native session adapter tests |
 | 43 | sherpa-onnx-tts | [-] native gap | Runtime/model and standalone Node host pending |
 | 44 | skill-creator | [x] contract-pass | Instruction-only adapter tests |
@@ -65,17 +70,17 @@ skills before the final checklist pass. The Android bridge smokes for `avatar_fo
 | 47 | sonoscli | [ ] pending | CLI-core pack smoke |
 | 48 | spike | [x] contract-pass | Instruction-only adapter tests |
 | 49 | spotify-player | [-] config | Requires Spotify token |
-| 50 | stocks | [x] live-pass / badge repair | Native `Tools().get_stock_price("AAPL")` returned a live quote; embedded inventory prevents redundant downloads; Stocks is now explicitly classified in the Android readiness manifest |
+| 50 | stocks | [x] device-pass / UI pending / badge repair | Native `Tools().get_stock_price("AAPL")` returned a live quote; embedded inventory prevents redundant downloads; Stocks is now explicitly classified in the Android readiness manifest |
 | 51 | summarize | [x] contract-pass | App-native adapter tests |
 | 52 | taskflow | [x] contract-pass | Instruction-only adapter tests |
 | 53 | taskflow-inbox-triage | [x] contract-pass | Instruction-only adapter tests |
 | 54 | things-mac | [-] outside GTM | macOS Things integration |
-| 55 | tmux | [x] live-pass / managed smoke | Verified `android-terminal-pack` receipt; the app-managed pack smoke passed. Raw shell execution without the managed library path is intentionally not the app execution path. |
+| 55 | tmux | [x] device-pass / managed smoke / UI pending | Verified `android-terminal-pack` receipt; the app-managed pack smoke passed. Raw shell execution without the managed library path is intentionally not the app execution path. |
 | 56 | trello | [-] config | Requires Trello credentials |
-| 57 | vibrate | [x] live-pass | Native `device-node` vibrated for 100 ms and returned success; battery bridge remained healthy at level 77 while charging. |
+| 57 | vibrate | [x] device-pass / UI pending | Native `device-node` vibrated for 100 ms and returned success; battery bridge remained healthy at level 77 while charging. |
 | 58 | video-frames | [~] pack-pass / video fixture pending | Verified the shared vision-media receipt and ARM64 FFmpeg 8.1.1 `-version`; no app-owned MP4/MOV fixture was present for a frame-extraction smoke. |
 | 59 | voice-call | [-] config | Requires provider/account/plugin config |
-| 60 | wacli | [x] live-pass / auth gate | Verified CLI-core receipt, ARM64 v0.11.0 help/version, and read-only `wacli doctor --json`; it correctly reports `authenticated:false` and the absent local store without attempting WhatsApp auth or sync. |
+| 60 | wacli | [x] device-pass / auth gate / UI pending | Verified CLI-core receipt, ARM64 v0.11.0 help/version, and read-only `wacli doctor --json`; it correctly reports `authenticated:false` and the absent local store without attempting WhatsApp auth or sync. |
 | 61 | weather | [x] contract-pass | Native HTTP adapter tests |
 | 62 | xurl | [x] contract-pass | Native HTTP adapter tests |
 | 63 | browser-automation | [~] native unavailable | Explicit `/api/tools/execute` probe returned HTTP 400 because the native AgentSkillServer catalog does not register this tool; requires the separate browser/desktop lane. |
@@ -86,8 +91,9 @@ skills before the final checklist pass. The Android bridge smokes for `avatar_fo
   2026-08-03.
 - Stocks was installed from the Skills page and verified in the native
   workspace.
-- Live device smokes must record the prompt, output, and relevant dependency
-  receipt before a row is marked live-pass.
+- Device smokes must record the prompt, output, and relevant dependency receipt
+  before a row is marked device-pass; a separate UI/user-flow trace is required
+  before marking a row ui-pass.
 - 2026-08-03 device evidence: `avatar-control` set `happy`, `device-node`
   returned battery level 66 while charging, and `camsnap` returned a real
   JPEG. `blogwatcher` returned two parsed items each from GitHub releases and
