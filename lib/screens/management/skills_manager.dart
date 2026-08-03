@@ -1061,7 +1061,20 @@ class _MySkillsTabState extends State<_MySkillsTab> {
         ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
-          sliver: _buildWorkspaceList(rawSkills, isLoading, provisioningById),
+          sliver: _buildWorkspaceList(
+            rawSkills,
+            isLoading,
+            provisioningById,
+            androidReadiness: androidReadiness,
+            onConfigure: (skillId) => _showAndroidSkillConfigSheet(
+              context,
+              androidReadiness!,
+              skillId,
+            ),
+            onRepairDependencies: (skillId) =>
+                _repairAndroidSkill(context, skillId),
+            shouldOfferDependencyRepair: _shouldOfferDependencyRepair,
+          ),
         ),
       ],
     );
@@ -1447,8 +1460,13 @@ String _dependencyProgressLabel(SkillProvisioningProgressEvent event) {
 Widget _buildWorkspaceList(
   List<Map<String, dynamic>> rawSkills,
   bool isLoading,
-  Map<String, _SkillProvisioningBadgeData> provisioningById,
-) {
+  Map<String, _SkillProvisioningBadgeData> provisioningById, {
+  Map<String, dynamic>? androidReadiness,
+  void Function(String skillId)? onConfigure,
+  Future<void> Function(String skillId)? onRepairDependencies,
+  bool Function(_SkillProvisioningBadgeData? provisioning)?
+      shouldOfferDependencyRepair,
+}) {
   if (isLoading) {
     return const SliverToBoxAdapter(
       child: Center(
@@ -1490,6 +1508,15 @@ Widget _buildWorkspaceList(
             (skill['description'] ?? 'SKILL.yaml Workspace Binding').toString();
         final isPremium = _premiumSkills.any((s) => s.id == skillId);
         final provisioning = _provisioningFor(provisioningById, skillId);
+        final configModel = androidReadiness == null
+            ? null
+            : AndroidSkillConfigFormModel.fromReadiness(
+                androidReadiness,
+                skillId,
+              );
+        final canConfigure = configModel?.hasFields == true;
+        final canRepairDependencies =
+            shouldOfferDependencyRepair?.call(provisioning) == true;
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Container(
@@ -1539,6 +1566,13 @@ Widget _buildWorkspaceList(
                 icon: isPremium
                     ? Icons.verified_rounded
                     : Icons.extension_rounded,
+                onConfigure: canConfigure && onConfigure != null
+                    ? () => onConfigure(skillId)
+                    : null,
+                onRepairDependencies:
+                    canRepairDependencies && onRepairDependencies != null
+                        ? () => onRepairDependencies(skillId)
+                        : null,
                 onEdit: () => Navigator.push(
                   context,
                   MaterialPageRoute(
