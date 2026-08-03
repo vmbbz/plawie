@@ -9,7 +9,9 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #60 `wacli`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: none in the current eligible set; review the partial fixture
+rows (`songsee`, `video-frames`, `openai-whisper`) or configure authenticated
+skills before the final checklist pass. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -73,7 +75,7 @@ Next live smoke: #60 `wacli`. The Android bridge smokes for `avatar_forge` and
 | 57 | vibrate | [x] live-pass | Native `device-node` vibrated for 100 ms and returned success; battery bridge remained healthy at level 77 while charging. |
 | 58 | video-frames | [~] pack-pass / video fixture pending | Verified the shared vision-media receipt and ARM64 FFmpeg 8.1.1 `-version`; no app-owned MP4/MOV fixture was present for a frame-extraction smoke. |
 | 59 | voice-call | [-] config | Requires provider/account/plugin config |
-| 60 | wacli | [ ] pending | CLI-core pack smoke |
+| 60 | wacli | [x] live-pass / auth gate | Verified CLI-core receipt, ARM64 v0.11.0 help/version, and read-only `wacli doctor --json`; it correctly reports `authenticated:false` and the absent local store without attempting WhatsApp auth or sync. |
 | 61 | weather | [x] contract-pass | Native HTTP adapter tests |
 | 62 | xurl | [x] contract-pass | Native HTTP adapter tests |
 | 63 | browser-automation | [~] native unavailable | Explicit `/api/tools/execute` probe returned HTTP 400 because the native AgentSkillServer catalog does not register this tool; requires the separate browser/desktop lane. |
@@ -137,6 +139,10 @@ Next live smoke: #60 `wacli`. The Android bridge smokes for `avatar_forge` and
   `smokePassed: true`; managed `ffmpeg -version` reports FFmpeg 8.1.1 with the
   bounded file-only video demux/decode configuration. No video fixture was
   available for a non-destructive JPEG-frame proof.
+- `wacli` device evidence: the shared `android-cli-core-pack.json` receipt
+  reports `smokePassed: true`; ARM64 version output was v0.11.0 and
+  `wacli doctor --read-only --json` returned a clean disconnected/unauthenticated
+  state with no local database, without starting QR auth or sync.
 
 ## Dependency repair UI
 
