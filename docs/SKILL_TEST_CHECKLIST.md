@@ -9,7 +9,7 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #57 `vibrate`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: #58 `video-frames`. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -70,7 +70,7 @@ Next live smoke: #57 `vibrate`. The Android bridge smokes for `avatar_forge` and
 | 54 | things-mac | [-] outside GTM | macOS Things integration |
 | 55 | tmux | [x] live-pass / managed smoke | Verified `android-terminal-pack` receipt; the app-managed pack smoke passed. Raw shell execution without the managed library path is intentionally not the app execution path. |
 | 56 | trello | [-] config | Requires Trello credentials |
-| 57 | vibrate | [ ] pending | Android bridge smoke |
+| 57 | vibrate | [x] live-pass | Native `device-node` vibrated for 100 ms and returned success; battery bridge remained healthy at level 77 while charging. |
 | 58 | video-frames | [ ] pending | Vision-media pack smoke |
 | 59 | voice-call | [-] config | Requires provider/account/plugin config |
 | 60 | wacli | [ ] pending | CLI-core pack smoke |
@@ -125,6 +125,9 @@ Next live smoke: #57 `vibrate`. The Android bridge smokes for `avatar_forge` and
 - `tmux` device evidence: `android-terminal-pack.json` reports
   `smokePassed: true`; the pack contains the verified ARM64 binary and its
   shared libraries, which are loaded through the app-managed native launcher.
+- `vibrate` device evidence: `/api/tools/execute` returned
+  `{"success":true,"status":"vibrated"}` for a bounded 100 ms haptic and the
+  follow-up battery read returned level 77 while charging.
 
 ## Dependency repair UI
 
