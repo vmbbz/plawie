@@ -9,7 +9,7 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #18 `gifgrep`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: #23 `himalaya`. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -31,7 +31,7 @@ Next live smoke: #18 `gifgrep`. The Android bridge smokes for `avatar_forge` and
 | 15 | eightctl | [-] config | Requires CLI pack plus credentials |
 | 16 | gemini | [-] config | Requires API key |
 | 17 | gh-issues | [-] config | Requires GitHub token |
-| 18 | gifgrep | [ ] pending | Vision-media pack smoke |
+| 18 | gifgrep | [x] live-pass | Verified vision-media receipt and live `gifgrep` status (v0.3.0) through the generic native executor; provider-backed search returned the expected key/config gate without claiming reinstall. |
 | 19 | github | [-] config | Requires GitHub token |
 | 20 | gog | [-] outside GTM | Desktop/Google Workspace workflow |
 | 21 | goplaces | [-] config | Requires Places API key |
@@ -100,6 +100,11 @@ Next live smoke: #18 `gifgrep`. The Android bridge smokes for `avatar_forge` and
   `smokePassed: true`; the installed `blu` digest is
   `9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442`, and
   read-only command discovery returned the expected v0.1.4 command catalog.
+- `gifgrep` device evidence: receipt `android-vision-media-pack.json` reports
+  `smokePassed: true`; the generic native catalog now declares bounded
+  `status/search/still/sheet` actions, live status returned v0.3.0, and search
+  returned `GIFGREP_PROVIDER_CONFIG_REQUIRED` with `runtimeReady: true` and
+  `installationRequired: false` when no provider key was configured.
 
 ## Dependency repair UI
 
