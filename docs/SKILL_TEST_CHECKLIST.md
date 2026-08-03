@@ -9,7 +9,7 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #39 `python-debugpy`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: #41 `sensors`. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -52,7 +52,7 @@ Next live smoke: #39 `python-debugpy`. The Android bridge smokes for `avatar_for
 | 36 | oracle | [-] PRoot-only | Manual compatibility mode |
 | 37 | ordercli | [-] outside GTM | Desktop/browser-heavy login |
 | 38 | peekaboo | [-] outside GTM | macOS screen automation |
-| 39 | python-debugpy | [ ] pending | Bundled debugpy smoke |
+| 39 | python-debugpy | [~] not installed | No current user skill/card or `android-python-debug-runtime` receipt exists on this fresh app state; the native bridge correctly returned `ModuleNotFoundError` for a direct import probe. |
 | 40 | sag | [-] config | Requires ElevenLabs API key |
 | 41 | sensors | [ ] pending | Android bridge smoke |
 | 42 | session-logs | [x] contract-pass | App-native session adapter tests |
