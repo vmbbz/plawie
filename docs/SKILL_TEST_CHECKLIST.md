@@ -64,7 +64,7 @@ advancing to #5 `battery`.
 | 47 | sonoscli | [ ] pending | CLI-core pack smoke |
 | 48 | spike | [x] contract-pass | Instruction-only adapter tests |
 | 49 | spotify-player | [-] config | Requires Spotify token |
-| 50 | stocks | [~] badge refresh repair | Live Chaquopy imports pass (`yfinance 1.5.2`, `pandas 2.1.3`, `pydantic 1.10.26`); audit and provisioning now share the embedded inventory, preventing redundant wheel downloads; recheck card after install retry |
+| 50 | stocks | [x] live-pass / badge repair | Native `Tools().get_stock_price("AAPL")` returned a live quote; embedded inventory prevents redundant downloads; Stocks is now explicitly classified in the Android readiness manifest |
 | 51 | summarize | [x] contract-pass | App-native adapter tests |
 | 52 | taskflow | [x] contract-pass | Instruction-only adapter tests |
 | 53 | taskflow-inbox-triage | [x] contract-pass | Instruction-only adapter tests |

@@ -54,6 +54,7 @@ void main() {
       'sonoscli',
       'spike',
       'spotify-player',
+      'stocks',
       'summarize',
       'taskflow',
       'taskflow-inbox-triage',
@@ -85,6 +86,14 @@ void main() {
           .entriesForStatus(AndroidSkillSupportStatus.readyRequired)
           .map((entry) => entry.skillId),
       containsAll(['battery', 'sensors', 'vibrate', 'weather', 'taskflow']),
+    );
+    expect(
+      manifest.entryFor('stocks')!.executionMode,
+      AndroidSkillExecutionMode.pythonAdapter,
+    );
+    expect(
+      manifest.entryFor('stocks')!.ownerLayer,
+      AndroidSkillOwnerLayer.openclawSkill,
     );
     expect(
       manifest.entryFor('github')!.status,

@@ -455,6 +455,12 @@ final List<AndroidSkillSupportEntry> _entries =
     mode: AndroidSkillExecutionMode.httpAdapter,
     smoke: 'Read Spotify profile metadata through the app-native REST adapter.',
   ),
+  _ready(
+    'stocks',
+    owner: AndroidSkillOwnerLayer.openclawSkill,
+    mode: AndroidSkillExecutionMode.pythonAdapter,
+    smoke: 'Pull a bounded stock quote through the Native Python adapter.',
+  ),
   _readyOptional(
     'summarize',
     owner: AndroidSkillOwnerLayer.appNativeCapability,
