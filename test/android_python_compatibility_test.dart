@@ -42,4 +42,15 @@ void main() {
       'requests>=2.28.0',
     );
   });
+
+  test('keeps the audit aligned with the Chaquopy pandas constraint', () {
+    expect(
+      AndroidPythonCompatibility.requirementFor(
+        skillId: 'stocks',
+        packageName: 'pandas',
+        requirement: 'pandas>=2.2.0',
+      ),
+      AndroidPythonCompatibility.chaquopyPandasRequirement,
+    );
+  });
 }

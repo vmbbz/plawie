@@ -9,6 +9,10 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
+Next live smoke: #4 `avatar_forge`. Prompt: `Use avatar_forge to set a simple
+happy expression.` Record the tool result and the relevant gateway log before
+advancing to #5 `battery`.
+
 | # | Skill | State | Evidence / next action |
 |---:|---|---|---|
 | 1 | 1password | [-] config | Requires Connect host/token |
@@ -60,7 +64,7 @@ PRoot-only mode).
 | 47 | sonoscli | [ ] pending | CLI-core pack smoke |
 | 48 | spike | [x] contract-pass | Instruction-only adapter tests |
 | 49 | spotify-player | [-] config | Requires Spotify token |
-| 50 | stocks | [~] dependency repair | Native package installed; Pydantic compatibility repair applied |
+| 50 | stocks | [~] badge refresh repair | Live Chaquopy imports pass (`yfinance 1.5.2`, `pandas 2.1.3`, `pydantic 1.10.26`); latest audit now probes embedded packages once and bypasses stale cache after refresh; recheck card after setup |
 | 51 | summarize | [x] contract-pass | App-native adapter tests |
 | 52 | taskflow | [x] contract-pass | Instruction-only adapter tests |
 | 53 | taskflow-inbox-triage | [x] contract-pass | Instruction-only adapter tests |

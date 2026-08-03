@@ -108,7 +108,9 @@ chaquopy {
             install("python-dateutil")
             install("requests")
             install("six")
-            install("pydantic")
+            // Pydantic v2 requires pydantic-core, which has no approved
+            // Chaquopy Android wheel. Stocks uses the v1 API surface.
+            install("pydantic<2")
             install("beautifulsoup4")
             install("frozendict")
             install("peewee")

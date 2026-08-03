@@ -369,7 +369,7 @@ requests>=2.28.0
     }
     final packageVersions = {
       'yfinance': '0.2.66',
-      'pandas': '2.2.3',
+      'pandas': '2.1.3',
       'pydantic': '1.10.15',
       'requests': '2.28.0',
     };

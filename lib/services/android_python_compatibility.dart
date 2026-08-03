@@ -10,14 +10,22 @@ class AndroidPythonCompatibility {
   /// BaseModel, Field, and validator. Pydantic v2 adds the native
   /// pydantic-core dependency, for which no approved Android wheel exists.
   static const stocksPydanticRequirement = 'pydantic>=1.10.15,<2.0.0';
+  static const chaquopyPandasRequirement = 'pandas<2.2';
 
   static String requirementFor({
     required String skillId,
     required String packageName,
     required String requirement,
   }) {
+    final normalizedPackage = packageName.trim().toLowerCase();
+    if (normalizedPackage == 'pandas') {
+      // Chaquopy 13.x cannot load pandas >=2.2 due to its incompatible C
+      // extension ABI. Provisioning has always applied this constraint; the
+      // readiness audit must evaluate the same effective requirement.
+      return chaquopyPandasRequirement;
+    }
     if (skillId.trim().toLowerCase() == 'stocks' &&
-        packageName.trim().toLowerCase() == 'pydantic' &&
+        normalizedPackage == 'pydantic' &&
         _requiresPydanticV2(requirement)) {
       return stocksPydanticRequirement;
     }

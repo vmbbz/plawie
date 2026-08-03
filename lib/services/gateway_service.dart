@@ -3690,7 +3690,13 @@ HEARTBEAT_OK.
     _skillParityAuditInFlight = true;
     try {
       final snapshot = await SkillParityAuditService.instance
-          .audit(repairNativeFromProot: false)
+          .audit(
+            repairNativeFromProot: false,
+            // A dependency install or explicit refresh must not reuse the
+            // pre-install snapshot for up to the normal audit TTL.
+            cacheTtl:
+                bypassCooldown ? Duration.zero : const Duration(seconds: 45),
+          )
           .timeout(const Duration(seconds: 20));
       final provisioning = await SkillProvisioningService.instance
           .planSnapshot(snapshot)

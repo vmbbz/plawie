@@ -144,6 +144,13 @@ class SkillParityAuditService {
     final prootPlugins = await _scanPluginRoots(layout.prootPluginRoots);
     final nativeBins = await _scanBins(layout.nativeBinRoots);
     final prootBins = await _scanBins(layout.prootBinRoots);
+    // Chaquopy's build-time distributions are shared by every Python skill.
+    // Probe the embedded interpreter once per audit; probing it inside the
+    // per-skill loop can consume the audit timeout and leave stale readiness
+    // data on the Skills page.
+    final embeddedPythonPackages = Platform.isAndroid
+        ? await _scanEmbeddedPythonPackagesIfAvailable(layout.nativeStateRoot)
+        : const <String, String>{};
     final nativePluginIds =
         nativePlugins.map((name) => name.toLowerCase()).toSet();
 
@@ -297,8 +304,11 @@ class SkillParityAuditService {
         }
       }
       if (requiredPythonPackages.isNotEmpty) {
-        final nativePythonPackages =
-            await _scanPythonPackages(layout.nativeStateRoot, skill);
+        final nativePythonPackages = await _scanPythonPackages(
+          layout.nativeStateRoot,
+          skill,
+          embeddedPythonPackages: embeddedPythonPackages,
+        );
         final nativeHasPython =
             nativeBins.contains('python3') || nativeBins.contains('python');
         if (!nativeHasPython) {
@@ -1244,8 +1254,9 @@ class SkillParityAuditService {
 
   static Future<Map<String, String>> _scanPythonPackages(
     String nativeStateRoot,
-    _SkillDiskEntry skill,
-  ) async {
+    _SkillDiskEntry skill, {
+    Map<String, String> embeddedPythonPackages = const <String, String>{},
+  }) async {
     final roots = <Directory>[];
     final managedPythonRoot = Directory(path.join(
       nativeStateRoot,
@@ -1289,6 +1300,68 @@ class SkillParityAuditService {
           }
         }
       } catch (_) {}
+    }
+    packages.addAll(embeddedPythonPackages);
+    return packages;
+  }
+
+  static Future<Map<String, String>> _scanEmbeddedPythonPackagesIfAvailable(
+    String nativeStateRoot,
+  ) async {
+    final marker = File(path.join(
+      nativeStateRoot,
+      'runtimes',
+      'python',
+      'bridge.json',
+    ));
+    if (!await _validNativePythonBridge(marker)) {
+      return const <String, String>{};
+    }
+    return _scanEmbeddedPythonPackages(nativeStateRoot);
+  }
+
+  /// Chaquopy packages installed at APK build time live inside the embedded
+  /// interpreter rather than the writable Native state directory. Ask that
+  /// interpreter for its distribution inventory so readiness reflects the
+  /// runtime users actually execute, not only runtime wheel receipts.
+  static Future<Map<String, String>> _scanEmbeddedPythonPackages(
+    String nativeStateRoot,
+  ) async {
+    final pythonRoot = path.join(nativeStateRoot, 'runtimes', 'python');
+    final result = await NativeBridge.runNativePython({
+      'args': [
+        '-c',
+        '''
+import importlib.metadata as metadata
+for distribution in metadata.distributions():
+    name = distribution.metadata.get('Name')
+    if name:
+        print(name + '\\t' + distribution.version)
+''',
+      ],
+      'cwd': nativeStateRoot,
+      'env': {
+        'HOME': nativeStateRoot,
+        'OPENCLAW_NATIVE_PYTHON_HOME': pythonRoot,
+        'OPENCLAW_NATIVE_PYTHON_SITE_PACKAGES':
+            path.join(pythonRoot, 'site-packages'),
+      },
+      'pythonPaths': [path.join(pythonRoot, 'site-packages')],
+    });
+    if (result['ok'] != true && result['exitCode'] != 0) {
+      debugPrint(
+        '[SkillParity] embedded Python package probe failed: '
+        '${result['stderr'] ?? 'unknown error'}',
+      );
+      return const <String, String>{};
+    }
+    final packages = <String, String>{};
+    for (final line in (result['stdout']?.toString() ?? '').split('\n')) {
+      final fields = line.trim().split('\t');
+      if (fields.length != 2 || fields[0].trim().isEmpty) continue;
+      final name = _normalizePythonPackageName(fields[0]);
+      final version = fields[1].trim();
+      if (name.isNotEmpty && version.isNotEmpty) packages[name] = version;
     }
     return packages;
   }
