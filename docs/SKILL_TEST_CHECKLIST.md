@@ -9,7 +9,7 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #39 `python-debugpy`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: #55 `tmux`. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -59,7 +59,7 @@ Next live smoke: #39 `python-debugpy`. The Android bridge smokes for `avatar_for
 | 43 | sherpa-onnx-tts | [-] native gap | Runtime/model and standalone Node host pending |
 | 44 | skill-creator | [x] contract-pass | Instruction-only adapter tests |
 | 45 | slack | [-] config | Requires token and channel config |
-| 46 | songsee | [ ] pending | Audio pack smoke |
+| 46 | songsee | [~] pack-pass / audio fixture pending | Verified audio-runtime receipt and ARM64 `songsee --version`/`--help`; no app-owned WAV/MP3 fixture was present for the output-image smoke. |
 | 47 | sonoscli | [ ] pending | CLI-core pack smoke |
 | 48 | spike | [x] contract-pass | Instruction-only adapter tests |
 | 49 | spotify-player | [-] config | Requires Spotify token |
@@ -114,6 +114,14 @@ Next live smoke: #39 `python-debugpy`. The Android bridge smokes for `avatar_for
   the library path, while a raw shell launch is intentionally not a valid app
   smoke. No audio/model fixture was available for a transcription proof, so the
   row remains partial rather than being overstated as fully live.
+- `python-debugpy` remains pending because it is not installed as a current
+  user skill/card and no `android-python-debug-runtime` or `debugpy` wheel
+  receipt exists on this fresh app state; the native Python bridge returned the
+  expected `ModuleNotFoundError` when probed.
+- `songsee` device evidence: `android-audio-runtime-pack.json` reports
+  `smokePassed: true`; ARM64 version output was `v0.1.1-10-g41d27ea` and help
+  output exposed the bounded audio-to-image command. No audio fixture was
+  available for a non-destructive image-generation smoke.
 
 ## Dependency repair UI
 
