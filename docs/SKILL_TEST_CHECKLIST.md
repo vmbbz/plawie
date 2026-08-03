@@ -9,7 +9,7 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #8 `blucli`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: #18 `gifgrep`. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -21,7 +21,7 @@ Next live smoke: #8 `blucli`. The Android bridge smokes for `avatar_forge` and
 | 5 | battery | [x] live-pass | Native `device-node` returned level 66 and `isCharging: true`. |
 | 6 | bear-notes | [-] outside GTM | macOS/iOS integration |
 | 7 | blogwatcher | [x] live-pass | Native feed checks returned two parsed items from GitHub releases and Hacker News; natural chat wording now stays on the native adapter instead of falling through to the Go CLI. |
-| 8 | blucli | [ ] pending | CLI-core pack smoke |
+| 8 | blucli | [x] live-pass | Verified `android-cli-core-pack` receipt and `blu --help`/`--version` on ARM64; `blu --json devices` returned an empty list, so no BluOS player was available for network control smoke. |
 | 9 | camsnap | [x] live-pass | `/api/tools/execute` captured a real back-camera JPEG on-device: 480x720, 159,460 bytes. |
 | 10 | canvas | [~] partial | Layout tests pass; live agent tool call blocked upstream |
 | 11 | clawhub | [x] contract-pass | Native ClawHub adapter tests |
@@ -96,6 +96,10 @@ Next live smoke: #8 `blucli`. The Android bridge smokes for `avatar_forge` and
   Go-based skill. The parser now recognizes `blogwatcher` plus an HTTP(S) feed
   URL in natural wording, and the app-local adapter does not require a paired
   Android node or a native Go compiler.
+- `blucli` device evidence: receipt `android-cli-core-pack.json` reports
+  `smokePassed: true`; the installed `blu` digest is
+  `9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442`, and
+  read-only command discovery returned the expected v0.1.4 command catalog.
 
 ## Dependency repair UI
 
