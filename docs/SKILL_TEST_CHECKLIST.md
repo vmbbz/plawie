@@ -9,7 +9,7 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #41 `sensors`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: #46 `songsee`. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -54,7 +54,7 @@ Next live smoke: #41 `sensors`. The Android bridge smokes for `avatar_forge` and
 | 38 | peekaboo | [-] outside GTM | macOS screen automation |
 | 39 | python-debugpy | [~] not installed | No current user skill/card or `android-python-debug-runtime` receipt exists on this fresh app state; the native bridge correctly returned `ModuleNotFoundError` for a direct import probe. |
 | 40 | sag | [-] config | Requires ElevenLabs API key |
-| 41 | sensors | [ ] pending | Android bridge smoke |
+| 41 | sensors | [x] live-pass | Native `device-node` listed accelerometer, gyroscope, magnetometer, and barometer; an accelerometer read returned valid x/y/z values and accuracy 3. |
 | 42 | session-logs | [x] contract-pass | App-native session adapter tests |
 | 43 | sherpa-onnx-tts | [-] native gap | Runtime/model and standalone Node host pending |
 | 44 | skill-creator | [x] contract-pass | Instruction-only adapter tests |
@@ -131,6 +131,8 @@ Next live smoke: #41 `sensors`. The Android bridge smokes for `avatar_forge` and
 - `openhue` device evidence: the shared `android-cli-core-pack.json` receipt
   reports `smokePassed: true`; the ARM64 binary launched and returned its
   non-secret first-run configuration message instead of a missing-binary error.
+- `sensors` device evidence: `/api/tools/execute` listed four Android sensors;
+  the accelerometer read returned x=0.263, y=-0.141, z=9.857 and accuracy 3.
 
 ## Dependency repair UI
 
