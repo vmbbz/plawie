@@ -2927,7 +2927,8 @@ class SkillProvisioningService {
       } catch (_) {}
     }
     if (Platform.isAndroid) {
-      result.addAll(
+      SkillParityAuditService.mergePythonPackageVersions(
+        result,
         await SkillParityAuditService.scanEmbeddedPythonPackagesIfAvailable(
           layout.nativeStateRoot,
         ),

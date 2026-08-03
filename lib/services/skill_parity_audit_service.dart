@@ -1315,8 +1315,29 @@ class SkillParityAuditService {
         }
       } catch (_) {}
     }
-    packages.addAll(embeddedPythonPackages);
+    mergePythonPackageVersions(packages, embeddedPythonPackages);
     return packages;
+  }
+
+  /// Merge distribution inventories from the writable Native runtime and
+  /// Chaquopy's embedded runtime. Chaquopy can expose both its base copy and
+  /// a newer managed copy of the same package; last-write-wins would randomly
+  /// select the older copy and make readiness disagree with import resolution.
+  static void mergePythonPackageVersions(
+    Map<String, String> target,
+    Map<String, String> source,
+  ) {
+    for (final entry in source.entries) {
+      final name = _normalizePythonPackageName(entry.key);
+      final version = entry.value.trim();
+      if (name.isEmpty || version.isEmpty) continue;
+      final existing = target[name];
+      if (existing == null ||
+          existing.trim().isEmpty ||
+          _compareVersions(version, existing) > 0) {
+        target[name] = version;
+      }
+    }
   }
 
   /// Returns the distribution inventory from the APK-embedded Chaquopy
@@ -1403,7 +1424,12 @@ for distribution in metadata.distributions():
       if (fields.length != 2 || fields[0].trim().isEmpty) continue;
       final name = _normalizePythonPackageName(fields[0]);
       final version = fields[1].trim();
-      if (name.isNotEmpty && version.isNotEmpty) packages[name] = version;
+      if (name.isNotEmpty && version.isNotEmpty) {
+        final existing = packages[name];
+        if (existing == null || _compareVersions(version, existing) > 0) {
+          packages[name] = version;
+        }
+      }
     }
     return packages;
   }

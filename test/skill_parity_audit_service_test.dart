@@ -7,6 +7,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
+  test('merges duplicate Python distributions using the highest version', () {
+    final packages = <String, String>{'yfinance': '1.5.2'};
+
+    SkillParityAuditService.mergePythonPackageVersions(
+      packages,
+      const {
+        'yfinance': '0.2.57',
+        'pandas': '2.1.3',
+      },
+    );
+
+    expect(packages, {
+      'yfinance': '1.5.2',
+      'pandas': '2.1.3',
+    });
+  });
+
   test('audit counts OpenClaw package skills on fresh native installs',
       () async {
     final temp =
