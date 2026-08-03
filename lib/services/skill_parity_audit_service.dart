@@ -19,6 +19,8 @@ class SkillParityAuditService {
   static const _mirrorMarkerName = '.plawie-native-mirror.json';
   static const _nativePythonRuntimeVersion = '3.11';
   static final _skillNamePattern = RegExp(r'^@?[a-zA-Z0-9][a-zA-Z0-9._@-]*$');
+  static final _embeddedPythonPackageCache =
+      <String, Future<Map<String, String>>>{};
   static final _envPattern = RegExp(
     r'\b[A-Z][A-Z0-9_]{2,}(?:API_KEY|TOKEN|SECRET|CLIENT_ID|CLIENT_SECRET|AUTH|KEY|URL|HOST|PASSWORD|EMAIL)\b'
     r'|\b(?:[A-Z][A-Z0-9_]{2,}_(?:API_KEY|TOKEN|SECRET|CLIENT_ID|CLIENT_SECRET|AUTH|KEY|URL|HOST|PASSWORD|EMAIL))\b',
@@ -149,7 +151,7 @@ class SkillParityAuditService {
     // per-skill loop can consume the audit timeout and leave stale readiness
     // data on the Skills page.
     final embeddedPythonPackages = Platform.isAndroid
-        ? await _scanEmbeddedPythonPackagesIfAvailable(layout.nativeStateRoot)
+        ? await scanEmbeddedPythonPackagesIfAvailable(layout.nativeStateRoot)
         : const <String, String>{};
     final nativePluginIds =
         nativePlugins.map((name) => name.toLowerCase()).toSet();
@@ -1305,7 +1307,11 @@ class SkillParityAuditService {
     return packages;
   }
 
-  static Future<Map<String, String>> _scanEmbeddedPythonPackagesIfAvailable(
+  /// Returns the distribution inventory from the APK-embedded Chaquopy
+  /// interpreter. The inventory is shared by readiness auditing and
+  /// provisioning so build-time packages are not downloaded again into the
+  /// incompatible writable wheel directory.
+  static Future<Map<String, String>> scanEmbeddedPythonPackagesIfAvailable(
     String nativeStateRoot,
   ) async {
     final marker = File(path.join(
@@ -1317,7 +1323,11 @@ class SkillParityAuditService {
     if (!await _validNativePythonBridge(marker)) {
       return const <String, String>{};
     }
-    return _scanEmbeddedPythonPackages(nativeStateRoot);
+    final cached = _embeddedPythonPackageCache[nativeStateRoot];
+    if (cached != null) return cached;
+    final future = _scanEmbeddedPythonPackages(nativeStateRoot);
+    _embeddedPythonPackageCache[nativeStateRoot] = future;
+    return future;
   }
 
   /// Chaquopy packages installed at APK build time live inside the embedded

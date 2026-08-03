@@ -2926,6 +2926,13 @@ class SkillProvisioningService {
         }
       } catch (_) {}
     }
+    if (Platform.isAndroid) {
+      result.addAll(
+        await SkillParityAuditService.scanEmbeddedPythonPackagesIfAvailable(
+          layout.nativeStateRoot,
+        ),
+      );
+    }
     return result;
   }
 
