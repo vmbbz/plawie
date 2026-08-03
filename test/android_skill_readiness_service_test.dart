@@ -386,6 +386,34 @@ void main() {
     );
   });
 
+  test('ready provisioning does not publish stale missing-pack actions', () {
+    final summary = AndroidSkillReadinessService.instance.summarize(
+      snapshot: snapshotWith([readyEntry('stocks')]),
+      provisioning: provisioningWith([
+        provisioningResult(
+          'stocks',
+          SkillProvisioningStatus.ready,
+          actions: const [
+            SkillProvisioningAction(
+              type: SkillProvisioningActionType.dependencyPack,
+              key: 'python-pack:yfinance',
+              status: SkillProvisioningActionStatus.missingPack,
+              message: 'stale action from an earlier audit',
+            ),
+          ],
+        ),
+      ]),
+      manifest: AndroidSkillSupportManifest.forTesting([
+        readyManifestEntry('stocks'),
+      ]),
+    );
+
+    final stocks = summary.skills.single;
+    expect(stocks['ready'], isTrue);
+    expect(stocks.containsKey('dependencyGateStatus'), isFalse);
+    expect(stocks.containsKey('dependencyGateMessage'), isFalse);
+  });
+
   test('pack-gated skills expose alternative binary requirements', () {
     final summary = AndroidSkillReadinessService.instance.summarize(
       snapshot: snapshotWith([

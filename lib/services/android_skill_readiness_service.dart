@@ -186,6 +186,13 @@ class AndroidSkillReadinessService {
     SkillProvisioningSkillResult? provisioningResult,
   ) {
     if (provisioningResult == null) return const <String, dynamic>{};
+    if (provisioningResult.status == SkillProvisioningStatus.ready ||
+        provisioningResult.status == SkillProvisioningStatus.satisfied) {
+      // A previous failed pack action may remain in the action history after
+      // the package is satisfied by the embedded/runtime inventory. Do not
+      // publish that stale failure beside a ready status.
+      return const <String, dynamic>{};
+    }
     final missingBins = <String>{};
     final missingPacks = <String>{};
     final messages = <String>[];
