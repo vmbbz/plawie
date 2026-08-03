@@ -132,6 +132,31 @@ void main() {
     );
   });
 
+  test('natural blogwatcher prompt with a URL stays on the native adapter',
+      () async {
+    final router = AppNativeChatToolRouter.forTesting(
+      blogWatcher: BlogWatcherCapability(
+        client: MockClient((request) async {
+          expect(request.url.toString(), 'https://example.test/feed.xml');
+          return http.Response(
+            '<rss><channel><title>Native Feed</title></channel></rss>',
+            200,
+            headers: {'content-type': 'application/rss+xml'},
+          );
+        }),
+      ),
+    );
+
+    final execution = await router.tryExecuteRequiredToolIntent(
+      'Please use the blogwatcher skill to check https://example.test/feed.xml',
+    );
+
+    expect(execution, isNotNull);
+    expect(execution!.toolName, 'blogwatcher');
+    expect(execution.input['url'], 'https://example.test/feed.xml');
+    expect(execution.ok, isTrue);
+  });
+
   test('AgentSkillServer routes blogwatcher execution to BlogWatcherCapability',
       () async {
     final source =

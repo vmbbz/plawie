@@ -9,19 +9,18 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #4 `avatar_forge`. Prompt: `Use avatar_forge to set a simple
-happy expression.` Record the tool result and the relevant gateway log before
-advancing to #5 `battery`.
+Next live smoke: #8 `blucli`. The Android bridge smokes for `avatar_forge` and
+`battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
 |---:|---|---|---|
 | 1 | 1password | [-] config | Requires Connect host/token |
 | 2 | apple-notes | [-] outside GTM | macOS integration |
 | 3 | apple-reminders | [-] outside GTM | macOS integration |
-| 4 | avatar_forge | [ ] pending | Android bridge smoke |
-| 5 | battery | [ ] pending | Android bridge smoke |
+| 4 | avatar_forge | [x] live-pass | Native `avatar-control` set the avatar emotion to `happy` through `/api/tools/execute`. |
+| 5 | battery | [x] live-pass | Native `device-node` returned level 66 and `isCharging: true`. |
 | 6 | bear-notes | [-] outside GTM | macOS/iOS integration |
-| 7 | blogwatcher | [~] live partial | Native adapter is exposed; device smoke reached the bounded feed guard but public feeds exceeded the 200 KB cap or timed out/DNS-failed. Retry on a connected device/network before live-pass. |
+| 7 | blogwatcher | [x] live-pass | Native feed checks returned two parsed items from GitHub releases and Hacker News; natural chat wording now stays on the native adapter instead of falling through to the Go CLI. |
 | 8 | blucli | [ ] pending | CLI-core pack smoke |
 | 9 | camsnap | [x] live-pass | `/api/tools/execute` captured a real back-camera JPEG on-device: 480x720, 159,460 bytes. |
 | 10 | canvas | [~] partial | Layout tests pass; live agent tool call blocked upstream |
@@ -87,12 +86,16 @@ advancing to #5 `battery`.
   workspace.
 - Live device smokes must record the prompt, output, and relevant dependency
   receipt before a row is marked live-pass.
-- 2026-08-03 device evidence: `camsnap` completed through the native execute
-  endpoint and returned a real JPEG. `blogwatcher` was dispatchable but the
-  connected device network returned bounded feed-size/timeout/DNS errors.
-  `browser-automation` is not registered in the native Android tool catalog.
-  The device disconnected before the next `avatar_forge` smoke, so it remains
-  pending rather than being inferred from contract coverage.
+- 2026-08-03 device evidence: `avatar-control` set `happy`, `device-node`
+  returned battery level 66 while charging, and `camsnap` returned a real
+  JPEG. `blogwatcher` returned two parsed items each from GitHub releases and
+  Hacker News after the device reconnected. The OpenAI feed was correctly
+  rejected by the 200 KB response guard. `browser-automation` is not
+  registered in the native Android tool catalog. A follow-up natural-language
+  blogwatcher prompt exposed a routing gap: it fell through to the upstream
+  Go-based skill. The parser now recognizes `blogwatcher` plus an HTTP(S) feed
+  URL in natural wording, and the app-local adapter does not require a paired
+  Android node or a native Go compiler.
 
 ## Dependency repair UI
 

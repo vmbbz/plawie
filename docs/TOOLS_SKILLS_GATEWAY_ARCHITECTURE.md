@@ -96,7 +96,12 @@ WhatsApp message-sending command.
 `blogwatcher` is a named app-native RSS/Atom adapter for small public feeds. It
 uses GET-only HTTP, blocks non-HTTP, loopback, private, and link-local targets,
 caps response size, and returns bounded item previews. It is not a persistent
-scheduler or notification system.
+scheduler or notification system. Chat prompts that name `blogwatcher` and
+include a feed URL are routed to this adapter even when phrased naturally; they
+must not fall through to the upstream Go CLI skill. The native adapter does not
+require a Go installation. Go-built CLI packs are shipped as precompiled
+Android binaries when supported, while the optional Go compiler remains a
+PRoot rollback extra only.
 
 `session-logs` is a named app-native adapter for app-owned chat sessions. It
 lists sessions, reads the active or selected session, and searches bounded

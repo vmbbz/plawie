@@ -1354,11 +1354,17 @@ class AppNativeChatToolRouter {
   }
 
   _AppNativeToolPlan? _blogWatcherPlan(String message) {
-    final match = RegExp(
+    final explicitCommand = RegExp(
       r'^\s*blogwatcher\s*:?\s+(\S+)',
       caseSensitive: false,
     ).firstMatch(message);
-    final url = _cleanXurlUrl(match?.group(1));
+    final naturalPrompt = RegExp(
+      r'\bblogwatcher\b[\s\S]*?\b(https?://\S+)',
+      caseSensitive: false,
+    ).firstMatch(message);
+    final url = _cleanXurlUrl(
+      explicitCommand?.group(1) ?? naturalPrompt?.group(1),
+    );
     if (url == null) return null;
     final limitMatch = RegExp(
       r'\blimit\s+(\d{1,2})\b',

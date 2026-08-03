@@ -5907,7 +5907,12 @@ ${lines.join('\n')}
     final node = NodeService();
     final requiredCommand =
         AppNativeChatToolRouter.instance.requiredToolCommandForTesting(message);
-    final nodeIndependent = requiredCommand?.startsWith('gifgrep.') == true;
+    // App-local HTTP adapters execute inside Plawie and do not need a paired
+    // Android node. Keep the node requirement for hardware-backed commands,
+    // while allowing feed checks to work during node reconnects.
+    final nodeIndependent =
+        requiredCommand?.startsWith('gifgrep.') == true ||
+        requiredCommand == 'blogwatcher.check';
     final nodeReady =
         node.state.isPaired && node.isConnected && !node.isConnectionStale;
     if (!nodeReady && !nodeIndependent) {
