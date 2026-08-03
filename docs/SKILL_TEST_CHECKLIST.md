@@ -9,7 +9,7 @@ Legend: `[ ]` pending, `[x]` passed, `[~]` blocked or partial, `[-]` skipped by
 Android GTM policy (configuration, desktop/PC, unsupported, or explicit
 PRoot-only mode).
 
-Next live smoke: #58 `video-frames`. The Android bridge smokes for `avatar_forge` and
+Next live smoke: #39 `python-debugpy`. The Android bridge smokes for `avatar_forge` and
 `battery` are complete; continue with the next pending native skill.
 
 | # | Skill | State | Evidence / next action |
@@ -48,7 +48,7 @@ Next live smoke: #58 `video-frames`. The Android bridge smokes for `avatar_forge
 | 32 | obsidian | [-] outside GTM | Desktop vault workflow |
 | 33 | openai-whisper | [~] pack-pass / transcription pending | Verified `android-whisper-runtime` receipt and managed launcher smoke; direct shell execution without the managed `LD_LIBRARY_PATH` correctly fails to load `libomp.so`. A real local transcription fixture is still required before full live-pass. |
 | 34 | openai-whisper-api | [-] config | Requires OpenAI API key |
-| 35 | openhue | [ ] pending | CLI-core pack smoke |
+| 35 | openhue | [~] pack-pass / config gate | Verified the shared CLI-core receipt and ARM64 binary launch; `openhue` correctly stopped at its required first-run `setup` configuration gate. |
 | 36 | oracle | [-] PRoot-only | Manual compatibility mode |
 | 37 | ordercli | [-] outside GTM | Desktop/browser-heavy login |
 | 38 | peekaboo | [-] outside GTM | macOS screen automation |
@@ -128,6 +128,9 @@ Next live smoke: #58 `video-frames`. The Android bridge smokes for `avatar_forge
 - `vibrate` device evidence: `/api/tools/execute` returned
   `{"success":true,"status":"vibrated"}` for a bounded 100 ms haptic and the
   follow-up battery read returned level 77 while charging.
+- `openhue` device evidence: the shared `android-cli-core-pack.json` receipt
+  reports `smokePassed: true`; the ARM64 binary launched and returned its
+  non-secret first-run configuration message instead of a missing-binary error.
 
 ## Dependency repair UI
 
