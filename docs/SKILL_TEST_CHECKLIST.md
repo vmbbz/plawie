@@ -130,7 +130,9 @@ catalog; continue with the next eligible UI row after it.
   the masked configuration sheet, the managed CLI reached the GIPHY request
   but the device returned connection refused. The failure path was found to
   echo the provider URL and was patched to redact provider keys before the
-  result reaches the Gateway or chat UI; the regression test passes.
+  result reaches the Gateway or chat UI; the regression test passes. The
+  patched APK was installed and the same live failure rendered only the
+  generic exit-code message.
 - `himalaya` device evidence: the shared `android-cli-core-pack.json` receipt
   reports `smokePassed: true`; ARM64 version output was v1.2.0 with IMAP/SMTP
   support, and `account list` reached the expected missing
