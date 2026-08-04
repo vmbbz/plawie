@@ -17,7 +17,8 @@ PRoot-only mode).
 Next device smoke: none in the current eligible set. The next phase is UI/user
 flow verification for the device-pass rows, plus fixture/config completion for
 the partial rows (`songsee`, `video-frames`, `openai-whisper`). The Android bridge smokes for `avatar_forge` and
-`battery` are complete; continue with the next pending native skill.
+`battery` are complete. `browser-automation` is explicitly outside the native
+catalog; continue with the next eligible UI row after it.
 
 | # | Skill | State | Evidence / next action |
 |---:|---|---|---|
@@ -27,13 +28,13 @@ the partial rows (`songsee`, `video-frames`, `openai-whisper`). The Android brid
 | 4 | avatar_forge | [x] device-pass / UI pending | Native `avatar-control` set the avatar emotion to `happy` through `/api/tools/execute`; user-surface verification remains pending. |
 | 5 | battery | [x] device-pass / UI pending | Native `device-node` returned level 66 and `isCharging: true`; user-surface verification remains pending. |
 | 6 | bear-notes | [-] outside GTM | macOS/iOS integration |
-| 7 | blogwatcher | [x] device-pass / UI pending | Native feed checks returned two parsed items from GitHub releases and Hacker News; natural chat wording now stays on the native adapter instead of falling through to the Go CLI. |
+| 7 | blogwatcher | [x] device-pass / UI-pass | Skills card was READY; chat request for `https://github.blog/feed/` rendered five parsed feed items, including GitHub security and Copilot entries, without a Go/binary/config error. |
 | 8 | blucli | [x] device-pass / UI pending | Verified `android-cli-core-pack` receipt and `blu --help`/`--version` on ARM64; `blu --json devices` returned an empty list, so no BluOS player was available for network control smoke. |
-| 9 | camsnap | [x] device-pass / UI pending | `/api/tools/execute` captured a real back-camera JPEG on-device: 480x720, 159,460 bytes. |
-| 10 | canvas | [~] partial | Layout tests pass; live agent tool call blocked upstream |
+| 9 | camsnap | [x] device-pass / UI-pass | Skills card was READY; chat request rendered the green `Result camsnap` panel and confirmed a successful back-camera snapshot. The earlier native JPEG was 480x720, 159,460 bytes. |
+| 10 | canvas | [~] partial | Skills page is READY through the Android app-native path; layout tests pass, but the live agent tool call remains blocked upstream. |
 | 11 | clawhub | [x] contract-pass | Native ClawHub adapter tests |
 | 12 | coding-agent | [-] native gap | Released pack quarantined until `/tmp` issue is fixed |
-| 13 | diagram-maker | [x] contract-pass | Instruction-only adapter tests |
+| 13 | diagram-maker | [x] contract-pass / READY | Skills page shows READY with “Instruction-only skill ready”; no executable dependency is required. |
 | 14 | discord | [-] config | Requires bot token |
 | 15 | eightctl | [-] config | Requires CLI pack plus credentials |
 | 16 | gemini | [-] config | Requires API key |
@@ -59,7 +60,7 @@ the partial rows (`songsee`, `video-frames`, `openai-whisper`). The Android brid
 | 36 | oracle | [-] PRoot-only | Manual compatibility mode |
 | 37 | ordercli | [-] outside GTM | Desktop/browser-heavy login |
 | 38 | peekaboo | [-] outside GTM | macOS screen automation |
-| 39 | python-debugpy | [~] bundled / not provisioned | The APK contains `debugpy-1.8.21-py2.py3-none-any.whl` under the APK-owned Python provisioning lane. No `android-python-debug-runtime` receipt exists until this optional skill is actually provisioned; this pack is intentionally not part of GitHub dependency-packs-v4. |
+| 39 | python-debugpy | [x] device-pass / UI pending | Current device has `android-python-debug-runtime.json` and `python-wheels/debugpy.json`, both `smokePassed: true`; the Skills page no longer lists it as a download gate. The APK-local pack remains separate from GitHub dependency-packs-v4. |
 | 40 | sag | [-] config | Requires ElevenLabs API key |
 | 41 | sensors | [x] device-pass / UI pending | Native `device-node` listed accelerometer, gyroscope, magnetometer, and barometer; an accelerometer read returned valid x/y/z values and accuracy 3. |
 | 42 | session-logs | [x] contract-pass | App-native session adapter tests |
@@ -67,7 +68,7 @@ the partial rows (`songsee`, `video-frames`, `openai-whisper`). The Android brid
 | 44 | skill-creator | [x] contract-pass | Instruction-only adapter tests |
 | 45 | slack | [-] config | Requires token and channel config |
 | 46 | songsee | [~] pack-pass / audio fixture pending | Verified audio-runtime receipt and ARM64 `songsee --version`/`--help`; no app-owned WAV/MP3 fixture was present for the output-image smoke. |
-| 47 | sonoscli | [~] device-pass / UI partial | Skills page showed ACTIVE/READY; the v4 CLI-core receipt contains an executable `sonos` binary. A real chat request reached the skill, but discovery could not complete while the phone was in Airplane mode; rerun with Wi-Fi/LAN enabled for a full speaker discovery pass. |
+| 47 | sonoscli | [~] device-pass / UI blocked | Skills page showed READY and the v4 CLI-core receipt contains an executable `sonos` binary. A fresh chat request reached the skill, but the agent reported that Android does not support the `sonos discover` command directly; this is a command-policy/routing gap, not a missing dependency. |
 | 48 | spike | [x] contract-pass | Instruction-only adapter tests |
 | 49 | spotify-player | [-] config | Requires Spotify token |
 | 50 | stocks | [x] device-pass / UI pending / badge repair | Native `Tools().get_stock_price("AAPL")` returned a live quote; embedded inventory prevents redundant downloads; Stocks is now explicitly classified in the Android readiness manifest |
@@ -83,12 +84,17 @@ the partial rows (`songsee`, `video-frames`, `openai-whisper`). The Android brid
 | 60 | wacli | [x] device-pass / auth gate / UI pending | Verified CLI-core receipt, ARM64 v0.11.0 help/version, and read-only `wacli doctor --json`; it correctly reports `authenticated:false` and the absent local store without attempting WhatsApp auth or sync. |
 | 61 | weather | [x] contract-pass | Native HTTP adapter tests |
 | 62 | xurl | [x] contract-pass | Native HTTP adapter tests |
-| 63 | browser-automation | [~] native unavailable | Explicit `/api/tools/execute` probe returned HTTP 400 because the native AgentSkillServer catalog does not register this tool; requires the separate browser/desktop lane. |
+| 63 | browser-automation | [~] native unavailable | Explicit `/api/tools/execute` probe returned HTTP 400 because the native AgentSkillServer catalog does not register this tool; requires the separate browser/desktop lane and is skipped in the native UI sequence. |
 
 ## Evidence baseline
 
 - Ordered native adapter/readiness suite: 152 automated tests passed on
   2026-08-03.
+- 2026-08-04 live Skills page truth: `31/50 ready now`, `14/14 launch gate`,
+  `15 needs config`, `4 needs download`, and `12 outside GTM`. The four live
+  pack gates are `coding-agent`, `node-inspect-debugger`, `sherpa-onnx-tts`, and
+  `wacli`; this is not a 21-item missing-dependency list. `diagram-maker`,
+  `canvas`, `gifgrep`, and `python-debugpy` were visibly ready on the page.
 - Stocks was installed from the Skills page and verified in the native
   workspace.
 - Device smokes must record the prompt, output, and relevant dependency receipt
@@ -104,6 +110,9 @@ the partial rows (`songsee`, `video-frames`, `openai-whisper`). The Android brid
   Go-based skill. The parser now recognizes `blogwatcher` plus an HTTP(S) feed
   URL in natural wording, and the app-local adapter does not require a paired
   Android node or a native Go compiler.
+- `blogwatcher` UI evidence: the Skills card was READY and a natural chat
+  request for `https://github.blog/feed/` rendered five parsed items in the
+  chat surface. The response stayed on the app-native feed adapter.
 - `blucli` device evidence: receipt `android-cli-core-pack.json` reports
   `smokePassed: true`; the installed `blu` digest is
   `9b8fa1dc19a94113badafeec2ddfa074e100fb0ae78ac5a79543a06b7725e442`, and
@@ -122,17 +131,19 @@ the partial rows (`songsee`, `video-frames`, `openai-whisper`). The Android brid
   the library path, while a raw shell launch is intentionally not a valid app
   smoke. No audio/model fixture was available for a transcription proof, so the
   row remains partial rather than being overstated as fully live.
-- `python-debugpy` remains partial because it is not installed as a current user
-  skill/card and no `android-python-debug-runtime` receipt exists on this app
-  state. The APK-local `debugpy-1.8.21` wheel is present under
-  `provisioning/python-debug/wheels`; it is not a GitHub v4 release asset.
-  Provisioning this optional skill must create the runtime and wheel receipts
-  before the row can become device-pass.
-- `sonoscli` UI evidence: the Skills page reported ACTIVE/READY, the shared
+- `python-debugpy` device evidence: the current device has
+  `android-python-debug-runtime.json` and `python-wheels/debugpy.json`, both
+  with `smokePassed: true`; the installed package is debugpy 1.8.21. This is
+  an APK-local lane, not a GitHub v4 release asset.
+- `sonoscli` UI evidence: the Skills page reported READY, the shared
   `android-cli-core-pack.json` receipt lists `sonos`, and both managed copies
-  were executable. The chat request reached `sonos discover`; the phone was in
-  Airplane mode, so the network discovery result is partial rather than a
-  successful speaker smoke.
+  were executable. A fresh natural chat request reached the skill, but the
+  rendered answer said Android does not support `sonos discover` directly.
+  Keep this as a UI-blocked command-policy result until the native executor is
+  wired to the allowed discovery path; do not relabel it as missing deps.
+- `camsnap` UI evidence: the Skills page reported READY and a fresh natural
+  chat request rendered the green `Result camsnap` panel with “Your snapshot
+  was taken successfully” from the back camera.
 - `songsee` device evidence: `android-audio-runtime-pack.json` reports
   `smokePassed: true`; ARM64 version output was `v0.1.1-10-g41d27ea` and help
   output exposed the bounded audio-to-image command. No audio fixture was
