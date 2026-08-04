@@ -71,7 +71,7 @@ catalog; continue with the next eligible UI row after it.
 | 47 | sonoscli | [~] device-pass / UI blocked | Skills page showed READY and the v4 CLI-core receipt contains an executable `sonos` binary. A fresh chat request reached the skill, but the agent reported that Android does not support the `sonos discover` command directly; this is a command-policy/routing gap, not a missing dependency. |
 | 48 | spike | [x] contract-pass | Instruction-only adapter tests |
 | 49 | spotify-player | [-] config | Requires Spotify token |
-| 50 | stocks | [~] device-pass / UI partial / badge repair | Native `Tools().get_stock_price("AAPL")` returned a live quote and the chat rendered a successful `Tool stocks` / `Result stocks` panel, but the surrounding provider turn timed out; repeat with an idle clean chat before UI-pass. Embedded inventory prevents redundant downloads; Stocks is explicitly classified in the Android readiness manifest. |
+| 50 | stocks | [x] device-pass / UI-pass / badge repair | Native `Tools().get_stock_price("AAPL")` returned a live quote; a clean chat request rendered a successful `Result stocks` card with AAPL price, market cap, P/E, ranges, volume, and beta. Embedded inventory prevents redundant downloads; Stocks is explicitly classified in the Android readiness manifest. |
 | 51 | summarize | [x] contract-pass | App-native adapter tests |
 | 52 | taskflow | [x] contract-pass | Instruction-only adapter tests |
 | 53 | taskflow-inbox-triage | [x] contract-pass | Instruction-only adapter tests |
@@ -159,6 +159,9 @@ catalog; continue with the next eligible UI row after it.
   explicit gateway error, but rendered only the literal fragment `<g` and did
   not show the canvas WebView. This is a UI-blocked result, not a successful
   canvas smoke; the live tool/agent response path still needs investigation.
+- `stocks` UI evidence: after discarding a malformed overlapping draft and
+  starting an idle clean chat, “Check the current share price of AAPL using
+  stocks” rendered a successful `Result stocks` card with live quote metrics.
 - `songsee` device evidence: `android-audio-runtime-pack.json` reports
   `smokePassed: true`; ARM64 version output was `v0.1.1-10-g41d27ea` and help
   output exposed the bounded audio-to-image command. No audio fixture was
