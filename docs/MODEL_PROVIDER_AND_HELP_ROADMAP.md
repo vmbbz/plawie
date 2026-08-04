@@ -5,6 +5,16 @@ Last updated: 2026-06-02
 This document is the implementation contract for model selection, provider keys,
 Gateway routing, local NDK inference, and the manual NDK Gateway bridge.
 
+## Forward Dynamic Provider Plan
+
+The static catalog remains the compatibility baseline while the provider/model
+migration is staged. The detailed forward plan for dynamic model discovery,
+searchable provider grouping, account handoffs, context-preserving Gateway
+selection, and human-approved Base x402 payments is
+[`DYNAMIC_PROVIDER_MODEL_AND_X402_IMPLEMENTATION_PLAN.md`](DYNAMIC_PROVIDER_MODEL_AND_X402_IMPLEMENTATION_PLAN.md).
+Dynamic discovery must not delay native Gateway startup or change the existing
+cloud Gateway, direct local NDK, compact bridge, or opt-in PRoot execution lanes.
+
 ## Current Product Contract
 
 Plawie exposes three model execution lanes:
