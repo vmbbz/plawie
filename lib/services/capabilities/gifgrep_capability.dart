@@ -32,6 +32,13 @@ typedef GifgrepLocalRenderer = Future<Map<String, dynamic>> Function(
   required int cols,
 });
 
+typedef GifgrepProviderSearch = Future<List<Map<String, dynamic>>> Function(
+  String source,
+  String query,
+  int limit,
+  Map<String, String> env,
+);
+
 /// Bounded app-native execution adapter for the managed Android gifgrep binary.
 ///
 /// Android cannot execute downloaded app-data ELF files through a normal shell.
@@ -46,15 +53,21 @@ class GifgrepCapability extends CapabilityHandler {
     GifgrepRunner? runner,
     GifgrepFilesDirProvider? filesDirProvider,
     GifgrepLocalRenderer? localRenderer,
+    GifgrepProviderSearch? providerSearch,
+    bool useNativeProviderSearch = true,
   })  : _credentialsProvider = credentialsProvider ?? _readGifgrepCredentials,
         _runner = runner ?? NativeBridge.runManagedCli,
         _filesDirProvider = filesDirProvider ?? NativeBridge.getFilesDir,
-        _localRenderer = localRenderer ?? _renderGifLocally;
+        _localRenderer = localRenderer ?? _renderGifLocally,
+        _providerSearch = providerSearch ?? _fetchProviderSearch,
+        _useNativeProviderSearch = useNativeProviderSearch;
 
   final GifgrepCredentialsProvider _credentialsProvider;
   final GifgrepRunner _runner;
   final GifgrepFilesDirProvider _filesDirProvider;
   final GifgrepLocalRenderer _localRenderer;
+  final GifgrepProviderSearch _providerSearch;
+  final bool _useNativeProviderSearch;
 
   static const int _maxInputBytes = 20 * 1024 * 1024;
 
@@ -181,38 +194,59 @@ class GifgrepCapability extends CapabilityHandler {
       if (giphyKey?.isNotEmpty == true) 'GIPHY_API_KEY': giphyKey!,
       if (klipyKey?.isNotEmpty == true) 'KLIPY_API_KEY': klipyKey!,
     };
-    final args = [
-      'search',
-      query,
-      '--json',
-      '--source',
-      source,
-      '--max',
-      '$maxResults',
-    ];
     final startedAt = DateTime.now();
-    final result = await _runner(
-      'gifgrep',
-      args,
-      env: env,
-      timeoutSeconds: 25,
-    );
-    if (!result.ok) {
-      return _failure(result, args, sensitiveValues: env.values);
+    late final List<Map<String, dynamic>> results;
+    if (_useNativeProviderSearch) {
+      try {
+        results = await _providerSearch(source, query, maxResults, env)
+            .timeout(const Duration(seconds: 15));
+      } on TimeoutException {
+        return NodeFrame.response('', error: {
+          'code': 'GIFGREP_TIMEOUT',
+          'message':
+              'gifgrep $source provider request timed out after 15 seconds.',
+        });
+      } catch (error) {
+        final detail = _redactSensitiveText(error.toString(), env.values);
+        debugPrint('[GIFGREP] $source provider request failed detail=$detail');
+        return NodeFrame.response('', error: {
+          'code': 'GIFGREP_PROVIDER_ERROR',
+          'message': 'gifgrep $source provider request failed.',
+          if (detail.isNotEmpty) 'detail': detail,
+        });
+      }
+    } else {
+      final args = [
+        'search',
+        query,
+        '--json',
+        '--source',
+        source,
+        '--max',
+        '$maxResults',
+      ];
+      final result = await _runner(
+        'gifgrep',
+        args,
+        env: env,
+        timeoutSeconds: 25,
+      );
+      if (!result.ok) {
+        return _failure(result, args, sensitiveValues: env.values);
+      }
+      final decoded = jsonDecode(result.stdout);
+      if (decoded is! List) {
+        return NodeFrame.response('', error: {
+          'code': 'GIFGREP_INVALID_OUTPUT',
+          'message': 'gifgrep returned an unexpected search response.',
+        });
+      }
+      results = decoded
+          .whereType<Map>()
+          .map((entry) => entry.map((key, value) => MapEntry('$key', value)))
+          .take(maxResults)
+          .toList(growable: false);
     }
-
-    final decoded = jsonDecode(result.stdout);
-    if (decoded is! List) {
-      return NodeFrame.response('', error: {
-        'code': 'GIFGREP_INVALID_OUTPUT',
-        'message': 'gifgrep returned an unexpected search response.',
-      });
-    }
-    final results = decoded
-        .whereType<Map>()
-        .map((entry) => entry.map((key, value) => MapEntry('$key', value)))
-        .take(maxResults)
-        .toList(growable: false);
     return NodeFrame.response('', payload: {
       'runtime': 'app-native-gifgrep-cli',
       'ready': true,
@@ -224,6 +258,135 @@ class GifgrepCapability extends CapabilityHandler {
       'elapsedMs': DateTime.now().difference(startedAt).inMilliseconds,
     });
   }
+
+  static Future<List<Map<String, dynamic>>> _fetchProviderSearch(
+    String source,
+    String query,
+    int limit,
+    Map<String, String> env,
+  ) async {
+    final normalized = source == 'tenor' ? 'klipy' : source;
+    final key = env[normalized == 'giphy' ? 'GIPHY_API_KEY' : 'KLIPY_API_KEY'];
+    if (key == null || key.isEmpty) {
+      throw StateError(
+          'missing ${normalized == 'giphy' ? 'GIPHY_API_KEY' : 'KLIPY_API_KEY'}');
+    }
+
+    final uri = normalized == 'giphy'
+        ? Uri.https('api.giphy.com', '/v1/gifs/search', {
+            'q': query,
+            'api_key': key,
+            'limit': '$limit',
+            'rating': 'g',
+          })
+        : Uri.https('api.klipy.com', '/v2/search', {
+            'q': query,
+            'key': key,
+            'limit': '$limit',
+            'contentfilter': 'low',
+            'media_filter': 'gif,tinygif,mediumgif,nanogif,preview',
+          });
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10)
+      ..userAgent = 'gifgrep';
+    try {
+      final request = await client.getUrl(uri);
+      final response =
+          await request.close().timeout(const Duration(seconds: 10));
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException('HTTP ${response.statusCode}', uri: uri);
+      }
+      final decoded = jsonDecode(body);
+      return normalized == 'giphy'
+          ? _parseGiphyResults(decoded)
+          : _parseKlipyResults(decoded);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  static List<Map<String, dynamic>> _parseGiphyResults(Object? decoded) {
+    final data = decoded is Map ? decoded['data'] : null;
+    if (data is! List)
+      throw const FormatException('GIPHY returned invalid data.');
+    return data
+        .whereType<Map>()
+        .map((raw) {
+          final images = raw['images'];
+          final original = images is Map ? images['original'] : null;
+          final fixed = images is Map ? images['fixed_width_small'] : null;
+          final preview = images is Map ? images['preview_gif'] : null;
+          final originalMap =
+              original is Map ? original : const <Object?, Object?>{};
+          final fixedMap = fixed is Map ? fixed : const <Object?, Object?>{};
+          final previewMap =
+              preview is Map ? preview : const <Object?, Object?>{};
+          final url = originalMap['url']?.toString() ?? '';
+          if (url.isEmpty) return null;
+          return <String, dynamic>{
+            'id': raw['id']?.toString() ?? '',
+            'title': raw['title']?.toString() ?? raw['id']?.toString() ?? '',
+            'url': url,
+            'previewUrl':
+                (fixedMap['url'] ?? previewMap['url'] ?? url).toString(),
+            'width': _parseProviderInt(originalMap['width']),
+            'height': _parseProviderInt(originalMap['height']),
+          };
+        })
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
+  }
+
+  static List<Map<String, dynamic>> _parseKlipyResults(Object? decoded) {
+    final data = decoded is Map ? decoded['results'] : null;
+    if (data is! List)
+      throw const FormatException('Klipy returned invalid results.');
+    return data
+        .whereType<Map>()
+        .map((raw) {
+          final formats = raw['media_formats'];
+          if (formats is! Map) return null;
+          Map? media;
+          for (final name in const [
+            'gif',
+            'mediumgif',
+            'tinygif',
+            'nanogif',
+            'preview'
+          ]) {
+            final candidate = formats[name];
+            if (candidate is Map &&
+                candidate['url']?.toString().isNotEmpty == true) {
+              media = candidate;
+              break;
+            }
+          }
+          if (media == null) return null;
+          final dims = media['dims'];
+          return <String, dynamic>{
+            'id': raw['id']?.toString() ?? '',
+            'title': raw['title']?.toString() ??
+                raw['content_description']?.toString() ??
+                raw['id']?.toString() ??
+                '',
+            'url': media['url'].toString(),
+            'previewUrl': media['url'].toString(),
+            'tags': raw['tags'],
+            'width': dims is List && dims.isNotEmpty
+                ? _parseProviderInt(dims[0])
+                : 0,
+            'height': dims is List && dims.length > 1
+                ? _parseProviderInt(dims[1])
+                : 0,
+          };
+        })
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
+  }
+
+  static int _parseProviderInt(Object? value) =>
+      int.tryParse(value?.toString() ?? '') ?? 0;
 
   Future<NodeFrame> _runLocalImage(
     String action,

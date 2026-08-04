@@ -8,7 +8,7 @@ component: gifgrep
 source: https://github.com/steipete/gifgrep
 source commit: 72e2cf8fe685e7baa0535c04c3cf2e238ebfd0bc
 payload: assets/openclaw/vision-media/bin/gifgrep
-payload sha256: 431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
+payload sha256: 5fcd1be3ddd9b7708dfb0a29f1fdfdb33ff5fe9bca242089998bfcaf998b3691
 license: MIT License
 ```
 

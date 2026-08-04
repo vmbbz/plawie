@@ -19,6 +19,7 @@ void main() {
   test('gifgrep search runs through bounded managed CLI adapter', () async {
     final calls = <Map<String, Object?>>[];
     final capability = GifgrepCapability(
+      useNativeProviderSearch: false,
       credentialsProvider: () async => {
         'GIPHY_API_KEY': 'test-giphy-key',
         'KLIPY_API_KEY': null,
@@ -72,6 +73,7 @@ void main() {
   test('missing provider key is configuration, not installation', () async {
     var runnerCalled = false;
     final capability = GifgrepCapability(
+      useNativeProviderSearch: false,
       credentialsProvider: () async => {
         'GIPHY_API_KEY': null,
         'KLIPY_API_KEY': null,
@@ -103,6 +105,7 @@ void main() {
   test('provider CLI failures redact keys before reaching chat', () async {
     const providerKey = 'test-giphy-key';
     final capability = GifgrepCapability(
+      useNativeProviderSearch: false,
       credentialsProvider: () async => {
         'GIPHY_API_KEY': providerKey,
         'KLIPY_API_KEY': null,

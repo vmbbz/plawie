@@ -39,7 +39,7 @@ catalog; continue with the next eligible UI row after it.
 | 15 | eightctl | [-] config | Requires CLI pack plus credentials |
 | 16 | gemini | [-] config | Requires API key |
 | 17 | gh-issues | [-] config | Requires GitHub token |
-| 18 | gifgrep | [~] device-pass / UI config-gate | Skills card/detail showed READY/ACTIVE. A real chat request for a cat GIF opened the intended “Configure gifgrep search” sheet with GIPHY and KLIPY fields; the sheet correctly states that online search needs a provider key while local still/contact-sheet operations remain key-free. Search cannot be marked live without a provider key; local still/sheet remains fixture-pending. |
+| 18 | gifgrep | [~] device-pass / native HTTP / preview verification pending | Skills card/detail showed READY/ACTIVE and a real chat request returned five official GIPHY results through the app-native provider adapter. Chat now extracts structured `previewUrl`/`url` values, downloads media through the app-native HTTP stack, decodes animated GIF bytes locally, and keeps a “Play GIF” link fallback. The device capture used for verification was contaminated by an unrelated external player/ad overlay, so the in-card animation is not marked fully passed until a clean capture confirms it. |
 | 19 | github | [-] config | Requires GitHub token |
 | 20 | gog | [-] outside GTM | Desktop/Google Workspace workflow |
 | 21 | goplaces | [-] config | Requires Places API key |

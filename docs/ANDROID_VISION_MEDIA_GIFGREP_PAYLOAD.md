@@ -16,9 +16,11 @@ source describe: 72e2cf8
 upstream version: 0.3.0
 toolchain: go1.25.5 windows/amd64
 toolchain archive sha256: ae756cce1cb80c819b4fe01b0353807178f532211b47f72d7fa77949de054ebb
-build target: GOOS=android GOARCH=arm64 CGO_ENABLED=0
-payload bytes: 8782177
-payload sha256: 431e81de8d46d6fad4b0ca1dbd76e7ce2efb8ca5dd6a9b495be303c60f937098
+build target: GOOS=android GOARCH=arm64 CGO_ENABLED=1
+DNS mode: native build retained for local/status execution; provider HTTP uses
+the app-native Android network stack
+payload bytes: 8718160
+payload sha256: 5fcd1be3ddd9b7708dfb0a29f1fdfdb33ff5fe9bca242089998bfcaf998b3691
 verified format: ELF64 little-endian AArch64
 license: MIT License
 ```
@@ -26,13 +28,18 @@ license: MIT License
 ## Rebuild
 
 ```powershell
-.\scripts\vision_media\build_gifgrep_android_arm64.ps1 -InstallAsset
+.\scripts\vision_media\build_gifgrep_android_arm64.ps1 `
+  -DnsMode native `
+  -AndroidNdkRoot '<Android NDK root>' `
+  -InstallAsset
 ```
 
 The script downloads the pinned Go archive if needed, verifies its SHA-256,
 checks out the pinned Gifgrep commit, builds the real Go CLI for Android arm64,
 verifies the output is an ELF64 AArch64 executable, and only then copies it into
-the APK asset path when `-InstallAsset` is supplied.
+the APK asset path when `-InstallAsset` is supplied. Native DNS is required for
+Android: a pure-Go build reads an app-visible resolver address of `[::1]:53`,
+where Android has no DNS listener, and fails before reaching provider APIs.
 
 ## Current Limits
 
@@ -82,6 +89,9 @@ gifgrep.sheet
 `NativeBridge.runManagedCli`, which validates the binary allowlist and launches
 the verified arm64 ELF through `/system/bin/linker64`. `gifgrep.still` and
 `gifgrep.sheet` execute in the bounded app-native Dart image adapter instead.
+Online provider requests use the app-native Dart `HttpClient`, which delegates
+hostname resolution to Android's network stack. This avoids the upstream
+pure-Go resolver selecting the app sandbox's unusable `[::1]:53` address.
 The space-delimited command `gifgrep search` remains intentionally disallowed.
 The required-tool router runs explicit gifgrep requests before model inference
 and returns the deterministic result directly, so the agent must not attempt

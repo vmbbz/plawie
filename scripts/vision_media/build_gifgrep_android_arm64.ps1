@@ -3,6 +3,9 @@ param(
   [string]$GifgrepVersion = '0.3.0',
   [string]$GoVersion = 'go1.25.5',
   [string]$GoArchiveSha256 = 'ae756cce1cb80c819b4fe01b0353807178f532211b47f72d7fa77949de054ebb',
+  [ValidateSet('native', 'pure-go')]
+  [string]$DnsMode = 'native',
+  [string]$AndroidNdkRoot = '',
   [string]$WorkRoot = '',
   [string]$ToolRoot = '',
   [switch]$InstallAsset
@@ -25,6 +28,34 @@ $assetBinary = Join-Path $repoRoot 'assets\openclaw\vision-media\bin\gifgrep'
 $goZip = Join-Path $ToolRoot "$GoVersion.windows-amd64.zip"
 $goRoot = Join-Path $ToolRoot $GoVersion
 $goExe = Join-Path $goRoot 'bin\go.exe'
+
+if ($DnsMode -eq 'native') {
+  if ([string]::IsNullOrWhiteSpace($AndroidNdkRoot)) {
+    $AndroidNdkRoot = $env:ANDROID_NDK_HOME
+  }
+  if ([string]::IsNullOrWhiteSpace($AndroidNdkRoot) -and $env:ANDROID_HOME) {
+    $AndroidNdkRoot = Join-Path $env:ANDROID_HOME 'ndk'
+  }
+  if ([string]::IsNullOrWhiteSpace($AndroidNdkRoot) -and $env:ANDROID_SDK_ROOT) {
+    $AndroidNdkRoot = Join-Path $env:ANDROID_SDK_ROOT 'ndk'
+  }
+  if ((Test-Path $AndroidNdkRoot -PathType Container) -and
+      ((Split-Path -Leaf $AndroidNdkRoot) -eq 'ndk')) {
+    $AndroidNdkRoot = Get-ChildItem -LiteralPath $AndroidNdkRoot -Directory |
+      Sort-Object Name -Descending |
+      Select-Object -First 1 -ExpandProperty FullName
+  }
+  if ([string]::IsNullOrWhiteSpace($AndroidNdkRoot) -or
+      !(Test-Path $AndroidNdkRoot -PathType Container)) {
+    throw 'Android NDK is required for DnsMode=native. Pass -AndroidNdkRoot or set ANDROID_NDK_HOME.'
+  }
+  $llvmBin = Join-Path $AndroidNdkRoot 'toolchains\llvm\prebuilt\windows-x86_64\bin'
+  $androidClang = Join-Path $llvmBin 'aarch64-linux-android29-clang.cmd'
+  $androidClangPlusPlus = Join-Path $llvmBin 'aarch64-linux-android29-clang++.cmd'
+  if (!(Test-Path $androidClang) -or !(Test-Path $androidClangPlusPlus)) {
+    throw "Android arm64 clang toolchain is missing under $llvmBin."
+  }
+}
 
 New-Item -ItemType Directory -Path $ToolRoot, $outDir -Force | Out-Null
 
@@ -78,8 +109,10 @@ git -C $sourceRoot checkout --detach $GifgrepRef
 $commit = (git -C $sourceRoot rev-parse HEAD).Trim()
 $env:GOOS = 'android'
 $env:GOARCH = 'arm64'
-$env:CGO_ENABLED = '0'
+$env:CGO_ENABLED = if ($DnsMode -eq 'native') { '1' } else { '0' }
 $env:GOTOOLCHAIN = 'local'
+$env:CC = if ($DnsMode -eq 'native') { $androidClang } else { $null }
+$env:CXX = if ($DnsMode -eq 'native') { $androidClangPlusPlus } else { $null }
 $env:GOMODCACHE = Join-Path $WorkRoot 'gomodcache'
 $env:GOCACHE = Join-Path $WorkRoot 'gocache'
 $env:GOTMPDIR = Join-Path $WorkRoot 'gotmp'
@@ -122,6 +155,7 @@ if ($InstallAsset) {
   goos = $env:GOOS
   goarch = $env:GOARCH
   cgoEnabled = $env:CGO_ENABLED
+  dnsMode = $DnsMode
   output = $outBinary
   outputBytes = $bytes.Length
   outputSha256 = $payloadSha
