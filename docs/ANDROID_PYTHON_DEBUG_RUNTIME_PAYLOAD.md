@@ -3,6 +3,16 @@
 This document records the provenance for the APK-local
 `android-python-debug-runtime` payload used by `python-debugpy`.
 
+## Delivery boundary
+
+This runtime is deliberately APK-local and is not one of the public GitHub
+`dependency-packs-v4` assets. v4 contains the independently released CLI-core,
+vision/media, audio, and terminal packs; it does not contain the Python
+`debugpy` wheel. The APK bootstrap copies the pinned wheel into the managed
+Python provisioning lane. The optional `python-debugpy` skill still needs its
+normal provisioning/smoke flow to install the wheel and write
+`android-python-debug-runtime.json` before the skill is reported ready.
+
 ## Payload
 
 ```text

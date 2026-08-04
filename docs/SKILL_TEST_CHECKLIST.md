@@ -59,7 +59,7 @@ the partial rows (`songsee`, `video-frames`, `openai-whisper`). The Android brid
 | 36 | oracle | [-] PRoot-only | Manual compatibility mode |
 | 37 | ordercli | [-] outside GTM | Desktop/browser-heavy login |
 | 38 | peekaboo | [-] outside GTM | macOS screen automation |
-| 39 | python-debugpy | [~] not installed | No current user skill/card or `android-python-debug-runtime` receipt exists on this fresh app state; the native bridge correctly returned `ModuleNotFoundError` for a direct import probe. |
+| 39 | python-debugpy | [~] bundled / not provisioned | The APK contains `debugpy-1.8.21-py2.py3-none-any.whl` under the APK-owned Python provisioning lane. No `android-python-debug-runtime` receipt exists until this optional skill is actually provisioned; this pack is intentionally not part of GitHub dependency-packs-v4. |
 | 40 | sag | [-] config | Requires ElevenLabs API key |
 | 41 | sensors | [x] device-pass / UI pending | Native `device-node` listed accelerometer, gyroscope, magnetometer, and barometer; an accelerometer read returned valid x/y/z values and accuracy 3. |
 | 42 | session-logs | [x] contract-pass | App-native session adapter tests |
@@ -67,7 +67,7 @@ the partial rows (`songsee`, `video-frames`, `openai-whisper`). The Android brid
 | 44 | skill-creator | [x] contract-pass | Instruction-only adapter tests |
 | 45 | slack | [-] config | Requires token and channel config |
 | 46 | songsee | [~] pack-pass / audio fixture pending | Verified audio-runtime receipt and ARM64 `songsee --version`/`--help`; no app-owned WAV/MP3 fixture was present for the output-image smoke. |
-| 47 | sonoscli | [ ] pending | CLI-core pack smoke |
+| 47 | sonoscli | [~] device-pass / UI partial | Skills page showed ACTIVE/READY; the v4 CLI-core receipt contains an executable `sonos` binary. A real chat request reached the skill, but discovery could not complete while the phone was in Airplane mode; rerun with Wi-Fi/LAN enabled for a full speaker discovery pass. |
 | 48 | spike | [x] contract-pass | Instruction-only adapter tests |
 | 49 | spotify-player | [-] config | Requires Spotify token |
 | 50 | stocks | [x] device-pass / UI pending / badge repair | Native `Tools().get_stock_price("AAPL")` returned a live quote; embedded inventory prevents redundant downloads; Stocks is now explicitly classified in the Android readiness manifest |
@@ -122,10 +122,17 @@ the partial rows (`songsee`, `video-frames`, `openai-whisper`). The Android brid
   the library path, while a raw shell launch is intentionally not a valid app
   smoke. No audio/model fixture was available for a transcription proof, so the
   row remains partial rather than being overstated as fully live.
-- `python-debugpy` remains pending because it is not installed as a current
-  user skill/card and no `android-python-debug-runtime` or `debugpy` wheel
-  receipt exists on this fresh app state; the native Python bridge returned the
-  expected `ModuleNotFoundError` when probed.
+- `python-debugpy` remains partial because it is not installed as a current user
+  skill/card and no `android-python-debug-runtime` receipt exists on this app
+  state. The APK-local `debugpy-1.8.21` wheel is present under
+  `provisioning/python-debug/wheels`; it is not a GitHub v4 release asset.
+  Provisioning this optional skill must create the runtime and wheel receipts
+  before the row can become device-pass.
+- `sonoscli` UI evidence: the Skills page reported ACTIVE/READY, the shared
+  `android-cli-core-pack.json` receipt lists `sonos`, and both managed copies
+  were executable. The chat request reached `sonos discover`; the phone was in
+  Airplane mode, so the network discovery result is partial rather than a
+  successful speaker smoke.
 - `songsee` device evidence: `android-audio-runtime-pack.json` reports
   `smokePassed: true`; ARM64 version output was `v0.1.1-10-g41d27ea` and help
   output exposed the bounded audio-to-image command. No audio fixture was
