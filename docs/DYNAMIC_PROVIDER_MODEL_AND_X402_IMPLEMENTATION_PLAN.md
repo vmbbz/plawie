@@ -96,8 +96,65 @@ The following are prohibited:
 - exposing the raw private key to Gateway, skills, tools, prompts, logs, or
   provider adapters.
 
-The first payment implementation must use Base Sepolia with small limits and a
-test provider. Mainnet is a separate release decision.
+The first payment implementation must use x402 v2, Base Sepolia, the `exact`
+scheme, USDC through EIP-3009, small limits, and one test provider. Mainnet,
+`upto`, Permit2, ERC-7710, recurring permissions, and additional assets are
+separate release decisions.
+
+### 2.6 Research verdict: sound flow, wallet hardening required
+
+The human-approval flow is logical and aligns with x402, but human approval is a
+Plawie safety policy rather than a protocol guarantee. Official x402 client
+wrappers are designed to parse, sign, and retry automatically. Plawie must put a
+deliberate approval gate between parsing the `PAYMENT-REQUIRED` response and
+creating the `PAYMENT-SIGNATURE` payload; it must not use an automatic wrapper
+unchanged.
+
+The current wallet implementation is suitable for ordinary test transfers but
+is not sufficient for production x402 mainnet signing:
+
+- `BaseService` stores the secp256k1 private key as exportable hex through
+  `FlutterSecureStorage`;
+- `initialize()` loads a long-lived `EthPrivateKey` into the Dart process;
+- `sendEth` and `sendUsdc` can sign without per-operation user authentication;
+- `exportPrivateKey()` returns the raw key;
+- the wallet defaults to Base mainnet;
+- there is no approval-bound typed-data signer or intent/receipt ledger.
+
+Android Keystore does not provide portable hardware-backed secp256k1 signing;
+its broadly supported hardware EC curve is NIST P-256. For the existing EOA,
+the practical Android hardening is envelope encryption: protect the Ethereum
+private key with an AES-256-GCM key generated in Android Keystore, require strong
+biometric or device credential authorization for each unwrap/sign operation,
+prefer StrongBox when available, keep the unwrapped key in memory only for the
+single signature, and zeroize temporary buffers. This materially improves the
+current design, but it is not equivalent to a private key that never enters the
+app process.
+
+A Base Account/passkey smart wallet is the more modern optional destination for
+truly user-mediated wallet interactions. The current x402 v2 specification also
+describes ERC-7710 for compatible smart accounts. However, adopting a smart
+account changes wallet identity, SDK/runtime integration, recovery, and
+facilitator compatibility, so it is a later migration rather than a prerequisite
+for the first EIP-3009 testnet implementation.
+
+Base Spend Permissions and automatic Sub Account funding are explicitly out of
+scope. They are designed to permit later spending without a prompt, which
+conflicts with Plawie's requirement that a human approve every transaction.
+
+Research references:
+
+- [`x402 v2 migration guide`](https://docs.cdp.coinbase.com/x402/migration-guide)
+- [`x402 exact EVM specification`](https://github.com/x402-foundation/x402/blob/main/specs/schemes/exact/scheme_exact_evm.md)
+- [`x402 network and EIP-3009 support`](https://docs.cdp.coinbase.com/x402/network-support)
+- [`x402 wallet integration`](https://docs.cdp.coinbase.com/wallets/using-wallets/x402-payments)
+- [`Android Keystore`](https://developer.android.com/privacy-and-security/keystore)
+- [`Android auth-per-use biometric keys`](https://developer.android.com/identity/sign-in/biometric-auth)
+- [`Android tapjacking mitigations`](https://developer.android.com/privacy-and-security/risks/tapjacking)
+- [`Android Protected Confirmation`](https://developer.android.com/privacy-and-security/security-android-protected-confirmation)
+- [`Base Account overview`](https://docs.base.org/base-account/overview/what-is-base-account)
+- [`Base Spend Permissions`](https://docs.base.org/base-account/improve-ux/spend-permissions)
+- [`Base Sub Accounts`](https://docs.base.org/base-account/improve-ux/sub-accounts)
 
 ## 3. Current-state evidence and preserved responsibilities
 
@@ -110,6 +167,7 @@ extend them rather than duplicate them.
 | Execution lanes | `lib/services/model_execution_policy.dart` | Cloud Gateway, direct local NDK, compact bridge, safe output caps, context policy |
 | Chat model selection | `lib/screens/chat_screen.dart` | Persist the selected model, check credentials, keep cloud models on Gateway |
 | Settings provider/key UI | `lib/screens/settings_screen.dart` | Provider credential management and model selection entry points |
+| First-run provider/key UI | `lib/screens/setup_flow_screen.dart` | Provider selection, temporary API-key collection, agent name, setup handoff |
 | Gateway configuration | `lib/services/gateway_service.dart` | Provider config, auth profiles, native policy, reload/restart, Gateway ownership |
 | Base wallet | `lib/services/base_service.dart` | Managed EVM wallet, Base network selection, balance/history, ordinary transfers |
 | Legacy credit flow | `lib/services/crypto_credits_service.dart` | Legacy OpenRouter/LI.FI flow to quarantine; do not extend as the x402 design |
@@ -127,6 +185,20 @@ transfer. A normal `transfer` is not automatically an x402 payment: x402 may
 require a typed authorization such as EIP-3009 or another provider-specific
 payment payload. The x402 implementation therefore needs a signer adapter and
 approval boundary rather than calling the existing generic `sendUsdc` method.
+
+The current first-run screen also has two issues that must be fixed as part of
+this migration:
+
+- it stores `pendingApiKey` in `SharedPreferences` until bootstrap consumes it;
+  provider keys are secrets and must not pass through ordinary preferences;
+- its copy says the key is “never sent anywhere,” although the key must be sent
+  by the Gateway to the selected provider when making authorized API requests.
+
+Non-secret setup state such as provider ID, selected model ID, and progress may
+remain in preferences. The API key must move to an Android Keystore-backed
+secret store and be referenced by an opaque one-time setup ID. The bootstrap
+paths must consume that reference idempotently and clear it on success, cancel,
+provider change, failure cleanup, or expiry.
 
 ## 4. Goals and non-goals
 
@@ -147,6 +219,10 @@ approval boundary rather than calling the existing generic `sendUsdc` method.
 9. Add an x402 payment intent and approval flow that is safe by construction.
 10. Provide receipts, idempotency, and clear recovery for successful and failed
     dependency/model/payment operations.
+11. Preserve first-run provider/API-key setup while removing plaintext pending
+    secrets and keeping model discovery non-blocking.
+12. Require a separate human approval and device-authenticated signature for
+    every x402 payment; no standing spend permission is accepted.
 
 ### Non-goals for the first implementation
 
@@ -160,7 +236,11 @@ approval boundary rather than calling the existing generic `sendUsdc` method.
 - adding broad performance/price/context filters before the basic picker works;
 - routing cloud chat directly from Dart around Gateway;
 - automatically spending from the Base wallet;
+- using Base Spend Permissions, Auto Spend Permissions, or any reusable agent
+  allowance in the human-approval release;
 - supporting Base mainnet payments before testnet and audit acceptance;
+- implementing `upto`, Permit2, or smart-account delegation in the first x402
+  release;
 - changing native tool wildcard/allowlist behavior as part of model discovery.
 
 ## 5. Phase 0: context and tool compatibility baseline
@@ -360,6 +440,44 @@ The cache envelope contains:
 The snapshot is a cache, not a credential store and not an OpenClaw config
 replacement.
 
+### 6.5 `PendingProviderSetup`
+
+This is the crash-recoverable, non-secret setup record.
+
+Fields:
+
+- random setup ID;
+- provider ID and connection mode;
+- selected safe default model ID;
+- opaque secret reference when an API key was entered;
+- secret creation/expiry time, never the secret value;
+- connection validation state (`notTested`, `valid`, `invalid`, `unavailable`);
+- bootstrap consumption state and receipt ID;
+- last failure category without provider response bodies.
+
+There must be only one active pending setup. Replacing, skipping, or cancelling
+it deletes its secret reference before a new record is accepted.
+
+### 6.6 `PendingPaymentIntent` and `PaymentReceipt`
+
+`PendingPaymentIntent` is generated from a validated 402 challenge and is the
+only object that the wallet signer accepts. It contains:
+
+- random intent ID and approval nonce;
+- provider adapter ID and verified HTTPS origin;
+- HTTP method, canonical resource URL, and request-body hash;
+- x402 version, scheme, network, asset transfer method, and facilitator identity
+  when supplied;
+- exact token, amount, recipient, valid-after, valid-before, and payment nonce;
+- hash of the canonical payment requirement shown to the user;
+- per-request/session/day policy result;
+- state, created time, expiry, and one-attempt flag.
+
+`PaymentReceipt` contains the intent ID, provider payment identifier, settlement
+response, transaction hash when available, paid amount/asset/network, timestamps,
+and final status. It never stores a reusable signature, private key, API key, or
+full sensitive request body.
+
 ## 7. Provider adapter contract
 
 Create a provider adapter boundary so provider quirks stay out of widgets,
@@ -388,6 +506,11 @@ Adapters must:
   selection callback;
 - reject payment challenges that do not match the provider's configured host,
   expected chain, token, and request context;
+- bind an approved payment to the original HTTP method, canonical URL, body hash,
+  provider adapter, and exact challenge hash;
+- reject cross-origin redirects before or after a payment challenge and never
+  forward a payment signature to a redirected host;
+- allow only one signed retry for a payment intent;
 - expose only the provider capability facts that were actually observed or
   documented.
 
@@ -481,9 +604,140 @@ the Gateway receives. The catalog remains a Plawie-side discovery/cache concern.
 This keeps Gateway startup fast, avoids giant configuration payloads, and
 prevents stale or unsupported models from becoming runtime defaults.
 
-## 10. Model picker and settings UX
+## 10. First-run provider and API-key setup
 
-### 10.1 Recommended layout
+First setup remains available before OpenClaw installation. It must use a small,
+bundled set of trusted provider definitions because provider hosts, auth modes,
+and payment allowlists are security policy and cannot be downloaded from an
+arbitrary remote catalog. Model lists are dynamic; trusted provider adapters are
+shipped and reviewed with the app.
+
+### 10.1 Setup goals
+
+The setup page must let a new user:
+
+1. choose Cloud provider, Wallet/x402 provider when supported, Private Offline,
+   or Configure later;
+2. understand whether the provider uses an API key, official account handoff,
+   wallet identity, or per-request x402;
+3. save an API key securely when that mode is selected;
+4. optionally test the connection without purchasing anything;
+5. accept a bundled safe default model so installation is not blocked by a
+   models-endpoint outage;
+6. review provider, connection method, default model, and payment policy before
+   starting installation.
+
+The existing agent-name and quick-settings steps remain after provider
+connection. The provider step title should say `Choose your AI provider`, not
+`Choose your AI model`, because the current cards select a provider. Dynamic
+model selection can be offered after installation or as an optional non-blocking
+preview when a catalog is already available.
+
+### 10.2 Recommended first-run flow
+
+```text
+Choose mode/provider
+  -> explain connection method
+  -> API key: open official key page / paste key
+     OR x402: create or open internal Base wallet (no payment yet)
+     OR offline/configure later: no credential
+  -> optional Test connection
+  -> save non-secret setup record + opaque secret reference
+  -> name agent and quick settings
+  -> review: provider, default model, connection, Ask every payment
+  -> install official Gateway/dependencies
+  -> consume credential exactly once before first Gateway start
+  -> clear pending secret and store setup receipt
+  -> start native Gateway
+  -> refresh dynamic models after setup, never on the critical boot path
+```
+
+Wallet creation during setup creates a payment identity only. It must not fund,
+top up, sign, or grant spending permission. The review screen must say that every
+x402 charge will stop for explicit approval and device authentication.
+
+### 10.3 Provider connection modes in setup
+
+| Mode | Setup UI | Bootstrap result |
+| --- | --- | --- |
+| API key | Official Create/manage key link, obscured input, optional Test connection | Credential available to selected Gateway provider |
+| Official browser/OAuth | Open official account/login page and resume callback/status | Credential/reference stored only after provider confirmation |
+| Wallet identity/x402 | Create/open wallet, show address/network, explain funding and approval | Provider marked wallet-capable; no payment and no fake API key |
+| Private Offline | Explain that local model download happens later | No cloud credential; direct NDK lane preserved |
+| Configure later | Skip safely | Gateway can install/start without cloud inference credential |
+
+Provider cards must come from the same trusted `ProviderDefinition` registry used
+by Settings. A provider cannot appear during setup merely because a remote models
+endpoint returned its name.
+
+### 10.4 API-key secret lifecycle
+
+Replace `PreferencesService.pendingApiKey` with a dedicated `ProviderSecretStore`
+backed by Android Keystore protection. The UI writes the key once and receives an
+opaque secret reference. Only this reference enters `PendingProviderSetup`.
+
+Rules:
+
+- never persist the API key in ordinary `SharedPreferences`/DataStore;
+- never log the key, prefix beyond a safe redacted suffix, clipboard contents,
+  provider response authorization header, or secret reference lookup result;
+- clear the text controller and clipboard suggestion state after save;
+- changing provider, pressing Skip, going back and replacing a connection,
+  cancelling setup, or expiry deletes the old pending secret;
+- bootstrap consumes the secret through one common idempotent method used by
+  native and PRoot fallback paths;
+- consumption produces a non-secret receipt before the pending record is cleared
+  so crash recovery cannot duplicate configuration;
+- final credential storage has one canonical secret. If OpenClaw requires
+  generated config or environment material, it is app-private, minimally scoped,
+  never duplicated unnecessarily, and deleted on disconnect;
+- native launch should prefer injecting the credential into the embedded Gateway
+  process from the secret store rather than keeping duplicate plaintext copies;
+- PRoot fallback must pass credentials through a non-logged environment/IPC path,
+  never a command-line argument.
+
+The user-facing copy should be accurate:
+
+> Stored securely on this device. Plawie's Gateway sends this key only to the
+> selected provider when you make an authorized request.
+
+Do not claim the key is “never sent anywhere.”
+
+### 10.5 Connection validation
+
+Prefix and length checks are hints, not credential validation. `Test connection`
+is an explicit user action and should call a documented non-billable endpoint,
+preferably the provider's models or identity endpoint. It must:
+
+- use a short timeout and cancellation;
+- never invoke a paid model completion;
+- distinguish invalid credential, unavailable network, rate limit, malformed
+  response, and unsupported provider;
+- save only the validation state and timestamp;
+- allow installation to continue when validation is unavailable, while clearly
+  showing `Not verified`;
+- never start/restart Gateway just to validate a setup key.
+
+### 10.6 Setup idempotency and recovery
+
+The two existing bootstrap branches that consume `pendingProvider` and
+`pendingApiKey` must converge on one idempotent setup-consumption service. A
+stable setup ID and receipt prevent double configuration if Android kills the app
+mid-install. On restart:
+
+- `configured` receipt: continue without reading/signing/configuring again;
+- valid pending secret: resume from the recorded step;
+- expired/missing secret: return to connection input without discarding already
+  downloaded Gateway/dependency receipts;
+- provider changed: invalidate the old setup and delete its secret;
+- setup skipped: remove all pending provider secrets and continue installation.
+
+Provider/key setup must not cause duplicate Gateway downloads, duplicate provider
+onboarding, duplicate restarts, or duplicate notifications.
+
+## 11. Model picker and settings UX
+
+### 11.1 Recommended layout
 
 Use the current model picker/settings entry points, but replace the flat static
 list gradually:
@@ -501,7 +755,7 @@ Avoid long overflow-prone rows. Model names, provider names, and warnings must
 wrap or elide within bounded layouts; no card may depend on a single-line model
 name.
 
-### 10.2 Capability language
+### 11.2 Capability language
 
 Use plain labels:
 
@@ -517,7 +771,7 @@ Do not claim that a model is installed locally when it is only remotely
 discoverable. Do not claim that a provider is configured because its model list
 loaded anonymously.
 
-### 10.3 Minimal filters
+### 11.3 Minimal filters
 
 The first catalog should not expose a filter for every metadata field. Search and
 provider grouping solve the primary navigation problem. Add an Agent-ready/tools
@@ -525,9 +779,9 @@ filter only after the capability state is backed by a successful local canary.
 Add modality only when the current camera/image/GIF flows require it. Defer
 speed, price, context, and freshness filters to a measured follow-up.
 
-## 11. Gateway integration and context preservation
+## 12. Gateway integration and context preservation
 
-### 11.1 Selection flow
+### 12.1 Selection flow
 
 1. User selects a namespaced dynamic model.
 2. App checks the provider connection and model metadata quality.
@@ -540,7 +794,7 @@ speed, price, context, and freshness filters to a measured follow-up.
 7. A health/capability check confirms the selected route before labeling it
    Agent-ready.
 
-### 11.2 Required preservation rules
+### 12.2 Required preservation rules
 
 - Keep all cloud models on the Gateway lane.
 - Keep direct local models out of Gateway unless the existing compact bridge is
@@ -556,7 +810,7 @@ speed, price, context, and freshness filters to a measured follow-up.
 - If a model cannot support the current tool schema, offer Chat-only mode or
   block the Agent route with an actionable explanation.
 
-### 11.3 Dynamic model configuration
+### 12.3 Dynamic model configuration
 
 `ModelProviderCatalog` should become the compatibility facade while the dynamic
 catalog is introduced. Existing static defaults remain as fallback records until
@@ -566,24 +820,78 @@ lane selection, context reservation, and output caps.
 The implementation must not spread provider-specific parsing across
 `chat_screen.dart`, `settings_screen.dart`, or `gateway_service.dart`.
 
-## 12. x402 payment architecture
+## 13. x402 payment architecture
 
-### 12.1 Payment state machine
+### 13.1 Protocol baseline
+
+Implement x402 v2 only. The required wire contract is:
+
+- server challenge: `PAYMENT-REQUIRED`;
+- client proof: `PAYMENT-SIGNATURE`;
+- server settlement result: `PAYMENT-RESPONSE`;
+- Base mainnet: `eip155:8453`;
+- Base Sepolia: `eip155:84532`.
+
+Do not mix v1 packages, legacy `X-PAYMENT` headers, or legacy network names with
+v2. The first release supports only `(scheme=exact, network=eip155:84532,
+assetTransferMethod=eip3009, asset=Base Sepolia USDC)`. EIP-3009 is the best fit
+for the current EOA because the user signs a one-time typed authorization with
+exact recipient, amount, validity window, and nonce, while the facilitator
+settles it. It avoids the standing token allowance required by Permit2.
+
+The `upto` scheme is deferred. Although it is useful for token-based LLM billing,
+it authorizes a maximum rather than presenting the final settled amount at
+approval time. It needs separate UI language, settlement reconciliation, and
+receipt testing before it can satisfy the human-approval contract.
+
+### 13.2 Gateway and provider transport ownership
+
+Cloud inference must remain Gateway-owned, so x402 cannot be implemented as a
+separate direct-Dart chat route. The recommended boundary is an app-controlled
+x402 provider transport adapter:
+
+```text
+OpenClaw Gateway provider request
+  -> loopback provider transport / reviewed OpenClaw provider adapter
+  -> official provider HTTPS endpoint
+  -> 402 challenge
+  -> native bridge emits pending intent to Flutter
+  -> Flutter approval + Android signer
+  -> transport retries the exact original HTTPS request once
+  -> provider response returns to OpenClaw Gateway
+```
+
+Use the official x402 v2 parsing and EVM scheme implementation where it can be
+integrated with the embedded native Node runtime. Replace or wrap the automatic
+signer callback with an approval-bound callback to the native wallet service.
+Do not fork or wrap the official OpenClaw release merely to add payments. Prefer
+a supported provider adapter/plugin or a narrowly scoped loopback transport.
+
+The transport must be disabled for ordinary providers and ordinary HTTP calls.
+Only a shipped provider adapter and allowlisted HTTPS origin may invoke it. A
+skill that needs paid x402 access must declare that host/payment capability in a
+reviewed manifest and use the same payment-intent boundary; arbitrary agent URLs
+cannot reach the signer.
+
+If the app is backgrounded, a notification may open the pending-payment screen,
+but notification actions cannot approve. Only one payment approval may be active
+at a time; additional intents queue or fail with `approvalBusy`.
+
+### 13.3 Payment state machine
 
 The payment path is a user-mediated state machine:
 
 ```text
-request
-  -> provider returns HTTP 402
-  -> validate challenge
+original HTTPS request
+  -> provider returns HTTP 402 + PAYMENT-REQUIRED
+  -> parse and validate challenge against original request
   -> create PendingPaymentIntent
   -> display human approval UI
   -> user approves or rejects
-  -> wallet unlock/device authentication
-  -> sign exact typed payment
-  -> submit proof once
-  -> retry original request once
-  -> verify response and receipt
+  -> strong biometric/device credential unlocks one signing operation
+  -> revalidate intent and sign exact EIP-712 authorization
+  -> retry same request once with PAYMENT-SIGNATURE
+  -> parse PAYMENT-RESPONSE and persist redacted receipt
 ```
 
 States:
@@ -593,6 +901,7 @@ States:
 - `rejected`;
 - `expired`;
 - `blockedByPolicy`;
+- `approvalBusy`;
 - `awaitingHumanApproval`;
 - `awaitingWalletUnlock`;
 - `signing`;
@@ -604,20 +913,22 @@ States:
 An `uncertain` result must first query the provider/chain receipt before any
 retry. It must never blindly sign again.
 
-### 12.2 Payment intent contents
+### 13.4 Payment intent contents
 
 The app creates the intent from the verified provider challenge, not from model
 text. It must show:
 
 - provider and verified host;
-- original endpoint and operation;
+- original HTTPS method, canonical URL, and redacted operation;
+- request-body hash, never a sensitive body dump;
 - selected provider/model/route;
-- network and CAIP-2 chain ID;
+- x402 version, `exact` scheme, EIP-3009 transfer method, and CAIP-2 network;
 - token symbol and contract address;
 - exact amount in token units and a human-readable amount;
 - recipient/pay-to address;
-- request/resource identifier or hash;
-- expiry and nonce/idempotency key;
+- canonical challenge hash and resource identifier;
+- validity window, payment nonce, approval nonce, and payment identifier when
+  supported;
 - per-request and session spend limits;
 - whether this is a top-up or per-request payment;
 - a warning if fiat value is unavailable or only estimated;
@@ -627,24 +938,43 @@ The approval screen must not look like an ordinary “Continue” dialog. It mus
 make the spend, recipient, chain, and expiry visible and require a deliberate
 Approve action distinct from chat input.
 
-### 12.3 Hard approval rules
+### 13.5 Hard approval rules
 
 - Only a UI approval event tied to the exact intent ID can authorize signing.
 - Approval expires with the intent and cannot be reused for another request.
 - Chat text, model output, skill output, deep-link parameters, and tool calls
   cannot approve a payment.
-- Approval requires wallet unlock or device authentication where supported.
+- Approval and signing are separate gates: the user first confirms the visible
+  intent, then strong biometric or device credential authorizes exactly one
+  cryptographic operation.
 - Enforce an allowlist of provider hosts, networks, token contracts, and payment
   schemes.
-- Enforce per-request, session, and daily limits.
+- Enforce per-request, session, and daily limits even though every payment asks.
 - Require exact recipient, amount, chain, asset, nonce, and resource match at
   signing time.
+- Recompute the canonical challenge and request hash immediately before signing.
+- Reject HTTP, TLS errors, cross-origin redirects, changed methods/bodies, stale
+  challenges, unsupported facilitators, and unrecognized transfer methods.
+- Do not send `PAYMENT-SIGNATURE` across any redirect.
+- Treat the payment screen as a sensitive Android activity: use `FLAG_SECURE`,
+  hide overlay windows where supported, reject fully or partially obscured touch
+  events on approval controls, and mark transaction controls accessibility-data
+  sensitive on supported Android versions.
+- Keep biometric confirmation enabled for passive face/iris modalities; this is
+  a purchase authorization, not low-risk re-authentication.
+- Evaluate Android Protected Confirmation as an additional signed record that the
+  user approved the short payment statement on supported devices. It supplements
+  but does not replace the EIP-3009 signature or the normal approval screen.
 - Redact signatures and key material from all logs and diagnostic exports.
 - Do not allow a skill to call a generic wallet-send method for x402.
+- Do not create Base Spend Permissions, token allowances, session keys, or
+  reusable delegations in the human-approval release.
+- Retry the original request once only. A second 402 creates no automatic second
+  signature and surfaces a recoverable payment error.
 - A user can cancel at any state before final submission; cancellation must
   prevent the pending intent from being reused.
 
-### 12.4 Internal Base wallet design
+### 13.6 Internal Base wallet design
 
 The wallet UI can be the user's visible management surface, but the signing
 implementation needs two conceptual identities:
@@ -653,23 +983,64 @@ implementation needs two conceptual identities:
 - `agentPaymentWallet`: a constrained wallet identity used for approved provider
   payments.
 
-They may share a secure storage implementation initially, but they must not share
-authorization semantics. In particular:
+The recommended first release can use a dedicated payment account derived from
+the existing internal-wallet architecture, but it should not silently spend the
+ordinary user-wallet balance. The Base page must show which address is the x402
+payment wallet, its network, USDC balance, security level, and payment receipts.
+Funding is always user initiated.
+
+The wallet identities may share a UI and storage foundation, but they must not
+share authorization semantics. Before any mainnet payment work:
 
 - Gateway and skills receive a wallet capability handle, never a private key;
 - the agent cannot export or inspect the private key;
-- `BaseService.exportPrivateKey` must be reviewed before production payment use;
-- the signer should move toward Android Keystore/biometric-backed authorization
-  where practical;
+- replace the long-lived `_credentials` field with address-only idle state;
+- encrypt the secp256k1 private key using AES-256-GCM with an Android
+  Keystore-generated wrapping key;
+- require per-use (`authenticationValidityDurationSeconds=0` or modern
+  equivalent) strong biometric/device credential authorization to unwrap;
+- prefer StrongBox, fall back to TEE, and report the effective security level;
+- unwrap only after an approved, unexpired intent is revalidated;
+- sign only the canonical EIP-712 EIP-3009 payload, then zeroize all mutable key
+  and message buffers;
+- separate wallet creation/import/export from payment signing interfaces;
+- gate `BaseService.exportPrivateKey` behind explicit wallet-management UI,
+  device re-authentication, warnings, and a separate audit; it is never available
+  to the agent-payment service;
 - payment signing is exposed only through an approval-bound service;
 - ordinary `sendEth`/`sendUsdc` remain user-facing transfers and cannot be
   repurposed by an agent as x402.
 
-The first adapter should support Base Sepolia, a single approved stablecoin,
-one provider host, small caps, and one documented x402 scheme. Mainnet and
-additional tokens/providers require separate allowlist changes and tests.
+Because Android Keystore hardware commonly supports P-256 rather than Ethereum's
+secp256k1, this design hardware-protects the wrapping/unlock key rather than
+claiming that the Ethereum signature itself is produced inside secure hardware.
+The security disclosure and diagnostics must state that distinction honestly.
 
-### 12.5 Provider-specific payment differences
+The first adapter supports Base Sepolia USDC at the official contract address,
+one provider host, tiny caps, and `exact/eip3009`. Mainnet and additional
+tokens/providers require separate allowlist changes, security review, and tests.
+
+### 13.7 Optional modern wallet migration
+
+A Base Account smart wallet with passkey approval is a strong later option and
+can remain presented through Plawie's internal Base wallet page. It can offer a
+self-custodial smart account and a user prompt for wallet interactions. Before
+migration, verify Flutter/Android integration, wallet recovery, x402
+EOA/smart-account compatibility, and the enabled facilitator's ERC-7710 support.
+
+If Base Account/Sub Accounts are evaluated:
+
+- disable Auto Spend Permissions (`funding: manual` or equivalent);
+- never request a recurring Spend Permission;
+- require the passkey/device prompt for every x402 payment;
+- keep the approval-intent screen before the wallet prompt;
+- migrate identity/funds only through an explicit user flow;
+- retain the EIP-3009 EOA path until smart-account settlement is proven.
+
+This is a security/UX migration, not a reason to delay the testnet EOA proof of
+concept.
+
+### 13.8 Provider-specific payment differences
 
 The generic payment state machine is shared; the challenge parser and signer are
 provider-specific.
@@ -685,7 +1056,7 @@ provider-specific.
 No provider adapter may silently convert a per-request payment into a balance
 top-up or vice versa.
 
-## 13. Account, balance, and top-up boundaries
+## 14. Account, balance, and top-up boundaries
 
 The app should show provider account actions only when the provider adapter
 supports them:
@@ -701,7 +1072,7 @@ internal credit ledger would introduce custody, refunds, reconciliation,
 chargebacks, and multi-provider accounting obligations. The first release keeps
 provider balances and x402 receipts provider-specific.
 
-## 14. Implementation phases and order
+## 15. Implementation phases and order
 
 Each phase ends with tests and a focused commit. Do not combine payment signing
 with the first dynamic catalog commit.
@@ -717,7 +1088,23 @@ with the first dynamic catalog commit.
 Exit criteria: baseline tests prove a model switch does not mutate context,
 tools, history, or runtime lane.
 
-### Phase 1 — Catalog data model and repository
+### Phase 1 — First-run credential hardening
+
+- Introduce `ProviderSecretStore` and opaque one-time secret references.
+- Remove plaintext `pendingApiKey` writes from `SharedPreferences`.
+- Converge native and PRoot bootstrap credential consumption on one idempotent
+  service with a setup ID and receipt.
+- Correct first-run key-storage/network copy and clear secrets on replace, skip,
+  cancel, failure cleanup, and expiry.
+- Add crash/restart tests around every credential-consumption boundary.
+- Keep current provider cards and static safe defaults until the dynamic catalog
+  is ready.
+
+Exit criteria: no API key enters ordinary preferences or logs, each pending key
+is consumed at most once, and fresh setup still configures the provider before
+the first native Gateway start without an extra restart.
+
+### Phase 2 — Catalog data model and repository
 
 - Add provider/model/connection/snapshot contracts.
 - Add namespaced IDs and migration for existing static IDs.
@@ -728,7 +1115,7 @@ tools, history, or runtime lane.
 Exit criteria: unit tests cover valid, stale, empty, malformed, duplicate, and
 unknown-capability responses without affecting Gateway startup.
 
-### Phase 2 — Discovery adapters
+### Phase 3 — Discovery adapters
 
 - Implement one provider adapter at a time, starting with a provider whose
   models endpoint is stable and whose auth semantics are already supported.
@@ -740,19 +1127,23 @@ unknown-capability responses without affecting Gateway startup.
 Exit criteria: each adapter can fetch, cache, validate, and explain its own
 failures without writing the full catalog into Gateway config.
 
-### Phase 3 — Grouped/searchable UI
+### Phase 4 — First-run and grouped/searchable UI
 
 - Replace the flat provider/model presentation behind a feature flag.
 - Add provider grouping, search, connection state, capability badge, and safe
   wrapping for long names.
 - Add explicit Connect/Manage/Refresh actions.
 - Keep static fallback records visible when dynamic refresh is unavailable.
+- Drive first-run provider cards from the bundled trusted provider registry.
+- Add connection-method explanations, optional non-billable Test connection,
+  safe default-model review, and `Ask every payment` disclosure.
+- Keep dynamic model fetching off the critical setup/install/startup path.
 
 Exit criteria: a user can find and select a model offline from cache, understand
 why a model is unavailable, and configure a provider without duplicate dialogs or
-notifications.
+notifications; first setup can also complete during a provider catalog outage.
 
-### Phase 4 — Gateway selected-model integration
+### Phase 5 — Gateway selected-model integration
 
 - Route selected dynamic models through `ModelExecutionPolicy` and
   `GatewayService`.
@@ -764,7 +1155,7 @@ notifications.
 Exit criteria: dynamic selection works with ordinary chat and verified tools;
 unknown/variable models are labeled accurately and do not overclaim support.
 
-### Phase 5 — Account and provider management
+### Phase 6 — Account and provider management
 
 - Add official browser/deep-link account handoffs where supported.
 - Add connection validation, disconnect, re-authentication, and redacted status.
@@ -774,20 +1165,39 @@ unknown/variable models are labeled accurately and do not overclaim support.
 Exit criteria: users can connect and manage a provider without Plawie storing a
 provider password or losing an existing working API-key configuration.
 
-### Phase 6 — x402 intent and approval on Base Sepolia
+### Phase 7 — Internal wallet signer hardening
 
-- Add challenge parsing and provider host/network/token allowlists.
+- Separate ordinary wallet management from the agent-payment signer interface.
+- Replace long-lived in-memory EOA credentials with address-only idle state.
+- Add Android Keystore AES-GCM envelope protection for the secp256k1 key.
+- Require one strong biometric/device-credential authorization per unwrap/sign.
+- Add StrongBox/TEE capability reporting and a software-fallback block for x402.
+- Gate export behind separate wallet-management authentication and ensure the
+  payment service cannot call it.
+- Add memory-lifetime/zeroization tests and log redaction tests.
+
+Exit criteria: a payment signature cannot be produced without an approved intent
+and a fresh device-authenticated cryptographic unlock; the Gateway and agent
+cannot access raw key material.
+
+### Phase 8 — x402 v2 intent and approval on Base Sepolia
+
+- Add v2 `PAYMENT-REQUIRED` parsing and provider
+  host/network/token/facilitator allowlists.
 - Add `PendingPaymentIntent` and receipt records.
 - Add the explicit approval screen and cancellation/expiry behavior.
-- Add wallet unlock/device authentication before signing.
-- Add an approval-bound signer adapter; do not call generic `sendUsdc`.
-- Test one provider and one payment scheme with tiny limits.
+- Add the Gateway-compatible provider transport and approval bridge.
+- Add `exact/eip3009` EIP-712 construction and the approval-bound signer; do not
+  call generic `sendUsdc`.
+- Retry once with `PAYMENT-SIGNATURE`, parse `PAYMENT-RESPONSE`, and persist a
+  redacted receipt.
+- Test one provider on Base Sepolia USDC with tiny limits.
 
 Exit criteria: reject/cancel/expiry paths are safe, approval is required, exact
 payment details are displayed and validated, and the provider accepts one
-approved payment in a controlled test.
+approved payment in a controlled test with no automatic second attempt.
 
-### Phase 7 — Provider-specific live validation
+### Phase 9 — Provider-specific live validation
 
 - Validate Venice top-up/inference separation if enabled.
 - Validate BlockRun per-request payment semantics if enabled.
@@ -798,7 +1208,18 @@ approved payment in a controlled test.
 Exit criteria: each enabled provider has a documented capability/payment matrix
 and a rollback switch.
 
-### Phase 8 — Cleanup and release hardening
+### Phase 10 — Optional smart-wallet evaluation
+
+- Prototype Base Account/passkey integration behind a separate feature flag.
+- Verify Flutter/Android UX, recovery, address migration, and facilitator
+  support for smart-account x402/ ERC-7710.
+- Keep Auto Spend Permissions and reusable Spend Permissions disabled.
+- Compare security and supportability against the hardened EOA signer.
+
+Exit criteria: an explicit architecture decision is documented; no user is
+silently migrated and no standing spend authority is introduced.
+
+### Phase 11 — Cleanup and release hardening
 
 - Remove dead static-only UI paths after migration telemetry is sufficient.
 - Keep static safe fallback records for offline/error recovery.
@@ -810,9 +1231,9 @@ and a rollback switch.
 Exit criteria: release build, fresh install, upgrade install, offline cache, and
 PRoot fallback all pass the release checklist.
 
-## 15. Test and acceptance matrix
+## 16. Test and acceptance matrix
 
-### 15.1 Catalog and selection
+### 16.1 Catalog and selection
 
 - provider models load from the documented endpoint;
 - one provider failure does not hide other providers;
@@ -825,7 +1246,29 @@ PRoot fallback all pass the release checklist.
 - dynamic catalog fetch does not delay Gateway startup;
 - refresh actions do not create duplicate notifications.
 
-### 15.2 Context and tools
+### 16.2 First-run provider and credential setup
+
+- provider cards come only from the bundled trusted registry;
+- provider selection works without a dynamic catalog response;
+- the title and review distinguish provider selection from model selection;
+- API-key, browser-account, wallet/x402, offline, and configure-later modes show
+  the correct controls;
+- API key never enters `SharedPreferences`, DataStore, logs, crash reports, or
+  setup receipts;
+- changing provider, back/replacement, Skip, cancel, expiry, and failure cleanup
+  delete the correct pending secret;
+- optional Test connection never makes a paid completion request;
+- unavailable validation is `Not verified` and does not block installation;
+- native bootstrap consumes a pending secret once and configures before first
+  Gateway start;
+- app termination before/during/after consumption resumes without duplicate
+  config, restart, download, or notification;
+- PRoot fallback uses the same non-logged secret reference and receipt contract;
+- setup copy says the Gateway sends the key to the selected provider when needed;
+- wallet/x402 setup creates or selects an address but never funds, approves,
+  signs, or grants spending authority.
+
+### 16.3 Context and tools
 
 - fixed session/history remains byte-for-byte or structurally identical across a
   model switch;
@@ -839,7 +1282,7 @@ PRoot fallback all pass the release checklist.
 - NDK direct and compact bridge tests remain unchanged;
 - native Gateway failure still offers the existing user-requested PRoot fallback.
 
-### 15.3 Account and security
+### 16.4 Account and security
 
 - API key never appears in UI logs, Gateway logs, model context, crash reports,
   or catalog snapshots;
@@ -848,26 +1291,44 @@ PRoot fallback all pass the release checklist.
 - expired/revoked credentials produce an actionable state;
 - wallet private key is not reachable by agent tools or provider adapters;
 - raw key export is gated and never part of an agent flow;
-- biometric/device-auth failure cancels signing.
+- idle wallet state holds an address, not a long-lived `EthPrivateKey`;
+- the secp256k1 secret is wrapped by an Android Keystore AES-GCM key;
+- StrongBox/TEE/software security level is observable and policy-enforced;
+- biometric/device-auth failure cancels signing;
+- one authentication unlocks at most one approved payment signature;
+- temporary key/message buffers are cleared after success, failure, and cancel.
 
-### 15.4 x402 payments
+### 16.5 x402 payments
 
 - non-402 request never shows a payment prompt;
+- v1 headers/network names and mixed v1/v2 payloads are rejected;
+- only Base Sepolia `exact/eip3009` USDC is accepted in the first release;
 - invalid host/chain/token/recipient/amount challenge is blocked;
+- HTTP, TLS failure, cross-origin redirect, changed method/URL/body, changed
+  challenge, unsupported facilitator, and expired validity window are blocked;
 - approval screen shows exact payment details;
+- screenshots/non-secure displays are blocked for payment approval, and obscured
+  touch events cannot press Approve;
 - reject and cancel never sign or submit;
 - chat “approve” text never signs;
+- notification action cannot approve;
+- simultaneous second intent queues or returns `approvalBusy`;
 - approval expires and cannot be replayed;
 - one approved intent signs exactly once;
-- provider receives the required x402 proof format;
+- EIP-712 fields match the displayed EIP-3009 authorization exactly;
+- provider receives v2 `PAYMENT-SIGNATURE` on the same original request;
 - the original request retries at most once after proof;
+- second 402 never signs again automatically;
+- `PAYMENT-RESPONSE` is parsed and tied to the intent receipt;
 - uncertain settlement checks receipt before any further action;
 - insufficient balance and network failure are recoverable without duplicate
   charge;
 - receipts are stored without private keys or reusable signatures;
-- session and daily limits are enforced.
+- session and daily limits are enforced;
+- no Permit2 allowance, Spend Permission, Auto Spend Permission, session key, or
+  reusable ERC-7710 delegation is created.
 
-### 15.5 Fresh install and upgrade
+### 16.6 Fresh install and upgrade
 
 - fresh install boots native Gateway without dynamic catalog/network success;
 - first setup does not download a duplicate gateway or dependency pack;
@@ -877,10 +1338,11 @@ PRoot fallback all pass the release checklist.
   selected model;
 - PRoot remains opt-in and does not become primary after a catalog error.
 
-## 16. Rollback and migration strategy
+## 17. Rollback and migration strategy
 
 Use feature flags at these boundaries:
 
+- secure pending-credential setup enabled after migration verification;
 - dynamic discovery enabled per provider;
 - dynamic picker enabled globally;
 - dynamic Gateway selection enabled per provider/model;
@@ -893,11 +1355,12 @@ Rollback rules:
 - fall back to the current static provider catalog;
 - preserve the user's last known working model where possible;
 - disable x402 payment adapters without disabling ordinary API-key chat;
+- disable the payment transport/signer without hiding the ordinary Base wallet;
 - never silently convert a failed paid request into a different paid route;
 - keep diagnostic reason codes so a rollback is distinguishable from an auth or
   provider outage.
 
-## 17. Risks and decisions still required
+## 18. Risks and decisions still required
 
 ### Risk: provider metadata is incomplete or optimistic
 
@@ -922,45 +1385,78 @@ allowlist; no generic ERC-20 transfer shortcut.
 ### Risk: app-controlled wallet custody is high impact
 
 Mitigation: small testnet limits, approval-bound signing, device auth, no raw
-key access from agents, receipts, and a later Keystore-backed signer review.
+key access from agents, Android Keystore envelope protection, receipts, and a
+later Base Account/passkey evaluation. Mainnet is blocked until the signer
+hardening and security review are complete.
+
+### Risk: Android Keystore cannot portably sign Ethereum secp256k1
+
+Mitigation: use a per-operation-authenticated Keystore AES-GCM wrapping key,
+minimize/zeroize the unwrapped EOA key lifetime, report the actual hardware
+security level, and never describe the EOA signature as hardware-isolated. Keep
+Base Account/passkey migration as the route to stronger non-exportable signing.
+
+### Risk: automatic x402 libraries bypass human approval
+
+Mitigation: integrate the official v2 parser/scheme behind a custom
+approval-bound signer callback. No generic `fetchWithPayment` wrapper receives a
+signer capable of signing without a validated Plawie intent and fresh device
+authentication.
+
+### Risk: setup temporarily duplicates or leaks provider credentials
+
+Mitigation: opaque one-time secret references, one canonical secret store,
+idempotent consumption receipts, explicit cleanup paths, and no plaintext
+`pendingApiKey` in ordinary preferences.
 
 ### Decision required before mainnet
 
 - Which wallet identity is used for provider payment and how it is disclosed to
   the user;
-- whether the existing managed private-key storage is acceptable for a limited
-  testnet feature;
-- the first supported stablecoin and x402 scheme;
+- whether the payment wallet is a separate address or an explicitly selected
+  existing user-wallet address;
 - per-request/session/daily limits;
-- whether biometric authentication is mandatory on the target Android versions;
+- minimum acceptable Keystore security level and device-auth fallback policy;
 - provider allowlist and supported jurisdictions;
 - support/refund behavior for an uncertain or settled provider charge.
 
-## 18. Commit order
+The protocol baseline is not open: first release is x402 v2,
+`exact/eip3009`, Base Sepolia USDC, with mandatory per-payment human approval and
+device authentication. Mainnet keeps the same narrow scheme unless a separate
+review changes it.
+
+## 19. Commit order
 
 The implementation should use small reviewable commits in this order:
 
 1. `Document dynamic provider and x402 rollout contract`
-2. `Add model catalog contracts and cache state`
-3. `Add provider discovery adapter foundation`
-4. `Add first dynamic provider models endpoint`
-5. `Add grouped searchable provider model picker`
-6. `Route dynamic selection through existing execution policy`
-7. `Add context and tool invariance tests`
-8. `Add official account connection actions`
-9. `Add x402 payment intent and approval UI on Base Sepolia`
-10. `Add provider-specific x402 signer adapter`
-11. `Add live payment receipt and recovery tests`
-12. `Remove or quarantine superseded legacy provider/payment paths`
+2. `Move pending provider keys into one-time secure storage`
+3. `Make bootstrap credential consumption idempotent`
+4. `Add model catalog contracts and cache state`
+5. `Add provider discovery adapter foundation`
+6. `Add first dynamic provider models endpoint`
+7. `Add first-run provider connection registry and review`
+8. `Add grouped searchable provider model picker`
+9. `Route dynamic selection through existing execution policy`
+10. `Add context and tool invariance tests`
+11. `Add official account connection actions`
+12. `Harden the internal Base EOA signer with per-use device auth`
+13. `Add x402 v2 payment intent and approval UI on Base Sepolia`
+14. `Add Gateway-compatible exact EIP-3009 payment transport`
+15. `Add live payment receipt and recovery tests`
+16. `Evaluate Base Account passkey signing without spend permissions`
+17. `Remove or quarantine superseded legacy provider/payment paths`
 
 Do not commit generated APKs, build reports, caches, or temporary device files.
 Do not stage unrelated pre-existing worktree files.
 
-## 19. Definition of done
+## 20. Definition of done
 
 This plan is complete only when:
 
 - users can discover current models without delaying Gateway startup;
+- first setup can select a provider and securely save/consume its API key without
+  ordinary-preference storage, duplicate bootstrap, or misleading copy;
 - provider groups and search work on a small mobile screen;
 - the selected model is namespaced, persisted, and safely routed;
 - stale/offline/error states are honest and recoverable;
@@ -968,8 +1464,11 @@ This plan is complete only when:
   native/PRoot/NDK lane;
 - tool capability claims are backed by local smoke results;
 - account connection uses official provider handoffs and redacted secrets;
-- any x402 payment requires a visible, exact, human approval and wallet unlock;
+- any x402 payment is v2 and requires a visible, exact, human approval plus a
+  fresh device-authenticated wallet unlock;
 - no agent or chat message can approve or access a private key;
+- no standing spend permission, allowance, session key, or automatic payment
+  wrapper can bypass per-transaction approval;
 - payment retries are idempotent and receipt-aware;
 - testnet and release acceptance matrices pass;
 - current provider roadmap, help, security, and release documentation agree with
