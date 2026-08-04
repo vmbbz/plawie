@@ -31,7 +31,7 @@ catalog; continue with the next eligible UI row after it.
 | 7 | blogwatcher | [x] device-pass / UI-pass | Skills card was READY; chat request for `https://github.blog/feed/` rendered five parsed feed items, including GitHub security and Copilot entries, without a Go/binary/config error. |
 | 8 | blucli | [x] device-pass / UI pending | Verified `android-cli-core-pack` receipt and `blu --help`/`--version` on ARM64; `blu --json devices` returned an empty list, so no BluOS player was available for network control smoke. |
 | 9 | camsnap | [x] device-pass / UI-pass | Skills card was READY; chat request rendered the green `Result camsnap` panel and confirmed a successful back-camera snapshot. The earlier native JPEG was 480x720, 159,460 bytes. |
-| 10 | canvas | [~] partial | Skills page is READY through the Android app-native path; layout tests pass, but the live agent tool call remains blocked upstream. |
+| 10 | canvas | [~] partial / UI blocked | Skills page is READY through the Android app-native path. A fresh chat request (`Use canvas to show a simple red circle with the title Test Canvas`) completed with only the malformed assistant fragment `<g`; no canvas surface rendered, so close-button sizing/centering could not be re-verified. Investigate the live agent/tool response path before marking UI-pass. |
 | 11 | clawhub | [x] contract-pass | Native ClawHub adapter tests |
 | 12 | coding-agent | [-] native gap | Released pack quarantined until `/tmp` issue is fixed |
 | 13 | diagram-maker | [x] contract-pass / READY | Skills page shows READY with “Instruction-only skill ready”; no executable dependency is required. |
@@ -39,7 +39,7 @@ catalog; continue with the next eligible UI row after it.
 | 15 | eightctl | [-] config | Requires CLI pack plus credentials |
 | 16 | gemini | [-] config | Requires API key |
 | 17 | gh-issues | [-] config | Requires GitHub token |
-| 18 | gifgrep | [~] device-pass / UI pending | Verified vision-media receipt and live `gifgrep` status (v0.3.0) through the generic native executor; provider-backed search returned the expected key/config gate. Local still/sheet and full user-flow verification remain pending. |
+| 18 | gifgrep | [~] device-pass / UI config-gate | Skills card/detail showed READY/ACTIVE. A real chat request for a cat GIF opened the intended “Configure gifgrep search” sheet with GIPHY and KLIPY fields; the sheet correctly states that online search needs a provider key while local still/contact-sheet operations remain key-free. Search cannot be marked live without a provider key; local still/sheet remains fixture-pending. |
 | 19 | github | [-] config | Requires GitHub token |
 | 20 | gog | [-] outside GTM | Desktop/Google Workspace workflow |
 | 21 | goplaces | [-] config | Requires Places API key |
@@ -122,6 +122,10 @@ catalog; continue with the next eligible UI row after it.
   `status/search/still/sheet` actions, live status returned v0.3.0, and search
   returned `GIFGREP_PROVIDER_CONFIG_REQUIRED` with `runtimeReady: true` and
   `installationRequired: false` when no provider key was configured.
+- `gifgrep` UI evidence: the READY/ACTIVE card was opened and a natural chat
+  request for a cat GIF opened the “Configure gifgrep search” sheet. The sheet
+  exposed GIPHY/KLIPY fields and explicitly explained that local still frames
+  and contact sheets do not need a provider key. No key was entered or saved.
 - `himalaya` device evidence: the shared `android-cli-core-pack.json` receipt
   reports `smokePassed: true`; ARM64 version output was v1.2.0 with IMAP/SMTP
   support, and `account list` reached the expected missing
@@ -144,6 +148,10 @@ catalog; continue with the next eligible UI row after it.
 - `camsnap` UI evidence: the Skills page reported READY and a fresh natural
   chat request rendered the green `Result camsnap` panel with “Your snapshot
   was taken successfully” from the back camera.
+- `canvas` UI evidence: a fresh chat request reached completion without an
+  explicit gateway error, but rendered only the literal fragment `<g` and did
+  not show the canvas WebView. This is a UI-blocked result, not a successful
+  canvas smoke; the live tool/agent response path still needs investigation.
 - `songsee` device evidence: `android-audio-runtime-pack.json` reports
   `smokePassed: true`; ARM64 version output was `v0.1.1-10-g41d27ea` and help
   output exposed the bounded audio-to-image command. No audio fixture was
