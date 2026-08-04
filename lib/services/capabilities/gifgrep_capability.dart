@@ -197,7 +197,9 @@ class GifgrepCapability extends CapabilityHandler {
       env: env,
       timeoutSeconds: 25,
     );
-    if (!result.ok) return _failure(result, args);
+    if (!result.ok) {
+      return _failure(result, args, sensitiveValues: env.values);
+    }
 
     final decoded = jsonDecode(result.stdout);
     if (decoded is! List) {
@@ -360,10 +362,15 @@ class GifgrepCapability extends CapabilityHandler {
     });
   }
 
-  NodeFrame _failure(NativeManagedCliRunResult result, List<String> args) {
-    final stderr = result.stderr.trim().isEmpty
+  NodeFrame _failure(
+    NativeManagedCliRunResult result,
+    List<String> args, {
+    Iterable<String> sensitiveValues = const <String>[],
+  }) {
+    final rawStderr = result.stderr.trim().isEmpty
         ? result.stdout.trim()
         : result.stderr.trim();
+    final stderr = _redactSensitiveText(rawStderr, sensitiveValues);
     return NodeFrame.response('', error: {
       'code': result.exitCode == 124
           ? 'GIFGREP_TIMEOUT'
@@ -373,6 +380,33 @@ class GifgrepCapability extends CapabilityHandler {
       'exitCode': result.exitCode,
       if (stderr.isNotEmpty) 'stderr': stderr,
     });
+  }
+
+  /// Native CLI failures can echo the provider URL, including its query
+  /// string. Never return a configured provider secret to the Gateway/agent
+  /// stream or chat UI, even when the failure comes from a third-party binary.
+  static String _redactSensitiveText(
+    String value,
+    Iterable<String> sensitiveValues,
+  ) {
+    var sanitized = value;
+    for (final secret in sensitiveValues) {
+      final trimmed = secret.trim();
+      if (trimmed.isNotEmpty) {
+        sanitized = sanitized.replaceAll(trimmed, '<redacted>');
+      }
+    }
+    // Also cover provider errors that reconstruct a URL or expose a secret
+    // through a key-like query parameter without preserving the exact env
+    // value in the same error string.
+    sanitized = sanitized.replaceAllMapped(
+      RegExp(
+        r'((?:api[_-]?key|access[_-]?token|auth[_-]?token|token)=)([^&\s"}]+)',
+        caseSensitive: false,
+      ),
+      (match) => '${match.group(1)}<redacted>',
+    );
+    return sanitized;
   }
 
   static Future<Map<String, String?>> _readGifgrepCredentials() async => {

@@ -71,7 +71,7 @@ catalog; continue with the next eligible UI row after it.
 | 47 | sonoscli | [~] device-pass / UI blocked | Skills page showed READY and the v4 CLI-core receipt contains an executable `sonos` binary. A fresh chat request reached the skill, but the agent reported that Android does not support the `sonos discover` command directly; this is a command-policy/routing gap, not a missing dependency. |
 | 48 | spike | [x] contract-pass | Instruction-only adapter tests |
 | 49 | spotify-player | [-] config | Requires Spotify token |
-| 50 | stocks | [x] device-pass / UI pending / badge repair | Native `Tools().get_stock_price("AAPL")` returned a live quote; embedded inventory prevents redundant downloads; Stocks is now explicitly classified in the Android readiness manifest |
+| 50 | stocks | [~] device-pass / UI partial / badge repair | Native `Tools().get_stock_price("AAPL")` returned a live quote and the chat rendered a successful `Tool stocks` / `Result stocks` panel, but the surrounding provider turn timed out; repeat with an idle clean chat before UI-pass. Embedded inventory prevents redundant downloads; Stocks is explicitly classified in the Android readiness manifest. |
 | 51 | summarize | [x] contract-pass | App-native adapter tests |
 | 52 | taskflow | [x] contract-pass | Instruction-only adapter tests |
 | 53 | taskflow-inbox-triage | [x] contract-pass | Instruction-only adapter tests |
@@ -126,6 +126,11 @@ catalog; continue with the next eligible UI row after it.
   request for a cat GIF opened the “Configure gifgrep search” sheet. The sheet
   exposed GIPHY/KLIPY fields and explicitly explained that local still frames
   and contact sheets do not need a provider key. No key was entered or saved.
+- `gifgrep` provider attempt: after entering a user-provided GIPHY key through
+  the masked configuration sheet, the managed CLI reached the GIPHY request
+  but the device returned connection refused. The failure path was found to
+  echo the provider URL and was patched to redact provider keys before the
+  result reaches the Gateway or chat UI; the regression test passes.
 - `himalaya` device evidence: the shared `android-cli-core-pack.json` receipt
   reports `smokePassed: true`; ARM64 version output was v1.2.0 with IMAP/SMTP
   support, and `account list` reached the expected missing

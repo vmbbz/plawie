@@ -100,6 +100,37 @@ void main() {
     expect(runnerCalled, isFalse);
   });
 
+  test('provider CLI failures redact keys before reaching chat', () async {
+    const providerKey = 'test-giphy-key';
+    final capability = GifgrepCapability(
+      credentialsProvider: () async => {
+        'GIPHY_API_KEY': providerKey,
+        'KLIPY_API_KEY': null,
+      },
+      runner: (
+        binName,
+        args, {
+        required env,
+        required timeoutSeconds,
+      }) async {
+        return const NativeManagedCliRunResult(
+          exitCode: 1,
+          stdout: '',
+          stderr:
+              'lookup api.giphy.com: https://api.giphy.com/v1/gifs/search?api_key=test-giphy-key&q=cat',
+          binaryPath: '/managed/gifgrep',
+        );
+      },
+    );
+
+    final frame = await capability.handle('gifgrep.search', {'query': 'cat'});
+
+    expect(frame.isError, isTrue);
+    final errorText = jsonEncode(frame.error);
+    expect(errorText, isNot(contains(providerKey)));
+    expect(errorText, contains('api_key=<redacted>'));
+  });
+
   test('gifgrep contract maps local language to native actions', () {
     expect(
       GifgrepContract.localActionForMessage(
