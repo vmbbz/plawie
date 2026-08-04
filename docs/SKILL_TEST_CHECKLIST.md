@@ -39,7 +39,7 @@ catalog; continue with the next eligible UI row after it.
 | 15 | eightctl | [-] config | Requires CLI pack plus credentials |
 | 16 | gemini | [-] config | Requires API key |
 | 17 | gh-issues | [-] config | Requires GitHub token |
-| 18 | gifgrep | [~] device-pass / native HTTP / preview verification pending | Skills card/detail showed READY/ACTIVE and a real chat request returned five official GIPHY results through the app-native provider adapter. Chat now extracts structured `previewUrl`/`url` values, downloads media through the app-native HTTP stack, decodes animated GIF bytes locally, and keeps a “Play GIF” link fallback. The device capture used for verification was contaminated by an unrelated external player/ad overlay, so the in-card animation is not marked fully passed until a clean capture confirms it. |
+| 18 | gifgrep | [x] device-pass / UI-pass / animated preview | Skills card/detail showed READY/ACTIVE. A clean fresh-chat request returned five official GIPHY results, rendered an in-card thumbnail with PLAY affordance, and a second capture showed a different GIF frame, confirming animation. Media uses the app-native HTTP/byte-decoding path with a direct-link fallback. |
 | 19 | github | [-] config | Requires GitHub token |
 | 20 | gog | [-] outside GTM | Desktop/Google Workspace workflow |
 | 21 | goplaces | [-] config | Requires Places API key |
