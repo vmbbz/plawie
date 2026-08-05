@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:decimal/decimal.dart';
 import '../../../services/skills_service.dart';
 import '../../../services/base_service.dart';
 import '../../../app.dart';
@@ -433,6 +434,37 @@ class _AgentBasePageState extends State<AgentBasePage>
     return data?.toString() ?? 'null';
   }
 
+  Future<bool> _confirmTransfer({
+    required String token,
+    required String destination,
+    required Decimal amount,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Confirm transfer'),
+            content: Text(
+              'You are about to send $amount $token to:\n\n'
+              '$destination\n\n'
+              'Network: ${_baseService.networkName}\n\n'
+              'This action will broadcast a blockchain transaction.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Approve & send'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   void _promptSend(BuildContext context, String token) {
     final toCtrl = TextEditingController();
     final amtCtrl = TextEditingController();
@@ -465,18 +497,31 @@ class _AgentBasePageState extends State<AgentBasePage>
           FilledButton(
             onPressed: () async {
               final to = toCtrl.text.trim();
-              final amt = amtCtrl.text.trim();
+              final amt = Decimal.tryParse(amtCtrl.text.trim());
               Navigator.pop(ctx);
-              if (to.isEmpty || amt.isEmpty) return;
+              if (to.isEmpty || amt == null || amt <= Decimal.zero) return;
+              final approved = await _confirmTransfer(
+                token: token.toUpperCase(),
+                destination: to,
+                amount: amt,
+              );
+              if (!approved || !mounted) return;
               setState(() => _loading = true);
               try {
+                final action = token == 'eth' ? 'send_eth' : 'send_usdc';
+                final approval = _baseService.issueVisibleTransferApproval(
+                  action: action,
+                  destination: to,
+                  amount: amt,
+                );
                 final result = await SkillsService().executeSkill(
                   'base-chain',
                   parameters: {
-                    'action': token == 'eth' ? 'send_eth' : 'send_usdc',
+                    'action': action,
                     'to': to,
-                    'amount': amt,
+                    'amount': amt.toString(),
                   },
+                  context: {'baseTransferApproval': approval},
                 );
                 if (!context.mounted) return;
                 if (result.success) {

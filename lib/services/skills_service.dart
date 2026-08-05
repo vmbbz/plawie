@@ -1315,10 +1315,28 @@ class SkillsService {
             'usdc': svc.usdcBalance.toString()
           });
         case 'send_eth':
-          final tx = await svc.sendEth(p['to'], Decimal.parse(p['amount']));
+          final approval = ctx['baseTransferApproval'];
+          if (approval is! BaseTransferApproval) {
+            return SkillResult.error(
+                'HUMAN_APPROVAL_REQUIRED: confirm the exact transfer in the visible Base wallet UI.');
+          }
+          final tx = await svc.sendEth(
+            p['to'].toString(),
+            Decimal.parse(p['amount'].toString()),
+            approval: approval,
+          );
           return SkillResult.success({'txHash': tx});
         case 'send_usdc':
-          final tx = await svc.sendUsdc(p['to'], Decimal.parse(p['amount']));
+          final approval = ctx['baseTransferApproval'];
+          if (approval is! BaseTransferApproval) {
+            return SkillResult.error(
+                'HUMAN_APPROVAL_REQUIRED: confirm the exact transfer in the visible Base wallet UI.');
+          }
+          final tx = await svc.sendUsdc(
+            p['to'].toString(),
+            Decimal.parse(p['amount'].toString()),
+            approval: approval,
+          );
           return SkillResult.success({'txHash': tx});
         case 'resolve_basename':
           final addr = await svc.resolveBasename(p['name']);

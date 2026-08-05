@@ -70,6 +70,37 @@ class _BaseScreenState extends State<BaseScreen> {
     }
   }
 
+  Future<bool> _confirmTransfer({
+    required String token,
+    required String destination,
+    required Decimal amount,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Confirm transfer'),
+            content: Text(
+              'You are about to send $amount $token to:\n\n'
+              '$destination\n\n'
+              'Network: ${_baseService.networkName}\n\n'
+              'This action will broadcast a blockchain transaction.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Approve & send'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -775,10 +806,21 @@ class _BaseScreenState extends State<BaseScreen> {
               final to = toCtrl.text.trim();
               final amt = Decimal.tryParse(amtCtrl.text.trim());
               Navigator.pop(ctx);
-              if (to.isEmpty || amt == null) return;
+              if (to.isEmpty || amt == null || amt <= Decimal.zero) return;
+              final approved = await _confirmTransfer(
+                token: 'ETH',
+                destination: to,
+                amount: amt,
+              );
+              if (!approved || !mounted) return;
               setState(() => _isLoading = true);
               try {
-                await _baseService.sendEth(to, amt);
+                final approval = _baseService.issueVisibleTransferApproval(
+                  action: 'send_eth',
+                  destination: to,
+                  amount: amt,
+                );
+                await _baseService.sendEth(to, amt, approval: approval);
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('ETH sent!')),
@@ -831,10 +873,21 @@ class _BaseScreenState extends State<BaseScreen> {
               final to = toCtrl.text.trim();
               final amt = Decimal.tryParse(amtCtrl.text.trim());
               Navigator.pop(ctx);
-              if (to.isEmpty || amt == null) return;
+              if (to.isEmpty || amt == null || amt <= Decimal.zero) return;
+              final approved = await _confirmTransfer(
+                token: 'USDC',
+                destination: to,
+                amount: amt,
+              );
+              if (!approved || !mounted) return;
               setState(() => _isLoading = true);
               try {
-                await _baseService.sendUsdc(to, amt);
+                final approval = _baseService.issueVisibleTransferApproval(
+                  action: 'send_usdc',
+                  destination: to,
+                  amount: amt,
+                );
+                await _baseService.sendUsdc(to, amt, approval: approval);
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('USDC sent!')),

@@ -1,10 +1,26 @@
 # Dynamic Providers, Models, Accounts, and Human-Approved x402
 
-Status: approved plan; Phases 1-3 implementation in progress
+Status: approved plan; Phases 1-5 implemented, Phase 7 safety boundary in progress
 
 Date: 2026-08-04
 
 Owner: Plawie native app and OpenClaw Gateway integration
+
+Current implementation status:
+
+- Secure first-run provider credential staging, versioned dynamic catalog cache,
+  provider model discovery, and grouped/searchable Settings and Chat pickers are
+  implemented.
+- Dynamic model metadata is not allowed to overwrite the app's local context or
+  tool policy limits.
+- x402 v2 challenge parsing, exact-request binding, single-use approval state,
+  expiry, and redacted receipts are implemented as a pre-signing boundary.
+- Ordinary Base ETH/USDC transfers now require a short-lived exact-request
+  visible-UI approval capability and a second confirmation step. This does not
+  enable x402 spending.
+- The native Keystore envelope signer, device-authenticated unwrap, EIP-3009
+  signing, provider transport, and live payment UI remain disabled until their
+  own phases are complete.
 
 ## 1. Purpose
 

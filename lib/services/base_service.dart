@@ -8,6 +8,28 @@ import 'package:logger/logger.dart';
 import 'package:decimal/decimal.dart';
 import 'package:http/http.dart' as http;
 
+/// A short-lived capability minted only after a visible wallet UI confirms an
+/// exact transfer. It is intentionally not serializable, so Gateway/agent
+/// payloads cannot manufacture one by sending a map or string.
+class BaseTransferApproval {
+  final String action;
+  final String destination;
+  final String amount;
+  final int chainId;
+  final DateTime expiresAt;
+  bool _consumed = false;
+
+  BaseTransferApproval._({
+    required this.action,
+    required this.destination,
+    required this.amount,
+    required this.chainId,
+    required this.expiresAt,
+  });
+
+  bool get consumed => _consumed;
+}
+
 /// Base Chain (Coinbase L2) wallet service.
 /// Chain ID 8453 (mainnet) / 84532 (sepolia testnet).
 /// Uses web3dart for EVM-compatible wallet operations.
@@ -56,6 +78,50 @@ class BaseService {
   String get networkName => _useSepolia ? 'Base Sepolia' : 'Base Mainnet';
   int get chainId => _useSepolia ? 84532 : 8453;
   String get usdcContract => _useSepolia ? _usdcSepolia : _usdcMainnet;
+
+  /// Mint a one-use transfer capability after the visible wallet UI has
+  /// displayed and received confirmation for the exact request.
+  ///
+  /// This is deliberately separate from x402 approval. x402 will use its own
+  /// challenge-bound signer and must never call ordinary transfer methods.
+  BaseTransferApproval issueVisibleTransferApproval({
+    required String action,
+    required String destination,
+    required Decimal amount,
+  }) {
+    if (action != 'send_eth' && action != 'send_usdc') {
+      throw ArgumentError.value(action, 'action', 'Unsupported transfer');
+    }
+    if (destination.trim().isEmpty || amount <= Decimal.zero) {
+      throw ArgumentError('Transfer destination and amount are required.');
+    }
+    return BaseTransferApproval._(
+      action: action,
+      destination: destination.trim(),
+      amount: amount.toString(),
+      chainId: chainId,
+      expiresAt: DateTime.now().add(const Duration(minutes: 2)),
+    );
+  }
+
+  bool consumeVisibleTransferApproval(
+    BaseTransferApproval? approval, {
+    required String action,
+    required String destination,
+    required Decimal amount,
+  }) {
+    if (approval == null ||
+        approval._consumed ||
+        DateTime.now().isAfter(approval.expiresAt) ||
+        approval.action != action ||
+        approval.destination != destination.trim() ||
+        approval.amount != amount.toString() ||
+        approval.chainId != chainId) {
+      return false;
+    }
+    approval._consumed = true;
+    return true;
+  }
 
   Web3Client _makeClient() => Web3Client(rpcUrl, http.Client());
 
@@ -189,7 +255,19 @@ class BaseService {
   }
 
   /// Send ETH to an address or .base.eth name
-  Future<String> sendEth(String toAddressOrName, Decimal amount) async {
+  Future<String> sendEth(
+    String toAddressOrName,
+    Decimal amount, {
+    required BaseTransferApproval approval,
+  }) async {
+    if (!consumeVisibleTransferApproval(
+      approval,
+      action: 'send_eth',
+      destination: toAddressOrName,
+      amount: amount,
+    )) {
+      throw StateError('Human approval is required for every Base transfer.');
+    }
     _assertConnected();
     final client = _makeClient();
     try {
@@ -214,7 +292,19 @@ class BaseService {
   }
 
   /// Send USDC to an address or .base.eth name
-  Future<String> sendUsdc(String toAddressOrName, Decimal amount) async {
+  Future<String> sendUsdc(
+    String toAddressOrName,
+    Decimal amount, {
+    required BaseTransferApproval approval,
+  }) async {
+    if (!consumeVisibleTransferApproval(
+      approval,
+      action: 'send_usdc',
+      destination: toAddressOrName,
+      amount: amount,
+    )) {
+      throw StateError('Human approval is required for every Base transfer.');
+    }
     _assertConnected();
     final client = _makeClient();
     try {
