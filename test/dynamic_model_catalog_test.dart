@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:clawa/services/dynamic_model_catalog.dart';
+import 'package:clawa/services/model_provider_catalog.dart';
 import 'package:clawa/services/preferences_service.dart';
 
 void main() {
@@ -125,5 +126,24 @@ void main() {
       }),
       throwsA(isA<FormatException>()),
     );
+  });
+
+  test('Gateway selection payload excludes untrusted advertised budgets', () {
+    const model = DynamicModelRecord(
+      id: 'openrouter/openai/future-model',
+      providerId: 'openrouter',
+      providerModelId: 'openai/future-model',
+      label: 'Future model',
+      route: ModelRouteKind.cloud,
+      advertisedContextWindow: 999999999,
+      advertisedMaxOutputTokens: 999999999,
+    );
+
+    expect(model.gatewayModelConfig, <String, dynamic>{
+      'id': 'openai/future-model',
+      'name': 'Future model',
+    });
+    expect(model.gatewayModelConfig, isNot(contains('contextWindow')));
+    expect(model.gatewayModelConfig, isNot(contains('maxTokens')));
   });
 }

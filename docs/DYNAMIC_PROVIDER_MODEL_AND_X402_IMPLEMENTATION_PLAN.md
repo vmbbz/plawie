@@ -188,6 +188,11 @@ model list through Gateway's credential/native-policy checks before the normal
 model switch path runs. Chat history, prompt/tool payloads, and context policy
 are not changed by this integration.
 
+The Chat page agent-settings menu now exposes the same catalog through a
+searchable provider-model sheet. The existing static menu remains as a fast
+compatibility path; dynamic selections use the same guarded Gateway persistence
+method, so adding discovery does not create a second model-switch lane.
+
 Endpoint references used for this slice:
 
 - [`OpenAI list models`](https://platform.openai.com/docs/api-reference/models)

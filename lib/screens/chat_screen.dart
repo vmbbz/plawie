@@ -28,6 +28,7 @@ import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/model_provider_catalog.dart';
+import '../services/dynamic_model_catalog.dart';
 import '../widgets/aura_dot.dart';
 import '../services/gateway_service.dart';
 import '../services/agent_skill_server.dart';
@@ -2274,6 +2275,196 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  Future<void> _showDynamicModelPicker() async {
+    final cached = await DynamicModelCatalogRepository().load();
+    final snapshot = cached != null &&
+            cached.providers.any((provider) => provider.models.isNotEmpty)
+        ? cached
+        : DynamicCatalogSnapshot.bundledFallback();
+    if (!mounted) return;
+
+    final selection = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        var query = '';
+        final expanded = <String>{};
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final normalizedQuery = query.trim().toLowerCase();
+            final groups = snapshot.providers
+                .map((provider) {
+                  final providerMatches =
+                      provider.label.toLowerCase().contains(normalizedQuery);
+                  final models = normalizedQuery.isEmpty || providerMatches
+                      ? provider.models
+                      : provider.models
+                          .where((model) =>
+                              model.label
+                                  .toLowerCase()
+                                  .contains(normalizedQuery) ||
+                              model.id.toLowerCase().contains(normalizedQuery))
+                          .toList(growable: false);
+                  return (provider: provider, models: models);
+                })
+                .where((group) => group.models.isNotEmpty)
+                .toList(growable: false);
+            return SafeArea(
+              child: Container(
+                height: MediaQuery.sizeOf(context).height * 0.78,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF101216),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(24)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: RadioGroup<String>(
+                  groupValue: _selectedModel,
+                  onChanged: (value) => Navigator.pop(sheetContext, value),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.white24,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('CLOUD MODEL CATALOG',
+                          style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2)),
+                      if (snapshot.state == DynamicCatalogSnapshotState.stale)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Text(
+                              'Showing cached metadata · refresh from Settings',
+                              style:
+                                  TextStyle(color: Colors.amber, fontSize: 11)),
+                        ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search_rounded),
+                          hintText: 'Search models or providers',
+                        ),
+                        onChanged: (value) =>
+                            setSheetState(() => query = value),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: ListView(
+                          children: [
+                            ...groups.map((group) {
+                              final provider = group.provider;
+                              final isExpanded = normalizedQuery.isNotEmpty ||
+                                  expanded.contains(provider.id);
+                              return ExpansionTile(
+                                key: PageStorageKey<String>(
+                                    'chat-${provider.id}'),
+                                initiallyExpanded: isExpanded,
+                                onExpansionChanged: (value) {
+                                  if (value) {
+                                    expanded.add(provider.id);
+                                  } else {
+                                    expanded.remove(provider.id);
+                                  }
+                                  setSheetState(() {});
+                                },
+                                tilePadding: EdgeInsets.zero,
+                                title: Text(provider.label,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700)),
+                                subtitle: Text(
+                                    '${group.models.length} models · ${provider.connectionState.name}',
+                                    style: const TextStyle(
+                                        color: Colors.white38, fontSize: 11)),
+                                children: isExpanded
+                                    ? group.models
+                                        .map((model) => RadioListTile<String>(
+                                              dense: true,
+                                              title: Text(model.label,
+                                                  overflow:
+                                                      TextOverflow.ellipsis),
+                                              subtitle: Text(
+                                                '${model.agentReady ? 'Agent-ready' : 'Tool support unknown'} · ${model.id}',
+                                                style: const TextStyle(
+                                                    color: Colors.white38,
+                                                    fontSize: 10),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              value: model.id,
+                                            ))
+                                        .toList(growable: false)
+                                    : const <Widget>[],
+                              );
+                            }),
+                            if (groups.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.all(24),
+                                child:
+                                    Text('No cached models match that search.'),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (selection == null || !mounted) return;
+    final dynamicModel = <DynamicModelRecord>[
+      for (final provider in snapshot.providers) ...provider.models,
+    ].firstWhere((model) => model.id == selection);
+    await _selectDynamicModel(dynamicModel);
+  }
+
+  Future<void> _selectDynamicModel(DynamicModelRecord model) async {
+    final provider = model.providerId;
+    if (!await GatewayService().hasProviderCredential(provider)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Add a $provider API key in Settings first.')),
+      );
+      return;
+    }
+    try {
+      await GatewayService().persistDynamicModel(model);
+      if (!mounted) return;
+      final prefs = PreferencesService();
+      await prefs.init();
+      setState(() {
+        _selectedModel = model.id;
+        _cloudFallbackModel = model.id;
+      });
+      prefs.configuredModel = model.id;
+      prefs.lastCloudModel = model.id;
+      GatewayService().disconnectWebSocket();
+      _addDiagnosticLog('Selected dynamic provider model: ${model.id}');
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Model selection failed: $error')),
+      );
+    }
+  }
+
   void _showUnifiedMenu(BuildContext context) {
     HapticFeedback.selectionClick();
     final RenderBox? button = context.findRenderObject() as RenderBox?;
@@ -2656,6 +2847,18 @@ class _ChatScreenState extends State<ChatScreen>
             ],
           ),
         ),
+        PopupMenuItem<String>(
+          value: 'browse_models',
+          height: 38,
+          child: const Row(
+            children: [
+              Icon(Icons.search_rounded, color: Colors.purpleAccent, size: 18),
+              SizedBox(width: 10),
+              Text('Browse provider models',
+                  style: TextStyle(color: Colors.white70)),
+            ],
+          ),
+        ),
         ..._availableModels.map((model) => PopupMenuItem<String>(
               value: 'model:$model',
               height: 44,
@@ -2738,7 +2941,9 @@ class _ChatScreenState extends State<ChatScreen>
       if (value == null) return;
       if (!context.mounted) return;
 
-      if (value == 'setup_local_llm') {
+      if (value == 'browse_models') {
+        await _showDynamicModelPicker();
+      } else if (value == 'setup_local_llm') {
         await Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const LocalLlmScreen(),
         ));
