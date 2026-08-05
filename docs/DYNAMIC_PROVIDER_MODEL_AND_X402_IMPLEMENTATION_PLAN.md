@@ -1,6 +1,6 @@
 # Dynamic Providers, Models, Accounts, and Human-Approved x402
 
-Status: approved plan; Phase 1 implementation in progress
+Status: approved plan; Phases 1-3 implementation in progress
 
 Date: 2026-08-04
 
@@ -171,6 +171,20 @@ Phase 1 is now underway. The first implementation round adds:
 
 Dynamic model discovery, account connections, and x402 signing remain gated by
 the later phases below; this round does not claim those features are complete.
+
+The initial discovery adapter slice is also implemented without changing
+Gateway configuration. It supports the documented OpenAI-compatible model-list
+shape, Google's paginated `models.list` shape, provider-specific authentication,
+ETag revalidation, bounded timeouts, per-provider request deduplication, and
+conservative filtering of obvious embedding/moderation/speech-only records.
+The adapter keeps the API key in the request boundary and never writes it into
+the catalog snapshot.
+
+Endpoint references used for this slice:
+
+- [`OpenAI list models`](https://platform.openai.com/docs/api-reference/models)
+- [`OpenRouter list models`](https://openrouter.ai/docs/api/api-reference/models/get-models)
+- [`Gemini list models`](https://ai.google.dev/api/models)
 
 ## 3. Current-state evidence and preserved responsibilities
 

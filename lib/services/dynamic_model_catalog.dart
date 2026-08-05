@@ -156,6 +156,7 @@ class DynamicProviderRecord {
     this.defaultModelId,
     this.connectionState = DynamicProviderConnectionState.unknown,
     this.source = 'unknown',
+    this.etag,
     this.lastRefreshedAt,
     this.errorMessage,
   });
@@ -168,6 +169,7 @@ class DynamicProviderRecord {
   final String? defaultModelId;
   final DynamicProviderConnectionState connectionState;
   final String source;
+  final String? etag;
   final DateTime? lastRefreshedAt;
   final String? errorMessage;
   final List<DynamicModelRecord> models;
@@ -219,6 +221,7 @@ class DynamicProviderRecord {
       defaultModelId: _optionalString(raw, 'defaultModelId'),
       connectionState: _providerStateFromJson(raw['connectionState']),
       source: _optionalString(raw, 'source') ?? 'unknown',
+      etag: _optionalString(raw, 'etag'),
       lastRefreshedAt: _optionalDateTime(raw, 'lastRefreshedAt'),
       errorMessage: _optionalString(raw, 'errorMessage'),
       models: parsedModels,
@@ -234,6 +237,7 @@ class DynamicProviderRecord {
         if (defaultModelId != null) 'defaultModelId': defaultModelId,
         'connectionState': connectionState.name,
         'source': source,
+        if (etag != null) 'etag': etag,
         if (lastRefreshedAt != null)
           'lastRefreshedAt': lastRefreshedAt!.toUtc().toIso8601String(),
         if (errorMessage != null) 'errorMessage': errorMessage,
