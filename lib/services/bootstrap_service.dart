@@ -14,6 +14,7 @@ import '../constants/openclaw_paths.dart';
 import 'gateway_service.dart';
 import 'package:uuid/uuid.dart';
 import 'skill_provisioning_service.dart';
+import 'provider_setup_service.dart';
 
 class BootstrapService {
   // Pin the core Gateway package for reproducible fresh installs. Dependency
@@ -307,6 +308,93 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
     }
   }
 
+  /// Applies the provider selected during first-run setup exactly once.
+  ///
+  /// Native setup and the explicit PRoot rollback both use this method so a
+  /// setup secret cannot be consumed by two divergent code paths. If Android
+  /// kills the process after provider config is written but before the receipt
+  /// is finalized, the `applying` state and provider credential check allow the
+  /// next run to finish model persistence without reading the secret again.
+  Future<void> _applyPendingProviderSetup({
+    required void Function(SetupState) onProgress,
+    required SetupStep progressStep,
+    required double credentialProgress,
+    required int notificationProgress,
+    required String credentialMessage,
+    required String credentialSubMessage,
+  }) async {
+    final setup = ProviderSetupService();
+    await setup.init();
+    final pending = await setup.readPending();
+    if (pending == null) return;
+
+    final gateway = GatewayService();
+    final canRecoverConfiguredCredential =
+        pending.state == PendingProviderSetupState.applying &&
+            await gateway.hasProviderCredential(pending.providerId);
+    final pendingApiKey = canRecoverConfiguredCredential
+        ? null
+        : await setup.readPendingApiKey(pending);
+
+    if (pending.requiresApiKey &&
+        pendingApiKey == null &&
+        !canRecoverConfiguredCredential) {
+      throw StateError(
+        'The pending ${pending.providerId} API key is unavailable. '
+        'Return to provider setup and enter it again.',
+      );
+    }
+
+    await setup.markApplying(pending);
+
+    if (pending.requiresApiKey && !canRecoverConfiguredCredential) {
+      _emitProgress(
+        onProgress,
+        progressStep,
+        credentialProgress,
+        credentialMessage,
+        notificationProgress,
+        subMessage: credentialSubMessage,
+      );
+      await gateway.configureApiKey(
+        pending.providerId,
+        pendingApiKey!,
+        runBackgroundOnboard: false,
+      );
+      final setupPrefs = PreferencesService();
+      await setupPrefs.init();
+      setupPrefs.apiKeyConfigured = true;
+    } else if (pending.requiresApiKey) {
+      _log(
+        '[SETUP] Recovering ${pending.providerId} after its provider '
+        'credential was already applied; no second secret write needed.',
+      );
+    } else {
+      _log(
+        '[SETUP] No API key supplied for ${pending.providerId}; '
+        'applying model-only bootstrap defaults.',
+      );
+    }
+
+    final setupPrefs = PreferencesService();
+    await setupPrefs.init();
+    try {
+      await gateway.persistModel(pending.modelId);
+      setupPrefs.configuredModel = pending.modelId;
+      setupPrefs.apiProvider =
+          ModelProviderCatalog.apiProviderForSetupId(pending.providerId);
+    } catch (error) {
+      _log('[SETUP] Failed to persist bootstrap model', error: error);
+      rethrow;
+    }
+
+    final receipt = await setup.complete(pending);
+    _log(
+      '[SETUP] Provider setup committed with receipt $receipt for '
+      '${pending.providerId}; pending secret cleared.',
+    );
+  }
+
   /// Native-first fresh setup.
   ///
   /// The OpenClaw core is resolved from the official openclaw/openclaw GitHub
@@ -380,42 +468,14 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
       );
       await gateway.configureNativeGatewayForSetup();
 
-      final pendingProvider = setupPrefs.pendingProvider;
-      final pendingApiKey = setupPrefs.pendingApiKey;
-      if (pendingProvider != null && pendingProvider.isNotEmpty) {
-        final providerModel =
-            ModelProviderCatalog.setupSafeModelForProvider(pendingProvider);
-        final hasApiKey = pendingApiKey != null && pendingApiKey.isNotEmpty;
-        if (hasApiKey) {
-          _emitProgress(
-            onProgress,
-            SetupStep.configuringGateway,
-            0.50,
-            'Configuring API credentials...',
-            58,
-            subMessage:
-                'Saving ${pendingProvider.replaceAll('_API_KEY', '')} securely',
-          );
-          await gateway.configureApiKey(
-            pendingProvider,
-            pendingApiKey,
-            runBackgroundOnboard: false,
-          );
-          setupPrefs.pendingApiKey = null;
-          setupPrefs.apiKeyConfigured = true;
-        }
-
-        try {
-          await gateway.persistModel(providerModel);
-          setupPrefs.configuredModel = providerModel;
-        } catch (error) {
-          _log('[SETUP] Failed to persist native bootstrap model',
-              error: error);
-        }
-        setupPrefs.pendingProvider = null;
-        setupPrefs.apiProvider =
-            ModelProviderCatalog.apiProviderForSetupId(pendingProvider);
-      }
+      await _applyPendingProviderSetup(
+        onProgress: onProgress,
+        progressStep: SetupStep.configuringGateway,
+        credentialProgress: 0.50,
+        notificationProgress: 58,
+        credentialMessage: 'Configuring API credentials...',
+        credentialSubMessage: 'Saving the provider secret securely',
+      );
 
       await gateway.configureNativeGatewayForSetup();
 
@@ -836,48 +896,16 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
       // break strict schema validation or suppress default agent skill loading.
       await _hardenOpenClawConfig();
 
-      // Bake API credentials collected in SetupFlowScreen BEFORE the gateway starts.
-      // This eliminates the post-start reload that used to disrupt node pairing.
-      final setupPrefs = PreferencesService();
-      await setupPrefs.init();
-      final pendingProvider = setupPrefs.pendingProvider;
-      final pendingApiKey = setupPrefs.pendingApiKey;
-      if (pendingProvider != null && pendingProvider.isNotEmpty) {
-        final credGateway = GatewayService();
-        final providerModel =
-            ModelProviderCatalog.setupSafeModelForProvider(pendingProvider);
-        final hasApiKey = pendingApiKey != null && pendingApiKey.isNotEmpty;
-
-        if (hasApiKey) {
-          _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.83,
-              'Configuring API credentials...', 88,
-              subMessage:
-                  'Baking ${pendingProvider.replaceAll('_API_KEY', '')} key into gateway config');
-          await credGateway.configureApiKey(
-            pendingProvider,
-            pendingApiKey,
-            runBackgroundOnboard: false,
-          );
-          setupPrefs.pendingApiKey = null;
-          setupPrefs.apiKeyConfigured = true;
-          _log(
-              '[SETUP] API credentials baked into config before gateway start.');
-        } else {
-          _log(
-              '[SETUP] No API key supplied for $pendingProvider; applying model-only bootstrap defaults.');
-        }
-
-        try {
-          await credGateway.persistModel(providerModel);
-          setupPrefs.configuredModel = providerModel;
-        } catch (e) {
-          _log('[SETUP] Failed to persist bootstrap model', error: e);
-        }
-
-        setupPrefs.pendingProvider = null;
-        setupPrefs.apiProvider =
-            ModelProviderCatalog.apiProviderForSetupId(pendingProvider);
-      }
+      // Apply credentials collected in SetupFlowScreen before the rollback
+      // Gateway starts, using the same idempotent handoff as native setup.
+      await _applyPendingProviderSetup(
+        onProgress: onProgress,
+        progressStep: SetupStep.installingOpenClaw,
+        credentialProgress: 0.83,
+        notificationProgress: 88,
+        credentialMessage: 'Configuring API credentials...',
+        credentialSubMessage: 'Saving the provider secret securely',
+      );
 
       _emitProgress(onProgress, SetupStep.installingOpenClaw, 0.85,
           'Applying industrial config hardening...', 90,

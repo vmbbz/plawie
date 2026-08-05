@@ -1,6 +1,6 @@
 # Dynamic Providers, Models, Accounts, and Human-Approved x402
 
-Status: approved planning baseline; implementation not started
+Status: approved plan; Phase 1 implementation in progress
 
 Date: 2026-08-04
 
@@ -155,6 +155,22 @@ Research references:
 - [`Base Account overview`](https://docs.base.org/base-account/overview/what-is-base-account)
 - [`Base Spend Permissions`](https://docs.base.org/base-account/improve-ux/spend-permissions)
 - [`Base Sub Accounts`](https://docs.base.org/base-account/improve-ux/sub-accounts)
+
+### 2.7 Implementation status
+
+Phase 1 is now underway. The first implementation round adds:
+
+- `ProviderSetupService`, which stores the temporary API key only in the
+  platform secure store behind an opaque setup-scoped reference;
+- one-time migration of the legacy `pending_api_key` preference;
+- shared, receipt-based provider setup consumption for native-first setup and
+  the explicit PRoot rollback path;
+- cleanup when the user changes provider, skips setup, completes setup, or an
+  older plaintext handoff is discovered;
+- focused lifecycle tests and bootstrap release-contract coverage.
+
+Dynamic model discovery, account connections, and x402 signing remain gated by
+the later phases below; this round does not claim those features are complete.
 
 ## 3. Current-state evidence and preserved responsibilities
 

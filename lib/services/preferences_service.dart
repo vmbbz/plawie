@@ -26,6 +26,13 @@ class PreferencesService {
   static const _keyLocalChatModeEnabled = 'local_chat_mode_enabled';
   static const _keyLastCloudModel = 'last_cloud_model';
   static const _keyImmersiveUiEnabled = 'immersive_ui_enabled';
+  static const _keyPendingSetupId = 'pending_setup_id';
+  static const _keyPendingSetupModel = 'pending_setup_model';
+  static const _keyPendingApiKeyReference = 'pending_api_key_reference';
+  static const _keyPendingSetupState = 'pending_setup_state';
+  static const _keyPendingSetupReceiptId = 'pending_setup_receipt_id';
+  static const _keyLastProviderSetupReceiptId =
+      'last_provider_setup_receipt_id';
 
   SharedPreferences? _prefs;
 
@@ -313,14 +320,70 @@ class PreferencesService {
     }
   }
 
-  /// API key entered in SetupFlowScreen before installation begins.
-  /// Consumed by bootstrap_service and cleared after baking into gateway config.
-  String? get pendingApiKey => _p.getString('pending_api_key');
-  set pendingApiKey(String? value) {
+  /// Legacy plaintext API-key slot used by releases before the secure setup
+  /// handoff. Only ProviderSetupService may read it during one-time migration.
+  String? get legacyPendingApiKey => _p.getString('pending_api_key');
+  set legacyPendingApiKey(String? value) {
     if (value != null) {
       _p.setString('pending_api_key', value);
     } else {
       _p.remove('pending_api_key');
+    }
+  }
+
+  String? get pendingSetupId => _p.getString(_keyPendingSetupId);
+  set pendingSetupId(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyPendingSetupId, value);
+    } else {
+      _p.remove(_keyPendingSetupId);
+    }
+  }
+
+  String? get pendingSetupModel => _p.getString(_keyPendingSetupModel);
+  set pendingSetupModel(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyPendingSetupModel, value);
+    } else {
+      _p.remove(_keyPendingSetupModel);
+    }
+  }
+
+  String? get pendingApiKeyReference =>
+      _p.getString(_keyPendingApiKeyReference);
+  set pendingApiKeyReference(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyPendingApiKeyReference, value);
+    } else {
+      _p.remove(_keyPendingApiKeyReference);
+    }
+  }
+
+  String? get pendingSetupState => _p.getString(_keyPendingSetupState);
+  set pendingSetupState(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyPendingSetupState, value);
+    } else {
+      _p.remove(_keyPendingSetupState);
+    }
+  }
+
+  String? get pendingSetupReceiptId => _p.getString(_keyPendingSetupReceiptId);
+  set pendingSetupReceiptId(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyPendingSetupReceiptId, value);
+    } else {
+      _p.remove(_keyPendingSetupReceiptId);
+    }
+  }
+
+  String? get lastProviderSetupReceiptId =>
+      _p.getString(_keyLastProviderSetupReceiptId);
+  set lastProviderSetupReceiptId(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyLastProviderSetupReceiptId, value);
+    } else {
+      _p.remove(_keyLastProviderSetupReceiptId);
     }
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,6 +9,7 @@ import '../constants.dart';
 import '../services/native_bridge.dart';
 import '../services/model_provider_catalog.dart';
 import '../services/preferences_service.dart';
+import '../services/provider_setup_service.dart';
 import 'setup_wizard_screen.dart';
 
 /// Pre-install info collector — shown BEFORE SetupWizardScreen.
@@ -173,14 +176,19 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
             ModelProviderCatalog.apiProviderForSetupId(activeProvider.id);
         final setupModel =
             ModelProviderCatalog.setupSafeModelForProvider(activeProvider.id);
-        prefs.pendingProvider = activeProvider.id;
+        var key = _apiKeyController.text.trim();
+        await ProviderSetupService().stage(
+          providerId: activeProvider.id,
+          modelId: setupModel,
+          apiKey: activeProvider.requiresApiKey ? key : null,
+        );
         prefs.apiProvider = apiProvider;
         prefs.configuredModel = setupModel;
+        // Do not retain the entered key in this screen after it has been handed
+        // to the secure setup store.
+        key = '';
       }
-      final key = _apiKeyController.text.trim();
-      if (key.isNotEmpty && _activeProvider?.requiresApiKey != false) {
-        prefs.pendingApiKey = key;
-      }
+      _apiKeyController.clear();
       prefs.agentName = _agentNameController.text.trim();
       prefs.isFirstRun = false;
 
@@ -214,7 +222,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
   /// Skip provider setup — start installation without pre-configured credentials.
   /// User can configure their API key later from Settings.
-  void _skipToInstallation() {
+  Future<void> _skipToInstallation() async {
+    await ProviderSetupService().clearPending();
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
@@ -448,7 +458,16 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       _ProviderInfo provider, ThemeData theme, bool isDark) {
     final isSelected = _selectedProvider == provider.id;
     return GestureDetector(
-      onTap: () => setState(() => _selectedProvider = provider.id),
+      onTap: () {
+        if (_selectedProvider == provider.id) return;
+        setState(() {
+          _selectedProvider = provider.id;
+          _apiKeyController.clear();
+          _apiKeyObscured = true;
+        });
+        // Provider changes invalidate any previously staged setup secret.
+        unawaited(ProviderSetupService().clearPending());
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.only(bottom: 12),
@@ -644,7 +663,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            'Stored locally on your device and baked directly into the gateway config — never sent anywhere.',
+            'Stored securely on this device. Plawie sends it only to the selected provider when the Gateway makes an authorized request.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

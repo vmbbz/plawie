@@ -811,7 +811,7 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
 
   Future<void> _goToApp(BuildContext context) async {
     // Credentials were baked into the gateway config during installation by
-    // BootstrapService (from pendingProvider/pendingApiKey prefs set in SetupFlowScreen).
+    // BootstrapService through the secure pending-provider setup handoff.
     // SetupFlowScreen always precedes SetupWizardScreen, so by the time we reach
     // this point the gateway is running and the API key is already live — go straight
     // to the dashboard without any intermediate setup screen.
