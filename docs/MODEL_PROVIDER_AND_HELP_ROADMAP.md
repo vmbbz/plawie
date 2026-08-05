@@ -1,6 +1,6 @@
 # Plawie Model Provider Implementation
 
-Last updated: 2026-08-04
+Last updated: 2026-08-05
 
 This document is the implementation contract for model selection, provider keys,
 Gateway routing, local NDK inference, and the manual NDK Gateway bridge.
@@ -17,6 +17,12 @@ Dynamic discovery must not delay native Gateway startup or change the existing
 cloud Gateway, direct local NDK, compact bridge, or opt-in PRoot execution lanes.
 The payment plan requires explicit UI approval plus device authentication for
 every transaction and does not permit reusable agent spend permissions.
+
+The approved completion architecture is
+[`Native Wallet, Bridge, and Wallet-Funded Provider Completion Design`](superpowers/specs/2026-08-05-native-wallet-bridge-paid-provider-design.md).
+Venice and BlockRun remain excluded from the current product contract below
+until their context-preserving OpenClaw transports and payment acceptance tests
+pass. Merely listing them in the payment catalog does not make them chat-ready.
 
 ## Current Product Contract
 
