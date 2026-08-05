@@ -33,6 +33,8 @@ class PreferencesService {
   static const _keyPendingSetupReceiptId = 'pending_setup_receipt_id';
   static const _keyLastProviderSetupReceiptId =
       'last_provider_setup_receipt_id';
+  static const _keyDynamicModelCatalogSnapshot =
+      'dynamic_model_catalog_snapshot_v1';
 
   SharedPreferences? _prefs;
 
@@ -384,6 +386,17 @@ class PreferencesService {
       _p.setString(_keyLastProviderSetupReceiptId, value);
     } else {
       _p.remove(_keyLastProviderSetupReceiptId);
+    }
+  }
+
+  /// Non-secret, versioned provider/model metadata cache.
+  String? get dynamicModelCatalogSnapshotJson =>
+      _p.getString(_keyDynamicModelCatalogSnapshot);
+  set dynamicModelCatalogSnapshotJson(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyDynamicModelCatalogSnapshot, value);
+    } else {
+      _p.remove(_keyDynamicModelCatalogSnapshot);
     }
   }
 }
