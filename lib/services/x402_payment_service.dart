@@ -40,10 +40,9 @@ class X402PaymentPolicy {
   static const String usdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
   static const String transferMethod = 'eip3009';
 
-  /// Mainnet challenge validation and UI can ship before signing. Keep live
-  /// payment submission off until the Android Keystore/device-authenticated
-  /// signer is complete and verified on-device.
-  static const bool liveSigningEnabled = false;
+  /// Live signing is still gated by the Android-side allowlist, hardware-backed
+  /// Keystore check, one-use visible approval ticket, and exact-request retry.
+  static const bool liveSigningEnabled = true;
 
   final Set<String> allowedHosts;
   final int maxAmount;
@@ -98,6 +97,7 @@ class X402PaymentRequirement {
 class X402PaymentChallenge {
   const X402PaymentChallenge({
     required this.x402Version,
+    required this.resource,
     required this.resourceUrl,
     required this.resourceDescription,
     required this.requirement,
@@ -105,6 +105,7 @@ class X402PaymentChallenge {
   });
 
   final int x402Version;
+  final Map<String, dynamic> resource;
   final Uri resourceUrl;
   final String? resourceDescription;
   final X402PaymentRequirement requirement;
@@ -154,6 +155,9 @@ class X402PaymentChallenge {
     final canonical = _canonicalJson(decoded);
     return X402PaymentChallenge(
       x402Version: version,
+      resource: resource.map(
+        (key, value) => MapEntry(key.toString(), value),
+      ),
       resourceUrl: resourceUrl,
       resourceDescription: resource['description']?.toString(),
       requirement: selected,
@@ -227,6 +231,14 @@ class X402PaymentReceipt {
     this.transactionHash,
     this.payer,
     this.errorCode,
+    this.providerId,
+    this.network,
+    this.asset,
+    this.amount,
+    this.payTo,
+    this.resourceUrl,
+    this.challengeHash,
+    this.httpStatus,
   });
 
   final String intentId;
@@ -235,6 +247,14 @@ class X402PaymentReceipt {
   final String? transactionHash;
   final String? payer;
   final String? errorCode;
+  final String? providerId;
+  final String? network;
+  final String? asset;
+  final String? amount;
+  final String? payTo;
+  final String? resourceUrl;
+  final String? challengeHash;
+  final int? httpStatus;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'intentId': intentId,
@@ -243,7 +263,46 @@ class X402PaymentReceipt {
         if (transactionHash != null) 'transactionHash': transactionHash,
         if (payer != null) 'payer': payer,
         if (errorCode != null) 'errorCode': errorCode,
+        if (providerId != null) 'providerId': providerId,
+        if (network != null) 'network': network,
+        if (asset != null) 'asset': asset,
+        if (amount != null) 'amount': amount,
+        if (payTo != null) 'payTo': payTo,
+        if (resourceUrl != null) 'resourceUrl': resourceUrl,
+        if (challengeHash != null) 'challengeHash': challengeHash,
+        if (httpStatus != null) 'httpStatus': httpStatus,
       };
+
+  factory X402PaymentReceipt.fromJson(Map<String, dynamic> json) {
+    final stateName = json['state']?.toString();
+    X402PaymentState? state;
+    for (final value in X402PaymentState.values) {
+      if (value.name == stateName) {
+        state = value;
+        break;
+      }
+    }
+    final recordedAt = DateTime.tryParse(json['recordedAt']?.toString() ?? '');
+    if (state == null || recordedAt == null) {
+      throw const FormatException('Invalid x402 receipt.');
+    }
+    return X402PaymentReceipt(
+      intentId: json['intentId']?.toString() ?? '',
+      state: state,
+      recordedAt: recordedAt.toUtc(),
+      transactionHash: json['transactionHash']?.toString(),
+      payer: json['payer']?.toString(),
+      errorCode: json['errorCode']?.toString(),
+      providerId: json['providerId']?.toString(),
+      network: json['network']?.toString(),
+      asset: json['asset']?.toString(),
+      amount: json['amount']?.toString(),
+      payTo: json['payTo']?.toString(),
+      resourceUrl: json['resourceUrl']?.toString(),
+      challengeHash: json['challengeHash']?.toString(),
+      httpStatus: (json['httpStatus'] as num?)?.toInt(),
+    );
+  }
 }
 
 class X402PaymentPolicyException implements Exception {
@@ -371,6 +430,8 @@ class X402PaymentApprovalService {
     String? transactionHash,
     String? payer,
     String? errorCode,
+    String? providerId,
+    int? httpStatus,
   }) {
     final intent = _requireActive(intentId);
     if (!const {
@@ -390,6 +451,14 @@ class X402PaymentApprovalService {
       transactionHash: transactionHash,
       payer: payer,
       errorCode: errorCode,
+      providerId: providerId,
+      network: intent.challenge.requirement.network,
+      asset: intent.challenge.requirement.asset,
+      amount: intent.challenge.requirement.amount,
+      payTo: intent.challenge.requirement.payTo,
+      resourceUrl: intent.requestUrl.toString(),
+      challengeHash: intent.challenge.challengeHash,
+      httpStatus: httpStatus,
     );
   }
 
@@ -444,11 +513,17 @@ bool _isAllowedRequirement(
   X402PaymentRequirement requirement,
   X402PaymentPolicy policy,
 ) {
+  final name = requirement.extra['name']?.toString().trim() ?? '';
+  final version = requirement.extra['version']?.toString().trim() ?? '';
   if (requirement.scheme != 'exact' ||
       requirement.network != X402PaymentPolicy.network ||
       requirement.asset != X402PaymentPolicy.usdc ||
       requirement.assetTransferMethod != X402PaymentPolicy.transferMethod ||
-      !RegExp(r'^0x[a-f0-9]{40}$').hasMatch(requirement.payTo.toLowerCase())) {
+      !RegExp(r'^0x[a-f0-9]{40}$').hasMatch(requirement.payTo.toLowerCase()) ||
+      name.isEmpty ||
+      name.length > 64 ||
+      version.isEmpty ||
+      version.length > 16) {
     return false;
   }
   final amount = BigInt.tryParse(requirement.amount);

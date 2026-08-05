@@ -186,6 +186,11 @@ Map<String, dynamic> _requirement({
     'asset': asset,
     'payTo': '0x2222222222222222222222222222222222222222',
     'maxTimeoutSeconds': timeout,
-    'extra': extra ?? <String, dynamic>{'assetTransferMethod': 'eip3009'},
+    'extra': extra ??
+        <String, dynamic>{
+          'assetTransferMethod': 'eip3009',
+          'name': 'USD Coin',
+          'version': '2',
+        },
   };
 }

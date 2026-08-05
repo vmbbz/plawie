@@ -7,6 +7,11 @@ enum AiPaymentConnectionMode {
   walletIdentity,
 }
 
+enum AiPaymentHeaderContract {
+  paymentSignatureV2,
+  x402Payment,
+}
+
 /// Trusted product metadata for providers that can be funded or paid with the
 /// app's Base wallet. Provider behavior is intentionally explicit: a prepaid
 /// balance is not presented as if it were the same thing as per-request x402.
@@ -20,6 +25,7 @@ class AiPaymentProviderOption {
     required this.connectionMode,
     required this.allowedHosts,
     required this.supportsTopUp,
+    required this.paymentHeaderContract,
     this.topUpEndpoint,
     this.balanceEndpointTemplate,
   });
@@ -32,12 +38,18 @@ class AiPaymentProviderOption {
   final AiPaymentConnectionMode connectionMode;
   final Set<String> allowedHosts;
   final bool supportsTopUp;
+  final AiPaymentHeaderContract paymentHeaderContract;
   final Uri? topUpEndpoint;
   final String? balanceEndpointTemplate;
 
   String get fundingLabel => switch (fundingMode) {
         AiPaymentFundingMode.prepaidBalance => 'Prepaid provider balance',
         AiPaymentFundingMode.perRequest => 'Pay per request',
+      };
+
+  String get paymentHeaderName => switch (paymentHeaderContract) {
+        AiPaymentHeaderContract.paymentSignatureV2 => 'PAYMENT-SIGNATURE',
+        AiPaymentHeaderContract.x402Payment => 'X-402-Payment',
       };
 }
 
@@ -60,6 +72,7 @@ class AiPaymentProviderCatalog {
       connectionMode: AiPaymentConnectionMode.walletIdentity,
       allowedHosts: const <String>{'api.venice.ai'},
       supportsTopUp: true,
+      paymentHeaderContract: AiPaymentHeaderContract.x402Payment,
       topUpEndpoint: Uri.parse('https://api.venice.ai/api/v1/x402/top-up'),
       balanceEndpointTemplate:
           'https://api.venice.ai/api/v1/x402/balance/{walletAddress}',
@@ -74,6 +87,7 @@ class AiPaymentProviderCatalog {
       connectionMode: AiPaymentConnectionMode.walletIdentity,
       allowedHosts: <String>{'blockrun.ai'},
       supportsTopUp: false,
+      paymentHeaderContract: AiPaymentHeaderContract.paymentSignatureV2,
     ),
   ];
 

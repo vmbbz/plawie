@@ -1319,7 +1319,8 @@ Exit criteria: a payment signature cannot be produced without an approved intent
 and a fresh device-authenticated cryptographic unlock; the Gateway and agent
 cannot access raw key material.
 
-### Phase 8 — x402 v2 intent and approval on Base Mainnet
+### Phase 8 — x402 v2 intent and approval on Base Mainnet (implemented;
+device settlement proof pending)
 
 - Add v2 `PAYMENT-REQUIRED` parsing and provider
   host/network/token/facilitator allowlists.
@@ -1328,15 +1329,25 @@ cannot access raw key material.
 - Add the Gateway-compatible provider transport and approval bridge.
 - Add `exact/eip3009` EIP-712 construction and the approval-bound signer; do not
   call generic `sendUsdc`.
-- Retry once with `PAYMENT-SIGNATURE`, parse `PAYMENT-RESPONSE`, and persist a
-  redacted receipt.
-- Keep live signing behind a compile-time policy lock until Phase 7 is complete.
+- Retry the byte-identical method/URL/body once with the provider's documented
+  payment header (`PAYMENT-SIGNATURE` for standard v2 or Venice's current
+  `X-402-Payment` contract), parse `PAYMENT-RESPONSE`, and persist a redacted
+  receipt. Redirects and cross-host retries are disabled.
+- Live signing is enabled only through the completed Phase 7 Android policy
+  signer. There is no Dart private key and no generic x402 signing endpoint.
+- Treat network failure after signature submission as `uncertain`; never make
+  it look safely retryable merely because receipt persistence failed.
 - Test one allowlisted provider on Base Mainnet native USDC with a maximum 5
   USDC request only after signer and transport security tests pass.
 
 Exit criteria: reject/cancel/expiry paths are safe, approval is required, exact
 payment details are displayed and validated, and the provider accepts one
 approved payment in a controlled test with no automatic second attempt.
+
+Code-level parsing, approval, exact-retry, terminal receipt, redirect, and
+single-attempt tests pass. The remaining release gate is one user-approved
+Base Mainnet settlement against the current live provider challenge on a
+hardware-backed connected Android device.
 
 ### Phase 9 — Provider-specific live validation
 

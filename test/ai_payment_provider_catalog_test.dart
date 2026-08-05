@@ -13,7 +13,7 @@ void main() {
       AiPaymentProviderCatalog.usdcContract.toLowerCase(),
       X402PaymentPolicy.usdc,
     );
-    expect(X402PaymentPolicy.liveSigningEnabled, isFalse);
+    expect(X402PaymentPolicy.liveSigningEnabled, isTrue);
   });
 
   test('Venice is modeled as wallet identity with a prepaid balance', () {
@@ -25,6 +25,7 @@ void main() {
     expect(venice.supportsTopUp, isTrue);
     expect(venice.topUpEndpoint?.host, 'api.venice.ai');
     expect(venice.allowedHosts, <String>{'api.venice.ai'});
+    expect(venice.paymentHeaderName, 'X-402-Payment');
   });
 
   test('BlockRun is modeled as per-request payment without top-up', () {

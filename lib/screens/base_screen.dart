@@ -9,6 +9,7 @@ import '../services/ai_payment_provider_catalog.dart';
 import '../services/base_service.dart';
 import '../services/preferences_service.dart';
 import '../services/x402_payment_service.dart';
+import '../services/x402_payment_transport_service.dart';
 import '../widgets/status_card.dart';
 import '../widgets/glass_card.dart';
 
@@ -22,11 +23,16 @@ class BaseScreen extends StatefulWidget {
 class _BaseScreenState extends State<BaseScreen> {
   final BaseService _baseService = BaseService();
   final PreferencesService _prefs = PreferencesService();
+  final X402PaymentTransportService _x402Transport =
+      X402PaymentTransportService();
   StreamSubscription<BaseEvent>? _eventSub;
   bool _isLoading = false;
   String? _error;
   String _selectedAiPaymentProvider =
       AiPaymentProviderCatalog.providers.first.id;
+  List<X402PaymentReceipt> _paymentReceipts = const <X402PaymentReceipt>[];
+  bool _aiPaymentBusy = false;
+  String? _aiPaymentProgress;
 
   @override
   void initState() {
@@ -38,6 +44,7 @@ class _BaseScreenState extends State<BaseScreen> {
   @override
   void dispose() {
     _eventSub?.cancel();
+    _x402Transport.dispose();
     super.dispose();
   }
 
@@ -60,6 +67,7 @@ class _BaseScreenState extends State<BaseScreen> {
         _selectedAiPaymentProvider = savedPaymentProvider.id;
       }
       await _baseService.initialize();
+      _paymentReceipts = await _x402Transport.receiptStore.read();
       if (_baseService.isConnected) {
         await _baseService.refreshBalance();
       }
@@ -494,12 +502,20 @@ class _BaseScreenState extends State<BaseScreen> {
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: _baseService.isConnected && mainnetReady
-                          ? () => _showTopUpPreparation(selected)
+                          ? _aiPaymentBusy
+                              ? null
+                              : () => _showTopUpPreparation(selected)
                           : _baseService.isConnected
                               ? _switchToMainnetForAiPayments
                               : _showWalletRequiredDialog,
-                      icon: const Icon(Icons.add_card_rounded, size: 18),
-                      label: const Text('Top up'),
+                      icon: _aiPaymentBusy
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.add_card_rounded, size: 18),
+                      label: Text(_aiPaymentBusy ? 'Preparing…' : 'Top up'),
                     ),
                   ),
                 ],
@@ -515,6 +531,17 @@ class _BaseScreenState extends State<BaseScreen> {
                     color: theme.colorScheme.onSurfaceVariant),
               ),
             ],
+            if (_aiPaymentProgress != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _aiPaymentProgress!,
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.4,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             const Divider(height: 24),
             Row(
               children: [
@@ -522,12 +549,32 @@ class _BaseScreenState extends State<BaseScreen> {
                     size: 17, color: Colors.white54),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    'No x402 receipts yet. Settled payments will appear here.',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: theme.colorScheme.onSurfaceVariant),
-                  ),
+                  child: _paymentReceipts.isEmpty
+                      ? Text(
+                          'No x402 receipts yet. Settled payments will appear here.',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.onSurfaceVariant),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: _paymentReceipts.take(3).map((receipt) {
+                            final amount = _formatReceiptAmount(receipt.amount);
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 5),
+                              child: Text(
+                                '${receipt.providerId ?? 'x402'} · $amount USDC · ${receipt.state.name} · ${_shortDate(receipt.recordedAt)}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color:
+                                      receipt.state == X402PaymentState.settled
+                                          ? Colors.greenAccent
+                                          : Colors.orangeAccent,
+                                ),
+                              ),
+                            );
+                          }).toList(growable: false),
+                        ),
                 ),
               ],
             ),
@@ -564,61 +611,134 @@ class _BaseScreenState extends State<BaseScreen> {
     if (mounted) setState(() {});
   }
 
-  void _showTopUpPreparation(AiPaymentProviderOption provider) {
-    final amountController = TextEditingController(text: '5.00');
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: Text('${provider.label} balance top-up'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: amountController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Amount',
-                prefixText: r'$ ',
-                suffixText: 'USDC',
-                helperText: 'Initial safety limit: 5.00 USDC',
+  Future<void> _showTopUpPreparation(
+    AiPaymentProviderOption provider,
+  ) async {
+    if (_aiPaymentBusy) return;
+    setState(() {
+      _aiPaymentBusy = true;
+      _aiPaymentProgress =
+          'Requesting a fresh ${provider.label} payment challenge…';
+    });
+    PreparedX402Payment? prepared;
+    try {
+      prepared = await _x402Transport.prepareTopUp(provider);
+      if (!mounted) {
+        _x402Transport.reject(prepared);
+        return;
+      }
+      setState(() => _aiPaymentProgress =
+          'Challenge verified. Waiting for your explicit approval.');
+      final approved = await _showX402Approval(prepared);
+      if (!approved) {
+        _x402Transport.reject(prepared);
+        if (mounted) {
+          setState(() => _aiPaymentProgress = 'Payment cancelled.');
+        }
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _aiPaymentProgress =
+          'Unlock the secure wallet to sign this one payment…');
+      final receipt = await _x402Transport.approveAndSubmit(
+        prepared,
+        walletAddress: _baseService.address ?? '',
+      );
+      _paymentReceipts = await _x402Transport.receiptStore.read();
+      if (!mounted) return;
+      final settled = receipt.state == X402PaymentState.settled;
+      setState(() {
+        _aiPaymentProgress = settled
+            ? '${provider.label} confirmed the top-up.'
+            : receipt.state == X402PaymentState.uncertain
+                ? 'Submission is uncertain. Check the receipt before retrying.'
+                : 'The provider rejected the signed payment. No automatic retry was attempted.';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(settled
+            ? '${provider.label} top-up settled.'
+            : _aiPaymentProgress!),
+      ));
+      await _baseService.refreshBalance();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _aiPaymentProgress = 'Top-up stopped safely: $error');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Top-up stopped safely: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _aiPaymentBusy = false);
+    }
+  }
+
+  Future<bool> _showX402Approval(PreparedX402Payment payment) async {
+    final requirement = payment.intent.challenge.requirement;
+    final seconds = payment.intent.expiresAt
+        .difference(DateTime.now().toUtc())
+        .inSeconds
+        .clamp(0, requirement.maxTimeoutSeconds);
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Approve exact AI payment'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${payment.amountUsd.toStringAsFixed(2)} USDC',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Provider: ${payment.provider.label}\n'
+                    'Purpose: ${payment.intent.challenge.resourceDescription ?? 'Provider balance top-up'}\n'
+                    'Network: ${AiPaymentProviderCatalog.networkLabel}\n'
+                    'Payer: ${_baseService.address}\n'
+                    'Recipient: ${requirement.payTo}\n'
+                    'Host: ${payment.intent.requestUrl.host}\n'
+                    'Expires in: $seconds seconds',
+                    style: const TextStyle(fontSize: 12, height: 1.45),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Approval is one-use. Android will ask for your device credential, then Plawie retries only this exact request once. Chat and agents cannot press this button.',
+                    style: TextStyle(fontSize: 11, height: 1.4),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 14),
-            Text(
-              'Network: ${AiPaymentProviderCatalog.networkLabel}\n'
-              'Wallet: ${_baseService.address}\n\n'
-              'This prepares a provider balance top-up. It does not approve or broadcast one.',
-              style: const TextStyle(fontSize: 12, height: 1.4),
-            ),
-            if (!X402PaymentPolicy.liveSigningEnabled) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'Mainnet payment signing is locked until the Android Keystore and device-authenticated signer is complete. No funds can move from this screen yet.',
-                  style: TextStyle(fontSize: 11, height: 1.4),
-                ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Reject'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(ctx, true),
+                icon: const Icon(Icons.fingerprint_rounded),
+                label: const Text('Approve & unlock'),
               ),
             ],
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-          FilledButton(
-            onPressed: null,
-            child: const Text('Review & approve'),
           ),
-        ],
-      ),
-    ).whenComplete(amountController.dispose);
+        ) ??
+        false;
+  }
+
+  String _formatReceiptAmount(String? units) {
+    final parsed = BigInt.tryParse(units ?? '');
+    if (parsed == null) return '?';
+    return (parsed.toDouble() / 1000000).toStringAsFixed(2);
+  }
+
+  String _shortDate(DateTime value) {
+    final local = value.toLocal();
+    String two(int part) => part.toString().padLeft(2, '0');
+    return '${two(local.month)}/${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
   }
 
   // ── Wallet header card ─────────────────────────────────────────────────────

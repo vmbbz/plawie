@@ -36,6 +36,7 @@ class PreferencesService {
   static const _keyDynamicModelCatalogSnapshot =
       'dynamic_model_catalog_snapshot_v1';
   static const _keyAiPaymentProvider = 'ai_payment_provider';
+  static const _keyX402PaymentReceipts = 'x402_payment_receipts_v1';
 
   SharedPreferences? _prefs;
 
@@ -200,6 +201,14 @@ class PreferencesService {
       _p.remove(_keyAiPaymentProvider);
     }
   }
+
+  /// Redacted x402 settlement receipts. Signatures, challenges, payment
+  /// headers, private keys, and provider authentication never belong here.
+  List<String> get x402PaymentReceipts =>
+      _p.getStringList(_keyX402PaymentReceipts) ?? const <String>[];
+
+  Future<void> setX402PaymentReceipts(List<String> receipts) =>
+      _p.setStringList(_keyX402PaymentReceipts, receipts);
 
   /// User-chosen agent name
   String get agentName => _p.getString('agent_name') ?? 'Plawie';
