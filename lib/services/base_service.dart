@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:web3dart/web3dart.dart';
 import 'package:web3dart/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
 import 'package:decimal/decimal.dart';
 import 'package:http/http.dart' as http;
+import 'native_bridge.dart';
 
 /// A short-lived capability minted only after a visible wallet UI confirms an
 /// exact transfer. It is intentionally not serializable, so Gateway/agent
@@ -32,7 +34,9 @@ class BaseTransferApproval {
 
 /// Base Chain (Coinbase L2) wallet service.
 /// Chain ID 8453 (mainnet) / 84532 (sepolia testnet).
-/// Uses web3dart for EVM-compatible wallet operations.
+/// Uses web3dart for read-only RPC preparation and Android Keystore-backed
+/// native signing. Private keys are never retained in Dart after migration or
+/// import.
 class BaseService {
   static final BaseService _instance = BaseService._internal();
   factory BaseService() => _instance;
@@ -55,9 +59,11 @@ class BaseService {
       '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 
   // State
-  EthPrivateKey? _credentials;
   String? _address;
   bool _isConnected = false;
+  bool _legacyMigrationRequired = false;
+  String _securityLevel = 'not-created';
+  String _authenticationMode = '';
   bool _useSepolia = false; // default mainnet
 
   // Cached balances
@@ -69,6 +75,9 @@ class BaseService {
 
   Stream<BaseEvent> get events => _eventController.stream;
   bool get isConnected => _isConnected;
+  bool get legacyMigrationRequired => _legacyMigrationRequired;
+  String get securityLevel => _securityLevel;
+  String get authenticationMode => _authenticationMode;
   String? get address => _address;
   bool get useSepolia => _useSepolia;
   Decimal get ethBalance => _ethBalance;
@@ -146,31 +155,50 @@ class BaseService {
         _useSepolia = storedNetwork == 'true';
       }
 
-      final storedKey = await _secureStorage.read(key: 'base_private_key');
-      if (storedKey != null) {
-        _loadFromPrivateKey(storedKey);
+      final nativeStatus = await NativeBridge.getSecureEvmWalletStatus();
+      if (nativeStatus['exists'] == true) {
+        _applyNativeWalletStatus(nativeStatus);
+      } else {
+        final storedKey = await _secureStorage.read(key: 'base_private_key');
+        if (storedKey != null && storedKey.trim().isNotEmpty) {
+          // Existing installs need one explicit, device-authenticated migration.
+          // Derive only the public address here; do not retain credentials.
+          final legacy = EthPrivateKey.fromHex(storedKey);
+          _address = legacy.address.hexEip55;
+          _legacyMigrationRequired = true;
+          _isConnected = false;
+        }
       }
     } catch (e) {
       _logger.e('Failed to initialize Base Service: $e');
     }
   }
 
-  void _loadFromPrivateKey(String hexKey) {
-    _credentials = EthPrivateKey.fromHex(hexKey);
-    _address = _credentials!.address.hexEip55;
+  void _applyNativeWalletStatus(Map<String, dynamic> status) {
+    final address = status['address']?.toString().trim() ?? '';
+    if (status['exists'] != true || address.isEmpty) {
+      throw StateError('Android reported an invalid secure wallet status.');
+    }
+    _address = EthereumAddress.fromHex(address).hexEip55;
     _isConnected = true;
+    _legacyMigrationRequired = false;
+    _securityLevel = status['securityLevel']?.toString() ?? 'unknown';
+    _authenticationMode = status['authenticationMode']?.toString() ?? '';
     _eventController.add(BaseEvent.walletLoaded(_address!));
-    _logger.i('Base wallet loaded: $_address');
+    _logger.i('Secure Base wallet loaded: $_address ($_securityLevel)');
   }
 
   /// Create a new EVM wallet
   Future<String> createWallet() async {
     try {
-      _logger.i('Generating new Base wallet...');
-      final creds = EthPrivateKey.createRandom(Random.secure());
-      final hexKey = bytesToHex(creds.privateKey, include0x: false);
-      await _secureStorage.write(key: 'base_private_key', value: hexKey);
-      _loadFromPrivateKey(hexKey);
+      if (_legacyMigrationRequired) {
+        throw StateError(
+          'Secure the existing wallet before creating a new one.',
+        );
+      }
+      _logger.i('Generating Android-protected Base wallet...');
+      final status = await NativeBridge.createSecureEvmWallet();
+      _applyNativeWalletStatus(status);
       await refreshBalance();
       _eventController.add(BaseEvent.walletCreated(_address!));
       return _address!;
@@ -182,17 +210,52 @@ class BaseService {
 
   /// Import wallet from hex private key
   Future<void> importWallet(String privateKeyHex) async {
+    Uint8List? privateKey;
     try {
+      if (_legacyMigrationRequired) {
+        throw StateError(
+          'Secure or remove the existing legacy wallet before importing.',
+        );
+      }
       final clean = privateKeyHex.startsWith('0x')
           ? privateKeyHex.substring(2)
           : privateKeyHex;
-      final hexKey = clean;
-      await _secureStorage.write(key: 'base_private_key', value: hexKey);
-      _loadFromPrivateKey(hexKey);
+      if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(clean)) {
+        throw const FormatException('Private key must be 32-byte hexadecimal.');
+      }
+      privateKey = Uint8List.fromList(hexToBytes(clean));
+      final status = await NativeBridge.importSecureEvmWallet(privateKey);
+      _applyNativeWalletStatus(status);
       await refreshBalance();
     } catch (e) {
       _logger.e('Failed to import wallet: $e');
       rethrow;
+    } finally {
+      privateKey?.fillRange(0, privateKey.length, 0);
+    }
+  }
+
+  /// One-time migration from the historical FlutterSecureStorage key into the
+  /// auth-per-use Android Keystore envelope. The legacy record is deleted only
+  /// after Android confirms the new wallet envelope was written.
+  Future<void> migrateLegacyWallet() async {
+    Uint8List? privateKey;
+    try {
+      final stored = await _secureStorage.read(key: 'base_private_key');
+      if (stored == null || stored.trim().isEmpty) {
+        throw StateError('No legacy wallet is available to migrate.');
+      }
+      final clean = stored.startsWith('0x') ? stored.substring(2) : stored;
+      if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(clean)) {
+        throw const FormatException('Legacy wallet key is invalid.');
+      }
+      privateKey = Uint8List.fromList(hexToBytes(clean));
+      final status = await NativeBridge.importSecureEvmWallet(privateKey);
+      await _secureStorage.delete(key: 'base_private_key');
+      _applyNativeWalletStatus(status);
+      await refreshBalance();
+    } finally {
+      privateKey?.fillRange(0, privateKey.length, 0);
     }
   }
 
@@ -229,12 +292,13 @@ class BaseService {
     final whole = wei ~/ divisor;
     final frac = wei % divisor;
     final fracStr = frac.toString().padLeft(decimals, '0');
-    return Decimal.parse('$whole.${fracStr.substring(0, min(6, fracStr.length))}');
+    return Decimal.parse(
+        '$whole.${fracStr.substring(0, min(6, fracStr.length))}');
   }
 
   /// Get ERC-20 token balance (returns human-readable Decimal)
-  Future<Decimal> _getErc20Balance(
-      Web3Client client, String contractAddr, String walletAddr, int decimals) async {
+  Future<Decimal> _getErc20Balance(Web3Client client, String contractAddr,
+      String walletAddr, int decimals) async {
     try {
       final contract = DeployedContract(
         ContractAbi.fromJson(_erc20BalanceAbi, 'ERC20'),
@@ -272,15 +336,13 @@ class BaseService {
     final client = _makeClient();
     try {
       final to = await _resolveAddress(toAddressOrName);
-      // Convert ETH amount to wei BigInt
       final weiValue = _decimalToWei(amount, 18);
-      final txHash = await client.sendTransaction(
-        _credentials!,
-        Transaction(
-          to: EthereumAddress.fromHex(to),
-          value: EtherAmount.inWei(weiValue),
-        ),
-        chainId: chainId,
+      final txHash = await _signAndBroadcast(
+        client: client,
+        kind: 'eth',
+        to: EthereumAddress.fromHex(to),
+        value: weiValue,
+        data: Uint8List(0),
       );
       _logger.i('ETH sent: $txHash');
       _eventController.add(BaseEvent.transactionSent(txHash));
@@ -316,14 +378,13 @@ class BaseService {
       final fn = contract.function('transfer');
       // USDC has 6 decimals
       final rawAmount = _decimalToWei(amount, 6);
-      final txHash = await client.sendTransaction(
-        _credentials!,
-        Transaction.callContract(
-          contract: contract,
-          function: fn,
-          parameters: [EthereumAddress.fromHex(to), rawAmount],
-        ),
-        chainId: chainId,
+      final data = fn.encodeCall([EthereumAddress.fromHex(to), rawAmount]);
+      final txHash = await _signAndBroadcast(
+        client: client,
+        kind: 'usdc',
+        to: EthereumAddress.fromHex(usdcContract),
+        value: BigInt.zero,
+        data: data,
       );
       _logger.i('USDC sent: $txHash');
       _eventController.add(BaseEvent.transactionSent(txHash));
@@ -332,6 +393,46 @@ class BaseService {
     } finally {
       client.dispose();
     }
+  }
+
+  Future<String> _signAndBroadcast({
+    required Web3Client client,
+    required String kind,
+    required EthereumAddress to,
+    required BigInt value,
+    required Uint8List data,
+  }) async {
+    final from = EthereumAddress.fromHex(_address!);
+    final gasPrice = await client.getGasPrice();
+    final nonce = await client.getTransactionCount(
+      from,
+      atBlock: const BlockNum.pending(),
+    );
+    final gasLimit = await client.estimateGas(
+      sender: from,
+      to: to,
+      data: data,
+      value: EtherAmount.inWei(value),
+      gasPrice: gasPrice,
+    );
+    final signedHex = await NativeBridge.signSecureEvmTransaction(
+      <String, dynamic>{
+        'kind': kind,
+        'chainId': chainId.toString(),
+        'nonce': nonce.toString(),
+        'gasPrice': gasPrice.getInWei.toString(),
+        'gasLimit': gasLimit.toString(),
+        'to': to.hex,
+        'value': value.toString(),
+        'data': bytesToHex(data, include0x: true),
+      },
+    );
+    if (!RegExp(r'^0x[0-9a-fA-F]+$').hasMatch(signedHex)) {
+      throw StateError('Android returned an invalid signed transaction.');
+    }
+    return client.sendRawTransaction(
+      Uint8List.fromList(hexToBytes(signedHex)),
+    );
   }
 
   BigInt _decimalToWei(Decimal amount, int decimals) {
@@ -349,12 +450,10 @@ class BaseService {
       return nameOrAddress;
     }
     try {
-      final response = await http
-          .get(
-            Uri.parse('https://api.ensideas.com/ens/resolve/$nameOrAddress'),
-            headers: {'Accept': 'application/json'},
-          )
-          .timeout(const Duration(seconds: 6));
+      final response = await http.get(
+        Uri.parse('https://api.ensideas.com/ens/resolve/$nameOrAddress'),
+        headers: {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 6));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final addr = data['address'] as String?;
@@ -371,18 +470,16 @@ class BaseService {
       final base = _useSepolia
           ? 'https://api-sepolia.basescan.org'
           : 'https://api.basescan.org';
-      final url = Uri.parse(
-          '$base/api?module=account&action=txlist&address=$_address'
-          '&startblock=0&endblock=99999999&page=1&offset=$limit&sort=desc');
-      final response =
-          await http.get(url).timeout(const Duration(seconds: 10));
+      final url =
+          Uri.parse('$base/api?module=account&action=txlist&address=$_address'
+              '&startblock=0&endblock=99999999&page=1&offset=$limit&sort=desc');
+      final response = await http.get(url).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         if (body['status'] == '1' && body['result'] is List) {
           _txHistory = (body['result'] as List).map((tx) {
             final m = tx as Map<String, dynamic>;
-            final weiValue =
-                BigInt.tryParse(m['value'] ?? '0') ?? BigInt.zero;
+            final weiValue = BigInt.tryParse(m['value'] ?? '0') ?? BigInt.zero;
             return BaseTx(
               hash: m['hash'] ?? '',
               from: m['from'] ?? '',
@@ -402,24 +499,30 @@ class BaseService {
     return [];
   }
 
-  /// Export private key hex (for backup)
-  Future<String?> exportPrivateKey() async {
-    return await _secureStorage.read(key: 'base_private_key');
+  /// Shows an Android-owned, device-authenticated backup dialog. The private
+  /// key is not returned to Dart.
+  Future<void> showPrivateKeyBackup() async {
+    await NativeBridge.showSecureEvmWalletBackup();
   }
 
   /// Delete wallet from secure storage
   Future<void> deleteWallet() async {
+    if (_isConnected) {
+      await NativeBridge.deleteSecureEvmWallet();
+    }
     await _secureStorage.delete(key: 'base_private_key');
-    _credentials = null;
     _address = null;
     _isConnected = false;
+    _legacyMigrationRequired = false;
+    _securityLevel = 'not-created';
+    _authenticationMode = '';
     _ethBalance = Decimal.zero;
     _usdcBalance = Decimal.zero;
     _eventController.add(BaseEvent.disconnected());
   }
 
   void _assertConnected() {
-    if (!_isConnected || _credentials == null) {
+    if (!_isConnected || _address == null) {
       throw StateError('No wallet connected');
     }
   }

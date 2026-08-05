@@ -72,6 +72,7 @@ class MainActivity : FlutterActivity() {
     private lateinit var bootstrapManager: BootstrapManager
     private lateinit var processManager: ProcessManager
     private lateinit var nativeNodeSmokeProcess: NativeNodeSmokeProcess
+    private lateinit var secureEvmWalletManager: SecureEvmWalletManager
     private var screenCaptureResult: MethodChannel.Result? = null
     private var gifImportResult: MethodChannel.Result? = null
     private var screenCaptureDurationMs: Long = 5000L
@@ -150,6 +151,7 @@ class MainActivity : FlutterActivity() {
         processManager = ProcessManager(applicationContext, filesDir, nativeLibDir)
         bootstrapManager = BootstrapManager(applicationContext, filesDir, nativeLibDir, processManager)
         nativeNodeSmokeProcess = NativeNodeSmokeProcess(applicationContext, nativeLibDir)
+        secureEvmWalletManager = SecureEvmWalletManager(this)
         handleDebugNativeFullGatewayBootstrapIntent(intent)
 
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vrm/pip_mode")
@@ -221,6 +223,36 @@ class MainActivity : FlutterActivity() {
             methodChannel = channel
             channel.setMethodCallHandler { call, result ->
             when (call.method) {
+                "getSecureEvmWalletStatus" -> {
+                    result.success(secureEvmWalletManager.status())
+                }
+                "createSecureEvmWallet" -> {
+                    secureEvmWalletManager.createWallet(result)
+                }
+                "importSecureEvmWallet" -> {
+                    secureEvmWalletManager.importWallet(
+                        call.argument<ByteArray>("privateKey"),
+                        result,
+                    )
+                }
+                "signSecureEvmTransaction" -> {
+                    secureEvmWalletManager.signTransaction(
+                        call.arguments as? Map<*, *>,
+                        result,
+                    )
+                }
+                "signSecureX402Authorization" -> {
+                    secureEvmWalletManager.signX402Authorization(
+                        call.arguments as? Map<*, *>,
+                        result,
+                    )
+                }
+                "showSecureEvmWalletBackup" -> {
+                    secureEvmWalletManager.showPrivateKeyBackup(result)
+                }
+                "deleteSecureEvmWallet" -> {
+                    secureEvmWalletManager.deleteWallet(result)
+                }
                 "getProotPath" -> {
                     result.success(processManager.getProotPath())
                 }

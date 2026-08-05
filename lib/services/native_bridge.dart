@@ -38,6 +38,60 @@ class NativeBridge {
   static const _channel = MethodChannel('com.openclaw.plawie/native');
   static const _eventChannel = EventChannel('com.openclaw.plawie/gateway_logs');
 
+  static Future<Map<String, dynamic>> getSecureEvmWalletStatus() async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'getSecureEvmWalletStatus',
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
+  static Future<Map<String, dynamic>> createSecureEvmWallet() async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'createSecureEvmWallet',
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
+  static Future<Map<String, dynamic>> importSecureEvmWallet(
+    Uint8List privateKey,
+  ) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'importSecureEvmWallet',
+      <String, dynamic>{'privateKey': privateKey},
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
+  static Future<String> signSecureEvmTransaction(
+    Map<String, dynamic> transaction,
+  ) async {
+    return await _channel.invokeMethod<String>(
+          'signSecureEvmTransaction',
+          transaction,
+        ) ??
+        '';
+  }
+
+  static Future<Map<String, dynamic>> signSecureX402Authorization(
+    Map<String, dynamic> authorization,
+  ) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'signSecureX402Authorization',
+      authorization,
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
+  /// Shows the private-key backup in an Android-owned authenticated dialog.
+  /// The key never crosses the MethodChannel into Dart.
+  static Future<void> showSecureEvmWalletBackup() async {
+    await _channel.invokeMethod('showSecureEvmWalletBackup');
+  }
+
+  static Future<void> deleteSecureEvmWallet() async {
+    await _channel.invokeMethod('deleteSecureEvmWallet');
+  }
+
   static Future<String> getProotPath() async {
     return await _channel.invokeMethod('getProotPath');
   }

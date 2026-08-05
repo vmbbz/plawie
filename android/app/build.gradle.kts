@@ -136,4 +136,12 @@ dependencies {
     // Correct group is com.alphacephei — published on Maven Central
     implementation("com.alphacephei:vosk-android:0.3.47") { isTransitive = false }
     implementation("net.java.dev.jna:jna:5.13.0@aar")
+    // Android-optimised Web3j crypto only. Private EVM key material is
+    // decrypted and used inside the Android process; it is never returned to
+    // Dart for ordinary transfers or x402 authorizations.
+    implementation("org.web3j:crypto:4.12.3-android")
+    implementation("org.web3j:rlp:4.12.3-android")
+    implementation("org.web3j:utils:4.12.3-android")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    testImplementation("junit:junit:4.13.2")
 }

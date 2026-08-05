@@ -247,20 +247,31 @@ class _BaseScreenState extends State<BaseScreen> {
                               const SizedBox(height: 24),
                               _sectionLabel(theme, 'WALLET ACTIONS'),
                               if (!_baseService.isConnected) ...[
-                                StatusCard(
-                                  title: 'Create Wallet',
-                                  subtitle: 'Generate new Base EVM keypair',
-                                  icon: Icons.add_circle_outline,
-                                  trailing: const Icon(Icons.chevron_right),
-                                  onTap: _showCreateWalletDialog,
-                                ),
-                                StatusCard(
-                                  title: 'Import Wallet',
-                                  subtitle: 'Import from private key',
-                                  icon: Icons.file_download,
-                                  trailing: const Icon(Icons.chevron_right),
-                                  onTap: _showImportWalletDialog,
-                                ),
+                                if (_baseService.legacyMigrationRequired)
+                                  StatusCard(
+                                    title: 'Secure existing wallet',
+                                    subtitle:
+                                        'Move the legacy key into Android Keystore protection',
+                                    icon: Icons.security,
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: _migrateLegacyWallet,
+                                  ),
+                                if (!_baseService.legacyMigrationRequired) ...[
+                                  StatusCard(
+                                    title: 'Create Wallet',
+                                    subtitle: 'Generate new Base EVM keypair',
+                                    icon: Icons.add_circle_outline,
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: _showCreateWalletDialog,
+                                  ),
+                                  StatusCard(
+                                    title: 'Import Wallet',
+                                    subtitle: 'Import from private key',
+                                    icon: Icons.file_download,
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: _showImportWalletDialog,
+                                  ),
+                                ],
                               ],
                               if (_baseService.isConnected) ...[
                                 StatusCard(
@@ -688,6 +699,24 @@ class _BaseScreenState extends State<BaseScreen> {
             ],
           ),
           if (_baseService.isConnected) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.verified_user_outlined,
+                    size: 15, color: Colors.white70),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '${_baseService.securityLevel} · auth per payment',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 20),
             Text(
               '${_baseService.ethBalance.toStringAsFixed(6)} ETH',
@@ -1010,7 +1039,7 @@ class _BaseScreenState extends State<BaseScreen> {
 
   void _showImportWalletDialog() {
     final ctrl = TextEditingController();
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Import Wallet'),
@@ -1028,6 +1057,7 @@ class _BaseScreenState extends State<BaseScreen> {
           FilledButton(
             onPressed: () async {
               final key = ctrl.text.trim();
+              ctrl.clear();
               Navigator.pop(ctx);
               if (key.isEmpty) return;
               setState(() => _isLoading = true);
@@ -1043,7 +1073,43 @@ class _BaseScreenState extends State<BaseScreen> {
           ),
         ],
       ),
-    );
+    ).whenComplete(ctrl.dispose);
+  }
+
+  Future<void> _migrateLegacyWallet() async {
+    final approved = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Secure existing wallet'),
+            content: const Text(
+              'Plawie will move the existing wallet key into an Android '
+              'Keystore envelope. Your device will require authentication '
+              'for every transfer and AI payment.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Not now'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(ctx, true),
+                icon: const Icon(Icons.security),
+                label: const Text('Secure wallet'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!approved || !mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      await _baseService.migrateLegacyWallet();
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   void _showSendEthDialog() {
@@ -1229,25 +1295,11 @@ class _BaseScreenState extends State<BaseScreen> {
                 backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () async {
               Navigator.pop(ctx);
-              final key = await _baseService.exportPrivateKey();
-              if (!mounted) return;
-              showDialog(
-                context: context,
-                builder: (_) => AlertDialog(
-                  title: const Text('Private Key'),
-                  content: SelectableText(key ?? 'Not found',
-                      style: GoogleFonts.robotoMono(fontSize: 11)),
-                  actions: [
-                    TextButton(
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: key ?? ''));
-                        Navigator.pop(context);
-                      },
-                      child: const Text('Copy & Close'),
-                    ),
-                  ],
-                ),
-              );
+              try {
+                await _baseService.showPrivateKeyBackup();
+              } catch (e) {
+                if (mounted) setState(() => _error = e.toString());
+              }
             },
             child: const Text('Show Key'),
           ),

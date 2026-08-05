@@ -1,8 +1,8 @@
 # Dynamic Providers, Models, Accounts, and Human-Approved x402
 
-Status: Phases 1-5 implemented; Base Mainnet payment UX and pre-signing policy implemented; native signer and settlement transport pending
+Status: Phases 1-5 and native wallet signer hardening implemented; Base Mainnet x402 settlement transport and live enablement pending
 
-Date: 2026-08-04
+Date: 2026-08-05
 
 Owner: Plawie native app and OpenClaw Gateway integration
 
@@ -22,9 +22,19 @@ Current implementation status:
 - Ordinary Base ETH/USDC transfers now require a short-lived exact-request
   visible-UI approval capability and a second confirmation step. This does not
   enable x402 spending.
-- The native Keystore envelope signer, device-authenticated unwrap, EIP-3009
-  signing, provider transport, and live payment UI remain disabled until their
-  own phases are complete.
+- The native Android signer now keeps only the address in idle Dart state,
+  wraps the secp256k1 key with an auth-per-use AES-256-GCM Android Keystore key,
+  prefers StrongBox, reports the effective security level, and exposes only
+  bounded Base ETH/USDC and EIP-3009 operations. Existing Flutter secure-store
+  wallets have an explicit one-time migration path. Private-key backup is shown
+  in an Android-owned authenticated dialog and is not returned over the Flutter
+  channel.
+- EIP-3009 construction matches an independently generated EIP-712 vector and
+  native signing self-recovers the payer address before returning a signature.
+  x402 additionally blocks software/unknown Keystore security levels.
+- Provider transport, SIWE/SIWX provider authentication, durable receipts, and
+  live payment UI remain disabled until their own phases and on-device payment
+  tests are complete.
 
 ## 1. Purpose
 
@@ -124,7 +134,7 @@ challenge validation and UX do not enable spending: live submission remains
 hard-disabled until the Android device-authenticated signer and settlement
 transport pass their own review and on-device tests.
 
-### 2.6 Research verdict: sound flow, wallet hardening required
+### 2.6 Research verdict: sound flow, wallet hardening implemented
 
 The human-approval flow is logical and aligns with x402, but human approval is a
 Plawie safety policy rather than a protocol guarantee. Official x402 client
@@ -133,8 +143,8 @@ deliberate approval gate between parsing the `PAYMENT-REQUIRED` response and
 creating the `PAYMENT-SIGNATURE` payload; it must not use an automatic wrapper
 unchanged.
 
-The current wallet implementation is suitable for ordinary test transfers but
-is not sufficient for production x402 mainnet signing:
+The pre-hardening wallet implementation was suitable for ordinary test
+transfers but was not sufficient for production x402 mainnet signing:
 
 - `BaseService` stores the secp256k1 private key as exportable hex through
   `FlutterSecureStorage`;
@@ -153,6 +163,16 @@ prefer StrongBox when available, keep the unwrapped key in memory only for the
 single signature, and zeroize temporary buffers. This materially improves the
 current design, but it is not equivalent to a private key that never enters the
 app process.
+
+That envelope design is now implemented. On Android 11 and later, each operation
+accepts a Class 3 biometric or device credential through an auth-per-use
+Keystore key. Android 10 uses a Class 3 biometric because the combined
+authenticator mode is not supported there. Ordinary transfers and x402 signing
+share the storage foundation but not their payload contracts; there is no
+generic digest-signing channel. x402 requires a hardware-backed wrapping key,
+Base Mainnet native USDC, an allowlisted host, `exact/eip3009`, a five-USDC cap,
+and a short validity window. Live network submission is still locked until the
+transport and receipt phase is complete.
 
 A Base Account/passkey smart wallet is the more modern optional destination for
 truly user-mediated wallet interactions. The current x402 v2 specification also
@@ -1281,7 +1301,7 @@ unknown/variable models are labeled accurately and do not overclaim support.
 Exit criteria: users can connect and manage a provider without Plawie storing a
 provider password or losing an existing working API-key configuration.
 
-### Phase 7 — Internal wallet signer hardening
+### Phase 7 — Internal wallet signer hardening (implemented)
 
 - Separate ordinary wallet management from the agent-payment signer interface.
 - Replace long-lived in-memory EOA credentials with address-only idle state.
@@ -1290,7 +1310,10 @@ provider password or losing an existing working API-key configuration.
 - Add StrongBox/TEE capability reporting and a software-fallback block for x402.
 - Gate export behind separate wallet-management authentication and ensure the
   payment service cannot call it.
-- Add memory-lifetime/zeroization tests and log redaction tests.
+- Zero mutable key buffers after import, unwrap, and signing; verify the EIP-712
+  digest against an independent reference vector and self-recover every native
+  x402 signature. Complete log-redaction regression coverage with the transport
+  receipt phase, where signatures and provider responses exist.
 
 Exit criteria: a payment signature cannot be produced without an approved intent
 and a fresh device-authenticated cryptographic unlock; the Gateway and agent
