@@ -8,6 +8,7 @@ import 'package:decimal/decimal.dart';
 import '../services/ai_payment_provider_catalog.dart';
 import '../services/base_service.dart';
 import '../services/preferences_service.dart';
+import '../services/provider_balance_service.dart';
 import '../services/x402_payment_service.dart';
 import '../services/x402_payment_transport_service.dart';
 import '../widgets/status_card.dart';
@@ -25,6 +26,8 @@ class _BaseScreenState extends State<BaseScreen> {
   final PreferencesService _prefs = PreferencesService();
   final X402PaymentTransportService _x402Transport =
       X402PaymentTransportService();
+  final ProviderBalanceService _providerBalances =
+      ProviderBalanceService.instance;
   StreamSubscription<BaseEvent>? _eventSub;
   bool _isLoading = false;
   String? _error;
@@ -33,6 +36,8 @@ class _BaseScreenState extends State<BaseScreen> {
   List<X402PaymentReceipt> _paymentReceipts = const <X402PaymentReceipt>[];
   bool _aiPaymentBusy = false;
   String? _aiPaymentProgress;
+  ProviderBalanceSnapshot? _providerBalance;
+  bool _providerBalanceBusy = false;
 
   @override
   void initState() {
@@ -65,6 +70,7 @@ class _BaseScreenState extends State<BaseScreen> {
           AiPaymentProviderCatalog.byId(_prefs.aiPaymentProvider);
       if (savedPaymentProvider != null) {
         _selectedAiPaymentProvider = savedPaymentProvider.id;
+        _providerBalance = _providerBalances.cached(savedPaymentProvider.id);
       }
       await _baseService.initialize();
       _paymentReceipts = await _x402Transport.receiptStore.read();
@@ -454,7 +460,10 @@ class _BaseScreenState extends State<BaseScreen> {
                   label: Text(provider.label),
                   selected: provider.id == selected.id,
                   onSelected: (_) {
-                    setState(() => _selectedAiPaymentProvider = provider.id);
+                    setState(() {
+                      _selectedAiPaymentProvider = provider.id;
+                      _providerBalance = _providerBalances.cached(provider.id);
+                    });
                     _prefs.aiPaymentProvider = provider.id;
                   },
                 );
@@ -481,6 +490,43 @@ class _BaseScreenState extends State<BaseScreen> {
                           color: theme.colorScheme.onSurfaceVariant,
                           fontSize: 11,
                           height: 1.4)),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _providerBalance?.summary ??
+                              (selected.fundingMode ==
+                                      AiPaymentFundingMode.perRequest
+                                  ? 'No prepaid provider balance.'
+                                  : 'Balance not checked on this device.'),
+                          style: TextStyle(
+                            color: _providerBalance?.needsAttention == true
+                                ? Colors.orangeAccent
+                                : theme.colorScheme.onSurfaceVariant,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed:
+                            _baseService.isConnected && !_providerBalanceBusy
+                                ? () => _refreshProviderBalance(selected)
+                                : null,
+                        icon: _providerBalanceBusy
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh_rounded, size: 16),
+                        label: const Text('Balance'),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -668,6 +714,33 @@ class _BaseScreenState extends State<BaseScreen> {
       );
     } finally {
       if (mounted) setState(() => _aiPaymentBusy = false);
+    }
+  }
+
+  Future<void> _refreshProviderBalance(
+    AiPaymentProviderOption provider,
+  ) async {
+    if (_providerBalanceBusy) return;
+    setState(() => _providerBalanceBusy = true);
+    try {
+      final snapshot = await _providerBalances.refreshWalletProvider(
+        provider: provider,
+        walletAddress: _baseService.address ?? '',
+      );
+      if (!mounted) return;
+      setState(() => _providerBalance = snapshot);
+      if (snapshot.needsAttention) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(snapshot.summary)),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Balance refresh failed safely: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _providerBalanceBusy = false);
     }
   }
 

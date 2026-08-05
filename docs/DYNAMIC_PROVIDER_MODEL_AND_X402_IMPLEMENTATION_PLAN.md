@@ -1183,7 +1183,9 @@ provider-specific.
 
 - Venice may use x402 for a top-up and a separate wallet/SIWX identity for
   inference. Top-up approval and inference authorization must be separate
-  intents.
+  intents. Balance reads now use a native-constructed EIP-4361 message bound to
+  `api.venice.ai/api/v1/x402/balance/<this-wallet>` with a five-minute maximum
+  lifetime; no generic personal-message signer exists.
 - BlockRun may require a per-request `PAYMENT-SIGNATURE` and does not fit an
   API-key/top-up assumption.
 - llm402 may expose x402/L402, Cashu, or prepaid flows. Each must be represented
@@ -1207,6 +1209,26 @@ There will be no universal Plawie balance in the first release. A future
 internal credit ledger would introduce custody, refunds, reconciliation,
 chargebacks, and multi-provider accounting obligations. The first release keeps
 provider balances and x402 receipts provider-specific.
+
+Current truthful balance adapters are:
+
+- Venice: exact wallet-linked spendable balance through the documented
+  `X-Sign-In-With-X` balance route. The short-lived identity header is cached
+  in memory only and a refresh cannot approve spending.
+- OpenRouter: purchased credits minus usage through `/api/v1/credits`. The
+  endpoint requires a management key; a rejected ordinary chat key is reported
+  as such and is never elevated or mislabeled.
+- Anthropic: usage and cost reporting requires a distinct Admin API key, so a
+  normal chat key only yields a management-page/status explanation.
+- Google Gemini: prepaid balance/top-up is currently managed in AI Studio
+  Billing; without a documented chat-key balance endpoint the app reports
+  dashboard-only state instead of inventing a number.
+- Per-request x402 providers: no prepaid balance is shown unless their own
+  documented adapter exposes one.
+
+The agent receives cached/read-only snapshots and redacted receipts. It may
+explain status and direct the user to the Base page, but its command contract
+contains no approve, unlock, sign, submit, broadcast, or bridge operation.
 
 ## 15. Implementation phases and order
 
@@ -1349,13 +1371,17 @@ single-attempt tests pass. The remaining release gate is one user-approved
 Base Mainnet settlement against the current live provider challenge on a
 hardware-backed connected Android device.
 
-### Phase 9 — Provider-specific live validation
+### Phase 9 — Provider-specific live validation (balance/read-only agent
+contract implemented; live provider proof pending)
 
 - Validate Venice top-up/inference separation if enabled.
 - Validate BlockRun per-request payment semantics if enabled.
 - Validate llm402 payment mode selection if enabled.
 - Test wallet balance, insufficient funds, chain mismatch, expired challenge,
   duplicate request, uncertain receipt, and provider outage.
+- Keep provider identity signatures separate from payment signatures. Agent
+  balance/status/receipt tools are read-only and cannot mint a UI approval
+  ticket.
 
 Exit criteria: each enabled provider has a documented capability/payment matrix
 and a rollback switch.

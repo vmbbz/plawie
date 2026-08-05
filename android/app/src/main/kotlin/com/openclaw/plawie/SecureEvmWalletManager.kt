@@ -28,6 +28,9 @@ import java.math.BigInteger
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
+import java.net.URI
+import java.time.Duration
+import java.time.Instant
 import java.util.Arrays
 import java.util.Locale
 import java.util.concurrent.Executor
@@ -74,6 +77,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
         private val X402_HOSTS = setOf("api.venice.ai", "blockrun.ai")
         private val HEX_ADDRESS = Regex("^0x[0-9a-fA-F]{40}$")
         private val HEX_BYTES32 = Regex("^0x[0-9a-fA-F]{64}$")
+        private val SIWE_NONCE = Regex("^[A-Za-z0-9]{8,64}$")
         private val operationActive = AtomicBoolean(false)
     }
 
@@ -206,6 +210,51 @@ class SecureEvmWalletManager(private val activity: Activity) {
             }
         } catch (error: Exception) {
             result.error("X402_POLICY_ERROR", safeMessage(error), null)
+        }
+    }
+
+    /**
+     * Signs only the Venice balance endpoint's EIP-4361 identity message.
+     * This is intentionally not a generic personal-message signer and cannot
+     * authorize a transfer or an arbitrary provider resource.
+     */
+    fun signVeniceBalanceIdentity(arguments: Map<*, *>?, result: MethodChannel.Result) {
+        val envelope = requireEnvelope(result) ?: return
+        try {
+            val request = parseVeniceBalanceIdentity(arguments, envelope.address)
+            val message = VeniceSiweMessage.build(
+                address = envelope.address,
+                uri = request.uri,
+                nonce = request.nonce,
+                issuedAt = request.issuedAt,
+                expirationTime = request.expirationTime,
+            )
+            withDecryptedKey(
+                envelope = envelope,
+                title = "Sign in to Venice",
+                description = "Authenticate this wallet to read its Venice balance",
+                result = result,
+            ) { privateKey ->
+                val pair = ECKeyPair.create(BigInteger(1, privateKey))
+                val bytes = message.toByteArray(StandardCharsets.UTF_8)
+                val signature = Sign.signPrefixedMessage(bytes, pair)
+                val signatureBytes = ByteArray(65)
+                System.arraycopy(signature.r, 0, signatureBytes, 0, 32)
+                System.arraycopy(signature.s, 0, signatureBytes, 32, 32)
+                signatureBytes[64] = signature.v[0]
+                val recovered = Sign.signedPrefixedMessageToKey(bytes, signature)
+                val recoveredAddress = Keys.toChecksumAddress("0x${Keys.getAddress(recovered)}")
+                require(recoveredAddress.equals(envelope.address, ignoreCase = true)) {
+                    "Venice identity signature self-verification failed."
+                }
+                mapOf(
+                    "signature" to Numeric.toHexString(signatureBytes),
+                    "payer" to envelope.address,
+                    "message" to message,
+                )
+            }
+        } catch (error: Exception) {
+            result.error("VENICE_IDENTITY_POLICY_ERROR", safeMessage(error), null)
         }
     }
 
@@ -698,6 +747,46 @@ class SecureEvmWalletManager(private val activity: Activity) {
         )
     }
 
+    private fun parseVeniceBalanceIdentity(
+        arguments: Map<*, *>?,
+        walletAddress: String,
+    ): VeniceBalanceIdentityRequest {
+        require(arguments != null) { "Venice identity request is missing." }
+        val uriText = arguments["uri"]?.toString()?.trim() ?: ""
+        val uri = URI(uriText)
+        require(
+            uri.scheme.equals("https", ignoreCase = true) &&
+                uri.host.equals("api.venice.ai", ignoreCase = true) &&
+                (uri.port == -1 || uri.port == 443) &&
+                uri.userInfo == null &&
+                uri.query == null &&
+                uri.fragment == null
+        ) { "Venice identity URI is not allowlisted." }
+        val expectedPath = "/api/v1/x402/balance/$walletAddress"
+        require(uri.path.equals(expectedPath, ignoreCase = true)) {
+            "Venice identity is limited to this wallet's balance endpoint."
+        }
+        val nonce = arguments["nonce"]?.toString()?.trim() ?: ""
+        require(SIWE_NONCE.matches(nonce)) { "Venice identity nonce is invalid." }
+        val issuedAt = Instant.parse(arguments["issuedAt"]?.toString() ?: "")
+        val expirationTime = Instant.parse(arguments["expirationTime"]?.toString() ?: "")
+        val now = Instant.now()
+        require(Duration.between(issuedAt, now).abs() <= Duration.ofSeconds(60)) {
+            "Venice identity issue time is stale."
+        }
+        require(expirationTime.isAfter(now)) { "Venice identity has expired." }
+        require(
+            expirationTime.isAfter(issuedAt) &&
+                Duration.between(issuedAt, expirationTime) <= Duration.ofMinutes(5)
+        ) { "Venice identity lifetime exceeds five minutes." }
+        return VeniceBalanceIdentityRequest(
+            uri = uri.toString(),
+            nonce = nonce,
+            issuedAt = issuedAt.toString(),
+            expirationTime = expirationTime.toString(),
+        )
+    }
+
     private fun eip3009Digest(request: X402Request): ByteArray {
         return Eip3009Digest.compute(
             name = request.name,
@@ -780,6 +869,33 @@ class SecureEvmWalletManager(private val activity: Activity) {
         val validBefore: BigInteger,
         val nonce: String,
     )
+
+    private data class VeniceBalanceIdentityRequest(
+        val uri: String,
+        val nonce: String,
+        val issuedAt: String,
+        val expirationTime: String,
+    )
+}
+
+internal object VeniceSiweMessage {
+    fun build(
+        address: String,
+        uri: String,
+        nonce: String,
+        issuedAt: String,
+        expirationTime: String,
+    ): String = """api.venice.ai wants you to sign in with your Ethereum account:
+$address
+
+Sign in to Venice AI
+
+URI: $uri
+Version: 1
+Chain ID: 8453
+Nonce: $nonce
+Issued At: $issuedAt
+Expiration Time: $expirationTime"""
 }
 
 /** Pure EIP-712 encoder kept separately so JVM tests can verify it against an

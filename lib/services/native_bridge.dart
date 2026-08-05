@@ -82,6 +82,16 @@ class NativeBridge {
     return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
   }
 
+  static Future<Map<String, dynamic>> signSecureVeniceBalanceIdentity(
+    Map<String, dynamic> identity,
+  ) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'signSecureVeniceBalanceIdentity',
+      identity,
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
   /// Shows the private-key backup in an Android-owned authenticated dialog.
   /// The key never crosses the MethodChannel into Dart.
   static Future<void> showSecureEvmWalletBackup() async {

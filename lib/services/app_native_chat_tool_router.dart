@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../models/node_frame.dart';
 import 'avatar_gesture_catalog.dart';
 import 'capabilities/avatar_capability.dart';
+import 'capabilities/ai_payments_capability.dart';
 import 'capabilities/blog_watcher_capability.dart';
 import 'capabilities/camera_capability.dart';
 import 'capabilities/clawhub_capability.dart';
@@ -118,6 +119,7 @@ class AppNativeChatToolRouter {
       );
 
   final AvatarCapability _avatar = AvatarCapability();
+  final AiPaymentsCapability _aiPayments = AiPaymentsCapability();
   final BlogWatcherCapability _blogWatcher;
   final CameraCapability _camera = CameraCapability();
   final ClawHubCapability _clawHub = ClawHubCapability();
@@ -262,6 +264,10 @@ class AppNativeChatToolRouter {
       'summarize.text' ||
       'trello.boards' ||
       'xurl.request' =>
+        true,
+      'payments.capabilities' ||
+      'payments.status' ||
+      'payments.receipts' =>
         true,
       _ => false,
     };
@@ -720,6 +726,13 @@ class AppNativeChatToolRouter {
             plan.command,
             plan.input,
           ));
+        case 'payments.capabilities':
+        case 'payments.status':
+        case 'payments.receipts':
+          return _frameToMap(await _aiPayments.handle(
+            plan.command,
+            plan.input,
+          ));
         case 'camera.list':
           return _frameToMap(await _camera.handleWithPermission(
             'camera.list',
@@ -975,6 +988,12 @@ class AppNativeChatToolRouter {
         final method = result['method'] ?? plan.input['method'] ?? 'GET';
         final bytes = result['bytes'];
         return 'xurl $method ${plan.input['url']} -> HTTP $statusCode${bytes == null ? '' : ' ($bytes bytes)'}.';
+      case 'payments.capabilities':
+        return 'AI payment capabilities retrieved. Agents can inspect and explain, but cannot approve, unlock, sign, broadcast, or bridge funds.';
+      case 'payments.status':
+        return 'AI payment and provider-balance status retrieved. Cached values may require a user refresh from the Base page.';
+      case 'payments.receipts':
+        return 'Redacted AI payment receipts retrieved; no signatures or wallet secrets are included.';
       case 'camera.list':
         return 'Camera list retrieved.';
       case 'camera.snap':
@@ -2036,6 +2055,34 @@ class AppNativeChatToolRouter {
           'method': method,
           if (method == 'get_price') 'tokens': _cryptoTokens(lower),
         },
+      );
+    }
+
+    if (_containsAny(lower, const [
+      'ai payment',
+      'x402 payment',
+      'provider balance',
+      'provider credit',
+      'venice balance',
+      'openrouter credit',
+      'payment receipt',
+      'top up ai',
+      'top-up ai',
+    ])) {
+      final action = _containsAny(lower, const ['receipt', 'history'])
+          ? 'receipts'
+          : _containsAny(lower, const [
+              'can you',
+              'capability',
+              'what payments',
+              'how can',
+            ])
+              ? 'capabilities'
+              : 'status';
+      return _AppNativeToolPlan(
+        toolName: 'ai-payments',
+        command: 'payments.$action',
+        input: const <String, dynamic>{},
       );
     }
 

@@ -247,6 +247,12 @@ class MainActivity : FlutterActivity() {
                         result,
                     )
                 }
+                "signSecureVeniceBalanceIdentity" -> {
+                    secureEvmWalletManager.signVeniceBalanceIdentity(
+                        call.arguments as? Map<*, *>,
+                        result,
+                    )
+                }
                 "showSecureEvmWalletBackup" -> {
                     secureEvmWalletManager.showPrivateKeyBackup(result)
                 }
