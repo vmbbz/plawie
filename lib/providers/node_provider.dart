@@ -11,6 +11,7 @@ import '../models/node_frame.dart';
 import '../models/gateway_state.dart';
 import 'gateway_provider.dart' as svc_gateway;
 import '../services/capabilities/avatar_capability.dart';
+import '../services/capabilities/ai_payments_capability.dart';
 import '../services/capabilities/camera_capability.dart';
 import '../services/capabilities/canvas_capability.dart';
 import '../services/capabilities/clawhub_capability.dart';
@@ -36,6 +37,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   // Capabilities
   final _avatarCapability = AvatarCapability();
+  final _aiPaymentsCapability = AiPaymentsCapability();
   final _cameraCapability = CameraCapability();
   final _canvasCapability = CanvasCapability();
   final _clawHubCapability = ClawHubCapability();
@@ -178,6 +180,14 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   ) {
     final commands = <String>{};
     for (final command in capability.commands) {
+      if (command.contains('.')) {
+        // A handler may deliberately expose a separately namespaced bounded
+        // command (for example bridge.quote through the payment safety
+        // boundary). Keep that command exact instead of producing the invalid
+        // payments.bridge.quote alias.
+        commands.add(command);
+        continue;
+      }
       final canonical = '${capability.name}.$command';
       commands.add(canonical);
       commands.add('${capability.name}_$command');
@@ -211,6 +221,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _registerCapabilities() {
+    _registerCapabilityAliases(
+      _aiPaymentsCapability,
+      (cmd, params) => _aiPaymentsCapability.handle(cmd, params),
+    );
     _registerCapabilityAliases(
       _avatarCapability,
       (cmd, params) => _avatarCapability.handle(cmd, params),
@@ -321,6 +335,11 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
           'avatar.mode',
           'avatar.model',
           'avatar.status',
+          'payments.capabilities',
+          'payments.status',
+          'payments.receipts',
+          'bridge.capabilities',
+          'bridge.quote',
           'camera.snap',
           'camera.clip',
           'camera.list',

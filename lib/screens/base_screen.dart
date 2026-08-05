@@ -5,8 +5,10 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:decimal/decimal.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/ai_payment_provider_catalog.dart';
 import '../services/base_service.dart';
+import '../services/bridge_quote_service.dart';
 import '../services/preferences_service.dart';
 import '../services/provider_balance_service.dart';
 import '../services/x402_payment_service.dart';
@@ -28,6 +30,7 @@ class _BaseScreenState extends State<BaseScreen> {
       X402PaymentTransportService();
   final ProviderBalanceService _providerBalances =
       ProviderBalanceService.instance;
+  final BridgeQuoteService _bridgeQuotes = BridgeQuoteService();
   StreamSubscription<BaseEvent>? _eventSub;
   bool _isLoading = false;
   String? _error;
@@ -50,6 +53,7 @@ class _BaseScreenState extends State<BaseScreen> {
   void dispose() {
     _eventSub?.cancel();
     _x402Transport.dispose();
+    _bridgeQuotes.dispose();
     super.dispose();
   }
 
@@ -258,6 +262,9 @@ class _BaseScreenState extends State<BaseScreen> {
                               const SizedBox(height: 16),
                               _sectionLabel(theme, 'AI PAYMENTS'),
                               _buildAiPaymentsPanel(theme),
+                              const SizedBox(height: 16),
+                              _sectionLabel(theme, 'BRIDGE INTO BASE'),
+                              _buildBridgePanel(theme),
                               const SizedBox(height: 24),
                               _sectionLabel(theme, 'WALLET ACTIONS'),
                               if (!_baseService.isConnected) ...[
@@ -344,6 +351,283 @@ class _BaseScreenState extends State<BaseScreen> {
                       ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBridgePanel(ThemeData theme) {
+    return GlassCard(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.swap_calls_rounded,
+                    color: Color(0xFF5B8CFF), size: 22),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Fund Base from another chain',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                ),
+                Text(
+                  'QUOTE ONLY',
+                  style: TextStyle(
+                    color: Colors.orangeAccent,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Check a live LI.FI route from Ethereum, Solana, or Robinhood Chain into this Base wallet. The source transaction stays in your external wallet; Plawie never signs arbitrary bridge calldata.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: BridgeQuoteService.sourceChains
+                  .map((chain) => Chip(
+                        avatar: Icon(
+                          chain.type == BridgeChainType.svm
+                              ? Icons.blur_circular_rounded
+                              : Icons.hexagon_outlined,
+                          size: 14,
+                        ),
+                        label: Text(chain.name),
+                        visualDensity: VisualDensity.compact,
+                      ))
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _baseService.isConnected
+                    ? _showBridgeQuoteDialog
+                    : _showWalletRequiredDialog,
+                icon: const Icon(Icons.route_outlined),
+                label: const Text('Get live bridge quote'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showBridgeQuoteDialog() async {
+    var sourceChain = BridgeQuoteService.sourceChains.first;
+    var sourceToken = sourceChain.nativeToken;
+    var busy = false;
+    String? dialogError;
+    final amountController = TextEditingController();
+    final sourceAddressController = TextEditingController();
+    BridgeQuote? quote;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !busy,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Bridge into Base'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DropdownButtonFormField<BridgeSourceChain>(
+                  initialValue: sourceChain,
+                  decoration: const InputDecoration(labelText: 'Source chain'),
+                  items: BridgeQuoteService.sourceChains
+                      .map((chain) => DropdownMenuItem(
+                            value: chain,
+                            child: Text(chain.name),
+                          ))
+                      .toList(growable: false),
+                  onChanged: busy
+                      ? null
+                      : (value) {
+                          if (value == null) return;
+                          setDialogState(() {
+                            sourceChain = value;
+                            sourceToken = value.nativeToken;
+                            dialogError = null;
+                          });
+                        },
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  key: ValueKey<String>('${sourceChain.id}-$sourceToken'),
+                  initialValue: sourceToken,
+                  decoration: const InputDecoration(labelText: 'Pay with'),
+                  items: <String>{sourceChain.nativeToken, 'USDC'}
+                      .map((token) => DropdownMenuItem(
+                            value: token,
+                            child: Text(token),
+                          ))
+                      .toList(growable: false),
+                  onChanged: busy
+                      ? null
+                      : (value) {
+                          if (value != null) {
+                            setDialogState(() => sourceToken = value);
+                          }
+                        },
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: amountController,
+                  enabled: !busy,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Source amount',
+                    suffixText: sourceToken,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: sourceAddressController,
+                  enabled: !busy,
+                  autocorrect: false,
+                  decoration: InputDecoration(
+                    labelText: '${sourceChain.name} source-wallet address',
+                    helperText: 'The external wallet that will sign and pay',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Destination: ${_baseService.address}\n'
+                  'Receive: Base USDC\n'
+                  'Slippage limit: 0.5%',
+                  style: const TextStyle(fontSize: 11, height: 1.4),
+                ),
+                if (dialogError != null) ...[
+                  const SizedBox(height: 10),
+                  Text(dialogError!,
+                      style: const TextStyle(
+                          color: Colors.orangeAccent, fontSize: 11)),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      setDialogState(() {
+                        busy = true;
+                        dialogError = null;
+                      });
+                      try {
+                        quote = await _bridgeQuotes.quoteToBaseUsdc(
+                          BridgeQuoteRequest(
+                            sourceChain: sourceChain,
+                            sourceToken: sourceToken,
+                            amount: amountController.text,
+                            sourceAddress: sourceAddressController.text,
+                            baseDestinationAddress: _baseService.address ?? '',
+                          ),
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      } catch (error) {
+                        if (ctx.mounted) {
+                          setDialogState(() {
+                            dialogError = '$error';
+                            busy = false;
+                          });
+                        }
+                      }
+                    },
+              icon: busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.search_rounded),
+              label: Text(busy ? 'Checking…' : 'Get quote'),
+            ),
+          ],
+        ),
+      ),
+    );
+    amountController.dispose();
+    sourceAddressController.dispose();
+    if (!mounted || quote == null) return;
+    await _showBridgeQuoteResult(quote!);
+  }
+
+  Future<void> _showBridgeQuoteResult(BridgeQuote quote) async {
+    final fee = quote.estimatedFeesUsd;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Live bridge estimate'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${quote.sourceAmount} ${quote.sourceToken} → at least ${quote.destinationAmountMinimum} ${quote.destinationToken}',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Route: ${quote.routeTool}\n'
+                'From: ${quote.sourceChain.name}\n'
+                'To: Base\n'
+                '${quote.estimatedDurationSeconds == null ? '' : 'Estimated time: ~${quote.estimatedDurationSeconds}s\n'}'
+                '${fee == null ? '' : 'Estimated route + gas cost: \$${fee.toStringAsFixed(2)}\n'}'
+                'Quote validity: 60 seconds',
+                style: const TextStyle(fontSize: 12, height: 1.45),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'This is planning data only. Plawie discarded LI.FI transaction calldata. Jumper and your external source wallet must produce and show a fresh final transaction for you to approve.',
+                style: TextStyle(fontSize: 11, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final opened = await launchUrl(
+                quote.externalCompletionUrl,
+                mode: LaunchMode.externalApplication,
+              );
+              if (!opened && mounted) {
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('Could not open Jumper.')),
+                );
+              }
+            },
+            icon: const Icon(Icons.open_in_new_rounded),
+            label: const Text('Open Jumper'),
           ),
         ],
       ),

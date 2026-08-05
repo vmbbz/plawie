@@ -308,8 +308,9 @@ class GifgrepCapability extends CapabilityHandler {
 
   static List<Map<String, dynamic>> _parseGiphyResults(Object? decoded) {
     final data = decoded is Map ? decoded['data'] : null;
-    if (data is! List)
+    if (data is! List) {
       throw const FormatException('GIPHY returned invalid data.');
+    }
     return data
         .whereType<Map>()
         .map((raw) {
@@ -340,8 +341,9 @@ class GifgrepCapability extends CapabilityHandler {
 
   static List<Map<String, dynamic>> _parseKlipyResults(Object? decoded) {
     final data = decoded is Map ? decoded['results'] : null;
-    if (data is! List)
+    if (data is! List) {
       throw const FormatException('Klipy returned invalid results.');
+    }
     return data
         .whereType<Map>()
         .map((raw) {

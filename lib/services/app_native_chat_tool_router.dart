@@ -26,6 +26,7 @@ import 'capabilities/trello_capability.dart';
 import 'capabilities/vibration_capability.dart';
 import 'capabilities/weather_capability.dart';
 import 'capabilities/xurl_capability.dart';
+import 'bridge_quote_service.dart';
 import 'gifgrep_contract.dart';
 import 'gifgrep_media_store.dart';
 import 'skills_service.dart';
@@ -269,6 +270,7 @@ class AppNativeChatToolRouter {
       'payments.status' ||
       'payments.receipts' =>
         true,
+      'bridge.capabilities' || 'bridge.quote' => true,
       _ => false,
     };
   }
@@ -590,7 +592,7 @@ class AppNativeChatToolRouter {
       );
     }
 
-    final bundledSkillPlan = _bundledSkillPlan(lower);
+    final bundledSkillPlan = _bundledSkillPlan(lower, trimmed);
     if (bundledSkillPlan != null) return bundledSkillPlan;
 
     return null;
@@ -729,6 +731,12 @@ class AppNativeChatToolRouter {
         case 'payments.capabilities':
         case 'payments.status':
         case 'payments.receipts':
+          return _frameToMap(await _aiPayments.handle(
+            plan.command,
+            plan.input,
+          ));
+        case 'bridge.capabilities':
+        case 'bridge.quote':
           return _frameToMap(await _aiPayments.handle(
             plan.command,
             plan.input,
@@ -994,6 +1002,10 @@ class AppNativeChatToolRouter {
         return 'AI payment and provider-balance status retrieved. Cached values may require a user refresh from the Base page.';
       case 'payments.receipts':
         return 'Redacted AI payment receipts retrieved; no signatures or wallet secrets are included.';
+      case 'bridge.capabilities':
+        return 'Inbound Base bridge options retrieved. Quotes are read-only and every source transaction must be reviewed and signed in an external wallet.';
+      case 'bridge.quote':
+        return 'A live inbound Base bridge estimate was retrieved. It is not an approval or executable transaction; open the Base page and review again in the external source wallet.';
       case 'camera.list':
         return 'Camera list retrieved.';
       case 'camera.snap':
@@ -1927,7 +1939,7 @@ class AppNativeChatToolRouter {
     return value.replaceAll(RegExp(r'[?.!]+$'), '').trim();
   }
 
-  _AppNativeToolPlan? _bundledSkillPlan(String lower) {
+  _AppNativeToolPlan? _bundledSkillPlan(String lower, String original) {
     if (_containsAny(lower, const [
       'avatar overlay',
       'avatar_overlay',
@@ -2055,6 +2067,60 @@ class AppNativeChatToolRouter {
           'method': method,
           if (method == 'get_price') 'tokens': _cryptoTokens(lower),
         },
+      );
+    }
+
+    final mentionsBridgeSource = _containsAny(lower, const [
+      'ethereum',
+      'solana',
+      'robinhood',
+      'another chain',
+    ]);
+    final requestsInboundBaseBridge = lower.contains('base') &&
+        mentionsBridgeSource &&
+        (lower.contains('bridge') ||
+            (lower.contains('fund') && lower.contains('from')));
+    if (requestsInboundBaseBridge) {
+      final source = lower.contains('solana')
+          ? BridgeQuoteService.sourceChains.singleWhere(
+              (chain) => chain.id == BridgeQuoteService.solanaChainId,
+            )
+          : lower.contains('robinhood')
+              ? BridgeQuoteService.sourceChains.singleWhere(
+                  (chain) => chain.id == BridgeQuoteService.robinhoodChainId,
+                )
+              : BridgeQuoteService.sourceChains.first;
+      final amountMatch = RegExp(
+        r'\b(\d+(?:\.\d+)?)\s*(ETH|SOL|USDC)\b',
+        caseSensitive: false,
+      ).firstMatch(original);
+      final evmAddress =
+          RegExp(r'0x[a-fA-F0-9]{40}').firstMatch(original)?.group(0);
+      final solanaAddresses = RegExp(r'\b[1-9A-HJ-NP-Za-km-z]{32,44}\b')
+          .allMatches(original)
+          .map((match) => match.group(0)!)
+          .where(source.validAddress)
+          .toList(growable: false);
+      final solanaAddress =
+          solanaAddresses.isEmpty ? null : solanaAddresses.first;
+      final sourceAddress =
+          source.type == BridgeChainType.svm ? solanaAddress : evmAddress;
+      if (amountMatch != null && sourceAddress != null) {
+        return _AppNativeToolPlan(
+          toolName: 'ai-payments',
+          command: 'bridge.quote',
+          input: <String, dynamic>{
+            'sourceChainId': source.id,
+            'sourceToken': amountMatch.group(2)!.toUpperCase(),
+            'amount': amountMatch.group(1),
+            'sourceAddress': sourceAddress,
+          },
+        );
+      }
+      return const _AppNativeToolPlan(
+        toolName: 'ai-payments',
+        command: 'bridge.capabilities',
+        input: <String, dynamic>{},
       );
     }
 

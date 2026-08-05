@@ -1,6 +1,6 @@
 # Dynamic Providers, Models, Accounts, and Human-Approved x402
 
-Status: Phases 1-5 and native wallet signer hardening implemented; Base Mainnet x402 settlement transport and live enablement pending
+Status: Phases 1-9 and inbound Base bridge quoting implemented; controlled live mainnet settlement proof pending
 
 Date: 2026-08-05
 
@@ -32,9 +32,14 @@ Current implementation status:
 - EIP-3009 construction matches an independently generated EIP-712 vector and
   native signing self-recovers the payer address before returning a signature.
   x402 additionally blocks software/unknown Keystore security levels.
-- Provider transport, SIWE/SIWX provider authentication, durable receipts, and
-  live payment UI remain disabled until their own phases and on-device payment
-  tests are complete.
+- Provider transport, bounded SIWE/SIWX provider authentication, durable
+  receipts, visible approval, and exact-request retry are implemented. The
+  release gate remains one controlled, user-approved on-device Base Mainnet
+  settlement proof.
+- The Base page and read-only agent capability can request inbound Base USDC
+  quotes from Ethereum, Solana, and Robinhood Chain through LI.FI runtime
+  discovery. Source-chain execution remains in an external wallet; transaction
+  calldata is discarded and never enters the internal Base signer.
 
 ## 1. Purpose
 
@@ -1386,7 +1391,58 @@ contract implemented; live provider proof pending)
 Exit criteria: each enabled provider has a documented capability/payment matrix
 and a rollback switch.
 
-### Phase 10 — Optional smart-wallet evaluation
+### Phase 10 — Inbound Base bridge planning (implemented; external-wallet
+execution proof pending)
+
+- Treat bridging as wallet funding, not as an x402 payment or provider-credit
+  settlement. The destination is always the app's displayed internal Base
+  wallet and the destination asset is native Base USDC.
+- Use LI.FI as a quote aggregator because it exposes current chain, token,
+  connection, quote, tool, and transfer-status contracts across EVM and SVM
+  chains. Anonymous API access is allowed; a client-shipped partner key is not.
+- Enable Ethereum mainnet (`1`), Solana (`1151111081099710`), and Robinhood
+  Chain mainnet (`4663`, LI.FI key `out`) as source selectors. Robinhood is an
+  Arbitrum L2 using ETH for gas; no testnet or guessed chain alias is accepted.
+- Resolve the source token and Base USDC contract through LI.FI at quote time.
+  Verify exact token address, chain ID, symbol, and decimals in the token,
+  connection, and quote responses. This is mandatory for Robinhood because a
+  bridged ERC-20 contract address is chain-specific.
+- Permit only each source chain's native gas token and USDC in the initial UI.
+  Check `/chains`, `/token`, and token-specific `/connections` before `/quote`.
+  Reject redirects, non-HTTPS/non-allowlisted hosts, oversized payloads,
+  mismatched wallets/chains/tokens/amounts, invalid Solana public keys, and
+  missing minimum received amounts.
+- Show source amount, minimum Base USDC received, route tool, estimated route
+  plus gas cost, estimated duration, 0.5% slippage, and a short quote lifetime.
+  Quotes are estimates, not receipts or guarantees.
+- Discard LI.FI `transactionRequest` and all bridge calldata. The agent may
+  inspect capabilities and request a quote, but cannot approve, sign, submit,
+  broadcast, or claim completion. The internal Base signer exposes no arbitrary
+  message or bridge-calldata operation.
+- Send the user to an external source wallet/LI.FI surface for a fresh route and
+  final human review. Future execution integration must return with a source
+  transaction hash before status polling can begin; a quote ID alone is never a
+  completion receipt.
+- Treat runtime route discovery as authoritative. If LI.FI no longer advertises
+  Robinhood-to-Base, fail honestly. Robinhood's canonical L2 withdrawal path is
+  a separate Ethereum route with an approximately seven-day challenge period,
+  not an automatic fallback for a fast Base quote.
+
+Exit criteria: every supported source produces an exact, validated quote or an
+actionable no-route state; no quote response can reach a signer; Robinhood Chain
+support disappears safely when runtime discovery removes it; and one external
+wallet handoff is verified per source ecosystem without claiming the app
+executed or tracked the transfer.
+
+References:
+
+- [`LI.FI endpoint specifications`](https://docs.li.fi/agents/reference/endpoint-specs)
+- [`LI.FI authentication and client-side key policy`](https://docs.li.fi/api-reference/introduction)
+- [`LI.FI Solana provider contract`](https://docs.li.fi/introduction/lifi-architecture/solana-overview)
+- [`Robinhood Chain connection details`](https://docs.robinhood.com/chain/connecting/)
+- [`Robinhood Chain bridge choices and canonical timing`](https://docs.robinhood.com/chain/bridging/)
+
+### Phase 11 — Optional smart-wallet evaluation
 
 - Prototype Base Account/passkey integration behind a separate feature flag.
 - Verify Flutter/Android UX, recovery, address migration, and facilitator
@@ -1397,7 +1453,7 @@ and a rollback switch.
 Exit criteria: an explicit architecture decision is documented; no user is
 silently migrated and no standing spend authority is introduced.
 
-### Phase 11 — Cleanup and release hardening
+### Phase 12 — Cleanup and release hardening
 
 - Remove dead static-only UI paths after migration telemetry is sufficient.
 - Keep static safe fallback records for offline/error recovery.
@@ -1510,7 +1566,31 @@ PRoot fallback all pass the release checklist.
 - no Permit2 allowance, Spend Permission, Auto Spend Permission, session key, or
   reusable ERC-7710 delegation is created.
 
-### 16.6 Fresh install and upgrade
+### 16.6 Inbound Base bridges
+
+- Ethereum, Solana, and Robinhood Chain are source-only; Base USDC is the fixed
+  destination lane;
+- Robinhood mainnet is chain ID `4663`, Solana uses LI.FI's SVM chain ID, and
+  every chain must still be present in the current `/chains` response;
+- exact token contracts and decimals come from `/token`, not from a shared USDC
+  symbol assumption;
+- token-specific `/connections` must contain both resolved contracts before a
+  quote is requested;
+- EVM addresses compare case-insensitively, while decoded Solana public keys and
+  returned SVM addresses preserve case;
+- returned quote source/destination wallets, chain IDs, token contracts,
+  decimals, symbols, and amount match the request exactly;
+- absent/malformed fees display as unknown, not zero;
+- `transactionRequest`, calldata, approvals, and signatures never enter agent
+  output, app persistence, or the internal signer;
+- incomplete chat requests explain supported lanes; complete requests can only
+  call `bridge.quote`;
+- external-wallet completion is described as a new final quote and approval,
+  never as execution of the app's earlier quote;
+- route removal, rate limit, provider outage, malformed response, and expired
+  quote fail without changing wallet or payment state.
+
+### 16.7 Fresh install and upgrade
 
 - fresh install boots native Gateway without dynamic catalog/network success;
 - first setup does not download a duplicate gateway or dependency pack;
@@ -1585,6 +1665,20 @@ approval-bound signer callback. No generic `fetchWithPayment` wrapper receives a
 signer capable of signing without a validated Plawie intent and fresh device
 authentication.
 
+### Risk: bridge aggregation changes routes or returns unsafe calldata
+
+Mitigation: bridge availability is runtime-discovered and token-specific; the
+app validates quote identity fields but discards all transaction data. Execution
+is delegated to a fresh external-wallet flow, where the user reviews the current
+route. The agent and internal Base signer cannot approve or broadcast it.
+
+### Risk: Robinhood Chain token identity and withdrawal assumptions
+
+Mitigation: pin mainnet chain ID `4663` but resolve tokens and connections at
+runtime. Never reuse an Ethereum token address on Robinhood. Do not silently
+substitute the canonical Robinhood-to-Ethereum withdrawal, whose challenge
+period is about seven days, when a fast Robinhood-to-Base route is unavailable.
+
 ### Risk: setup temporarily duplicates or leaks provider credentials
 
 Mitigation: opaque one-time secret references, one canonical secret store,
@@ -1626,8 +1720,9 @@ The implementation should use small reviewable commits in this order:
 13. `Add x402 v2 payment intent and approval UI on Base Mainnet`
 14. `Add Gateway-compatible exact EIP-3009 payment transport`
 15. `Add live payment receipt and recovery tests`
-16. `Evaluate Base Account passkey signing without spend permissions`
-17. `Remove or quarantine superseded legacy provider/payment paths`
+16. `Add quote-only Ethereum Solana and Robinhood funding into Base`
+17. `Evaluate Base Account passkey signing without spend permissions`
+18. `Remove or quarantine superseded legacy provider/payment paths`
 
 Do not commit generated APKs, build reports, caches, or temporary device files.
 Do not stage unrelated pre-existing worktree files.
@@ -1652,6 +1747,9 @@ This plan is complete only when:
 - no standing spend permission, allowance, session key, or automatic payment
   wrapper can bypass per-transaction approval;
 - payment retries are idempotent and receipt-aware;
+- Ethereum, Solana, and Robinhood funding quotes resolve and verify exact token
+  contracts at runtime while all bridge execution remains external and
+  human-approved;
 - testnet and release acceptance matrices pass;
 - current provider roadmap, help, security, and release documentation agree with
   the shipped behavior.
