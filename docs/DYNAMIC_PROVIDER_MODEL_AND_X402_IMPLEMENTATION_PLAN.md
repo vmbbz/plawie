@@ -180,6 +180,14 @@ conservative filtering of obvious embedding/moderation/speech-only records.
 The adapter keeps the API key in the request boundary and never writes it into
 the catalog snapshot.
 
+The first Settings integration is now present as well: it reads the cached
+snapshot, groups models by provider, supports local search and expansion, keeps
+stale/error messaging visible, and refreshes metadata after an explicit API-key
+save. A dynamically discovered selection is added to the existing provider
+model list through Gateway's credential/native-policy checks before the normal
+model switch path runs. Chat history, prompt/tool payloads, and context policy
+are not changed by this integration.
+
 Endpoint references used for this slice:
 
 - [`OpenAI list models`](https://platform.openai.com/docs/api-reference/models)

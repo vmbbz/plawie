@@ -65,6 +65,23 @@ class DynamicModelRecord {
 
   String get shortId => id.contains('/') ? id.split('/').last : id;
 
+  /// Model ID expected inside `models.providers.<provider>.models`.
+  ///
+  /// Provider payloads are allowed to use nested IDs (for example
+  /// `openai/gpt-5` through OpenRouter), so this cannot be derived with a
+  /// simple last-segment split.
+  String get gatewayModelId {
+    final source = providerModelId?.trim() ?? '';
+    if (source.isNotEmpty) return source;
+    final prefix = '$providerId/';
+    return id.startsWith(prefix) ? id.substring(prefix.length) : shortId;
+  }
+
+  Map<String, dynamic> get gatewayModelConfig => <String, dynamic>{
+        'id': gatewayModelId,
+        'name': label,
+      };
+
   factory DynamicModelRecord.fromStatic(ModelOption model) {
     return DynamicModelRecord(
       id: model.id,

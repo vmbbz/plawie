@@ -24,6 +24,7 @@ import 'native_gateway_shadow_parity_service.dart';
 import 'android_skill_readiness_service.dart';
 import 'skill_parity_audit_service.dart';
 import 'skill_provisioning_service.dart';
+import 'dynamic_model_catalog.dart';
 import '../constants/openclaw_paths.dart';
 import 'skills_service.dart';
 import 'gifgrep_contract.dart';
@@ -2904,6 +2905,66 @@ HEARTBEAT_OK.
     } else {
       remote.remove('password');
     }
+  }
+
+  /// Persist a model discovered from a provider endpoint.
+  ///
+  /// Dynamic model IDs are not allowed to bypass the existing provider and
+  /// native-runtime policy. The discovered model is first added to the
+  /// provider's model list without copying untrusted context/token metadata;
+  /// [persistModel] then applies the normal Gateway model-switch path.
+  Future<void> persistDynamicModel(DynamicModelRecord model) async {
+    final canonical = model.id.trim();
+    final provider = ModelProviderCatalog.normalizeProvider(model.providerId);
+    if (provider.isEmpty || !canonical.startsWith('$provider/')) {
+      throw ArgumentError(
+          'Dynamic model ID is not namespaced by its provider.');
+    }
+    if (!ModelProviderCatalog.isProviderSupportedByNativeGateway(provider) &&
+        await _nativeConfigOwnerSelected()) {
+      throw UnsupportedError(
+        '$provider is not supported by the embedded native gateway.',
+      );
+    }
+    if (!await hasProviderCredential(provider)) {
+      throw StateError('Configure the $provider provider before selecting it.');
+    }
+
+    final config = await _readConfig();
+    config['models'] ??= <String, dynamic>{};
+    final models = config['models'];
+    if (models is! Map) {
+      throw StateError('Gateway model configuration is malformed.');
+    }
+    models['providers'] ??= <String, dynamic>{};
+    final providers = models['providers'];
+    if (providers is! Map) {
+      throw StateError('Gateway provider configuration is malformed.');
+    }
+
+    final existing = providers[provider];
+    final providerConfig = ModelProviderCatalog.mergeProviderConfig(
+      provider,
+      existing is Map ? existing : null,
+    );
+    final modelList = providerConfig['models'];
+    final modelsById = <String, Map<String, dynamic>>{};
+    if (modelList is List) {
+      for (final entry in modelList) {
+        if (entry is! Map) continue;
+        final id = entry['id']?.toString().trim() ?? '';
+        if (id.isEmpty) continue;
+        modelsById[id] = entry.map(
+          (key, value) => MapEntry(key.toString(), value),
+        );
+      }
+    }
+    modelsById[model.gatewayModelId] = model.gatewayModelConfig;
+    providerConfig['models'] = modelsById.values.toList(growable: false);
+    providers[provider] = providerConfig;
+    await _writeConfig(config);
+
+    await persistModel(canonical);
   }
 
   Future<void> persistModel(String model) async {

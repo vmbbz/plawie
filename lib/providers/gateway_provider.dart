@@ -7,6 +7,7 @@ import '../services/gateway_service.dart' as svc;
 import '../services/gateway_skill_proxy.dart';
 import '../services/bootstrap_service.dart';
 import '../services/model_provider_catalog.dart';
+import '../services/dynamic_model_catalog.dart';
 import '../services/skill_provisioning_service.dart';
 
 class GatewayProvider extends ChangeNotifier {
@@ -187,6 +188,12 @@ class GatewayProvider extends ChangeNotifier {
   /// Persist the selected model to openclaw.json.
   Future<void> persistModel(String model) async {
     await _gatewayService.persistModel(model);
+  }
+
+  /// Persist a model obtained from the dynamic provider catalog through the
+  /// same credential and native-runtime policy as the Gateway service.
+  Future<void> persistDynamicModel(DynamicModelRecord model) async {
+    await _gatewayService.persistDynamicModel(model);
   }
 
   /// Force a re-fetch of the authenticated Dashboard URL.

@@ -14,6 +14,8 @@ import '../services/native_bridge.dart';
 import '../services/diagnostic_service.dart';
 import '../services/gateway_service.dart';
 import '../services/model_provider_catalog.dart';
+import '../services/dynamic_model_catalog.dart';
+import '../services/provider_model_discovery_service.dart';
 import '../services/preferences_service.dart';
 import '../services/tts_service.dart';
 import '../services/local_llm_service.dart';
@@ -1116,10 +1118,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _prefs.apiKeyConfigured = true;
                   setState(() {});
 
+                  String modelRefreshMessage =
+                      'Provider key saved. Showing the bundled model list.';
+                  try {
+                    final refreshed =
+                        await ProviderModelDiscoveryService().refreshProvider(
+                      selectedProvider,
+                      apiKey: key,
+                    );
+                    final count = refreshed.providers
+                        .firstWhere(
+                            (provider) => provider.id == selectedProvider)
+                        .models
+                        .length;
+                    modelRefreshMessage =
+                        'Provider key saved. Refreshed $count models.';
+                  } on ProviderDiscoveryException catch (error) {
+                    modelRefreshMessage =
+                        'Provider key saved, but model refresh failed: ${error.message}';
+                  } catch (error) {
+                    modelRefreshMessage =
+                        'Provider key saved, but model refresh failed: $error';
+                  }
+
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
+                    SnackBar(
                         content: Text(
-                            'API key updated. Gateway may restart briefly before reconnecting.')),
+                            '$modelRefreshMessage Gateway may restart briefly before reconnecting.')),
                   );
                 } catch (e) {
                   if (!context.mounted) return;
@@ -1136,12 +1162,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showChangeModelDialog(BuildContext context) {
-    final cloudModels = ModelProviderCatalog.chatDefaultModelIds;
-    final cloudLabels = cloudModels
-        .map((model) => ModelProviderCatalog.labelForModel(model))
-        .toList(growable: false);
+  Future<void> _showChangeModelDialog(BuildContext context) async {
+    final cached = await DynamicModelCatalogRepository().load();
+    final snapshot = cached != null &&
+            cached.providers.any(
+              (provider) => provider.models.isNotEmpty,
+            )
+        ? cached
+        : DynamicCatalogSnapshot.bundledFallback();
+    if (!context.mounted) return;
 
+    final dynamicModels = <DynamicModelRecord>[
+      for (final provider in snapshot.providers) ...provider.models,
+    ];
     final llmService = LocalLlmService();
     final llmReady = llmService.state.status == LocalLlmStatus.ready;
     final localModelId = llmReady && llmService.state.activeModelId != null
@@ -1152,9 +1185,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         : null;
 
     String current = ModelProviderCatalog.canonicalizeModelId(
-        _prefs.configuredModel ?? cloudModels[0]);
+        _prefs.configuredModel ??
+            ModelProviderCatalog.defaultCloudFallbackModel);
 
-    Future<void> switchModel(String val, String label) async {
+    Future<void> switchModel(
+      String val,
+      String label,
+      DynamicModelRecord? dynamicModel,
+    ) async {
       final modelId = ModelProviderCatalog.canonicalizeModelId(val);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Switching model...')),
@@ -1162,23 +1200,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
       try {
         final gw = context.read<GatewayProvider>();
         final catalogModel = ModelProviderCatalog.modelById(modelId);
-        if (catalogModel != null &&
-            catalogModel.route == ModelRouteKind.cloud &&
-            !await GatewayService()
-                .hasProviderCredential(catalogModel.providerId)) {
+        final providerId = dynamicModel?.providerId ?? catalogModel?.providerId;
+        if (providerId != null &&
+            !await GatewayService().hasProviderCredential(providerId)) {
           if (!context.mounted) return;
-          final provider =
-              ModelProviderCatalog.providerById(catalogModel.providerId);
+          final provider = ModelProviderCatalog.providerById(providerId);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Add a ${provider?.label ?? catalogModel.providerId} API key before using ${catalogModel.label}.',
+                'Add a ${provider?.label ?? providerId} API key before using $label.',
               ),
             ),
           );
           return;
         }
-        await gw.persistModel(modelId);
+        if (dynamicModel != null &&
+            dynamicModel.sourceModelId != null &&
+            !ModelProviderCatalog.cloudModelIds.contains(modelId)) {
+          await gw.persistDynamicModel(dynamicModel);
+        } else {
+          await gw.persistModel(modelId);
+        }
         if (!context.mounted) return;
         _prefs.configuredModel = modelId;
         setState(() {});
@@ -1194,83 +1236,190 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
 
-    final valueToLabel = <String, String>{
-      for (var i = 0; i < cloudModels.length; i++)
-        cloudModels[i]: cloudLabels[i],
-      if (localModelId != null) localModelId: localLabel!,
-    };
-    if (!valueToLabel.containsKey(current)) {
-      current = cloudModels[0];
+    final cloudIds = dynamicModels.map((model) => model.id).toSet();
+    if (!cloudIds.contains(current) && localModelId != current) {
+      current = dynamicModels.isNotEmpty
+          ? dynamicModels.first.id
+          : ModelProviderCatalog.defaultCloudFallbackModel;
     }
 
-    showDialog(
+    final selection = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Select Model'),
-        content: RadioGroup<String>(
-          groupValue: current,
-          onChanged: (val) async {
-            if (val == null) return;
-            Navigator.pop(ctx);
-            await switchModel(val, valueToLabel[val] ?? _getModelLabel(val));
-          },
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Local LLM option — only shown when llama-server is running
-                if (llmReady && localModelId != null) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 0, 0, 4),
-                    child: Text('ON-DEVICE',
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.5,
-                            color:
-                                AppColors.statusGreen.withValues(alpha: 0.8))),
-                  ),
-                  RadioListTile<String>(
-                    title: Text(localLabel!),
-                    subtitle: const Text('No API key · No internet · Private',
-                        style: TextStyle(fontSize: 11)),
-                    value: localModelId,
-                  ),
-                  const Divider(),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
-                    child: Text('CLOUD',
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.5,
-                            color: Colors.white38)),
+      builder: (ctx) {
+        var query = '';
+        final expanded = <String>{
+          for (final provider in snapshot.providers) provider.id,
+        };
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final normalizedQuery = query.trim().toLowerCase();
+            final providerGroups = snapshot.providers
+                .map((provider) {
+                  final models = normalizedQuery.isEmpty
+                      ? provider.models
+                      : provider.models
+                          .where((model) =>
+                              model.label
+                                  .toLowerCase()
+                                  .contains(normalizedQuery) ||
+                              model.id.toLowerCase().contains(normalizedQuery))
+                          .toList(growable: false);
+                  return (provider: provider, models: models);
+                })
+                .where((group) => group.models.isNotEmpty)
+                .toList(growable: false);
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Expanded(child: Text('Select Model')),
+                  IconButton(
+                    tooltip: 'Manage provider keys and refresh models',
+                    icon: const Icon(Icons.refresh_rounded, size: 20),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _showUpdateApiKeyDialog(context);
+                    },
                   ),
                 ],
-                ...List.generate(
-                    cloudModels.length,
-                    (i) => RadioListTile<String>(
-                          title: Text(cloudLabels[i]),
-                          subtitle: Text(
-                            '${ModelProviderCatalog.routeLabelForModel(cloudModels[i])} - ${cloudModels[i]}',
-                            style: const TextStyle(fontSize: 11),
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: MediaQuery.sizeOf(context).height * 0.66,
+                child: RadioGroup<String>(
+                  groupValue: current,
+                  onChanged: (val) => Navigator.pop(ctx, val),
+                  child: Column(
+                    children: [
+                      TextField(
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search_rounded),
+                          hintText: 'Search models or providers',
+                        ),
+                        onChanged: (value) =>
+                            setDialogState(() => query = value),
+                      ),
+                      if (snapshot.state == DynamicCatalogSnapshotState.stale ||
+                          snapshot.state == DynamicCatalogSnapshotState.error)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              snapshot.state ==
+                                      DynamicCatalogSnapshotState.stale
+                                  ? 'Cached model list · refresh from Provider keys'
+                                  : 'Provider refresh had an error · showing cached models',
+                              style: const TextStyle(
+                                  color: Colors.amber, fontSize: 11),
+                            ),
                           ),
-                          value: cloudModels[i],
-                        )),
-                if (!llmReady)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: Text(
-                      'Start Local LLM from Agent Skills to unlock free on-device inference.',
-                      style: TextStyle(fontSize: 11, color: Colors.white38),
-                    ),
+                        ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: ListView(
+                          children: [
+                            if (llmReady && localModelId != null) ...[
+                              const Text('ON-DEVICE',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 1.5,
+                                      color: AppColors.statusGreen)),
+                              RadioListTile<String>(
+                                title: Text(localLabel!),
+                                subtitle: const Text(
+                                    'No API key · No internet · Private',
+                                    style: TextStyle(fontSize: 11)),
+                                value: localModelId,
+                              ),
+                              const Divider(),
+                            ],
+                            if (providerGroups.isNotEmpty)
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 4),
+                                child: Text('CLOUD PROVIDERS',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 1.5,
+                                        color: Colors.white38)),
+                              ),
+                            ...providerGroups.map((group) {
+                              final provider = group.provider;
+                              final isExpanded = normalizedQuery.isNotEmpty ||
+                                  expanded.contains(provider.id);
+                              return ExpansionTile(
+                                key: PageStorageKey<String>(provider.id),
+                                initiallyExpanded: isExpanded,
+                                onExpansionChanged: (value) {
+                                  if (value) {
+                                    expanded.add(provider.id);
+                                  } else {
+                                    expanded.remove(provider.id);
+                                  }
+                                  setDialogState(() {});
+                                },
+                                tilePadding: EdgeInsets.zero,
+                                title: Text(provider.label,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700)),
+                                subtitle: Text(
+                                  '${group.models.length} models · ${provider.connectionState.name}',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                children: isExpanded
+                                    ? group.models
+                                        .map((model) => RadioListTile<String>(
+                                              dense: true,
+                                              title: Text(model.label,
+                                                  overflow:
+                                                      TextOverflow.ellipsis),
+                                              subtitle: Text(
+                                                '${model.agentReady ? 'Agent-ready' : 'Tool support unknown'} · ${model.id}',
+                                                style: const TextStyle(
+                                                    fontSize: 10),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              value: model.id,
+                                            ))
+                                        .toList(growable: false)
+                                    : const <Widget>[],
+                              );
+                            }),
+                            if (providerGroups.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.all(24),
+                                child:
+                                    Text('No cached models match that search.'),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-              ],
-            ),
-          ),
-        ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (selection == null || !context.mounted) return;
+    final dynamicModel = dynamicModels.firstWhere(
+      (model) => model.id == selection,
+      orElse: () => const DynamicModelRecord(
+        id: '',
+        providerId: '',
+        label: '',
+        route: ModelRouteKind.cloud,
       ),
+    );
+    await switchModel(
+      selection,
+      dynamicModel.id.isEmpty ? _getModelLabel(selection) : dynamicModel.label,
+      dynamicModel.id.isEmpty ? null : dynamicModel,
     );
   }
 
