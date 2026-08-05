@@ -1,6 +1,6 @@
 # Dynamic Providers, Models, Accounts, and Human-Approved x402
 
-Status: approved plan; Phases 1-5 implemented, Phase 7 safety boundary in progress
+Status: Phases 1-5 implemented; Base Mainnet payment UX and pre-signing policy implemented; native signer and settlement transport pending
 
 Date: 2026-08-04
 
@@ -14,7 +14,11 @@ Current implementation status:
 - Dynamic model metadata is not allowed to overwrite the app's local context or
   tool policy limits.
 - x402 v2 challenge parsing, exact-request binding, single-use approval state,
-  expiry, and redacted receipts are implemented as a pre-signing boundary.
+  expiry, Base Mainnet USDC allowlisting, and redacted receipts are implemented
+  as a pre-signing boundary.
+- First setup distinguishes BYOK providers from wallet-funded providers. The Base
+  page owns wallet funding, prepaid provider top-ups, per-request payment
+  explanations, and receipts; Chat and Settings link to that management surface.
 - Ordinary Base ETH/USDC transfers now require a short-lived exact-request
   visible-UI approval capability and a second confirmation step. This does not
   enable x402 spending.
@@ -112,10 +116,13 @@ The following are prohibited:
 - exposing the raw private key to Gateway, skills, tools, prompts, logs, or
   provider adapters.
 
-The first payment implementation must use x402 v2, Base Sepolia, the `exact`
-scheme, USDC through EIP-3009, small limits, and one test provider. Mainnet,
-`upto`, Permit2, ERC-7710, recurring permissions, and additional assets are
-separate release decisions.
+The first payment implementation uses x402 v2 on Base Mainnet, the `exact`
+scheme, native USDC through EIP-3009, a hard initial 5 USDC per-request limit,
+and a shipped provider-host allowlist. `upto`, Permit2, ERC-7710, recurring
+permissions, and additional assets remain separate release decisions. Mainnet
+challenge validation and UX do not enable spending: live submission remains
+hard-disabled until the Android device-authenticated signer and settlement
+transport pass their own review and on-device tests.
 
 ### 2.6 Research verdict: sound flow, wallet hardening required
 
@@ -152,7 +159,7 @@ truly user-mediated wallet interactions. The current x402 v2 specification also
 describes ERC-7710 for compatible smart accounts. However, adopting a smart
 account changes wallet identity, SDK/runtime integration, recovery, and
 facilitator compatibility, so it is a later migration rather than a prerequisite
-for the first EIP-3009 testnet implementation.
+for the first EIP-3009 implementation.
 
 Base Spend Permissions and automatic Sub Account funding are explicitly out of
 scope. They are designed to permit later spending without a prompt, which
@@ -210,12 +217,13 @@ compatibility path; dynamic selections use the same guarded Gateway persistence
 method, so adding discovery does not create a second model-switch lane.
 
 The first x402 implementation slice is intentionally pre-signing: strict v2
-`PAYMENT-REQUIRED` parsing, Base Sepolia exact/EIP-3009 allowlisting, request and
-challenge binding, one active intent, visible-UI-only approval, expiry/replay
-protection, and redacted receipt contracts are covered by tests. No transport,
-wallet signer, automatic retry, or payment UI is enabled by this slice. The
-next payment commits must add device-authenticated signing before any provider
-can invoke it.
+`PAYMENT-REQUIRED` parsing, Base Mainnet exact/EIP-3009 USDC allowlisting,
+request and challenge binding, one active intent, visible-UI-only approval,
+expiry/replay protection, and redacted receipt contracts are covered by tests.
+The Base management UI can select a trusted wallet provider, switch the wallet
+to mainnet, show funding semantics, and prepare a top-up, but its signing action
+is disabled. No provider transport, wallet signer, automatic retry, or live
+payment submission is enabled by this slice.
 
 Endpoint references used for this slice:
 
@@ -706,7 +714,7 @@ preview when a catalog is already available.
 Choose mode/provider
   -> explain connection method
   -> API key: open official key page / paste key
-     OR x402: create or open internal Base wallet (no payment yet)
+     OR x402: select a trusted wallet provider; collect no provider key
      OR offline/configure later: no credential
   -> optional Test connection
   -> save non-secret setup record + opaque secret reference
@@ -717,10 +725,14 @@ Choose mode/provider
   -> clear pending secret and store setup receipt
   -> start native Gateway
   -> refresh dynamic models after setup, never on the critical boot path
+  -> x402 only: open Base page, create/import and fund wallet, then activate
+     provider after the signer/transport feature is enabled
 ```
 
-Wallet creation during setup creates a payment identity only. It must not fund,
-top up, sign, or grant spending permission. The review screen must say that every
+Wallet-provider selection during setup stores only the trusted provider ID. It
+does not create a wallet, invent a Gateway API key, silently substitute a BYOK
+provider, fund, top up, sign, or grant spending permission. The review screen
+must say that wallet management continues in Base after installation and every
 x402 charge will stop for explicit approval and device authentication.
 
 ### 10.3 Provider connection modes in setup
@@ -729,7 +741,7 @@ x402 charge will stop for explicit approval and device authentication.
 | --- | --- | --- |
 | API key | Official Create/manage key link, obscured input, optional Test connection | Credential available to selected Gateway provider |
 | Official browser/OAuth | Open official account/login page and resume callback/status | Credential/reference stored only after provider confirmation |
-| Wallet identity/x402 | Create/open wallet, show address/network, explain funding and approval | Provider marked wallet-capable; no payment and no fake API key |
+| Wallet identity/x402 | Select trusted provider, show Base Mainnet USDC and approval policy; wallet setup follows installation | Provider marked wallet-capable; no cloud model credential, payment, or fake API key |
 | Private Offline | Explain that local model download happens later | No cloud credential; direct NDK lane preserved |
 | Configure later | Skip safely | Gateway can install/start without cloud inference credential |
 
@@ -897,21 +909,56 @@ Implement x402 v2 only. The required wire contract is:
 - client proof: `PAYMENT-SIGNATURE`;
 - server settlement result: `PAYMENT-RESPONSE`;
 - Base mainnet: `eip155:8453`;
-- Base Sepolia: `eip155:84532`.
+- Base Sepolia: `eip155:84532` (recognized as testnet metadata but rejected by
+  the mainnet payment policy).
 
 Do not mix v1 packages, legacy `X-PAYMENT` headers, or legacy network names with
-v2. The first release supports only `(scheme=exact, network=eip155:84532,
-assetTransferMethod=eip3009, asset=Base Sepolia USDC)`. EIP-3009 is the best fit
-for the current EOA because the user signs a one-time typed authorization with
-exact recipient, amount, validity window, and nonce, while the facilitator
-settles it. It avoids the standing token allowance required by Permit2.
+v2. The first release supports only `(scheme=exact, network=eip155:8453,
+assetTransferMethod=eip3009, asset=Base Mainnet native USDC at
+0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)`. EIP-3009 is the best fit for the
+current EOA because the user signs a one-time typed authorization with exact
+recipient, amount, validity window, and nonce, while the facilitator settles it.
+It avoids the standing token allowance required by Permit2.
 
 The `upto` scheme is deferred. Although it is useful for token-based LLM billing,
 it authorizes a maximum rather than presenting the final settled amount at
 approval time. It needs separate UI language, settlement reconciliation, and
 receipt testing before it can satisfy the human-approval contract.
 
-### 13.2 Gateway and provider transport ownership
+### 13.2 Product surfaces and top-up semantics
+
+Plawie must make three operations visibly distinct:
+
+1. **Fund wallet** receives ETH or USDC into the user's Base address. It does
+   not authorize a provider charge.
+2. **Top up provider balance** is available only for a provider such as Venice
+   that exposes a wallet-linked prepaid ledger. It creates an exact payment
+   intent and, once signing is enabled, requires approval and device auth.
+3. **Pay per request** is used by a provider such as BlockRun. There is no
+   universal Plawie top-up; Chat receives a 402 for an exact request and opens
+   the same approval boundary.
+
+UI ownership is intentionally centralized:
+
+- **Base page:** wallet creation/import, address and balances, mainnet switch,
+  wallet funding, wallet-provider selection, prepaid balance/top-up entry point,
+  payment policy, and settlement receipts/history.
+- **Chat:** a lightweight link to Base, plus an exact payment approval modal only
+  after a valid provider challenge. Chat text can never approve. There is no
+  permanent funding widget competing with conversation controls.
+- **Settings:** a management link to the Base payment hub and provider account
+  settings. It does not duplicate signing or receipt logic.
+- **First setup:** BYOK and wallet-funded providers are separate groups. A
+  wallet-funded provider has no API-key input and setup performs no wallet or
+  payment action.
+
+Provider metadata in `AiPaymentProviderCatalog` is trusted shipped policy, not a
+remote model-list record. Selecting a wallet provider does not imply that its
+Gateway transport is live. Until the provider adapter and native signer are
+enabled, the app must show a locked/preparation state instead of attempting a
+request or fabricating a balance or receipt.
+
+### 13.3 Gateway and provider transport ownership
 
 Cloud inference must remain Gateway-owned, so x402 cannot be implemented as a
 separate direct-Dart chat route. The recommended boundary is an app-controlled
@@ -944,7 +991,7 @@ If the app is backgrounded, a notification may open the pending-payment screen,
 but notification actions cannot approve. Only one payment approval may be active
 at a time; additional intents queue or fail with `approvalBusy`.
 
-### 13.3 Payment state machine
+### 13.4 Payment state machine
 
 The payment path is a user-mediated state machine:
 
@@ -980,7 +1027,7 @@ States:
 An `uncertain` result must first query the provider/chain receipt before any
 retry. It must never blindly sign again.
 
-### 13.4 Payment intent contents
+### 13.5 Payment intent contents
 
 The app creates the intent from the verified provider challenge, not from model
 text. It must show:
@@ -1005,7 +1052,7 @@ The approval screen must not look like an ordinary “Continue” dialog. It mus
 make the spend, recipient, chain, and expiry visible and require a deliberate
 Approve action distinct from chat input.
 
-### 13.5 Hard approval rules
+### 13.6 Hard approval rules
 
 - Only a UI approval event tied to the exact intent ID can authorize signing.
 - Approval expires with the intent and cannot be reused for another request.
@@ -1041,7 +1088,7 @@ Approve action distinct from chat input.
 - A user can cancel at any state before final submission; cancellation must
   prevent the pending intent from being reused.
 
-### 13.6 Internal Base wallet design
+### 13.7 Internal Base wallet design
 
 The wallet UI can be the user's visible management surface, but the signing
 implementation needs two conceptual identities:
@@ -1083,11 +1130,13 @@ secp256k1, this design hardware-protects the wrapping/unlock key rather than
 claiming that the Ethereum signature itself is produced inside secure hardware.
 The security disclosure and diagnostics must state that distinction honestly.
 
-The first adapter supports Base Sepolia USDC at the official contract address,
-one provider host, tiny caps, and `exact/eip3009`. Mainnet and additional
-tokens/providers require separate allowlist changes, security review, and tests.
+The first adapter policy supports Base Mainnet native USDC at the official
+contract address, shipped provider hosts, a 5 USDC per-request cap, and
+`exact/eip3009`. Live signing remains disabled until signer, transport, redirect,
+receipt, and on-device authentication tests pass. Additional tokens/providers
+require separate allowlist changes, security review, and tests.
 
-### 13.7 Optional modern wallet migration
+### 13.8 Optional modern wallet migration
 
 A Base Account smart wallet with passkey approval is a strong later option and
 can remain presented through Plawie's internal Base wallet page. It can offer a
@@ -1104,10 +1153,10 @@ If Base Account/Sub Accounts are evaluated:
 - migrate identity/funds only through an explicit user flow;
 - retain the EIP-3009 EOA path until smart-account settlement is proven.
 
-This is a security/UX migration, not a reason to delay the testnet EOA proof of
-concept.
+This is a security/UX migration, not a reason to weaken the mainnet EOA safety
+boundary.
 
-### 13.8 Provider-specific payment differences
+### 13.9 Provider-specific payment differences
 
 The generic payment state machine is shared; the challenge parser and signer are
 provider-specific.
@@ -1247,7 +1296,7 @@ Exit criteria: a payment signature cannot be produced without an approved intent
 and a fresh device-authenticated cryptographic unlock; the Gateway and agent
 cannot access raw key material.
 
-### Phase 8 — x402 v2 intent and approval on Base Sepolia
+### Phase 8 — x402 v2 intent and approval on Base Mainnet
 
 - Add v2 `PAYMENT-REQUIRED` parsing and provider
   host/network/token/facilitator allowlists.
@@ -1258,7 +1307,9 @@ cannot access raw key material.
   call generic `sendUsdc`.
 - Retry once with `PAYMENT-SIGNATURE`, parse `PAYMENT-RESPONSE`, and persist a
   redacted receipt.
-- Test one provider on Base Sepolia USDC with tiny limits.
+- Keep live signing behind a compile-time policy lock until Phase 7 is complete.
+- Test one allowlisted provider on Base Mainnet native USDC with a maximum 5
+  USDC request only after signer and transport security tests pass.
 
 Exit criteria: reject/cancel/expiry paths are safe, approval is required, exact
 payment details are displayed and validated, and the provider accepts one
@@ -1332,8 +1383,10 @@ PRoot fallback all pass the release checklist.
   config, restart, download, or notification;
 - PRoot fallback uses the same non-logged secret reference and receipt contract;
 - setup copy says the Gateway sends the key to the selected provider when needed;
-- wallet/x402 setup creates or selects an address but never funds, approves,
-  signs, or grants spending authority.
+- wallet/x402 setup records a trusted provider choice but never creates, funds,
+  approves, signs, or grants spending authority;
+- wallet-provider setup never asks for or fabricates a provider API key;
+- Base, Chat, and Settings all route payment management to one Base payment hub.
 
 ### 16.3 Context and tools
 
@@ -1369,7 +1422,9 @@ PRoot fallback all pass the release checklist.
 
 - non-402 request never shows a payment prompt;
 - v1 headers/network names and mixed v1/v2 payloads are rejected;
-- only Base Sepolia `exact/eip3009` USDC is accepted in the first release;
+- only Base Mainnet `exact/eip3009` native USDC is accepted in the first
+  release, with a 5 USDC per-request policy cap;
+- Base Sepolia challenges are rejected by the mainnet payment policy;
 - invalid host/chain/token/recipient/amount challenge is blocked;
 - HTTP, TLS failure, cross-origin redirect, changed method/URL/body, changed
   challenge, unsupported facilitator, and expired validity window are blocked;
@@ -1476,7 +1531,7 @@ Mitigation: opaque one-time secret references, one canonical secret store,
 idempotent consumption receipts, explicit cleanup paths, and no plaintext
 `pendingApiKey` in ordinary preferences.
 
-### Decision required before mainnet
+### Decisions required before live mainnet signing
 
 - Which wallet identity is used for provider payment and how it is disclosed to
   the user;
@@ -1488,9 +1543,9 @@ idempotent consumption receipts, explicit cleanup paths, and no plaintext
 - support/refund behavior for an uncertain or settled provider charge.
 
 The protocol baseline is not open: first release is x402 v2,
-`exact/eip3009`, Base Sepolia USDC, with mandatory per-payment human approval and
-device authentication. Mainnet keeps the same narrow scheme unless a separate
-review changes it.
+`exact/eip3009`, Base Mainnet native USDC, a 5 USDC per-request cap, mandatory
+per-payment human approval, and device authentication. Validation and management
+UI may ship while the signer is locked; settlement cannot.
 
 ## 19. Commit order
 
@@ -1508,7 +1563,7 @@ The implementation should use small reviewable commits in this order:
 10. `Add context and tool invariance tests`
 11. `Add official account connection actions`
 12. `Harden the internal Base EOA signer with per-use device auth`
-13. `Add x402 v2 payment intent and approval UI on Base Sepolia`
+13. `Add x402 v2 payment intent and approval UI on Base Mainnet`
 14. `Add Gateway-compatible exact EIP-3009 payment transport`
 15. `Add live payment receipt and recovery tests`
 16. `Evaluate Base Account passkey signing without spend permissions`

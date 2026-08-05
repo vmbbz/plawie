@@ -32,13 +32,18 @@ enum PaymentApprovalSource {
 class X402PaymentPolicy {
   const X402PaymentPolicy({
     required this.allowedHosts,
-    this.maxAmount = 1000000,
+    this.maxAmount = 5000000,
     this.maxTimeoutSeconds = 300,
   });
 
-  static const String network = 'eip155:84532';
-  static const String usdc = '0x036cbd53842c5426634e7929541ec2318f3dcf7e';
+  static const String network = 'eip155:8453';
+  static const String usdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
   static const String transferMethod = 'eip3009';
+
+  /// Mainnet challenge validation and UI can ship before signing. Keep live
+  /// payment submission off until the Android Keystore/device-authenticated
+  /// signer is complete and verified on-device.
+  static const bool liveSigningEnabled = false;
 
   final Set<String> allowedHosts;
   final int maxAmount;
@@ -143,7 +148,7 @@ class X402PaymentChallenge {
     }
     if (selected == null) {
       throw const X402PaymentPolicyException(
-          'No supported Base Sepolia EIP-3009 payment requirement was offered.');
+          'No supported Base Mainnet EIP-3009 payment requirement was offered.');
     }
 
     final canonical = _canonicalJson(decoded);

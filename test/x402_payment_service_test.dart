@@ -20,7 +20,7 @@ void main() {
     final challenge = X402PaymentChallenge.fromHeader(
       _encodedChallenge(
         accepts: <Map<String, dynamic>>[
-          _requirement(network: 'eip155:8453'),
+          _requirement(network: 'eip155:84532'),
           _requirement(),
         ],
       ),
@@ -37,9 +37,9 @@ void main() {
 
   test('rejects unsupported network, asset, host, amount, and scheme', () {
     for (final changed in <Map<String, dynamic>>[
-      _requirement(network: 'base-sepolia'),
+      _requirement(network: 'eip155:84532'),
       _requirement(asset: '0x0000000000000000000000000000000000000001'),
-      _requirement(amount: '1000001'),
+      _requirement(amount: '5000001'),
       _requirement(scheme: 'upto'),
       _requirement(extra: <String, dynamic>{'assetTransferMethod': 'permit2'}),
     ]) {

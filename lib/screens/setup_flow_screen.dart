@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../app.dart';
 import '../constants.dart';
 import '../services/native_bridge.dart';
+import '../services/ai_payment_provider_catalog.dart';
 import '../services/model_provider_catalog.dart';
 import '../services/preferences_service.dart';
 import '../services/provider_setup_service.dart';
@@ -44,8 +45,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
   late final AnimationController _fadeController;
   late final Animation<double> _fadeAnimation;
 
-  static const _providers = [
-    _ProviderInfo(
+  static final List<_ProviderInfo> _providers = <_ProviderInfo>[
+    const _ProviderInfo(
       id: 'anthropic',
       name: 'Claude',
       subtitle: 'by Anthropic',
@@ -56,7 +57,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       defaultModel: 'anthropic/claude-opus-4-6',
       requiresApiKey: true,
     ),
-    _ProviderInfo(
+    const _ProviderInfo(
       id: 'google',
       name: 'Gemini',
       subtitle: 'by Google',
@@ -67,7 +68,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       defaultModel: 'google/gemini-3.1-pro-preview',
       requiresApiKey: true,
     ),
-    _ProviderInfo(
+    const _ProviderInfo(
       id: 'openai',
       name: 'OpenAI',
       subtitle: 'GPT models',
@@ -78,7 +79,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       defaultModel: 'openai/gpt-5.4',
       requiresApiKey: true,
     ),
-    _ProviderInfo(
+    const _ProviderInfo(
       id: 'xai',
       name: 'Grok',
       subtitle: 'by xAI',
@@ -89,7 +90,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       defaultModel: 'xai/grok-4',
       requiresApiKey: true,
     ),
-    _ProviderInfo(
+    const _ProviderInfo(
       id: 'openrouter',
       name: 'OpenRouter',
       subtitle: 'free + many models',
@@ -99,6 +100,24 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       prefix: 'sk-or-',
       defaultModel: ModelProviderCatalog.defaultCloudFallbackModel,
       requiresApiKey: true,
+    ),
+    ...AiPaymentProviderCatalog.providers.map(
+      (provider) => _ProviderInfo(
+        id: provider.id,
+        name: provider.label,
+        subtitle: 'Base wallet · ${provider.fundingLabel.toLowerCase()}',
+        icon: provider.supportsTopUp
+            ? Icons.account_balance_wallet_outlined
+            : Icons.bolt_rounded,
+        color: provider.supportsTopUp
+            ? const Color(0xFF3B82F6)
+            : const Color(0xFF8B5CF6),
+        hint: '',
+        prefix: '',
+        defaultModel: '',
+        requiresApiKey: false,
+        paymentProviderId: provider.id,
+      ),
     ),
     // Groq is an upstream external OpenClaw plugin. It remains unavailable
     // here until it has a verified Android-native extension pack; setup must
@@ -172,21 +191,32 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
       if (_selectedProvider != null) {
         final activeProvider = _activeProvider!;
-        final apiProvider =
-            ModelProviderCatalog.apiProviderForSetupId(activeProvider.id);
-        final setupModel =
-            ModelProviderCatalog.setupSafeModelForProvider(activeProvider.id);
-        var key = _apiKeyController.text.trim();
-        await ProviderSetupService().stage(
-          providerId: activeProvider.id,
-          modelId: setupModel,
-          apiKey: activeProvider.requiresApiKey ? key : null,
-        );
-        prefs.apiProvider = apiProvider;
-        prefs.configuredModel = setupModel;
-        // Do not retain the entered key in this screen after it has been handed
-        // to the secure setup store.
-        key = '';
+        if (activeProvider.paymentProviderId != null) {
+          // Wallet-funded providers do not accept a BYOK secret. Install the
+          // Gateway without inventing a credential or silently substituting a
+          // different paid provider; wallet activation continues in Base.
+          await ProviderSetupService().clearPending();
+          prefs.apiProvider = null;
+          prefs.configuredModel = null;
+          prefs.aiPaymentProvider = activeProvider.paymentProviderId;
+        } else {
+          final apiProvider =
+              ModelProviderCatalog.apiProviderForSetupId(activeProvider.id);
+          final setupModel =
+              ModelProviderCatalog.setupSafeModelForProvider(activeProvider.id);
+          var key = _apiKeyController.text.trim();
+          await ProviderSetupService().stage(
+            providerId: activeProvider.id,
+            modelId: setupModel,
+            apiKey: key,
+          );
+          prefs.apiProvider = apiProvider;
+          prefs.configuredModel = setupModel;
+          prefs.aiPaymentProvider = null;
+          // Do not retain the entered key in this screen after it has been
+          // handed to the secure setup store.
+          key = '';
+        }
       }
       _apiKeyController.clear();
       prefs.agentName = _agentNameController.text.trim();
@@ -378,8 +408,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
   }
 
   static const _stepTitles = [
-    'Choose your AI model',
-    'Enter your API key',
+    'Choose your AI provider',
+    'Connect your provider',
     'Name your agent',
     'Quick settings',
   ];
@@ -434,7 +464,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       children: [
         Text(
-          'Which AI would you like to use?',
+          'How would you like to access AI?',
           style: GoogleFonts.outfit(
             fontSize: 18,
             color: theme.colorScheme.onSurface,
@@ -443,13 +473,44 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         ),
         const SizedBox(height: 6),
         Text(
-          'Choose the cloud provider for OpenClaw Gateway mode. Offline NDK models are set up later from Local LLM and never require an API key.',
+          'Use your own provider key, or choose a wallet-funded provider that uses Base Mainnet USDC. Offline NDK models remain separate and key-free.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 20),
-        ..._providers.map((p) => _buildProviderCard(p, theme, isDark)),
+        Text(
+          'BRING YOUR OWN API KEY',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.1,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ..._providers
+            .where((provider) => provider.paymentProviderId == null)
+            .map((provider) => _buildProviderCard(provider, theme, isDark)),
+        const SizedBox(height: 12),
+        Text(
+          'PAY WITH BASE USDC',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.1,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'No provider API key. Wallet setup and funding happen after installation; every spend still requires visible approval.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 10),
+        ..._providers
+            .where((provider) => provider.paymentProviderId != null)
+            .map((provider) => _buildProviderCard(provider, theme, isDark)),
       ],
     );
   }
@@ -637,7 +698,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 Icon(provider.icon, color: provider.color, size: 48),
                 const SizedBox(height: 16),
                 Text(
-                  'No API key needed',
+                  provider.paymentProviderId != null
+                      ? 'Wallet-funded provider'
+                      : 'No API key needed',
                   style: GoogleFonts.outfit(
                     fontWeight: FontWeight.w600,
                     fontSize: 18,
@@ -645,13 +708,32 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Plawie will boot the Gateway first. Private offline models can be downloaded later from Local LLM and do not require a provider key.',
+                  provider.paymentProviderId != null
+                      ? '${provider.name} uses your Plawie Base wallet on ${AiPaymentProviderCatalog.networkLabel}. No provider API key or password is collected. After installation, create or import a wallet in Base, fund it with USDC, and approve each payment visibly.'
+                      : 'Plawie will boot the Gateway first. Private offline models can be downloaded later from Local LLM and do not require a provider key.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                     height: 1.5,
                   ),
                 ),
+                if (provider.paymentProviderId != null) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: Colors.amber.withValues(alpha: 0.3)),
+                    ),
+                    child: const Text(
+                      'Installation never funds the wallet or signs a payment. Live mainnet signing stays locked until the device-authenticated signer is ready.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11, height: 1.4),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -978,13 +1060,18 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
               const SizedBox(height: 10),
               _buildSummaryRow(
                   theme, _activeProvider?.name ?? 'No provider selected'),
+              if (_activeProvider?.paymentProviderId != null)
+                _buildSummaryRow(theme,
+                    '${AiPaymentProviderCatalog.networkLabel} · ${AiPaymentProviderCatalog.assetLabel} · approval every payment'),
               _buildSummaryRow(
                   theme, 'Agent: ${_agentNameController.text.trim()}'),
               _buildSummaryRow(
                   theme, 'Gateway: 127.0.0.1:18789 (auto-configured)'),
               const SizedBox(height: 8),
               Text(
-                'Credentials will be baked into the gateway config before it starts — no reload, no disruption.',
+                _activeProvider?.paymentProviderId != null
+                    ? 'The Gateway will install without a fabricated API key. Finish wallet funding and provider activation from the Base page after setup.'
+                    : 'Credentials will be baked into the gateway config before it starts — no reload, no disruption.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: AppColors.statusGreen.withValues(alpha: 0.8),
                   fontSize: 11,
@@ -1170,6 +1257,7 @@ class _ProviderInfo {
   final String prefix;
   final String defaultModel;
   final bool requiresApiKey;
+  final String? paymentProviderId;
 
   const _ProviderInfo({
     required this.id,
@@ -1181,5 +1269,6 @@ class _ProviderInfo {
     required this.prefix,
     required this.defaultModel,
     required this.requiresApiKey,
+    this.paymentProviderId,
   });
 }

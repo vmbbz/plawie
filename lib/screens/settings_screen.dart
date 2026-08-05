@@ -26,6 +26,7 @@ import 'node_screen.dart';
 import 'setup_wizard_screen.dart';
 import 'vrm_store_screen.dart';
 import 'management/local_llm_screen.dart';
+import 'base_screen.dart';
 import '../services/voice_persona_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -311,6 +312,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         leading: const Icon(Icons.psychology),
                         trailing: const Icon(Icons.swap_horiz, size: 18),
                         onTap: () => _showChangeModelDialog(context),
+                      ),
+                      ListTile(
+                        title: const Text('AI Payments & Base Wallet'),
+                        subtitle: const Text(
+                            'Base Mainnet USDC · provider top-ups · x402 receipts'),
+                        leading: const Icon(Icons.payments_outlined),
+                        trailing: const Icon(Icons.chevron_right, size: 18),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const BaseScreen()),
+                        ),
                       ),
                       // Local LLM shortcut — shows live server status
                       StreamBuilder<LocalLlmState>(

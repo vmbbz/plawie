@@ -42,6 +42,7 @@ import 'management/skills/gifgrep_config_sheet.dart';
 import '../services/tool_media_event_bus.dart';
 import '../widgets/hologram_overlay.dart';
 import 'management/local_llm_screen.dart';
+import 'base_screen.dart';
 import 'web_dashboard_screen.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
@@ -3710,6 +3711,10 @@ class _ChatScreenState extends State<ChatScreen>
                       }
                     } else if (value == 'agent_controls') {
                       _showAgentRuntimeControls(context);
+                    } else if (value == 'ai_payments') {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const BaseScreen()),
+                      );
                     }
                   },
                   itemBuilder: (ctx) => [
@@ -3721,6 +3726,19 @@ class _ChatScreenState extends State<ChatScreen>
                               color: Colors.white70, size: 20),
                           SizedBox(width: 10),
                           Text('Agent Controls',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'ai_payments',
+                      child: Row(
+                        children: [
+                          Icon(Icons.payments_outlined,
+                              color: Colors.white70, size: 20),
+                          SizedBox(width: 10),
+                          Text('AI Payments & Wallet',
                               style: TextStyle(
                                   color: Colors.white70, fontSize: 13)),
                         ],

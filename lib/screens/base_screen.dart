@@ -5,7 +5,10 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:decimal/decimal.dart';
+import '../services/ai_payment_provider_catalog.dart';
 import '../services/base_service.dart';
+import '../services/preferences_service.dart';
+import '../services/x402_payment_service.dart';
 import '../widgets/status_card.dart';
 import '../widgets/glass_card.dart';
 
@@ -18,9 +21,12 @@ class BaseScreen extends StatefulWidget {
 
 class _BaseScreenState extends State<BaseScreen> {
   final BaseService _baseService = BaseService();
+  final PreferencesService _prefs = PreferencesService();
   StreamSubscription<BaseEvent>? _eventSub;
   bool _isLoading = false;
   String? _error;
+  String _selectedAiPaymentProvider =
+      AiPaymentProviderCatalog.providers.first.id;
 
   @override
   void initState() {
@@ -47,6 +53,12 @@ class _BaseScreenState extends State<BaseScreen> {
   Future<void> _initBase() async {
     setState(() => _isLoading = true);
     try {
+      await _prefs.init();
+      final savedPaymentProvider =
+          AiPaymentProviderCatalog.byId(_prefs.aiPaymentProvider);
+      if (savedPaymentProvider != null) {
+        _selectedAiPaymentProvider = savedPaymentProvider.id;
+      }
       await _baseService.initialize();
       if (_baseService.isConnected) {
         await _baseService.refreshBalance();
@@ -126,8 +138,8 @@ class _BaseScreenState extends State<BaseScreen> {
                       'assets/app_icon_official.svg',
                       width: 20,
                       height: 20,
-                      colorFilter: const ColorFilter.mode(
-                          Colors.white, BlendMode.srcIn),
+                      colorFilter:
+                          const ColorFilter.mode(Colors.white, BlendMode.srcIn),
                     ),
                     const SizedBox(width: 12),
                     Text(
@@ -145,8 +157,8 @@ class _BaseScreenState extends State<BaseScreen> {
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                     child: FlexibleSpaceBar(
-                      background: Container(
-                          color: Colors.black.withValues(alpha: 0.2)),
+                      background:
+                          Container(color: Colors.black.withValues(alpha: 0.2)),
                     ),
                   ),
                 ),
@@ -230,9 +242,10 @@ class _BaseScreenState extends State<BaseScreen> {
                               const SizedBox(height: 24),
                               _buildNetworkBanner(theme),
                               const SizedBox(height: 16),
-
+                              _sectionLabel(theme, 'AI PAYMENTS'),
+                              _buildAiPaymentsPanel(theme),
+                              const SizedBox(height: 24),
                               _sectionLabel(theme, 'WALLET ACTIONS'),
-
                               if (!_baseService.isConnected) ...[
                                 StatusCard(
                                   title: 'Create Wallet',
@@ -249,11 +262,11 @@ class _BaseScreenState extends State<BaseScreen> {
                                   onTap: _showImportWalletDialog,
                                 ),
                               ],
-
                               if (_baseService.isConnected) ...[
                                 StatusCard(
                                   title: 'Send ETH',
-                                  subtitle: 'Transfer ETH to an address or .base.eth name',
+                                  subtitle:
+                                      'Transfer ETH to an address or .base.eth name',
                                   icon: Icons.send,
                                   trailing: const Icon(Icons.chevron_right),
                                   onTap: _showSendEthDialog,
@@ -272,15 +285,12 @@ class _BaseScreenState extends State<BaseScreen> {
                                   trailing: const Icon(Icons.chevron_right),
                                   onTap: _showReceiveDialog,
                                 ),
-
                                 const SizedBox(height: 24),
                                 _sectionLabel(theme, 'RECENT TRANSACTIONS'),
                                 _buildTransactionHistory(theme),
-
                                 const SizedBox(height: 24),
                                 _sectionLabel(theme, 'AI AGENT SKILLS'),
                                 _buildSkillsInfo(theme),
-
                                 const SizedBox(height: 24),
                                 _sectionLabel(theme, 'WALLET MANAGEMENT'),
                                 StatusCard(
@@ -299,7 +309,6 @@ class _BaseScreenState extends State<BaseScreen> {
                                   onTap: _showDisconnectDialog,
                                 ),
                               ],
-
                               if (_error != null) ...[
                                 const SizedBox(height: 16),
                                 _buildErrorBanner(theme),
@@ -329,6 +338,277 @@ class _BaseScreenState extends State<BaseScreen> {
           ),
         ),
       );
+
+  // ── AI payment hub ─────────────────────────────────────────────────────────────
+
+  Widget _buildAiPaymentsPanel(ThemeData theme) {
+    final selected =
+        AiPaymentProviderCatalog.byId(_selectedAiPaymentProvider) ??
+            AiPaymentProviderCatalog.providers.first;
+    final mainnetReady = !_baseService.useSepolia;
+
+    return GlassCard(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.payments_outlined,
+                    color: Color(0xFF0052FF), size: 22),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Base Mainnet AI payments',
+                    style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0052FF).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'USDC',
+                    style: TextStyle(
+                        color: Color(0xFF5B8CFF),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Fund this wallet, top up a provider balance, or approve an exact x402 request. These are separate actions; Plawie never treats a chat message as payment approval.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant, height: 1.4),
+            ),
+            if (!mainnetReady) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.09),
+                  borderRadius: BorderRadius.circular(10),
+                  border:
+                      Border.all(color: Colors.orange.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        color: Colors.orange, size: 20),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'x402 payments use Base Mainnet, not Sepolia.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        await _baseService.setNetwork(sepolia: false);
+                        if (mounted) setState(() {});
+                      },
+                      child: const Text('Switch'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            Text('PROVIDER',
+                style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                    color: theme.colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: AiPaymentProviderCatalog.providers.map((provider) {
+                return ChoiceChip(
+                  label: Text(provider.label),
+                  selected: provider.id == selected.id,
+                  onSelected: (_) {
+                    setState(() => _selectedAiPaymentProvider = provider.id);
+                    _prefs.aiPaymentProvider = provider.id;
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.035),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(selected.fundingLabel,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  Text(selected.description,
+                      style: TextStyle(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontSize: 11,
+                          height: 1.4)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _baseService.isConnected
+                        ? _showReceiveDialog
+                        : _showWalletRequiredDialog,
+                    icon: const Icon(Icons.account_balance_wallet_outlined,
+                        size: 18),
+                    label: const Text('Fund wallet'),
+                  ),
+                ),
+                if (selected.supportsTopUp) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _baseService.isConnected && mainnetReady
+                          ? () => _showTopUpPreparation(selected)
+                          : _baseService.isConnected
+                              ? _switchToMainnetForAiPayments
+                              : _showWalletRequiredDialog,
+                      icon: const Icon(Icons.add_card_rounded, size: 18),
+                      label: const Text('Top up'),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            if (!selected.supportsTopUp) ...[
+              const SizedBox(height: 10),
+              Text(
+                'No top-up is needed. Chat will show a separate amount, recipient, network, and expiry approval only after the provider returns a valid payment request.',
+                style: TextStyle(
+                    fontSize: 11,
+                    height: 1.4,
+                    color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+            const Divider(height: 24),
+            Row(
+              children: [
+                const Icon(Icons.receipt_long_outlined,
+                    size: 17, color: Colors.white54),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'No x402 receipts yet. Settled payments will appear here.',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showWalletRequiredDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Base wallet required'),
+        content: const Text(
+            'Create or import a wallet first. Funding a wallet does not authorize an AI payment.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showCreateWalletDialog();
+            },
+            child: const Text('Create wallet'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _switchToMainnetForAiPayments() async {
+    await _baseService.setNetwork(sepolia: false);
+    if (mounted) setState(() {});
+  }
+
+  void _showTopUpPreparation(AiPaymentProviderOption provider) {
+    final amountController = TextEditingController(text: '5.00');
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text('${provider.label} balance top-up'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: amountController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Amount',
+                prefixText: r'$ ',
+                suffixText: 'USDC',
+                helperText: 'Initial safety limit: 5.00 USDC',
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Network: ${AiPaymentProviderCatalog.networkLabel}\n'
+              'Wallet: ${_baseService.address}\n\n'
+              'This prepares a provider balance top-up. It does not approve or broadcast one.',
+              style: const TextStyle(fontSize: 12, height: 1.4),
+            ),
+            if (!X402PaymentPolicy.liveSigningEnabled) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'Mainnet payment signing is locked until the Android Keystore and device-authenticated signer is complete. No funds can move from this screen yet.',
+                  style: TextStyle(fontSize: 11, height: 1.4),
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          FilledButton(
+            onPressed: null,
+            child: const Text('Review & approve'),
+          ),
+        ],
+      ),
+    ).whenComplete(amountController.dispose);
+  }
 
   // ── Wallet header card ─────────────────────────────────────────────────────
 
@@ -395,8 +675,7 @@ class _BaseScreenState extends State<BaseScreen> {
               ),
               if (_baseService.isConnected)
                 IconButton(
-                  icon: const Icon(Icons.copy,
-                      color: Colors.white70, size: 20),
+                  icon: const Icon(Icons.copy, color: Colors.white70, size: 20),
                   tooltip: 'Copy address',
                   onPressed: () {
                     Clipboard.setData(
@@ -534,8 +813,8 @@ class _BaseScreenState extends State<BaseScreen> {
   }
 
   Widget _buildTxTile(ThemeData theme, BaseTx tx) {
-    final isSent = tx.from.toLowerCase() ==
-        (_baseService.address ?? '').toLowerCase();
+    final isSent =
+        tx.from.toLowerCase() == (_baseService.address ?? '').toLowerCase();
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 2),
       leading: CircleAvatar(
@@ -565,8 +844,8 @@ class _BaseScreenState extends State<BaseScreen> {
       ),
       subtitle: Text(
         '${tx.timestamp.day}/${tx.timestamp.month}/${tx.timestamp.year}',
-        style: TextStyle(
-            fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+        style:
+            TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
       ),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -625,17 +904,15 @@ class _BaseScreenState extends State<BaseScreen> {
                 'Check ETH + USDC balance'),
             _skillRow(Icons.send, 'send_eth',
                 'Send ETH to 0x address or .base.eth name'),
-            _skillRow(Icons.attach_money, 'send_usdc',
-                'Send USDC stablecoin'),
+            _skillRow(Icons.attach_money, 'send_usdc', 'Send USDC stablecoin'),
             _skillRow(Icons.person_search, 'resolve_basename',
                 'Resolve .base.eth → 0x address'),
-            _skillRow(Icons.history, 'get_history',
-                'Fetch recent transactions'),
+            _skillRow(
+                Icons.history, 'get_history', 'Fetch recent transactions'),
             const Divider(height: 20),
             Row(
               children: [
-                const Icon(Icons.rocket_launch,
-                    color: Colors.purple, size: 16),
+                const Icon(Icons.rocket_launch, color: Colors.purple, size: 16),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -680,18 +957,17 @@ class _BaseScreenState extends State<BaseScreen> {
         decoration: BoxDecoration(
           color: theme.colorScheme.error.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-              color: theme.colorScheme.error.withValues(alpha: 0.3)),
+          border:
+              Border.all(color: theme.colorScheme.error.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
-            Icon(Icons.error_outline,
-                color: theme.colorScheme.error, size: 20),
+            Icon(Icons.error_outline, color: theme.colorScheme.error, size: 20),
             const SizedBox(width: 8),
             Expanded(
               child: Text(_error!,
-                  style: TextStyle(
-                      color: theme.colorScheme.error, fontSize: 12)),
+                  style:
+                      TextStyle(color: theme.colorScheme.error, fontSize: 12)),
             ),
             IconButton(
               icon: const Icon(Icons.close, size: 16),
@@ -712,8 +988,7 @@ class _BaseScreenState extends State<BaseScreen> {
             'Generate a new EVM keypair on Base. Store your private key safely — it cannot be recovered if lost.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               Navigator.pop(ctx);
@@ -749,8 +1024,7 @@ class _BaseScreenState extends State<BaseScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               final key = ctrl.text.trim();
@@ -799,8 +1073,7 @@ class _BaseScreenState extends State<BaseScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               final to = toCtrl.text.trim();
@@ -866,8 +1139,7 @@ class _BaseScreenState extends State<BaseScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               final to = toCtrl.text.trim();
@@ -936,8 +1208,7 @@ class _BaseScreenState extends State<BaseScreen> {
             child: const Text('Copy'),
           ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Close')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
         ],
       ),
     );
@@ -952,8 +1223,7 @@ class _BaseScreenState extends State<BaseScreen> {
             'WARNING: Never share your private key. Anyone with it has full control of your wallet.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.error),
@@ -995,8 +1265,7 @@ class _BaseScreenState extends State<BaseScreen> {
             'This will remove your private key from this device. Make sure you have a backup first.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.error),
@@ -1012,4 +1281,3 @@ class _BaseScreenState extends State<BaseScreen> {
     );
   }
 }
-

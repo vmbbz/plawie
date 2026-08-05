@@ -35,6 +35,7 @@ class PreferencesService {
       'last_provider_setup_receipt_id';
   static const _keyDynamicModelCatalogSnapshot =
       'dynamic_model_catalog_snapshot_v1';
+  static const _keyAiPaymentProvider = 'ai_payment_provider';
 
   SharedPreferences? _prefs;
 
@@ -186,6 +187,17 @@ class PreferencesService {
       _p.setString('api_provider', value);
     } else {
       _p.remove('api_provider');
+    }
+  }
+
+  /// Wallet-funded AI provider selected independently from BYOK providers.
+  /// This is non-secret routing metadata; wallet keys never enter preferences.
+  String? get aiPaymentProvider => _p.getString(_keyAiPaymentProvider);
+  set aiPaymentProvider(String? value) {
+    if (value != null && value.trim().isNotEmpty) {
+      _p.setString(_keyAiPaymentProvider, value.trim().toLowerCase());
+    } else {
+      _p.remove(_keyAiPaymentProvider);
     }
   }
 
