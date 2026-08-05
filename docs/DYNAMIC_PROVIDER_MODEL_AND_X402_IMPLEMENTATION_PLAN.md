@@ -193,6 +193,14 @@ searchable provider-model sheet. The existing static menu remains as a fast
 compatibility path; dynamic selections use the same guarded Gateway persistence
 method, so adding discovery does not create a second model-switch lane.
 
+The first x402 implementation slice is intentionally pre-signing: strict v2
+`PAYMENT-REQUIRED` parsing, Base Sepolia exact/EIP-3009 allowlisting, request and
+challenge binding, one active intent, visible-UI-only approval, expiry/replay
+protection, and redacted receipt contracts are covered by tests. No transport,
+wallet signer, automatic retry, or payment UI is enabled by this slice. The
+next payment commits must add device-authenticated signing before any provider
+can invoke it.
+
 Endpoint references used for this slice:
 
 - [`OpenAI list models`](https://platform.openai.com/docs/api-reference/models)
