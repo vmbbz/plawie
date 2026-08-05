@@ -150,10 +150,10 @@ requirements:
     final packAction = report.results.single.actions.singleWhere(
       (action) =>
           action.type == SkillProvisioningActionType.dependencyPack &&
-          action.key == 'android-cli-core-pack',
+          action.key.startsWith('android-cli-core-pack:'),
     );
-    expect(packAction.status, SkillProvisioningActionStatus.missingDependency);
-    expect(packAction.message, contains('can satisfy this skill'));
+    expect(packAction.status, SkillProvisioningActionStatus.missingPack);
+    expect(packAction.message, contains('Publish a signed dependency pack'));
   });
 
   test('provisioning plans the remote vision media pack for ffmpeg', () async {
@@ -218,7 +218,7 @@ requirements:
           .where((action) =>
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
-      contains('android-vision-media-pack'),
+      contains(startsWith('android-vision-media-pack:')),
     );
     expect(
       report.results.single.actions
@@ -279,10 +279,10 @@ requirements:
     final packAction = report.results.single.actions.singleWhere(
       (action) =>
           action.type == SkillProvisioningActionType.dependencyPack &&
-          action.key == 'android-vision-media-pack',
+          action.key.startsWith('android-vision-media-pack:'),
     );
-    expect(packAction.status, SkillProvisioningActionStatus.missingDependency);
-    expect(packAction.message, contains('can satisfy this skill'));
+    expect(packAction.status, SkillProvisioningActionStatus.missingPack);
+    expect(packAction.message, contains('Publish a signed dependency pack'));
   });
 
   test('gifgrep plans the remote vision media pack when binary is absent',
@@ -340,7 +340,7 @@ requirements:
           .where((action) =>
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
-      contains('android-vision-media-pack'),
+      contains(startsWith('android-vision-media-pack:')),
     );
     expect(
         await File(path.join(nativeRoot, 'bin', 'gifgrep')).exists(), isFalse);
@@ -408,7 +408,7 @@ requirements:
           .where((action) =>
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
-      contains('android-vision-media-pack'),
+      contains(startsWith('android-vision-media-pack:')),
     );
     expect(
       report.results.single.actions
@@ -484,7 +484,7 @@ requirements:
           .where((action) =>
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
-      contains('android-audio-runtime-pack'),
+      contains(startsWith('android-audio-runtime-pack:')),
     );
     expect(
         await File(path.join(nativeRoot, 'bin', 'songsee')).exists(), isFalse);
@@ -631,7 +631,7 @@ requirements:
           .where((action) =>
               action.type == SkillProvisioningActionType.dependencyPack)
           .map((action) => action.key),
-      contains('android-terminal-pack'),
+      contains(startsWith('android-terminal-pack:')),
     );
     expect(await File(path.join(nativeRoot, 'bin', 'tmux')).exists(), isFalse);
   });
