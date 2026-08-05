@@ -103,6 +103,13 @@ slice depends on the earlier security contract.
 Each slice gets failing tests first, a focused implementation commit, and
 verification before the next slice begins.
 
+The detailed executable plans are:
+
+- [Secure wallet reliability](../plans/2026-08-05-secure-wallet-reliability.md)
+- [External wallet bridge execution](../plans/2026-08-05-external-wallet-bridge-execution.md)
+- [Wallet-funded provider Gateway](../plans/2026-08-05-wallet-funded-provider-gateway.md)
+- [Wallet payment release hardening](../plans/2026-08-05-wallet-payment-release-hardening.md)
+
 ## 1. Wallet Reliability and Persistence
 
 ### Observable wallet states
