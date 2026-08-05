@@ -19,12 +19,16 @@ android {
     ndkVersion = "28.2.13676358"
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        isCoreLibraryDesugaringEnabled = true
+        // Web3j 4.12 is compiled for Java 17 and contains records. Keep the
+        // app's Java and Kotlin bytecode targets aligned so D8 can desugar it
+        // into the APK's global-synthetics consumer.
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8.toString()
+        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     defaultConfig {
@@ -124,6 +128,9 @@ flutter {
 }
 
 dependencies {
+    // Web3j 4.12 uses Java record APIs. D8 must have a global-synthetics
+    // consumer when dexing these Android artifacts on API 29.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("org.apache.commons:commons-compress:1.26.0")
     implementation("org.tukaani:xz:1.9")
     implementation("com.github.luben:zstd-jni:1.5.6-4@aar")
