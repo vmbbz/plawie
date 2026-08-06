@@ -67,7 +67,7 @@ class PaidProviderHttpClient {
     }
 
     final uri = PaidProviderUpstreamPolicy.validate(
-      _upstreamUri(proxyRequest.route),
+      upstreamUriFor(proxyRequest.route),
       provider: proxyRequest.provider,
     );
     final abortTrigger = Completer<void>();
@@ -177,7 +177,7 @@ class PaidProviderHttpClient {
     _client.close();
   }
 
-  Uri _upstreamUri(PaidProviderProxyRoute route) {
+  Uri upstreamUriFor(PaidProviderProxyRoute route) {
     final host = switch (route.provider) {
       PaidProviderId.venice => 'api.venice.ai',
       PaidProviderId.blockrun => 'blockrun.ai',
@@ -196,7 +196,7 @@ class PaidProviderHttpClient {
     Map<String, String> supplied,
   ) {
     final allowed = switch (provider) {
-      PaidProviderId.venice => const {'sign-in-with-x'},
+      PaidProviderId.venice => const {'x-sign-in-with-x'},
       PaidProviderId.blockrun => const {'payment-signature'},
     };
     for (final entry in supplied.entries) {
@@ -391,6 +391,7 @@ class PaidProviderHttpClient {
           normalized == 'request-id' ||
           normalized.startsWith('x-ratelimit-') ||
           normalized.startsWith('ratelimit-') ||
+          normalized == 'x-balance-remaining' ||
           normalized == 'payment-required' ||
           normalized == 'x-payment-required' ||
           normalized == 'payment-response' ||

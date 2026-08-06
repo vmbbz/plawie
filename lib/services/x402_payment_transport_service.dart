@@ -6,10 +6,15 @@ import 'package:http/http.dart' as http;
 import 'ai_payment_provider_catalog.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
+import 'provider_balance_service.dart';
 import 'x402_payment_service.dart';
 
 typedef X402AuthorizationSigner = Future<Map<String, dynamic>> Function(
   Map<String, dynamic> authorization,
+);
+typedef X402ProviderBalanceRefresher = Future<void> Function(
+  String providerId,
+  String walletAddress,
 );
 
 class X402TransportException implements Exception {
@@ -97,11 +102,13 @@ class X402PaymentTransportService {
     X402PaymentApprovalService? approvalService,
     X402AuthorizationSigner? signer,
     X402PaymentReceiptStore? receiptStore,
+    X402ProviderBalanceRefresher? balanceRefresher,
     DateTime Function()? clock,
   })  : _client = client ?? http.Client(),
         _ownsClient = client == null,
         approvalService = approvalService ?? X402PaymentApprovalService(),
         _signer = signer ?? NativeBridge.signSecureX402Authorization,
+        _balanceRefresher = balanceRefresher ?? _refreshProviderBalance,
         receiptStore = receiptStore ?? X402PaymentReceiptStore(),
         _clock = clock ?? DateTime.now;
 
@@ -111,6 +118,7 @@ class X402PaymentTransportService {
   final http.Client _client;
   final bool _ownsClient;
   final X402AuthorizationSigner _signer;
+  final X402ProviderBalanceRefresher _balanceRefresher;
   final DateTime Function() _clock;
   final X402PaymentApprovalService approvalService;
   final X402PaymentReceiptStore receiptStore;
@@ -281,6 +289,12 @@ class X402PaymentTransportService {
         errorCode: settled ? null : 'SETTLEMENT_HTTP_${response.statusCode}',
       );
       await _appendSafely(receipt);
+      if (settled) {
+        await _refreshBalanceSafely(
+          payment.provider.id,
+          normalizedWallet,
+        );
+      }
       return receipt;
     } catch (error) {
       final active = approvalService.activeIntent;
@@ -366,6 +380,30 @@ class X402PaymentTransportService {
       // A provider-confirmed payment must never look retryable merely because
       // local redacted receipt persistence failed.
     }
+  }
+
+  Future<void> _refreshBalanceSafely(
+    String providerId,
+    String walletAddress,
+  ) async {
+    try {
+      await _balanceRefresher(providerId, walletAddress);
+    } catch (_) {
+      // A provider-confirmed settlement remains terminal when a follow-up
+      // balance read is temporarily unavailable.
+    }
+  }
+
+  static Future<void> _refreshProviderBalance(
+    String providerId,
+    String walletAddress,
+  ) async {
+    final provider = AiPaymentProviderCatalog.byId(providerId);
+    if (provider == null) return;
+    await ProviderBalanceService.instance.refreshWalletProvider(
+      provider: provider,
+      walletAddress: walletAddress,
+    );
   }
 
   dynamic _decodeHeader(String header) {

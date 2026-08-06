@@ -45,6 +45,10 @@ void main() {
       client: client,
       approvalService: approval,
       receiptStore: store,
+      balanceRefresher: (providerId, walletAddress) async {
+        expect(providerId, 'venice');
+        expect(walletAddress, payer);
+      },
       clock: () => now,
       signer: (authorization) async {
         expect(authorization['host'], 'api.venice.ai');
@@ -125,6 +129,76 @@ void main() {
     expect(receipt.state, X402PaymentState.failed);
     expect(receipt.errorCode, 'SETTLEMENT_HTTP_400');
   });
+
+  test('a settled top-up refreshes balance after its receipt is durable',
+      () async {
+    final events = <String>[];
+    final store = _OrderedReceiptStore(events);
+    var calls = 0;
+    final service = X402PaymentTransportService(
+      client: MockClient((_) async {
+        calls++;
+        if (calls == 1) {
+          return http.Response('', 402, headers: {
+            'payment-required': _challenge(provider.topUpEndpoint!),
+          });
+        }
+        return http.Response('', 200);
+      }),
+      approvalService: X402PaymentApprovalService(clock: () => now),
+      receiptStore: store,
+      clock: () => now,
+      signer: (_) async => <String, dynamic>{
+        'signature': '0x${'b' * 130}',
+        'payer': payer,
+      },
+      balanceRefresher: (providerId, walletAddress) async {
+        events.add('refresh:$providerId:$walletAddress');
+      },
+    );
+
+    final prepared = await service.prepareTopUp(provider);
+    final receipt = await service.approveAndSubmit(
+      prepared,
+      walletAddress: payer,
+    );
+
+    expect(receipt.state, X402PaymentState.settled);
+    expect(events, ['receipt', 'refresh:venice:$payer']);
+  });
+
+  test('balance refresh failure never changes a settled top-up receipt',
+      () async {
+    var calls = 0;
+    final service = X402PaymentTransportService(
+      client: MockClient((_) async {
+        calls++;
+        return calls == 1
+            ? http.Response('', 402, headers: {
+                'payment-required': _challenge(provider.topUpEndpoint!),
+              })
+            : http.Response('', 200);
+      }),
+      approvalService: X402PaymentApprovalService(clock: () => now),
+      receiptStore: _MemoryReceiptStore(),
+      clock: () => now,
+      signer: (_) async => <String, dynamic>{
+        'signature': '0x${'b' * 130}',
+        'payer': payer,
+      },
+      balanceRefresher: (_, __) async {
+        throw StateError('offline');
+      },
+    );
+
+    final prepared = await service.prepareTopUp(provider);
+    final receipt = await service.approveAndSubmit(
+      prepared,
+      walletAddress: payer,
+    );
+
+    expect(receipt.state, X402PaymentState.settled);
+  });
 }
 
 String _challenge(Uri endpoint) {
@@ -164,4 +238,16 @@ class _MemoryReceiptStore extends X402PaymentReceiptStore {
   @override
   Future<List<X402PaymentReceipt>> read() async =>
       List<X402PaymentReceipt>.unmodifiable(receipts);
+}
+
+class _OrderedReceiptStore extends _MemoryReceiptStore {
+  _OrderedReceiptStore(this.events);
+
+  final List<String> events;
+
+  @override
+  Future<void> append(X402PaymentReceipt receipt) async {
+    events.add('receipt');
+    await super.append(receipt);
+  }
 }

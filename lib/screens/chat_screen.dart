@@ -16,6 +16,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app.dart';
 import '../services/preferences_service.dart';
+import '../services/paid_provider_proxy_models.dart';
+import '../services/paid_provider_turn_authorization_service.dart';
 import '../providers/gateway_provider.dart';
 import '../models/gateway_state.dart';
 import '../widgets/vrm_avatar_widget.dart';
@@ -169,6 +171,12 @@ class _ChatScreenState extends State<ChatScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+    if (lifecycleState == null || lifecycleState == AppLifecycleState.resumed) {
+      PaidProviderTurnAuthorizationService.instance.markAppForeground();
+    } else {
+      PaidProviderTurnAuthorizationService.instance.markAppBackground();
+    }
     _scrollController.addListener(_handleChatScroll);
     _chatRuntime.addListener(_syncChatRuntimeState);
     _configurationRequestSub =
@@ -1407,6 +1415,25 @@ class _ChatScreenState extends State<ChatScreen>
       return;
     }
 
+    PaidProviderTurnLease? paidProviderTurnLease;
+    if (_selectedModel.startsWith('${PaidProviderId.venice.wireName}/')) {
+      try {
+        final conversationId = _persistence.activeSessionId?.trim() ?? '';
+        paidProviderTurnLease = PaidProviderTurnAuthorizationService.instance
+            .authorizeForegroundUserTurn(
+          conversationId: conversationId,
+          provider: PaidProviderId.venice,
+          modelId: _selectedModel,
+        );
+      } on PaidProviderTurnAuthorizationException catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+        return;
+      }
+    }
+
     final imageBase64 = _pendingImageBase64;
     final videoBase64 = _pendingVideoBase64;
     FocusManager.instance.primaryFocus?.unfocus();
@@ -1424,6 +1451,7 @@ class _ChatScreenState extends State<ChatScreen>
       model: _selectedModel,
       imageBase64: imageBase64,
       videoBase64: videoBase64,
+      paidProviderTurnLease: paidProviderTurnLease,
     ));
   }
 
@@ -3030,7 +3058,13 @@ class _ChatScreenState extends State<ChatScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      PaidProviderTurnAuthorizationService.instance.markAppForeground();
       _scrollToBottom(instant: true);
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      PaidProviderTurnAuthorizationService.instance.markAppBackground();
     }
 
     final mode = PreferencesService().wakeWordMode;

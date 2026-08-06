@@ -131,6 +131,8 @@ void main() {
             body: {
               'provider': request.provider.wireName,
               'path': request.route.path,
+              if (request.gatewayModelId != null)
+                'gatewayModelId': request.gatewayModelId,
               if (request.jsonBody != null) 'request': request.jsonBody,
             },
           );
@@ -229,6 +231,7 @@ void main() {
       final decoded = jsonDecode(chat.body) as Map<String, dynamic>;
 
       expect(chat.statusCode, HttpStatus.ok);
+      expect(decoded['gatewayModelId'], 'blockrun/model-a');
       expect(decoded['request']['model'], 'model-a');
       expect(decoded['request']['messages'][0]['content'], 'keep me');
       expect(decoded['request']['tools'][0]['function']['name'], 'keep_me');

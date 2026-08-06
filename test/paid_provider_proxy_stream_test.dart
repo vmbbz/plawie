@@ -52,7 +52,7 @@ void main() {
         ],
         'stream': false,
       },
-      upstreamHeaders: const {'SIGN-IN-WITH-X': 'bounded-siwe'},
+      upstreamHeaders: const {'X-SIGN-IN-WITH-X': 'bounded-siwe'},
     );
 
     expect(result.statusCode, HttpStatus.unprocessableEntity);
@@ -68,7 +68,8 @@ void main() {
         Uri.parse('https://api.venice.ai/api/v1/chat/completions'));
     expect(upstreamRequest.followRedirects, isFalse);
     expect(upstreamRequest.maxRedirects, 0);
-    expect(upstreamRequest.headers['sign-in-with-x'], 'bounded-siwe');
+    expect(upstreamRequest.headers['x-sign-in-with-x'], 'bounded-siwe');
+    expect(upstreamRequest.headers, isNot(contains('sign-in-with-x')));
     expect(upstreamRequest.headers, isNot(contains('authorization')));
     final sent = jsonDecode(utf8.decode(upstreamRequestBody));
     expect(sent['model'], 'model-a');

@@ -189,7 +189,7 @@ Rename internal parsing to `parseVeniceProviderIdentity`; expose `signSecureVeni
 
 `VeniceWalletAuthService.authorize(method, uri)` creates a fresh cryptographic nonce/timestamps, calls the bounded native method, verifies returned payer/message, and encodes the documented `X-Sign-In-With-X` JSON envelope. Cache nothing for inference. The existing five-minute exact balance identity cache may remain limited to balance reads.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```powershell
 cd android
@@ -246,19 +246,19 @@ git commit -m "feat: discover wallet-funded provider models"
 
 ## Task 5: Route Venice inference through OpenClaw
 
-- [ ] **Step 1: Add Venice proxy red tests**
+- [x] **Step 1: Add Venice proxy red tests**
 
 Test missing/unhealthy wallet, no foreground turn lease, valid lease, exact SIWE route, model mapping, ordinary response, SSE response, tool call, balance header capture, auth rejection, upstream error, and balance-refresh failure after a successful response.
 
-- [ ] **Step 2: Implement bounded interactive turn leases**
+- [x] **Step 2: Implement bounded interactive turn leases**
 
 `PaidProviderTurnAuthorizationService` creates an in-memory lease when the foreground user presses Send with a Venice model visible. Bind it to conversation/session ID, provider, selected model, creation time, and a maximum of eight proxy calls or ten minutes; close it when the Gateway turn finishes/cancels or app loses foreground. It cannot be created by an agent tool or background task.
 
-- [ ] **Step 3: Implement Venice handler**
+- [x] **Step 3: Implement Venice handler**
 
 For each allowed request: validate lease; map only model ID; obtain fresh `X-Sign-In-With-X`; send to the exact Venice route; relay response unchanged. Capture only documented balance metadata. After a successful terminal response, schedule `ProviderBalanceService.refresh('venice')`; a refresh error does not alter the completed model response.
 
-- [ ] **Step 4: Keep top-up distinct**
+- [x] **Step 4: Keep top-up distinct**
 
 The existing Venice top-up remains in `X402PaymentTransportService`. On its terminal receipt, refresh Venice balance and transaction history. Do not call top-up from model inference or infer chat readiness from a top-up intent alone.
 

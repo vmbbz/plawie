@@ -109,11 +109,16 @@ class PaidProviderProxyRequest {
   const PaidProviderProxyRequest({
     required this.provider,
     required this.route,
+    this.gatewayModelId,
     this.jsonBody,
   });
 
   final PaidProviderId provider;
   final PaidProviderProxyRoute route;
+
+  /// Original namespaced model selected in OpenClaw. This is retained only as
+  /// process-local authorization metadata; it is never sent upstream.
+  final String? gatewayModelId;
   final Map<String, dynamic>? jsonBody;
 }
 

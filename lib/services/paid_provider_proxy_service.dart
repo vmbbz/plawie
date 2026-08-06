@@ -4,7 +4,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'paid_provider_loopback_credential_service.dart';
+import 'paid_provider_http_client.dart';
 import 'paid_provider_proxy_models.dart';
+import 'paid_provider_turn_authorization_service.dart';
+import 'provider_balance_service.dart';
+import 'venice_wallet_auth_service.dart';
 
 class PaidProviderProxyService {
   PaidProviderProxyService({
@@ -158,9 +162,11 @@ class PaidProviderProxyService {
       }
 
       Map<String, dynamic>? jsonBody;
+      String? gatewayModelId;
       if (route.method == 'POST') {
         jsonBody = await _readJsonObject(request);
         if (route.kind == PaidProviderProxyRouteKind.chatCompletions) {
+          gatewayModelId = jsonBody['model']?.toString();
           jsonBody = PaidProviderRequestMapper.mapChatRequest(
             jsonBody,
             provider: route.provider,
@@ -171,6 +177,7 @@ class PaidProviderProxyService {
       final response = await _handler(PaidProviderProxyRequest(
         provider: route.provider,
         route: route,
+        gatewayModelId: gatewayModelId,
         jsonBody: jsonBody,
       ));
       await _writeResponse(request.response, response);
@@ -288,6 +295,136 @@ class PaidProviderProxyService {
   }
 
   static Set<PaidProviderId> _noReadyProviders() => const {};
+}
+
+/// Venice-specific policy for the generic loopback proxy. Model payloads have
+/// already been semantically mapped by [PaidProviderProxyService]; this layer
+/// adds only bounded wallet identity and terminal balance bookkeeping.
+class VenicePaidProviderProxyHandler {
+  VenicePaidProviderProxyHandler({
+    required PaidProviderHttpClient httpClient,
+    VeniceWalletAuthService? walletAuth,
+    PaidProviderTurnAuthorizationService? turnAuthorization,
+    ProviderBalanceService? balances,
+  })  : _httpClient = httpClient,
+        _walletAuth = walletAuth ?? VeniceWalletAuthService(),
+        _turnAuthorization =
+            turnAuthorization ?? PaidProviderTurnAuthorizationService.instance,
+        _balances = balances ?? ProviderBalanceService.instance;
+
+  final PaidProviderHttpClient _httpClient;
+  final VeniceWalletAuthService _walletAuth;
+  final PaidProviderTurnAuthorizationService _turnAuthorization;
+  final ProviderBalanceService _balances;
+
+  Future<PaidProviderProxyResponse> call(
+    PaidProviderProxyRequest request,
+  ) async {
+    if (request.provider != PaidProviderId.venice ||
+        request.route.provider != PaidProviderId.venice) {
+      throw const PaidProviderProxyException(
+        'The Venice handler received another provider.',
+        code: 'provider_route_mismatch',
+      );
+    }
+
+    final isInference =
+        request.route.kind == PaidProviderProxyRouteKind.chatCompletions;
+    if (isInference) {
+      final gatewayModelId = request.gatewayModelId?.trim() ?? '';
+      try {
+        _turnAuthorization.consumeForProxy(
+          provider: PaidProviderId.venice,
+          gatewayModelId: gatewayModelId,
+        );
+      } on PaidProviderTurnAuthorizationException catch (error) {
+        throw PaidProviderProxyException(
+          error.message,
+          code: error.code,
+          statusCode: HttpStatus.forbidden,
+        );
+      }
+    }
+
+    final upstreamUri = _httpClient.upstreamUriFor(request.route);
+    late String identity;
+    try {
+      identity = await _walletAuth.authorize(
+        request.route.method,
+        upstreamUri,
+      );
+    } on VeniceWalletAuthException catch (error) {
+      throw PaidProviderProxyException(
+        error.message,
+        code: error.code,
+        statusCode: HttpStatus.serviceUnavailable,
+      );
+    }
+
+    final response = await _httpClient.send(
+      request,
+      upstreamHeaders: <String, String>{
+        'X-Sign-In-With-X': identity,
+      },
+    );
+    if (!isInference) return response;
+
+    final success = response.statusCode >= 200 && response.statusCode < 300;
+    if (success) {
+      final remaining = _header(response.headers, 'x-balance-remaining');
+      if (remaining != null) {
+        try {
+          _balances.captureVeniceRemainingBalance(remaining);
+        } catch (_) {
+          // Provider metadata is advisory and cannot change chat delivery.
+        }
+      }
+    }
+
+    return PaidProviderProxyResponse.stream(
+      statusCode: response.statusCode,
+      headers: response.headers,
+      bodyStream: _observeTerminalResponse(
+        response.openBodyStream(),
+        refreshBalance: success,
+      ),
+    );
+  }
+
+  Stream<List<int>> _observeTerminalResponse(
+    Stream<List<int>> source, {
+    required bool refreshBalance,
+  }) async* {
+    var completed = false;
+    try {
+      await for (final chunk in source) {
+        yield chunk;
+      }
+      completed = true;
+    } finally {
+      if (completed && refreshBalance) {
+        unawaited(_refreshBalanceSafely());
+      }
+    }
+  }
+
+  Future<void> _refreshBalanceSafely() async {
+    try {
+      await _balances.refresh('venice');
+    } catch (_) {
+      // A post-response balance refresh is never part of model delivery.
+    }
+  }
+
+  String? _header(Map<String, String> headers, String name) {
+    final target = name.toLowerCase();
+    for (final entry in headers.entries) {
+      if (entry.key.toLowerCase() == target) return entry.value;
+    }
+    return null;
+  }
+
+  void close() => _httpClient.close();
 }
 
 class _RequestBodyTooLargeException implements Exception {

@@ -10,6 +10,7 @@ import 'chat_persistence_service.dart';
 import 'gateway_service.dart';
 import 'local_llm_service.dart';
 import 'model_provider_catalog.dart';
+import 'paid_provider_turn_authorization_service.dart';
 import 'preferences_service.dart';
 import 'tool_media_event_bus.dart';
 import 'tts_service.dart';
@@ -216,6 +217,28 @@ class ChatRuntimeService extends ChangeNotifier {
   }
 
   Future<void> sendMessage({
+    required String text,
+    required String model,
+    String? imageBase64,
+    String? videoBase64,
+    PaidProviderTurnLease? paidProviderTurnLease,
+  }) async {
+    try {
+      await _sendMessageAuthorized(
+        text: text,
+        model: model,
+        imageBase64: imageBase64,
+        videoBase64: videoBase64,
+      );
+    } finally {
+      final lease = paidProviderTurnLease;
+      if (lease != null) {
+        PaidProviderTurnAuthorizationService.instance.closeLease(lease.leaseId);
+      }
+    }
+  }
+
+  Future<void> _sendMessageAuthorized({
     required String text,
     required String model,
     String? imageBase64,

@@ -24,6 +24,20 @@ Current implementation status:
   discovery uses its documented public
   [models endpoint](https://blockrun.ai/docs/api-reference/models) without a
   payment or authorization header.
+- Venice inference now has a bounded foreground-turn contract: only the visible
+  Chat Send path can create an in-memory, conversation/model-bound lease; the
+  proxy permits at most eight matching calls for ten minutes and destroys the
+  lease when the turn ends or the app leaves the foreground. Each upstream call
+  receives a fresh route-bound `X-Sign-In-With-X`; ordinary/SSE/tool-call bytes
+  remain unchanged. Successful terminal responses capture only the documented
+  balance hint and schedule an isolated balance refresh.
+- Venice top-up remains a separate visible-approval x402 flow. A settled,
+  redacted receipt is persisted before provider balance refresh, and a refresh
+  failure never makes a confirmed payment look retryable.
+- The Venice handler is implemented and covered in isolation. Production use
+  remains unavailable until the shared loopback proxy lifecycle and current
+  capability are integrated into native Gateway startup; BlockRun per-request
+  approval brokerage is also still pending.
 - Catalog truth is separate from provider/payment readiness. Each provider now
   records fresh, stale, offline-fallback, or unavailable metadata, and shipped
   wallet-provider explanations are explicitly non-live and cannot become a
