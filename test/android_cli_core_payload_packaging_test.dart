@@ -65,4 +65,21 @@ void main() {
     expect(bootstrap, contains('PYTHON_DEBUG_WHEEL_ASSET_DIR'));
     expect(bootstrap, contains('copyPythonDebugWheelAssets'));
   });
+
+  test('APK assembly requires a verified embedded Node runtime', () async {
+    final buildScript = (await File('android/app/build.gradle.kts')
+            .readAsString())
+        .replaceAll('\r\n', '\n');
+    final cmake = (await File(
+      'android/app/src/main/cpp/CMakeLists.txt',
+    ).readAsString())
+        .replaceAll('\r\n', '\n');
+
+    expect(buildScript, contains('verifyEmbeddedNodeRuntime'));
+    expect(buildScript, contains('libnode.so.manifest.json'));
+    expect(buildScript, contains('MessageDigest.getInstance("SHA-256")'));
+    expect(buildScript, contains('dependsOn(verifyEmbeddedNodeRuntime)'));
+    expect(cmake, contains('Native-first builds require'));
+    expect(cmake, isNot(contains('PLAWIE_NODE_HAS_LIBNODE=0')));
+  });
 }

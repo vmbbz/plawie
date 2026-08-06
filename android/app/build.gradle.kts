@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -9,6 +11,80 @@ plugins {
 val internalNoProotProof =
     (project.findProperty("plawieInternalNoProotProof") as String?)
         ?.toBooleanStrictOrNull() == true
+
+val embeddedNodeRuntime =
+    layout.projectDirectory.file("src/main/jniLibs/arm64-v8a/libnode.so")
+val embeddedNodeManifest =
+    layout.projectDirectory.file("src/main/jniLibs/arm64-v8a/libnode.so.manifest.json")
+
+val verifyEmbeddedNodeRuntime = tasks.register("verifyEmbeddedNodeRuntime") {
+    group = "verification"
+    description = "Verifies the ignored native-first Node runtime before packaging."
+    inputs.files(embeddedNodeRuntime, embeddedNodeManifest)
+
+    doLast {
+        val runtimeFile = embeddedNodeRuntime.asFile
+        val manifestFile = embeddedNodeManifest.asFile
+        check(runtimeFile.isFile) {
+            "Native-first APK packaging requires ${runtimeFile.path}. " +
+                "Package the approved Node 22.22.3 Android arm64 artifact first."
+        }
+        check(manifestFile.isFile) {
+            "Native-first APK packaging requires the provenance manifest ${manifestFile.path}."
+        }
+
+        val manifest = manifestFile.readText()
+        fun manifestString(name: String): String =
+            Regex("\\\"${Regex.escape(name)}\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+                .find(manifest)
+                ?.groupValues
+                ?.get(1)
+                ?: error("Embedded Node manifest is missing $name.")
+        fun manifestLong(name: String): Long =
+            Regex("\\\"${Regex.escape(name)}\\\"\\s*:\\s*(\\d+)")
+                .find(manifest)
+                ?.groupValues
+                ?.get(1)
+                ?.toLongOrNull()
+                ?: error("Embedded Node manifest has an invalid $name.")
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        runtimeFile.inputStream().buffered().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        val actualSha256 = digest.digest().joinToString("") {
+            "%02x".format(it.toInt() and 0xff)
+        }
+
+        check(manifestString("nodeVersion") == "22.22.3") {
+            "Embedded Node manifest must declare Node 22.22.3."
+        }
+        check(manifestString("packagedSha256").equals(actualSha256, ignoreCase = true)) {
+            "Embedded Node SHA-256 does not match its provenance manifest."
+        }
+        check(manifestLong("packagedBytes") == runtimeFile.length()) {
+            "Embedded Node byte length does not match its provenance manifest."
+        }
+    }
+}
+
+tasks.matching {
+    it.name in setOf(
+        "assembleDebug",
+        "assembleProfile",
+        "assembleRelease",
+        "bundleDebug",
+        "bundleProfile",
+        "bundleRelease",
+    )
+}.configureEach {
+    dependsOn(verifyEmbeddedNodeRuntime)
+}
 
 android {
     namespace = "com.openclaw.plawie"

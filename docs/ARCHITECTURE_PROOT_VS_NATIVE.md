@@ -319,6 +319,15 @@ Plawie-owned runtime components:
 - Android node host on `127.0.0.1:8765`;
 - fllama/NDK runtime for direct local inference.
 
+Native APK and app-bundle packaging fail closed if the ignored arm64
+`libnode.so` or its local provenance manifest is absent. The Gradle packaging
+gate requires Node `22.22.3` and verifies the artifact byte length and SHA-256
+against that manifest before assembly. CMake independently refuses to build a
+bridge without `libnode.so`; it cannot silently emit a production bridge with
+native Node support compiled out. The large runtime and its provenance
+manifest remain local build inputs and are not committed or published as
+ordinary source artifacts.
+
 Plawie GitHub release assets remain reserved for Plawie-specific signed
 dependency packs (Whisper, TTS, CLI tools, and related Android capabilities).
 They are never an OpenClaw core mirror.

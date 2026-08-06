@@ -20,6 +20,7 @@ import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
 import android.util.AtomicFile
 import android.util.Base64
+import android.util.Log
 import android.widget.ScrollView
 import android.widget.TextView
 import io.flutter.plugin.common.MethodChannel
@@ -405,10 +406,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
             .setSubtitle(description.take(120))
             .setConfirmationRequired(true)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            builder.setAllowedAuthenticators(
-                KeyProperties.AUTH_BIOMETRIC_STRONG or
-                    KeyProperties.AUTH_DEVICE_CREDENTIAL,
-            )
+            builder.setAllowedAuthenticators(WalletAuthenticatorPolicy.biometricApiMask)
         } else {
             builder.setNegativeButton("Cancel", executor) { _, _ ->
                 fail("WALLET_AUTH_CANCELLED", "Wallet authentication was cancelled.")
@@ -479,8 +477,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             builder.setUserAuthenticationParameters(
                 0,
-                KeyProperties.AUTH_BIOMETRIC_STRONG or
-                    KeyProperties.AUTH_DEVICE_CREDENTIAL,
+                WalletAuthenticatorPolicy.keyStoreMask,
             )
         } else {
             @Suppress("DEPRECATION")
@@ -509,12 +506,17 @@ class SecureEvmWalletManager(private val activity: Activity) {
     private fun authenticationStatus(): Pair<Boolean, String> {
         val manager = activity.getSystemService(BiometricManager::class.java)
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val allowed = KeyProperties.AUTH_BIOMETRIC_STRONG or
-                KeyProperties.AUTH_DEVICE_CREDENTIAL
-            Pair(
-                manager.canAuthenticate(allowed) == BiometricManager.BIOMETRIC_SUCCESS,
-                "strong biometric or device credential",
-            )
+            val mode = "strong biometric or device credential"
+            try {
+                Pair(
+                    manager.canAuthenticate(WalletAuthenticatorPolicy.biometricApiMask) ==
+                        BiometricManager.BIOMETRIC_SUCCESS,
+                    mode,
+                )
+            } catch (error: SecurityException) {
+                Log.e(TAG, "Android rejected the wallet authenticator policy", error)
+                Pair(false, "$mode unavailable")
+            }
         } else {
             @Suppress("DEPRECATION")
             val biometricReady = manager.canAuthenticate() == BiometricManager.BIOMETRIC_SUCCESS
@@ -876,6 +878,20 @@ class SecureEvmWalletManager(private val activity: Activity) {
         val issuedAt: String,
         val expirationTime: String,
     )
+}
+
+/**
+ * Android's biometric APIs and Android Keystore intentionally define separate
+ * authenticator constant families. Their numeric values are not interchangeable.
+ */
+internal object WalletAuthenticatorPolicy {
+    val biometricApiMask: Int =
+        BiometricManager.Authenticators.BIOMETRIC_STRONG or
+            BiometricManager.Authenticators.DEVICE_CREDENTIAL
+
+    val keyStoreMask: Int =
+        KeyProperties.AUTH_BIOMETRIC_STRONG or
+            KeyProperties.AUTH_DEVICE_CREDENTIAL
 }
 
 internal object VeniceSiweMessage {
