@@ -10,7 +10,11 @@ void main() {
         .replaceAll('\r\n', '\n');
 
     expect(source, contains('LegacyEvmKeyNormalizer.normalize(stored)'));
-    expect(source, contains('_legacyMigrationRequired = true'));
+    expect(
+      source,
+      contains('nativeStatus.state == SecureWalletState.absent'),
+    );
+    expect(source, contains('nativeStatus.withLegacyWalletAddress('));
     expect(
       source,
       contains('Legacy wallet identity changed during normalization.'),

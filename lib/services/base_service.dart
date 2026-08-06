@@ -60,11 +60,7 @@ class BaseService {
       '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 
   // State
-  String? _address;
-  bool _isConnected = false;
-  bool _legacyMigrationRequired = false;
-  String _securityLevel = 'not-created';
-  String _authenticationMode = '';
+  SecureWalletStatus _walletStatus = SecureWalletStatus.absent();
   bool _useSepolia = false; // default mainnet
 
   // Cached balances
@@ -75,11 +71,13 @@ class BaseService {
   List<BaseTx> _txHistory = [];
 
   Stream<BaseEvent> get events => _eventController.stream;
-  bool get isConnected => _isConnected;
-  bool get legacyMigrationRequired => _legacyMigrationRequired;
-  String get securityLevel => _securityLevel;
-  String get authenticationMode => _authenticationMode;
-  String? get address => _address;
+  SecureWalletStatus get walletStatus => _walletStatus;
+  bool get isConnected => _walletStatus.isConnected;
+  bool get legacyMigrationRequired =>
+      _walletStatus.state == SecureWalletState.legacyMigrationRequired;
+  String get securityLevel => _walletStatus.securityLevel;
+  String get authenticationMode => _walletStatus.authenticationMode;
+  String? get address => _walletStatus.address;
   bool get useSepolia => _useSepolia;
   Decimal get ethBalance => _ethBalance;
   Decimal get usdcBalance => _usdcBalance;
@@ -143,7 +141,7 @@ class BaseService {
       value: sepolia.toString(),
     );
     _logger.i('Base network set to ${sepolia ? "Sepolia" : "Mainnet"}');
-    if (_isConnected) await refreshBalance();
+    if (isConnected) await refreshBalance();
   }
 
   /// Initialize — load stored wallet and network preference
@@ -157,52 +155,84 @@ class BaseService {
       }
 
       final nativeStatus = await NativeBridge.getSecureEvmWalletStatus();
-      if (nativeStatus['exists'] == true) {
+      _walletStatus = nativeStatus;
+      if (nativeStatus.state == SecureWalletState.healthy) {
         _applyNativeWalletStatus(nativeStatus);
-      } else {
+      } else if (nativeStatus.state == SecureWalletState.absent) {
         final storedKey = await _secureStorage.read(key: 'base_private_key');
         if (storedKey != null && storedKey.trim().isNotEmpty) {
           // Existing installs need one explicit, device-authenticated migration.
-          _legacyMigrationRequired = true;
-          _isConnected = false;
-          _address = null;
           Uint8List? normalized;
           try {
             normalized = LegacyEvmKeyNormalizer.normalize(storedKey);
             // Derive only the public address here; do not retain credentials.
-            _address = EthPrivateKey(normalized).address.hexEip55;
+            _walletStatus = nativeStatus.withLegacyWalletAddress(
+              EthPrivateKey(normalized).address.hexEip55,
+            );
           } finally {
             normalized?.fillRange(0, normalized.length, 0);
           }
         }
       }
-    } catch (e) {
-      _logger.e('Failed to initialize Base Service: $e');
+    } on SecureWalletException catch (error) {
+      _walletStatus = SecureWalletStatus.unavailable(errorCode: error.code);
+      _logger.e(
+        'Base wallet initialization failed: '
+        '${_walletStatus.state.name}/${_walletStatus.errorCode}',
+      );
+      _eventController.add(BaseEvent.error(error.message));
+    } catch (_) {
+      _walletStatus = SecureWalletStatus.unavailable(
+        errorCode: 'WALLET_INITIALIZATION_ERROR',
+      );
+      _logger.e(
+        'Base wallet initialization failed: '
+        '${_walletStatus.state.name}/${_walletStatus.errorCode}',
+      );
+      _eventController.add(
+        BaseEvent.error('The Base wallet status could not be loaded.'),
+      );
     }
   }
 
-  String _validatedNativeWalletAddress(Map<String, dynamic> status) {
-    final address = status['address']?.toString().trim() ?? '';
-    if (status['exists'] != true || address.isEmpty) {
-      throw StateError('Android reported an invalid secure wallet status.');
+  String _validatedNativeWalletAddress(SecureWalletStatus status) {
+    final address = status.address?.trim() ?? '';
+    if (status.state != SecureWalletState.healthy || address.isEmpty) {
+      throw SecureWalletException(
+        code: status.errorCode.isEmpty
+            ? 'WALLET_STATUS_INVALID'
+            : status.errorCode,
+        message: 'Android reported an unusable secure wallet state.',
+      );
     }
     return EthereumAddress.fromHex(address).hexEip55;
   }
 
-  void _applyNativeWalletStatus(Map<String, dynamic> status) {
-    _address = _validatedNativeWalletAddress(status);
-    _isConnected = true;
-    _legacyMigrationRequired = false;
-    _securityLevel = status['securityLevel']?.toString() ?? 'unknown';
-    _authenticationMode = status['authenticationMode']?.toString() ?? '';
-    _eventController.add(BaseEvent.walletLoaded(_address!));
-    _logger.i('Secure Base wallet loaded: $_address ($_securityLevel)');
+  void _applyNativeWalletStatus(SecureWalletStatus status) {
+    final validatedAddress = _validatedNativeWalletAddress(status);
+    _walletStatus = SecureWalletStatus(
+      state: status.state,
+      address: validatedAddress,
+      securityLevel: status.securityLevel,
+      authenticationMode: status.authenticationMode,
+      errorCode: status.errorCode,
+      envelopeIntegrity: status.envelopeIntegrity,
+      authenticationAvailable: status.authenticationAvailable,
+      hardwareBacked: status.hardwareBacked,
+      verificationPending: status.verificationPending,
+      verificationCode: status.verificationCode,
+    );
+    _eventController.add(BaseEvent.walletLoaded(validatedAddress));
+    _logger.i(
+      'Secure Base wallet loaded: '
+      '${_walletStatus.state.name}/${_walletStatus.securityLevel}',
+    );
   }
 
   /// Create a new EVM wallet
   Future<String> createWallet() async {
     try {
-      if (_legacyMigrationRequired) {
+      if (legacyMigrationRequired) {
         throw StateError(
           'Secure the existing wallet before creating a new one.',
         );
@@ -211,8 +241,8 @@ class BaseService {
       final status = await NativeBridge.createSecureEvmWallet();
       _applyNativeWalletStatus(status);
       await refreshBalance();
-      _eventController.add(BaseEvent.walletCreated(_address!));
-      return _address!;
+      _eventController.add(BaseEvent.walletCreated(address!));
+      return address!;
     } catch (e) {
       _logger.e('Failed to create wallet: $e');
       rethrow;
@@ -223,7 +253,7 @@ class BaseService {
   Future<void> importWallet(String privateKeyHex) async {
     Uint8List? privateKey;
     try {
-      if (_legacyMigrationRequired) {
+      if (legacyMigrationRequired) {
         throw StateError(
           'Secure or remove the existing legacy wallet before importing.',
         );
@@ -256,7 +286,7 @@ class BaseService {
       if (stored == null || stored.trim().isEmpty) {
         throw StateError('No legacy wallet is available to migrate.');
       }
-      final expectedAddress = _address;
+      final expectedAddress = address;
       if (expectedAddress == null || expectedAddress.isEmpty) {
         throw StateError('Legacy wallet identity cannot be verified.');
       }
@@ -284,16 +314,16 @@ class BaseService {
 
   /// Get ETH and USDC balances
   Future<void> refreshBalance() async {
-    if (!_isConnected || _address == null) return;
+    if (!isConnected || address == null) return;
     final client = _makeClient();
     try {
       // ETH balance
       final ethAmount =
-          await client.getBalance(EthereumAddress.fromHex(_address!));
+          await client.getBalance(EthereumAddress.fromHex(address!));
       _ethBalance = _weiToDecimal(ethAmount.getInWei, 18);
 
       // USDC balance via balanceOf — ERC-20 with 6 decimals
-      _usdcBalance = await _getErc20Balance(client, usdcContract, _address!, 6);
+      _usdcBalance = await _getErc20Balance(client, usdcContract, address!, 6);
 
       _eventController.add(BaseEvent.balanceUpdated(
         ethBalance: _ethBalance,
@@ -425,7 +455,7 @@ class BaseService {
     required BigInt value,
     required Uint8List data,
   }) async {
-    final from = EthereumAddress.fromHex(_address!);
+    final from = EthereumAddress.fromHex(address!);
     final gasPrice = await client.getGasPrice();
     final nonce = await client.getTransactionCount(
       from,
@@ -488,13 +518,13 @@ class BaseService {
 
   /// Fetch transaction history via Basescan API (etherscan-compatible)
   Future<List<BaseTx>> fetchHistory({int limit = 10}) async {
-    if (!_isConnected || _address == null) return [];
+    if (!isConnected || address == null) return [];
     try {
       final base = _useSepolia
           ? 'https://api-sepolia.basescan.org'
           : 'https://api.basescan.org';
       final url =
-          Uri.parse('$base/api?module=account&action=txlist&address=$_address'
+          Uri.parse('$base/api?module=account&action=txlist&address=$address'
               '&startblock=0&endblock=99999999&page=1&offset=$limit&sort=desc');
       final response = await http.get(url).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
@@ -530,22 +560,18 @@ class BaseService {
 
   /// Delete wallet from secure storage
   Future<void> deleteWallet() async {
-    if (_isConnected) {
+    if (isConnected) {
       await NativeBridge.deleteSecureEvmWallet();
     }
     await _secureStorage.delete(key: 'base_private_key');
-    _address = null;
-    _isConnected = false;
-    _legacyMigrationRequired = false;
-    _securityLevel = 'not-created';
-    _authenticationMode = '';
+    _walletStatus = SecureWalletStatus.absent();
     _ethBalance = Decimal.zero;
     _usdcBalance = Decimal.zero;
     _eventController.add(BaseEvent.disconnected());
   }
 
   void _assertConnected() {
-    if (!_isConnected || _address == null) {
+    if (!isConnected || address == null) {
       throw StateError('No wallet connected');
     }
   }

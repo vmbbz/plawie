@@ -4,6 +4,145 @@ import 'package:flutter/services.dart';
 import 'preferences_service.dart';
 import '../constants/openclaw_paths.dart';
 
+enum SecureWalletState {
+  absent,
+  healthy,
+  legacyMigrationRequired,
+  authenticationUnavailable,
+  envelopeCorrupt,
+  keystoreKeyMissing,
+  keystoreKeyInvalidated,
+  orphanedKeystoreAlias,
+  operationBusy,
+  unavailable,
+}
+
+class SecureWalletException implements Exception {
+  final String code;
+  final String message;
+
+  const SecureWalletException({required this.code, required this.message});
+
+  @override
+  String toString() => '$code: $message';
+}
+
+class SecureWalletStatus {
+  final SecureWalletState state;
+  final String? address;
+  final String securityLevel;
+  final String authenticationMode;
+  final String errorCode;
+  final String envelopeIntegrity;
+  final bool authenticationAvailable;
+  final bool hardwareBacked;
+  final bool verificationPending;
+  final String verificationCode;
+
+  const SecureWalletStatus({
+    required this.state,
+    required this.address,
+    required this.securityLevel,
+    required this.authenticationMode,
+    required this.errorCode,
+    required this.envelopeIntegrity,
+    required this.authenticationAvailable,
+    required this.hardwareBacked,
+    required this.verificationPending,
+    required this.verificationCode,
+  });
+
+  factory SecureWalletStatus.absent() => const SecureWalletStatus(
+        state: SecureWalletState.absent,
+        address: null,
+        securityLevel: 'not-created',
+        authenticationMode: '',
+        errorCode: '',
+        envelopeIntegrity: 'absent',
+        authenticationAvailable: false,
+        hardwareBacked: false,
+        verificationPending: false,
+        verificationCode: '',
+      );
+
+  factory SecureWalletStatus.unavailable({required String errorCode}) =>
+      SecureWalletStatus(
+        state: SecureWalletState.unavailable,
+        address: null,
+        securityLevel: 'unknown',
+        authenticationMode: '',
+        errorCode: errorCode,
+        envelopeIntegrity: 'unknown',
+        authenticationAvailable: false,
+        hardwareBacked: false,
+        verificationPending: false,
+        verificationCode: '',
+      );
+
+  factory SecureWalletStatus.fromNative(Map<String, dynamic> value) {
+    const states = <String, SecureWalletState>{
+      'absent': SecureWalletState.absent,
+      'healthy': SecureWalletState.healthy,
+      'authenticationUnavailable': SecureWalletState.authenticationUnavailable,
+      'envelopeCorrupt': SecureWalletState.envelopeCorrupt,
+      'keystoreKeyMissing': SecureWalletState.keystoreKeyMissing,
+      'keystoreKeyInvalidated': SecureWalletState.keystoreKeyInvalidated,
+      'orphanedKeystoreAlias': SecureWalletState.orphanedKeystoreAlias,
+      'operationBusy': SecureWalletState.operationBusy,
+    };
+    final wireState = value['state']?.toString();
+    final state = states[wireState] ?? SecureWalletState.unavailable;
+    final rawAddress = value['address']?.toString().trim() ?? '';
+    final rawErrorCode = value['errorCode']?.toString().trim() ?? '';
+    return SecureWalletStatus(
+      state: state,
+      address: rawAddress.isEmpty ? null : rawAddress,
+      securityLevel: value['securityLevel']?.toString() ?? 'unknown',
+      authenticationMode: value['authenticationMode']?.toString() ?? '',
+      errorCode: state == SecureWalletState.unavailable && rawErrorCode.isEmpty
+          ? 'WALLET_STATUS_UNKNOWN'
+          : rawErrorCode,
+      envelopeIntegrity: value['envelopeIntegrity']?.toString() ?? 'unknown',
+      authenticationAvailable: value['authenticationAvailable'] == true,
+      hardwareBacked: value['hardwareBacked'] == true,
+      verificationPending: value['verificationPending'] == true,
+      verificationCode: value['verificationCode']?.toString() ?? '',
+    );
+  }
+
+  bool get isConnected =>
+      state == SecureWalletState.healthy && address?.isNotEmpty == true;
+
+  bool get canCreate => state == SecureWalletState.absent;
+
+  bool get canRestore =>
+      state != SecureWalletState.operationBusy &&
+      state != SecureWalletState.unavailable;
+
+  bool get requiresDestructiveRecovery =>
+      state == SecureWalletState.envelopeCorrupt ||
+      state == SecureWalletState.keystoreKeyMissing ||
+      state == SecureWalletState.keystoreKeyInvalidated;
+
+  SecureWalletStatus withLegacyWalletAddress(String legacyAddress) {
+    if (state != SecureWalletState.absent || legacyAddress.trim().isEmpty) {
+      return this;
+    }
+    return SecureWalletStatus(
+      state: SecureWalletState.legacyMigrationRequired,
+      address: legacyAddress.trim(),
+      securityLevel: securityLevel,
+      authenticationMode: authenticationMode,
+      errorCode: '',
+      envelopeIntegrity: envelopeIntegrity,
+      authenticationAvailable: authenticationAvailable,
+      hardwareBacked: hardwareBacked,
+      verificationPending: false,
+      verificationCode: '',
+    );
+  }
+}
+
 class NativeFfmpegRunResult {
   final int exitCode;
   final String stdout;
@@ -38,28 +177,38 @@ class NativeBridge {
   static const _channel = MethodChannel('com.openclaw.plawie/native');
   static const _eventChannel = EventChannel('com.openclaw.plawie/gateway_logs');
 
-  static Future<Map<String, dynamic>> getSecureEvmWalletStatus() async {
-    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'getSecureEvmWalletStatus',
-    );
-    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
-  }
+  static Future<SecureWalletStatus> getSecureEvmWalletStatus() =>
+      _invokeSecureWalletStatus('getSecureEvmWalletStatus');
 
-  static Future<Map<String, dynamic>> createSecureEvmWallet() async {
-    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'createSecureEvmWallet',
-    );
-    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
-  }
+  static Future<SecureWalletStatus> createSecureEvmWallet() =>
+      _invokeSecureWalletStatus('createSecureEvmWallet');
 
-  static Future<Map<String, dynamic>> importSecureEvmWallet(
+  static Future<SecureWalletStatus> importSecureEvmWallet(
     Uint8List privateKey,
-  ) async {
-    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'importSecureEvmWallet',
-      <String, dynamic>{'privateKey': privateKey},
-    );
-    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  ) =>
+      _invokeSecureWalletStatus(
+        'importSecureEvmWallet',
+        <String, dynamic>{'privateKey': privateKey},
+      );
+
+  static Future<SecureWalletStatus> _invokeSecureWalletStatus(
+    String method, [
+    Object? arguments,
+  ]) async {
+    try {
+      final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        method,
+        arguments,
+      );
+      return SecureWalletStatus.fromNative(
+        Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{}),
+      );
+    } on PlatformException catch (error) {
+      throw SecureWalletException(
+        code: error.code,
+        message: error.message ?? 'The secure wallet operation failed.',
+      );
+    }
   }
 
   static Future<String> signSecureEvmTransaction(
