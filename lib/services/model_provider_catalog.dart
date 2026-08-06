@@ -5,6 +5,15 @@ enum ModelRouteKind {
   cloud,
 }
 
+/// How a provider authenticates requests. This is intentionally independent
+/// from model discovery and billing readiness: a wallet identity can exist
+/// while its proxy, balance, or per-request payment path is still unavailable.
+enum ProviderAuthenticationMode {
+  apiKey,
+  walletIdentity,
+  none,
+}
+
 class ModelOption {
   final String id;
   final String label;
@@ -77,7 +86,7 @@ class ProviderOption {
   final String keyPrefix;
   final String defaultModel;
   final String description;
-  final bool requiresApiKey;
+  final ProviderAuthenticationMode authenticationMode;
 
   const ProviderOption({
     required this.id,
@@ -88,8 +97,11 @@ class ProviderOption {
     required this.keyPrefix,
     required this.defaultModel,
     required this.description,
-    this.requiresApiKey = true,
+    this.authenticationMode = ProviderAuthenticationMode.apiKey,
   });
+
+  bool get requiresApiKey =>
+      authenticationMode == ProviderAuthenticationMode.apiKey;
 }
 
 class ModelProviderCatalog {
@@ -170,6 +182,30 @@ class ModelProviderCatalog {
       keyPrefix: 'zm-',
       defaultModel: 'zenmux/z-ai/glm-5.2-free',
       description: 'OpenAI-compatible API gateway with free community models.',
+    ),
+    ProviderOption(
+      id: 'venice',
+      label: 'Venice',
+      subtitle: 'Base wallet · prepaid balance',
+      envKey: '',
+      keyHint: '',
+      keyPrefix: '',
+      defaultModel: '',
+      description:
+          'Wallet-funded inference using a Venice balance linked to your Base wallet.',
+      authenticationMode: ProviderAuthenticationMode.walletIdentity,
+    ),
+    ProviderOption(
+      id: 'blockrun',
+      label: 'BlockRun',
+      subtitle: 'Base wallet · pay per request',
+      envKey: '',
+      keyHint: '',
+      keyPrefix: '',
+      defaultModel: '',
+      description:
+          'Wallet-funded inference with explicit Base USDC approval per request.',
+      authenticationMode: ProviderAuthenticationMode.walletIdentity,
     ),
   ];
 
@@ -464,6 +500,8 @@ class ModelProviderCatalog {
     if (p.contains('gemini') || p.contains('google')) return 'google';
     if (p.contains('groq')) return 'groq';
     if (p.contains('zenmux')) return 'zenmux';
+    if (p.contains('venice')) return 'venice';
+    if (p.contains('blockrun') || p.contains('block run')) return 'blockrun';
     if (p.endsWith('_api_key')) return normalizeProvider(p.split('_').first);
     return p;
   }
@@ -483,6 +521,10 @@ class ModelProviderCatalog {
         .map((model) => model.providerConfig)
         .toList(growable: false);
     if (models.isNotEmpty) return models;
+    if (providerById(normalized)?.authenticationMode ==
+        ProviderAuthenticationMode.walletIdentity) {
+      return const <Map<String, dynamic>>[];
+    }
     return const [
       {'id': 'default', 'name': 'Default Model'}
     ];
@@ -594,6 +636,18 @@ class ModelProviderCatalog {
       case 'openrouter':
         return {
           'baseUrl': 'https://openrouter.ai/api/v1',
+          'models': models,
+        };
+      case 'venice':
+        return {
+          'api': 'openai-completions',
+          'baseUrl': 'http://127.0.0.1:11436/venice/v1',
+          'models': models,
+        };
+      case 'blockrun':
+        return {
+          'api': 'openai-completions',
+          'baseUrl': 'http://127.0.0.1:11436/blockrun/v1',
           'models': models,
         };
       case 'plawie_ndk':

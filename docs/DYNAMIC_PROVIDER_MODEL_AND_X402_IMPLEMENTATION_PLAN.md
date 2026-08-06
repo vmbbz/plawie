@@ -14,6 +14,20 @@ Current implementation status:
   implemented.
 - Dynamic model metadata is not allowed to overwrite the app's local context or
   tool policy limits.
+- Venice and BlockRun are registered as wallet-identity providers with no
+  fabricated API key. Their dynamic model IDs stay under `venice/` and
+  `blockrun/`, while Gateway configuration points only at the authenticated
+  app-private loopback proxy.
+- Venice model discovery uses a fresh route-bound `X-Sign-In-With-X` identity
+  for the exact models URL, matching the official
+  [Venice x402 client](https://github.com/veniceai/x402-client). BlockRun model
+  discovery uses its documented public
+  [models endpoint](https://blockrun.ai/docs/api-reference/models) without a
+  payment or authorization header.
+- Catalog truth is separate from provider/payment readiness. Each provider now
+  records fresh, stale, offline-fallback, or unavailable metadata, and shipped
+  wallet-provider explanations are explicitly non-live and cannot become a
+  Gateway model config.
 - x402 v2 challenge parsing, exact-request binding, single-use approval state,
   expiry, Base Mainnet USDC allowlisting, and redacted receipts are implemented
   as a pre-signing boundary.

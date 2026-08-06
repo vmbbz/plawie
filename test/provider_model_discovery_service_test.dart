@@ -6,8 +6,11 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:clawa/services/dynamic_model_catalog.dart';
+import 'package:clawa/services/model_provider_catalog.dart';
+import 'package:clawa/services/native_bridge.dart';
 import 'package:clawa/services/preferences_service.dart';
 import 'package:clawa/services/provider_model_discovery_service.dart';
+import 'package:clawa/services/venice_wallet_auth_service.dart';
 
 void main() {
   late PreferencesService preferences;
@@ -74,6 +77,266 @@ void main() {
     expect(provider.connectionState, DynamicProviderConnectionState.connected);
     expect(provider.etag, 'router-v1');
     expect(snapshot.encode(), isNot(contains('test-key')));
+  });
+
+  test('discovers Venice with a fresh bounded wallet identity', () async {
+    const address = '0x857b06519E91e3A54538791bDbb0E22373e36b66';
+    var signedRequests = 0;
+    final auth = VeniceWalletAuthService(
+      clock: () => now,
+      nonceFactory: () => 'AbCdEf123456',
+      walletStatus: () async => _healthyWallet(address),
+      signer: (request) async {
+        signedRequests++;
+        return <String, dynamic>{
+          'payer': address,
+          'signature': '0x${'a' * 130}',
+          'message': _veniceMessage(address, request),
+        };
+      },
+    );
+    final client = _FakeClient((request) async {
+      expect(request.url, Uri.parse('https://api.venice.ai/api/v1/models'));
+      expect(request.followRedirects, isFalse);
+      expect(request.maxRedirects, 0);
+      expect(request.headers['x-sign-in-with-x'], isNotEmpty);
+      expect(request.headers.containsKey('sign-in-with-x'), isFalse);
+      expect(request.headers.containsKey('authorization'), isFalse);
+      return _jsonResponse(<String, dynamic>{
+        'data': <dynamic>[
+          <String, dynamic>{
+            'id': 'llama-3.3-70b',
+            'type': 'text',
+            'model_spec': <String, dynamic>{
+              'name': 'Llama 3.3 70B',
+              'availableContextTokens': 131072,
+              'capabilities': <String, dynamic>{
+                'supportsFunctionCalling': true,
+                'supportsVision': false,
+                'supportsReasoning': true,
+              },
+            },
+          },
+          <String, dynamic>{'id': 'stable-diffusion-xl', 'type': 'image'},
+        ],
+      }, headers: <String, String>{
+        'etag': 'venice-v1'
+      });
+    });
+    final service = ProviderModelDiscoveryService(
+      client: client,
+      repository: repository,
+      clock: () => now,
+      veniceWalletAuth: auth,
+    );
+
+    final snapshot = await service.refreshProvider('venice');
+    final provider =
+        snapshot.providers.firstWhere((record) => record.id == 'venice');
+    final model = provider.models.single;
+
+    expect(signedRequests, 1);
+    expect(
+        provider.authenticationMode, ProviderAuthenticationMode.walletIdentity);
+    expect(provider.requiresApiKey, isFalse);
+    expect(provider.connectionState, DynamicProviderConnectionState.unknown);
+    expect(provider.catalogState, DynamicProviderCatalogState.fresh);
+    expect(provider.lastRefreshedAt, now);
+    expect(provider.etag, 'venice-v1');
+    expect(model.id, 'venice/llama-3.3-70b');
+    expect(model.providerModelId, 'llama-3.3-70b');
+    expect(model.label, 'Llama 3.3 70B');
+    expect(model.supportsToolCalls, isTrue);
+    expect(model.supportsVision, isFalse);
+    expect(model.capabilities, contains('reasoning'));
+    expect(model.advertisedContextWindow, 131072);
+    expect(model.liveAvailable, isTrue);
+  });
+
+  test('rejects Venice redirects without forwarding the wallet identity',
+      () async {
+    const address = '0x857b06519E91e3A54538791bDbb0E22373e36b66';
+    final auth = VeniceWalletAuthService(
+      clock: () => now,
+      nonceFactory: () => 'AbCdEf123456',
+      walletStatus: () async => _healthyWallet(address),
+      signer: (request) async => <String, dynamic>{
+        'payer': address,
+        'signature': '0x${'a' * 130}',
+        'message': _veniceMessage(address, request),
+      },
+    );
+    final client = _FakeClient((request) async => http.Response(
+          '',
+          302,
+          headers: const <String, String>{
+            'location': 'https://attacker.example/models',
+          },
+        ));
+    final service = ProviderModelDiscoveryService(
+      client: client,
+      repository: repository,
+      clock: () => now,
+      veniceWalletAuth: auth,
+    );
+
+    await expectLater(
+      service.refreshProvider('venice'),
+      throwsA(isA<ProviderDiscoveryException>().having(
+        (error) => error.code,
+        'code',
+        'redirect_rejected',
+      )),
+    );
+    expect(client.calls, 1);
+  });
+
+  test('keeps Venice fallback unavailable when the secure wallet is absent',
+      () async {
+    final auth = VeniceWalletAuthService(
+      walletStatus: () async => SecureWalletStatus.absent(),
+      signer: (_) async => fail('An absent wallet must not sign.'),
+    );
+    final client = _FakeClient((request) async {
+      fail('An absent wallet must not reach Venice.');
+    });
+    final service = ProviderModelDiscoveryService(
+      client: client,
+      repository: repository,
+      clock: () => now,
+      veniceWalletAuth: auth,
+    );
+
+    await expectLater(
+      service.refreshProvider('venice'),
+      throwsA(isA<ProviderDiscoveryException>().having(
+        (error) => error.code,
+        'code',
+        'wallet_not_ready',
+      )),
+    );
+    final snapshot = await repository.load(now: now);
+    final provider =
+        snapshot!.providers.firstWhere((record) => record.id == 'venice');
+    expect(client.calls, 0);
+    expect(
+        provider.connectionState, DynamicProviderConnectionState.unavailable);
+    expect(provider.catalogState, DynamicProviderCatalogState.offlineFallback);
+    expect(provider.errorMessage, contains('wallet'));
+    expect(provider.models.single.liveAvailable, isFalse);
+  });
+
+  test('discovers public BlockRun models and removes unavailable duplicates',
+      () async {
+    final client = _FakeClient((request) async {
+      expect(request.url, Uri.parse('https://blockrun.ai/api/v1/models'));
+      expect(request.headers.containsKey('authorization'), isFalse);
+      expect(request.headers.containsKey('payment-signature'), isFalse);
+      return _jsonResponse(<String, dynamic>{
+        'models': <dynamic>[
+          <String, dynamic>{
+            'id': 'openai/gpt-5-mini',
+            'name': 'GPT-5 Mini',
+            'description': 'Fast tool model',
+            'context_window': 400000,
+            'max_output': 128000,
+            'categories': <String>['text', 'tools'],
+            'available': true,
+          },
+          <String, dynamic>{
+            'id': 'openai/gpt-5-mini',
+            'name': 'Duplicate ignored',
+            'available': true,
+          },
+          <String, dynamic>{
+            'id': 'offline-model',
+            'available': false,
+          },
+        ],
+      }, headers: <String, String>{
+        'etag': 'blockrun-v1'
+      });
+    });
+    final service = ProviderModelDiscoveryService(
+      client: client,
+      repository: repository,
+      clock: () => now,
+    );
+
+    final snapshot = await service.refreshProvider('blockrun');
+    final provider =
+        snapshot.providers.firstWhere((record) => record.id == 'blockrun');
+    final model = provider.models.single;
+
+    expect(model.id, 'blockrun/openai/gpt-5-mini');
+    expect(model.providerModelId, 'openai/gpt-5-mini');
+    expect(model.label, 'GPT-5 Mini');
+    expect(model.supportsToolCalls, isTrue);
+    expect(model.advertisedContextWindow, 400000);
+    expect(model.advertisedMaxOutputTokens, 128000);
+    expect(provider.catalogState, DynamicProviderCatalogState.fresh);
+    expect(provider.connectionState, DynamicProviderConnectionState.unknown);
+    expect(provider.etag, 'blockrun-v1');
+  });
+
+  test('updates BlockRun cache timestamp after a valid 304', () async {
+    var call = 0;
+    var clock = now;
+    final client = _FakeClient((request) async {
+      call++;
+      if (call == 2) {
+        expect(request.headers['if-none-match'], 'blockrun-v1');
+        return http.Response('', 304);
+      }
+      return _jsonResponse(<String, dynamic>{
+        'models': <dynamic>[
+          <String, dynamic>{'id': 'model-a', 'available': true},
+        ],
+      }, headers: <String, String>{
+        'etag': 'blockrun-v1'
+      });
+    });
+    final service = ProviderModelDiscoveryService(
+      client: client,
+      repository: repository,
+      clock: () => clock,
+    );
+
+    await service.refreshProvider('blockrun');
+    clock = now.add(const Duration(hours: 2));
+    final refreshed = await service.refreshProvider('blockrun');
+    final provider =
+        refreshed.providers.firstWhere((record) => record.id == 'blockrun');
+
+    expect(provider.lastRefreshedAt, clock);
+    expect(provider.models.single.id, 'blockrun/model-a');
+    expect(provider.catalogState, DynamicProviderCatalogState.fresh);
+  });
+
+  test('records an actionable BlockRun reason for malformed metadata',
+      () async {
+    final client = _FakeClient((request) async =>
+        _jsonResponse(<String, dynamic>{'models': <String, dynamic>{}}));
+    final service = ProviderModelDiscoveryService(
+      client: client,
+      repository: repository,
+      clock: () => now,
+    );
+
+    await expectLater(
+      service.refreshProvider('blockrun'),
+      throwsA(isA<ProviderDiscoveryException>().having(
+        (error) => error.code,
+        'code',
+        'invalid_response',
+      )),
+    );
+    final snapshot = await repository.load(now: now);
+    final provider =
+        snapshot!.providers.firstWhere((record) => record.id == 'blockrun');
+    expect(provider.catalogState, DynamicProviderCatalogState.offlineFallback);
+    expect(provider.errorMessage, isNotEmpty);
+    expect(provider.models.single.liveAvailable, isFalse);
   });
 
   test('uses the Google query-key contract without putting the key in headers',
@@ -305,3 +568,27 @@ class _FakeClient extends http.BaseClient {
     );
   }
 }
+
+SecureWalletStatus _healthyWallet(String address) => SecureWalletStatus(
+      state: SecureWalletState.healthy,
+      address: address,
+      securityLevel: 'Trusted Environment',
+      authenticationMode: 'deviceCredential',
+      errorCode: '',
+      envelopeIntegrity: 'verified',
+      authenticationAvailable: true,
+      hardwareBacked: true,
+      verificationPending: false,
+      verificationCode: '',
+    );
+
+String _veniceMessage(String address, Map<String, dynamic> request) =>
+    'api.venice.ai wants you to sign in with your Ethereum account:\n'
+    '$address\n\n'
+    'Sign in to Venice AI\n\n'
+    'URI: ${request['uri']}\n'
+    'Version: 1\n'
+    'Chain ID: 8453\n'
+    'Nonce: ${request['nonce']}\n'
+    'Issued At: ${request['issuedAt']}\n'
+    'Expiration Time: ${request['expirationTime']}';

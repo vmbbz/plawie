@@ -1,21 +1,27 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
 import 'dynamic_model_catalog.dart';
 import 'model_execution_policy.dart';
 import 'model_provider_catalog.dart';
+import 'venice_wallet_auth_service.dart';
 
 enum ProviderDiscoveryFormat {
   openAiModels,
   googleModels,
+  veniceModels,
+  blockRunModels,
 }
 
 enum ProviderDiscoveryAuth {
   bearer,
   anthropicApiKey,
   googleQueryKey,
+  veniceWalletIdentity,
+  none,
 }
 
 /// Trusted, non-secret connection metadata for a provider's model endpoint.
@@ -68,11 +74,13 @@ class ProviderModelDiscoveryService {
     DateTime Function()? clock,
     Duration timeout = const Duration(seconds: 12),
     Duration cacheTtl = DynamicModelCatalogRepository.defaultTtl,
+    VeniceWalletAuthService? veniceWalletAuth,
   })  : _client = client ?? http.Client(),
         _repository = repository ?? DynamicModelCatalogRepository(),
         _clock = clock ?? DateTime.now,
         _timeout = timeout,
-        _cacheTtl = cacheTtl;
+        _cacheTtl = cacheTtl,
+        _veniceWalletAuth = veniceWalletAuth ?? VeniceWalletAuthService();
 
   static final Map<String, ProviderDiscoverySpec> specs =
       <String, ProviderDiscoverySpec>{
@@ -118,13 +126,30 @@ class ProviderModelDiscoveryService {
       format: ProviderDiscoveryFormat.openAiModels,
       auth: ProviderDiscoveryAuth.bearer,
     ),
+    'venice': const ProviderDiscoverySpec(
+      providerId: 'venice',
+      endpoint: 'https://api.venice.ai/api/v1/models',
+      format: ProviderDiscoveryFormat.veniceModels,
+      auth: ProviderDiscoveryAuth.veniceWalletIdentity,
+      requiresApiKey: false,
+    ),
+    'blockrun': const ProviderDiscoverySpec(
+      providerId: 'blockrun',
+      endpoint: 'https://blockrun.ai/api/v1/models',
+      format: ProviderDiscoveryFormat.blockRunModels,
+      auth: ProviderDiscoveryAuth.none,
+      requiresApiKey: false,
+    ),
   };
+
+  static const int _maxCatalogResponseBytes = 4 * 1024 * 1024;
 
   final http.Client _client;
   final DynamicModelCatalogRepository _repository;
   final DateTime Function() _clock;
   final Duration _timeout;
   final Duration _cacheTtl;
+  final VeniceWalletAuthService _veniceWalletAuth;
   final Map<String, Future<DynamicCatalogSnapshot>> _inFlight =
       <String, Future<DynamicCatalogSnapshot>>{};
 
@@ -226,6 +251,18 @@ class ProviderModelDiscoveryService {
         now: now,
         error: error,
       );
+    } on VeniceWalletAuthException catch (error) {
+      return _persistFailureAndRethrow(
+        providerId: providerId,
+        cached: cached,
+        cachedProvider: cachedProvider,
+        now: now,
+        error: ProviderDiscoveryException(
+          providerId: providerId,
+          code: error.code,
+          message: error.message,
+        ),
+      );
     } on TimeoutException {
       return _persistFailureAndRethrow(
         providerId: providerId,
@@ -284,16 +321,22 @@ class ProviderModelDiscoveryService {
         DynamicCatalogSnapshot.bundledFallback(now: now, ttl: _cacheTtl);
     final previous = cachedProvider ?? _staticProvider(providerId);
     final safeMessage = _safeErrorMessage(safeError.message);
+    final catalogState = previous.lastRefreshedAt != null &&
+            previous.source == 'provider-api' &&
+            previous.models.any((model) => model.liveAvailable)
+        ? DynamicProviderCatalogState.stale
+        : previous.models.isEmpty
+            ? DynamicProviderCatalogState.unavailable
+            : DynamicProviderCatalogState.offlineFallback;
     final failedProvider = DynamicProviderRecord(
       id: previous.id,
       label: previous.label,
       subtitle: previous.subtitle,
       description: previous.description,
-      requiresApiKey: previous.requiresApiKey,
+      authenticationMode: previous.authenticationMode,
       defaultModelId: previous.defaultModelId,
-      connectionState: safeError.code == 'configuration_required'
-          ? DynamicProviderConnectionState.needsConfiguration
-          : DynamicProviderConnectionState.error,
+      connectionState: _failureConnectionState(safeError.code),
+      catalogState: catalogState,
       source: previous.source,
       etag: previous.etag,
       lastRefreshedAt: previous.lastRefreshedAt,
@@ -342,19 +385,20 @@ class ProviderModelDiscoveryService {
           apiKey.isNotEmpty) {
         headers['x-api-key'] = apiKey;
         headers['anthropic-version'] = '2023-06-01';
+      } else if (spec.auth == ProviderDiscoveryAuth.veniceWalletIdentity) {
+        headers['X-Sign-In-With-X'] = await _veniceIdentityHeader(uri);
       }
 
-      final response =
-          await _client.get(uri, headers: headers).timeout(_timeout);
-      etag ??= response.headers['etag'];
+      final response = await _getBounded(spec, uri, headers);
+      etag ??= _safeEtag(response.headers['etag']);
       if (response.statusCode == 304) {
         return const _ProviderFetchResult.notModified();
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw ProviderDiscoveryException(
           providerId: spec.providerId,
-          code: _discoveryErrorCode(response.statusCode),
-          message: _discoveryErrorMessage(response.statusCode),
+          code: _discoveryErrorCode(response.statusCode, auth: spec.auth),
+          message: _discoveryErrorMessage(response.statusCode, auth: spec.auth),
           statusCode: response.statusCode,
         );
       }
@@ -363,7 +407,7 @@ class ProviderModelDiscoveryService {
       final items = _itemsFor(spec.format, decoded);
       for (final item in items) {
         final model = _parseModel(spec, item);
-        if (model != null) discovered[model.id] = model;
+        if (model != null) discovered.putIfAbsent(model.id, () => model);
       }
 
       if (spec.format != ProviderDiscoveryFormat.googleModels) break;
@@ -378,6 +422,54 @@ class ProviderModelDiscoveryService {
     );
   }
 
+  Future<String> _veniceIdentityHeader(Uri uri) async {
+    try {
+      return await _veniceWalletAuth.authorize('GET', uri);
+    } on VeniceWalletAuthException {
+      rethrow;
+    } catch (_) {
+      throw const ProviderDiscoveryException(
+        providerId: 'venice',
+        code: 'wallet_auth_failed',
+        message: 'The secure wallet could not authorize Venice discovery.',
+      );
+    }
+  }
+
+  Future<http.Response> _getBounded(
+    ProviderDiscoverySpec spec,
+    Uri uri,
+    Map<String, String> headers,
+  ) async {
+    final request = http.Request('GET', uri)
+      ..followRedirects = false
+      ..maxRedirects = 0
+      ..headers.addAll(headers);
+    final streamed = await _client.send(request).timeout(_timeout);
+    final bytes = BytesBuilder(copy: false);
+    var length = 0;
+    await for (final chunk in streamed.stream.timeout(_timeout)) {
+      length += chunk.length;
+      if (length > _maxCatalogResponseBytes) {
+        throw ProviderDiscoveryException(
+          providerId: spec.providerId,
+          code: 'response_too_large',
+          message: 'The provider model catalog exceeded the safe size limit.',
+        );
+      }
+      bytes.add(chunk);
+    }
+    return http.Response.bytes(
+      bytes.takeBytes(),
+      streamed.statusCode,
+      headers: streamed.headers,
+      isRedirect: streamed.isRedirect,
+      persistentConnection: streamed.persistentConnection,
+      reasonPhrase: streamed.reasonPhrase,
+      request: request,
+    );
+  }
+
   Uri _buildUri(
     ProviderDiscoverySpec spec, {
     required String apiKey,
@@ -389,7 +481,7 @@ class ProviderModelDiscoveryService {
       if (spec.auth == ProviderDiscoveryAuth.googleQueryKey) 'key': apiKey,
       if (pageToken != null) 'pageToken': pageToken,
     };
-    return uri.replace(queryParameters: query);
+    return query.isEmpty ? uri : uri.replace(queryParameters: query);
   }
 
   Map<String, dynamic> _decodeObject(String body, String providerId) {
@@ -425,12 +517,21 @@ class ProviderModelDiscoveryService {
     ProviderDiscoverySpec spec,
     Map<dynamic, dynamic> raw,
   ) {
+    final modelSpec = raw['model_spec'] is Map
+        ? raw['model_spec'] as Map<dynamic, dynamic>
+        : const <dynamic, dynamic>{};
+    final modelCapabilities = modelSpec['capabilities'] is Map
+        ? modelSpec['capabilities'] as Map<dynamic, dynamic>
+        : const <dynamic, dynamic>{};
     var sourceId = (raw['id'] ?? raw['name'])?.toString().trim() ?? '';
     if (spec.format == ProviderDiscoveryFormat.googleModels &&
         sourceId.startsWith('models/')) {
       sourceId = sourceId.substring('models/'.length);
     }
-    if (sourceId.isEmpty || !_isChatCandidate(spec, raw, sourceId)) return null;
+    if (!_isSafeSourceModelId(sourceId) ||
+        !_isChatCandidate(spec, raw, sourceId)) {
+      return null;
+    }
 
     final providerId = spec.providerId;
     final id = _namespacedModelId(providerId, sourceId);
@@ -440,20 +541,31 @@ class ProviderModelDiscoveryService {
     final capabilities = <String>{
       ..._stringList(raw['capabilities']),
       ..._stringList(raw['supported_parameters']),
+      ..._stringList(raw['categories']),
+      ...modelCapabilities.entries
+          .where((entry) => entry.value == true)
+          .map((entry) => entry.key.toString()),
       ..._modalities(raw),
       if (supportsToolCalls == true) 'tool-calls',
       if (supportsVision == true) 'vision',
+      if (modelCapabilities['supportsReasoning'] == true) 'reasoning',
     };
 
     return DynamicModelRecord(
       id: id,
       providerId: providerId,
-      label: (raw['displayName'] ?? raw['name'] ?? raw['id'] ?? sourceId)
+      label: (modelSpec['name'] ??
+              raw['displayName'] ??
+              raw['name'] ??
+              raw['id'] ??
+              sourceId)
           .toString()
           .trim(),
       route: ModelRouteKind.cloud,
       providerModelId: sourceId,
-      description: (raw['description']?.toString() ?? '').trim(),
+      description: (raw['description'] ?? modelSpec['description'] ?? '')
+          .toString()
+          .trim(),
       sourceModelId: sourceId,
       capabilities: capabilities,
       supportsToolCalls: supportsToolCalls ?? staticModel?.supportsToolCalls,
@@ -467,14 +579,19 @@ class ProviderModelDiscoveryService {
         raw['context_length'],
         raw['inputTokenLimit'],
         raw['contextWindow'],
+        raw['context_window'],
+        modelSpec['availableContextTokens'],
         (raw['top_provider'] as Map?)?['context_length'],
       ]),
       advertisedMaxOutputTokens: _firstPositiveInt(<dynamic>[
         raw['max_output_tokens'],
+        raw['max_output'],
         raw['outputTokenLimit'],
+        modelSpec['maxOutputTokens'],
         (raw['top_provider'] as Map?)?['max_completion_tokens'],
       ]),
       recommended: staticModel?.recommended ?? false,
+      liveAvailable: true,
     );
   }
 
@@ -498,9 +615,13 @@ class ProviderModelDiscoveryService {
       label: fallback.label,
       subtitle: fallback.subtitle,
       description: fallback.description,
-      requiresApiKey: fallback.requiresApiKey,
+      authenticationMode: fallback.authenticationMode,
       defaultModelId: defaultModel,
-      connectionState: DynamicProviderConnectionState.connected,
+      connectionState: fallback.authenticationMode ==
+              ProviderAuthenticationMode.walletIdentity
+          ? DynamicProviderConnectionState.unknown
+          : DynamicProviderConnectionState.connected,
+      catalogState: DynamicProviderCatalogState.fresh,
       source: 'provider-api',
       etag: etag,
       lastRefreshedAt: refreshedAt,
@@ -567,6 +688,15 @@ class ProviderModelDiscoveryService {
     ];
     if (nonChatFragments.any(lower.contains)) return false;
 
+    if (spec.format == ProviderDiscoveryFormat.blockRunModels &&
+        raw['available'] == false) {
+      return false;
+    }
+    if (spec.format == ProviderDiscoveryFormat.veniceModels) {
+      final type = raw['type']?.toString().trim().toLowerCase() ?? '';
+      if (type.isNotEmpty && type != 'text') return false;
+    }
+
     if (spec.format == ProviderDiscoveryFormat.googleModels) {
       final methods = _stringList(raw['supportedGenerationMethods']);
       if (methods.isNotEmpty && !methods.contains('generateContent')) {
@@ -587,9 +717,19 @@ class ProviderModelDiscoveryService {
   bool? _toolSupport(Map<dynamic, dynamic> raw) {
     final explicit = raw['supportsToolCalls'];
     if (explicit is bool) return explicit;
-    final parameters = _stringList(raw['supported_parameters'])
-        .map((value) => value.toLowerCase())
-        .toSet();
+    final modelSpec = raw['model_spec'];
+    final nestedCapabilities =
+        modelSpec is Map ? modelSpec['capabilities'] : null;
+    if (nestedCapabilities is Map) {
+      final nested = nestedCapabilities['supportsFunctionCalling'] ??
+          nestedCapabilities['supportsToolCalls'];
+      if (nested is bool) return nested;
+    }
+    final parameters = <String>{
+      ..._stringList(raw['supported_parameters']),
+      ..._stringList(raw['categories']),
+      ..._stringList(raw['capabilities']),
+    }.map((value) => value.toLowerCase()).toSet();
     if (parameters.any(
       (value) => value.contains('tool') || value.contains('function'),
     )) {
@@ -599,6 +739,13 @@ class ProviderModelDiscoveryService {
   }
 
   bool? _visionSupport(Map<dynamic, dynamic> raw) {
+    final modelSpec = raw['model_spec'];
+    final nestedCapabilities =
+        modelSpec is Map ? modelSpec['capabilities'] : null;
+    if (nestedCapabilities is Map &&
+        nestedCapabilities['supportsVision'] is bool) {
+      return nestedCapabilities['supportsVision'] as bool;
+    }
     final modalities = _modalities(raw)
         .map((value) => value.toLowerCase())
         .where((value) => value.isNotEmpty)
@@ -641,6 +788,14 @@ class ProviderModelDiscoveryService {
         ? normalized
         : '$providerId/$normalized';
   }
+
+  bool _isSafeSourceModelId(String sourceId) {
+    final normalized = sourceId.trim();
+    return normalized.isNotEmpty &&
+        normalized.length <= 220 &&
+        !normalized.contains('..') &&
+        !normalized.contains(RegExp(r'[\u0000-\u001F\u007F]'));
+  }
 }
 
 class _ProviderFetchResult {
@@ -657,14 +812,32 @@ class _ProviderFetchResult {
   final bool notModified;
 }
 
-String _discoveryErrorCode(int statusCode) {
+String _discoveryErrorCode(
+  int statusCode, {
+  ProviderDiscoveryAuth? auth,
+}) {
+  if (statusCode >= 300 && statusCode < 400) return 'redirect_rejected';
+  if ((statusCode == 401 || statusCode == 403) &&
+      auth == ProviderDiscoveryAuth.veniceWalletIdentity) {
+    return 'wallet_authentication_rejected';
+  }
   if (statusCode == 401 || statusCode == 403) return 'authentication_required';
   if (statusCode == 429) return 'rate_limited';
   if (statusCode >= 500) return 'provider_unavailable';
   return 'http_$statusCode';
 }
 
-String _discoveryErrorMessage(int statusCode) {
+String _discoveryErrorMessage(
+  int statusCode, {
+  ProviderDiscoveryAuth? auth,
+}) {
+  if (statusCode >= 300 && statusCode < 400) {
+    return 'The provider attempted to redirect model discovery.';
+  }
+  if ((statusCode == 401 || statusCode == 403) &&
+      auth == ProviderDiscoveryAuth.veniceWalletIdentity) {
+    return 'Venice rejected the fresh secure-wallet identity.';
+  }
   if (statusCode == 401 || statusCode == 403) {
     return 'The provider rejected the saved API key.';
   }
@@ -673,6 +846,26 @@ String _discoveryErrorMessage(int statusCode) {
   }
   if (statusCode >= 500) return 'The provider model service is unavailable.';
   return 'The provider rejected the model discovery request.';
+}
+
+String? _safeEtag(String? value) {
+  final normalized = value?.trim() ?? '';
+  if (normalized.isEmpty ||
+      normalized.length > 256 ||
+      normalized.contains(RegExp(r'[\u0000-\u001F\u007F]'))) {
+    return null;
+  }
+  return normalized;
+}
+
+DynamicProviderConnectionState _failureConnectionState(String code) {
+  if (code == 'configuration_required') {
+    return DynamicProviderConnectionState.needsConfiguration;
+  }
+  if (code == 'wallet_not_ready' || code == 'provider_unavailable') {
+    return DynamicProviderConnectionState.unavailable;
+  }
+  return DynamicProviderConnectionState.error;
 }
 
 String _safeErrorMessage(String message) {

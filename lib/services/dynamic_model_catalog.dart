@@ -8,8 +8,20 @@ import 'preferences_service.dart';
 enum DynamicCatalogSnapshotState {
   fresh,
   stale,
+  offlineFallback,
+  unavailable,
   empty,
   error,
+}
+
+/// Per-provider catalog truth inside a mixed snapshot. A snapshot can contain
+/// one freshly refreshed provider alongside bundled or stale records for the
+/// others, so the snapshot-level state is not sufficient for readiness UI.
+enum DynamicProviderCatalogState {
+  fresh,
+  stale,
+  offlineFallback,
+  unavailable,
 }
 
 /// Connection information is deliberately separate from model discovery.
@@ -43,6 +55,8 @@ class DynamicModelRecord {
     this.advertisedContextWindow,
     this.advertisedMaxOutputTokens,
     this.recommended = false,
+    this.liveAvailable = true,
+    this.unavailableReason,
   });
 
   final String id;
@@ -59,9 +73,13 @@ class DynamicModelRecord {
   final int? advertisedContextWindow;
   final int? advertisedMaxOutputTokens;
   final bool recommended;
+  final bool liveAvailable;
+  final String? unavailableReason;
 
   bool get agentReady =>
-      supportsToolCalls == true && toolPolicy != ModelToolPolicy.disabled;
+      liveAvailable &&
+      supportsToolCalls == true &&
+      toolPolicy != ModelToolPolicy.disabled;
 
   String get shortId => id.contains('/') ? id.split('/').last : id;
 
@@ -77,10 +95,17 @@ class DynamicModelRecord {
     return id.startsWith(prefix) ? id.substring(prefix.length) : shortId;
   }
 
-  Map<String, dynamic> get gatewayModelConfig => <String, dynamic>{
-        'id': gatewayModelId,
-        'name': label,
-      };
+  Map<String, dynamic> get gatewayModelConfig {
+    if (!liveAvailable) {
+      throw StateError(
+        unavailableReason ?? 'This model is not available from a live catalog.',
+      );
+    }
+    return <String, dynamic>{
+      'id': gatewayModelId,
+      'name': label,
+    };
+  }
 
   factory DynamicModelRecord.fromStatic(ModelOption model) {
     return DynamicModelRecord(
@@ -100,6 +125,7 @@ class DynamicModelRecord {
       advertisedContextWindow: model.contextWindow,
       advertisedMaxOutputTokens: model.maxTokens,
       recommended: model.recommended,
+      liveAvailable: true,
     );
   }
 
@@ -137,6 +163,8 @@ class DynamicModelRecord {
       advertisedMaxOutputTokens:
           _optionalPositiveInt(raw, 'advertisedMaxOutputTokens'),
       recommended: raw['recommended'] == true,
+      liveAvailable: raw['liveAvailable'] != false,
+      unavailableReason: _optionalString(raw, 'unavailableReason'),
     );
   }
 
@@ -158,6 +186,8 @@ class DynamicModelRecord {
         if (advertisedMaxOutputTokens != null)
           'advertisedMaxOutputTokens': advertisedMaxOutputTokens,
         if (recommended) 'recommended': true,
+        'liveAvailable': liveAvailable,
+        if (unavailableReason != null) 'unavailableReason': unavailableReason,
       };
 }
 
@@ -169,9 +199,10 @@ class DynamicProviderRecord {
     required this.models,
     this.subtitle = '',
     this.description = '',
-    this.requiresApiKey = true,
+    this.authenticationMode = ProviderAuthenticationMode.apiKey,
     this.defaultModelId,
     this.connectionState = DynamicProviderConnectionState.unknown,
+    this.catalogState = DynamicProviderCatalogState.offlineFallback,
     this.source = 'unknown',
     this.etag,
     this.lastRefreshedAt,
@@ -182,27 +213,57 @@ class DynamicProviderRecord {
   final String label;
   final String subtitle;
   final String description;
-  final bool requiresApiKey;
+  final ProviderAuthenticationMode authenticationMode;
   final String? defaultModelId;
   final DynamicProviderConnectionState connectionState;
+  final DynamicProviderCatalogState catalogState;
   final String source;
   final String? etag;
   final DateTime? lastRefreshedAt;
   final String? errorMessage;
   final List<DynamicModelRecord> models;
 
+  bool get requiresApiKey =>
+      authenticationMode == ProviderAuthenticationMode.apiKey;
+
   factory DynamicProviderRecord.fromStatic(ProviderOption provider) {
-    final models = ModelProviderCatalog.cloudModels
+    var models = ModelProviderCatalog.cloudModels
         .where((model) => model.providerId == provider.id)
         .map(DynamicModelRecord.fromStatic)
         .toList(growable: false);
+    if (models.isEmpty &&
+        provider.authenticationMode ==
+            ProviderAuthenticationMode.walletIdentity) {
+      models = <DynamicModelRecord>[
+        DynamicModelRecord(
+          id: '${provider.id}/catalog-unavailable',
+          providerId: provider.id,
+          label: 'Refresh ${provider.label} models',
+          route: ModelRouteKind.cloud,
+          description:
+              'Connect the secure Base wallet and refresh to load current models.',
+          supportsToolCalls: false,
+          supportsVision: false,
+          toolPolicy: ModelToolPolicy.disabled,
+          liveAvailable: false,
+          unavailableReason:
+              'Current ${provider.label} models have not been loaded on this device.',
+        ),
+      ];
+    }
+    final defaultModelId = models.any(
+      (model) => model.id == provider.defaultModel && model.liveAvailable,
+    )
+        ? provider.defaultModel
+        : null;
     return DynamicProviderRecord(
       id: provider.id,
       label: provider.label,
       subtitle: provider.subtitle,
       description: provider.description,
-      requiresApiKey: provider.requiresApiKey,
-      defaultModelId: provider.defaultModel,
+      authenticationMode: provider.authenticationMode,
+      defaultModelId: defaultModelId,
+      catalogState: DynamicProviderCatalogState.offlineFallback,
       source: 'bundled-static',
       models: models,
     );
@@ -229,15 +290,23 @@ class DynamicProviderRecord {
       );
     }
 
+    final source = _optionalString(raw, 'source') ?? 'unknown';
     return DynamicProviderRecord(
       id: providerId,
       label: _requiredString(raw, 'label'),
       subtitle: _optionalString(raw, 'subtitle') ?? '',
       description: _optionalString(raw, 'description') ?? '',
-      requiresApiKey: raw['requiresApiKey'] != false,
+      authenticationMode: _providerAuthenticationModeFromJson(
+        raw['authenticationMode'],
+        legacyRequiresApiKey: raw['requiresApiKey'] != false,
+      ),
       defaultModelId: _optionalString(raw, 'defaultModelId'),
       connectionState: _providerStateFromJson(raw['connectionState']),
-      source: _optionalString(raw, 'source') ?? 'unknown',
+      catalogState: _providerCatalogStateFromJson(
+        raw['catalogState'],
+        source: source,
+      ),
+      source: source,
       etag: _optionalString(raw, 'etag'),
       lastRefreshedAt: _optionalDateTime(raw, 'lastRefreshedAt'),
       errorMessage: _optionalString(raw, 'errorMessage'),
@@ -250,9 +319,11 @@ class DynamicProviderRecord {
         'label': label,
         'subtitle': subtitle,
         'description': description,
+        'authenticationMode': authenticationMode.name,
         'requiresApiKey': requiresApiKey,
         if (defaultModelId != null) 'defaultModelId': defaultModelId,
         'connectionState': connectionState.name,
+        'catalogState': catalogState.name,
         'source': source,
         if (etag != null) 'etag': etag,
         if (lastRefreshedAt != null)
@@ -288,7 +359,10 @@ class DynamicCatalogSnapshot {
 
   bool get hasModels => providers.any((provider) => provider.models.isNotEmpty);
 
-  bool get isUsable => state != DynamicCatalogSnapshotState.error && hasModels;
+  bool get isUsable =>
+      state != DynamicCatalogSnapshotState.error &&
+      state != DynamicCatalogSnapshotState.unavailable &&
+      hasModels;
 
   DynamicCatalogSnapshotState effectiveState(DateTime now) {
     if (state == DynamicCatalogSnapshotState.fresh &&
@@ -301,13 +375,34 @@ class DynamicCatalogSnapshot {
   DynamicCatalogSnapshot withEffectiveState(DateTime now) {
     final effective = effectiveState(now);
     if (effective == state) return this;
+    final staleProviders = <DynamicProviderRecord>[
+      for (final provider in providers)
+        if (provider.catalogState == DynamicProviderCatalogState.fresh)
+          DynamicProviderRecord(
+            id: provider.id,
+            label: provider.label,
+            subtitle: provider.subtitle,
+            description: provider.description,
+            authenticationMode: provider.authenticationMode,
+            defaultModelId: provider.defaultModelId,
+            connectionState: provider.connectionState,
+            catalogState: DynamicProviderCatalogState.stale,
+            source: provider.source,
+            etag: provider.etag,
+            lastRefreshedAt: provider.lastRefreshedAt,
+            errorMessage: provider.errorMessage,
+            models: provider.models,
+          )
+        else
+          provider,
+    ];
     return DynamicCatalogSnapshot(
       schemaVersion: schemaVersion,
       snapshotId: snapshotId,
       state: effective,
       updatedAt: updatedAt,
       expiresAt: expiresAt,
-      providers: providers,
+      providers: staleProviders,
       source: source,
       errorMessage: errorMessage,
     );
@@ -387,12 +482,18 @@ class DynamicCatalogSnapshot {
             'Invalid or duplicate model ${model.id} in ${provider.id}.',
           );
         }
+        if (!model.liveAvailable &&
+            (model.unavailableReason?.trim().isEmpty ?? true)) {
+          throw StateError(
+            'Unavailable model ${model.id} must explain why it is unavailable.',
+          );
+        }
       }
       if (provider.defaultModelId != null &&
-          !provider.models
-              .any((model) => model.id == provider.defaultModelId)) {
+          !provider.models.any((model) =>
+              model.id == provider.defaultModelId && model.liveAvailable)) {
         throw StateError(
-          'Provider ${provider.id} default model is not in its snapshot.',
+          'Provider ${provider.id} default model is not live in its snapshot.',
         );
       }
     }
@@ -409,7 +510,7 @@ class DynamicCatalogSnapshot {
     return DynamicCatalogSnapshot(
       schemaVersion: currentSchemaVersion,
       snapshotId: 'bundled-static-v1',
-      state: DynamicCatalogSnapshotState.fresh,
+      state: DynamicCatalogSnapshotState.offlineFallback,
       updatedAt: timestamp,
       expiresAt: timestamp.add(ttl),
       providers: providers,
@@ -557,6 +658,38 @@ DynamicProviderConnectionState _providerStateFromJson(dynamic value) {
     (state) => state.name == value,
     orElse: () => DynamicProviderConnectionState.unknown,
   );
+}
+
+DynamicProviderCatalogState _providerCatalogStateFromJson(
+  dynamic value, {
+  required String source,
+}) {
+  if (value is! String) {
+    return source == 'provider-api'
+        ? DynamicProviderCatalogState.fresh
+        : DynamicProviderCatalogState.offlineFallback;
+  }
+  return DynamicProviderCatalogState.values.firstWhere(
+    (state) => state.name == value,
+    orElse: () => DynamicProviderCatalogState.offlineFallback,
+  );
+}
+
+ProviderAuthenticationMode _providerAuthenticationModeFromJson(
+  dynamic value, {
+  required bool legacyRequiresApiKey,
+}) {
+  if (value is String) {
+    return ProviderAuthenticationMode.values.firstWhere(
+      (mode) => mode.name == value,
+      orElse: () => legacyRequiresApiKey
+          ? ProviderAuthenticationMode.apiKey
+          : ProviderAuthenticationMode.none,
+    );
+  }
+  return legacyRequiresApiKey
+      ? ProviderAuthenticationMode.apiKey
+      : ProviderAuthenticationMode.none;
 }
 
 ModelRouteKind _modelRouteFromJson(dynamic value) {
