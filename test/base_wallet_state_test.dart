@@ -108,4 +108,27 @@ void main() {
       ),
     );
   });
+
+  test('bounded recovery calls return typed native status', () async {
+    final calls = <String>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call.method);
+      return <String, dynamic>{
+        'state': 'absent',
+        'address': '',
+        'authenticationAvailable': true,
+      };
+    });
+
+    final orphan = await NativeBridge.recoverOrphanedSecureEvmAlias();
+    final damaged = await NativeBridge.removeDamagedSecureEvmWallet();
+
+    expect(orphan.state, SecureWalletState.absent);
+    expect(damaged.state, SecureWalletState.absent);
+    expect(calls, <String>[
+      'recoverOrphanedSecureEvmAlias',
+      'removeDamagedSecureEvmWallet',
+    ]);
+  });
 }

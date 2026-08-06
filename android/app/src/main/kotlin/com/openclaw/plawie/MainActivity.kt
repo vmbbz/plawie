@@ -259,6 +259,12 @@ class MainActivity : FlutterActivity() {
                 "deleteSecureEvmWallet" -> {
                     secureEvmWalletManager.deleteWallet(result)
                 }
+                "recoverOrphanedSecureEvmAlias" -> {
+                    secureEvmWalletManager.recoverOrphanedAlias(result)
+                }
+                "removeDamagedSecureEvmWallet" -> {
+                    secureEvmWalletManager.removeDamagedWallet(result)
+                }
                 "getProotPath" -> {
                     result.success(processManager.getProotPath())
                 }

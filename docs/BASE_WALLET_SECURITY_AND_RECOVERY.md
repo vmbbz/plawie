@@ -86,6 +86,33 @@ decisions must use the stable `state` and `errorCode` fields. In particular,
 neither a damaged envelope nor an unknown Keystore probe is inferred as an
 ordinary missing wallet.
 
+### Bounded recovery contract
+
+Recovery is exposed through two dedicated native operations rather than a
+generic reset command:
+
+- `recoverOrphanedSecureEvmAlias` is accepted only in
+  `orphanedKeystoreAlias`. An Android-owned warning must be confirmed, the
+  state is revalidated, and only the known Plawie Keystore alias is removed.
+- `removeDamagedSecureEvmWallet` is accepted only in `envelopeCorrupt`,
+  `keystoreKeyMissing`, or `keystoreKeyInvalidated`. Android shows the
+  destructive warning. If a usable alias remains, a system authentication
+  prompt must succeed before the known envelope and alias are removed. A
+  missing or permanently invalidated key cannot be authenticated, so explicit
+  warning confirmation is the final available approval boundary.
+
+Both operations are exactly-once, report stable cancellation/error codes, and
+clear the busy flag before returning the freshly classified status. They never
+run through create/import and cannot remove a healthy wallet. Ordinary healthy
+wallet removal still authenticates by decrypting the existing envelope first.
+
+The Base wallet page maps each state to its allowed actions. Create/import are
+shown only for `absent`; damaged states offer restore/removal; orphan state
+offers alias cleanup; busy, unknown, and authentication-unavailable states are
+read-only. The agent skill page can display wallet capability and open the
+human wallet manager, but it cannot invoke creation, import, backup, or recovery
+as an agent action.
+
 ## 2026-08-06 device incident
 
 On a Samsung SM-A556E running Android 14, wallet creation failed with

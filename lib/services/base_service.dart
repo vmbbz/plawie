@@ -155,25 +155,8 @@ class BaseService {
       }
 
       final nativeStatus = await NativeBridge.getSecureEvmWalletStatus();
-      _walletStatus = nativeStatus;
-      if (nativeStatus.state == SecureWalletState.healthy) {
-        _applyNativeWalletStatus(nativeStatus);
-      } else if (nativeStatus.state == SecureWalletState.absent) {
-        final storedKey = await _secureStorage.read(key: 'base_private_key');
-        if (storedKey != null && storedKey.trim().isNotEmpty) {
-          // Existing installs need one explicit, device-authenticated migration.
-          Uint8List? normalized;
-          try {
-            normalized = LegacyEvmKeyNormalizer.normalize(storedKey);
-            // Derive only the public address here; do not retain credentials.
-            _walletStatus = nativeStatus.withLegacyWalletAddress(
-              EthPrivateKey(normalized).address.hexEip55,
-            );
-          } finally {
-            normalized?.fillRange(0, normalized.length, 0);
-          }
-        }
-      }
+      final resolvedStatus = await _withLegacyWalletStatus(nativeStatus);
+      _applyWalletStatus(resolvedStatus);
     } on SecureWalletException catch (error) {
       _walletStatus = SecureWalletStatus.unavailable(errorCode: error.code);
       _logger.e(
@@ -192,6 +175,60 @@ class BaseService {
       _eventController.add(
         BaseEvent.error('The Base wallet status could not be loaded.'),
       );
+    }
+  }
+
+  Future<SecureWalletStatus> _withLegacyWalletStatus(
+    SecureWalletStatus nativeStatus,
+  ) async {
+    if (nativeStatus.state != SecureWalletState.absent) return nativeStatus;
+    final storedKey = await _secureStorage.read(key: 'base_private_key');
+    if (storedKey == null || storedKey.trim().isEmpty) return nativeStatus;
+
+    // Existing installs need one explicit, device-authenticated migration.
+    Uint8List? normalized;
+    try {
+      normalized = LegacyEvmKeyNormalizer.normalize(storedKey);
+      // Derive only the public address here; do not retain credentials.
+      return nativeStatus.withLegacyWalletAddress(
+        EthPrivateKey(normalized).address.hexEip55,
+      );
+    } finally {
+      normalized?.fillRange(0, normalized.length, 0);
+    }
+  }
+
+  void _applyWalletStatus(SecureWalletStatus status) {
+    if (status.state == SecureWalletState.healthy) {
+      _applyNativeWalletStatus(status);
+      return;
+    }
+    _walletStatus = status;
+    _ethBalance = Decimal.zero;
+    _usdcBalance = Decimal.zero;
+    _eventController.add(BaseEvent.walletStatusChanged());
+  }
+
+  /// Re-read the native lifecycle contract. Unknown and failed reads remain
+  /// unavailable rather than being interpreted as an empty wallet.
+  Future<SecureWalletStatus> refreshWalletStatus() async {
+    try {
+      final nativeStatus = await NativeBridge.getSecureEvmWalletStatus();
+      final resolvedStatus = await _withLegacyWalletStatus(nativeStatus);
+      _applyWalletStatus(resolvedStatus);
+      return _walletStatus;
+    } on SecureWalletException catch (error) {
+      _applyWalletStatus(
+        SecureWalletStatus.unavailable(errorCode: error.code),
+      );
+      rethrow;
+    } catch (_) {
+      _applyWalletStatus(
+        SecureWalletStatus.unavailable(
+          errorCode: 'WALLET_STATUS_REFRESH_ERROR',
+        ),
+      );
+      rethrow;
     }
   }
 
@@ -274,6 +311,22 @@ class BaseService {
     } finally {
       privateKey?.fillRange(0, privateKey.length, 0);
     }
+  }
+
+  /// Remove only a native alias that has no corresponding wallet envelope.
+  /// Android owns the destructive confirmation; no secret enters Dart.
+  Future<void> recoverOrphanedWalletProtection() async {
+    final nativeStatus = await NativeBridge.recoverOrphanedSecureEvmAlias();
+    final resolvedStatus = await _withLegacyWalletStatus(nativeStatus);
+    _applyWalletStatus(resolvedStatus);
+  }
+
+  /// Remove only a native wallet classified as damaged. Android owns the
+  /// warning and requires device authentication whenever the alias is usable.
+  Future<void> removeDamagedWallet() async {
+    final nativeStatus = await NativeBridge.removeDamagedSecureEvmWallet();
+    final resolvedStatus = await _withLegacyWalletStatus(nativeStatus);
+    _applyWalletStatus(resolvedStatus);
   }
 
   /// One-time migration from the historical FlutterSecureStorage key into the
@@ -560,13 +613,14 @@ class BaseService {
 
   /// Delete wallet from secure storage
   Future<void> deleteWallet() async {
-    if (isConnected) {
-      await NativeBridge.deleteSecureEvmWallet();
+    if (!isConnected) {
+      throw StateError(
+        'Ordinary removal is available only for a healthy secure wallet.',
+      );
     }
+    await NativeBridge.deleteSecureEvmWallet();
     await _secureStorage.delete(key: 'base_private_key');
-    _walletStatus = SecureWalletStatus.absent();
-    _ethBalance = Decimal.zero;
-    _usdcBalance = Decimal.zero;
+    await refreshWalletStatus();
     _eventController.add(BaseEvent.disconnected());
   }
 
@@ -631,6 +685,8 @@ class BaseEvent {
       BaseEvent._(type: BaseEventType.transactionSent, txHash: txHash);
   factory BaseEvent.disconnected() =>
       BaseEvent._(type: BaseEventType.disconnected);
+  factory BaseEvent.walletStatusChanged() =>
+      BaseEvent._(type: BaseEventType.walletStatusChanged);
   factory BaseEvent.error(String message) =>
       BaseEvent._(type: BaseEventType.error, message: message);
 }
@@ -641,6 +697,7 @@ enum BaseEventType {
   balanceUpdated,
   transactionSent,
   disconnected,
+  walletStatusChanged,
   error,
 }
 

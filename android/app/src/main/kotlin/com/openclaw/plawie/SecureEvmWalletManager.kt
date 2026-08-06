@@ -146,7 +146,9 @@ class SecureEvmWalletManager(private val activity: Activity) {
         )
     }
 
-    private fun walletStateSnapshot(): WalletStateSnapshot {
+    private fun walletStateSnapshot(
+        operationInProgress: Boolean = operationActive.get(),
+    ): WalletStateSnapshot {
         val envelopePresent = envelopeFile.baseFile.exists()
         val envelope = readEnvelopeOrNull()
         val auth = authenticationStatus()
@@ -158,7 +160,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
                 keyAliasPresent = keyProbe.aliasPresent,
                 keyInvalidated = keyProbe.invalidated,
                 authenticationAvailable = auth.first,
-                operationActive = operationActive.get(),
+                operationActive = operationInProgress,
             ),
         )
         val securityLevel = keySecurityLevel()
@@ -747,6 +749,187 @@ class SecureEvmWalletManager(private val activity: Activity) {
         }
     }
 
+    /**
+     * Removes only the known Keystore alias when no wallet envelope exists.
+     * This is deliberately separate from create/import and healthy deletion.
+     */
+    fun recoverOrphanedAlias(result: MethodChannel.Result) {
+        val initial = walletStateSnapshot()
+        if (!SecureEvmWalletRecoveryPolicy.canRemoveOrphanedAlias(initial.state)) {
+            result.error(
+                "WALLET_RECOVERY_NOT_ALLOWED",
+                "Orphan cleanup is available only for an orphaned wallet protection record.",
+                null,
+            )
+            return
+        }
+        if (!beginOperation(result)) return
+
+        val completed = AtomicBoolean(false)
+        fun finishError(code: String, message: String) {
+            if (!completed.compareAndSet(false, true)) return
+            endOperation()
+            result.error(code, message.take(240), null)
+        }
+        fun finishSuccess() {
+            if (!completed.compareAndSet(false, true)) return
+            endOperation()
+            try {
+                result.success(status())
+            } catch (error: Exception) {
+                result.error("WALLET_STATUS_ERROR", safeMessage(error), null)
+            }
+        }
+
+        try {
+            AlertDialog.Builder(activity)
+                .setTitle("Remove orphaned wallet protection?")
+                .setMessage(
+                    "Plawie found an Android Keystore protection record without a wallet. " +
+                        "Removing this record cannot restore a wallet, but it allows a new " +
+                        "wallet or backup to be secured on this device.",
+                )
+                .setNegativeButton("Cancel") { _, _ ->
+                    finishError("WALLET_RECOVERY_CANCELLED", "Wallet recovery was cancelled.")
+                }
+                .setPositiveButton("Remove record") { _, _ ->
+                    try {
+                        val current = walletStateSnapshot(operationInProgress = false)
+                        require(
+                            SecureEvmWalletRecoveryPolicy.canRemoveOrphanedAlias(current.state),
+                        ) { "Wallet storage changed; no recovery data was removed." }
+                        require(!current.envelopePresent) {
+                            "A wallet envelope appeared; no protection record was removed."
+                        }
+                        deleteKnownAlias()
+                        finishSuccess()
+                    } catch (error: Exception) {
+                        finishError("WALLET_RECOVERY_ERROR", safeMessage(error))
+                    }
+                }
+                .setOnCancelListener {
+                    finishError("WALLET_RECOVERY_CANCELLED", "Wallet recovery was cancelled.")
+                }
+                .show()
+        } catch (error: Exception) {
+            finishError("WALLET_RECOVERY_ERROR", safeMessage(error))
+        }
+    }
+
+    /**
+     * Removes only an explicitly classified damaged wallet. When its Keystore
+     * key can still be used, Android authentication is mandatory after the
+     * destructive warning. Missing/invalidated keys cannot be authenticated.
+     */
+    fun removeDamagedWallet(result: MethodChannel.Result) {
+        val initial = walletStateSnapshot()
+        if (!SecureEvmWalletRecoveryPolicy.canRemoveDamagedWallet(initial.state)) {
+            result.error(
+                "WALLET_RECOVERY_NOT_ALLOWED",
+                "Damaged-wallet removal is available only for a classified recovery state.",
+                null,
+            )
+            return
+        }
+        if (!beginOperation(result)) return
+
+        val completed = AtomicBoolean(false)
+        fun finishError(code: String, message: String) {
+            if (!completed.compareAndSet(false, true)) return
+            endOperation()
+            result.error(code, message.take(240), null)
+        }
+        fun finishSuccess() {
+            if (!completed.compareAndSet(false, true)) return
+            endOperation()
+            try {
+                result.success(status())
+            } catch (error: Exception) {
+                result.error("WALLET_STATUS_ERROR", safeMessage(error), null)
+            }
+        }
+        fun removeConfirmedArtifacts() {
+            try {
+                deleteEnvelopeAndKey()
+                finishSuccess()
+            } catch (error: Exception) {
+                finishError("WALLET_RECOVERY_ERROR", safeMessage(error))
+            }
+        }
+        fun authenticateThenRemove(snapshot: WalletStateSnapshot) {
+            if (!SecureEvmWalletRecoveryPolicy.requiresAuthentication(
+                    aliasPresent = snapshot.keyProbe.aliasPresent,
+                    keyInvalidated = snapshot.keyProbe.invalidated,
+                )
+            ) {
+                removeConfirmedArtifacts()
+                return
+            }
+            try {
+                ensureAuthenticationAvailable()
+                val key = keyStore.getKey(KEY_ALIAS, null) as? SecretKey
+                if (key == null) {
+                    // The alias became unusable after the warning. It cannot be
+                    // authenticated, and the bounded recovery state remains valid.
+                    removeConfirmedArtifacts()
+                    return
+                }
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.ENCRYPT_MODE, key)
+                requestAuthenticatedCipher(
+                    cipher = cipher,
+                    title = "Remove damaged Base wallet",
+                    description = "Authenticate to permanently remove the unusable wallet record",
+                    onSuccess = { authenticatedCipher ->
+                        try {
+                            authenticatedCipher.doFinal(ByteArray(0))
+                            removeConfirmedArtifacts()
+                        } catch (error: Exception) {
+                            finishError("WALLET_RECOVERY_ERROR", safeMessage(error))
+                        }
+                    },
+                    onError = { code, message -> finishError(code, message) },
+                )
+            } catch (_: KeyPermanentlyInvalidatedException) {
+                // Android cannot authenticate an invalidated key. The explicit
+                // destructive warning is the final available approval boundary.
+                removeConfirmedArtifacts()
+            } catch (error: Exception) {
+                finishError("WALLET_RECOVERY_ERROR", safeMessage(error))
+            }
+        }
+
+        try {
+            AlertDialog.Builder(activity)
+                .setTitle("Remove damaged Base wallet?")
+                .setMessage(
+                    "This permanently removes the unusable encrypted wallet record from this " +
+                        "device. It does not recover funds. Continue only if you have the private " +
+                        "key backup needed to restore this wallet.",
+                )
+                .setNegativeButton("Cancel") { _, _ ->
+                    finishError("WALLET_RECOVERY_CANCELLED", "Wallet recovery was cancelled.")
+                }
+                .setPositiveButton("Remove damaged wallet") { _, _ ->
+                    try {
+                        val current = walletStateSnapshot(operationInProgress = false)
+                        require(
+                            SecureEvmWalletRecoveryPolicy.canRemoveDamagedWallet(current.state),
+                        ) { "Wallet storage changed; no recovery data was removed." }
+                        authenticateThenRemove(current)
+                    } catch (error: Exception) {
+                        finishError("WALLET_RECOVERY_ERROR", safeMessage(error))
+                    }
+                }
+                .setOnCancelListener {
+                    finishError("WALLET_RECOVERY_CANCELLED", "Wallet recovery was cancelled.")
+                }
+                .show()
+        } catch (error: Exception) {
+            finishError("WALLET_RECOVERY_ERROR", safeMessage(error))
+        }
+    }
+
     private fun createBlockedMessage(state: SecureEvmWalletState): String = when (state) {
         SecureEvmWalletState.HEALTHY ->
             "A secure wallet already exists. Remove it before importing another wallet."
@@ -858,9 +1041,14 @@ class SecureEvmWalletManager(private val activity: Activity) {
         level == "StrongBox" || level == "Trusted Environment" || level == "secure hardware"
 
     private fun deleteEnvelopeAndKey() {
-        if (envelopeFile.baseFile.exists() && !envelopeFile.baseFile.delete()) {
+        envelopeFile.delete()
+        if (envelopeFile.baseFile.exists()) {
             throw IllegalStateException("Could not remove the wallet envelope.")
         }
+        deleteKnownAlias()
+    }
+
+    private fun deleteKnownAlias() {
         if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS)
     }
 

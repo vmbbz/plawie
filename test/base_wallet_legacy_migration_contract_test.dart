@@ -12,7 +12,7 @@ void main() {
     expect(source, contains('LegacyEvmKeyNormalizer.normalize(stored)'));
     expect(
       source,
-      contains('nativeStatus.state == SecureWalletState.absent'),
+      contains('nativeStatus.state != SecureWalletState.absent) return'),
     );
     expect(source, contains('nativeStatus.withLegacyWalletAddress('));
     expect(

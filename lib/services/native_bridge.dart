@@ -191,6 +191,12 @@ class NativeBridge {
         <String, dynamic>{'privateKey': privateKey},
       );
 
+  static Future<SecureWalletStatus> recoverOrphanedSecureEvmAlias() =>
+      _invokeSecureWalletStatus('recoverOrphanedSecureEvmAlias');
+
+  static Future<SecureWalletStatus> removeDamagedSecureEvmWallet() =>
+      _invokeSecureWalletStatus('removeDamagedSecureEvmWallet');
+
   static Future<SecureWalletStatus> _invokeSecureWalletStatus(
     String method, [
     Object? arguments,

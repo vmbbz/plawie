@@ -8,7 +8,9 @@ import 'package:decimal/decimal.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/ai_payment_provider_catalog.dart';
 import '../services/base_service.dart';
+import '../services/base_wallet_recovery_view_model.dart';
 import '../services/bridge_quote_service.dart';
+import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
 import '../services/provider_balance_service.dart';
 import '../services/x402_payment_service.dart';
@@ -89,10 +91,12 @@ class _BaseScreenState extends State<BaseScreen> {
   }
 
   Future<void> _refreshBalance() async {
-    if (!_baseService.isConnected) return;
     setState(() => _isLoading = true);
     try {
-      await _baseService.refreshBalance();
+      await _baseService.refreshWalletStatus();
+      if (_baseService.isConnected) {
+        await _baseService.refreshBalance();
+      }
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -233,12 +237,11 @@ class _BaseScreenState extends State<BaseScreen> {
                       ),
                     ],
                   ),
-                  if (_baseService.isConnected)
-                    IconButton(
-                      icon: const Icon(Icons.refresh),
-                      onPressed: _refreshBalance,
-                      tooltip: 'Refresh balance',
-                    ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    onPressed: _isLoading ? null : _refreshBalance,
+                    tooltip: 'Refresh wallet status',
+                  ),
                 ],
               ),
               SliverToBoxAdapter(
@@ -257,6 +260,8 @@ class _BaseScreenState extends State<BaseScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _buildWalletHeader(theme),
+                              const SizedBox(height: 16),
+                              _buildWalletStatePanel(theme),
                               const SizedBox(height: 24),
                               _buildNetworkBanner(theme),
                               const SizedBox(height: 16),
@@ -267,33 +272,8 @@ class _BaseScreenState extends State<BaseScreen> {
                               _buildBridgePanel(theme),
                               const SizedBox(height: 24),
                               _sectionLabel(theme, 'WALLET ACTIONS'),
-                              if (!_baseService.isConnected) ...[
-                                if (_baseService.legacyMigrationRequired)
-                                  StatusCard(
-                                    title: 'Secure existing wallet',
-                                    subtitle:
-                                        'Move the legacy key into Android Keystore protection',
-                                    icon: Icons.security,
-                                    trailing: const Icon(Icons.chevron_right),
-                                    onTap: _migrateLegacyWallet,
-                                  ),
-                                if (!_baseService.legacyMigrationRequired) ...[
-                                  StatusCard(
-                                    title: 'Create Wallet',
-                                    subtitle: 'Generate new Base EVM keypair',
-                                    icon: Icons.add_circle_outline,
-                                    trailing: const Icon(Icons.chevron_right),
-                                    onTap: _showCreateWalletDialog,
-                                  ),
-                                  StatusCard(
-                                    title: 'Import Wallet',
-                                    subtitle: 'Import from private key',
-                                    icon: Icons.file_download,
-                                    trailing: const Icon(Icons.chevron_right),
-                                    onTap: _showImportWalletDialog,
-                                  ),
-                                ],
-                              ],
+                              if (!_baseService.isConnected)
+                                ..._buildRecoveryActionCards(theme),
                               if (_baseService.isConnected) ...[
                                 StatusCard(
                                   title: 'Send ETH',
@@ -333,8 +313,9 @@ class _BaseScreenState extends State<BaseScreen> {
                                   onTap: _showExportKeyDialog,
                                 ),
                                 StatusCard(
-                                  title: 'Disconnect Wallet',
-                                  subtitle: 'Remove wallet from this device',
+                                  title: 'Remove Wallet',
+                                  subtitle:
+                                      'Permanently remove this wallet from the device',
                                   icon: Icons.logout,
                                   trailing: Icon(Icons.chevron_right,
                                       color: theme.colorScheme.error),
@@ -915,22 +896,28 @@ class _BaseScreenState extends State<BaseScreen> {
   }
 
   void _showWalletRequiredDialog() {
+    final view = BaseWalletRecoveryViewModel.fromStatus(
+      _baseService.walletStatus,
+    );
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Base wallet required'),
-        content: const Text(
-            'Create or import a wallet first. Funding a wallet does not authorize an AI payment.'),
+        title: Text(view.title),
+        content: Text(
+          '${view.consequence}\n\n${view.guidance}\n\n'
+          'Funding a wallet never authorizes an AI payment.',
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _showCreateWalletDialog();
-            },
-            child: const Text('Create wallet'),
-          ),
+          if (view.canCreate)
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _showCreateWalletDialog();
+              },
+              child: const Text('Create wallet'),
+            ),
         ],
       ),
     );
@@ -1100,11 +1087,181 @@ class _BaseScreenState extends State<BaseScreen> {
 
   // ── Wallet header card ─────────────────────────────────────────────────────
 
+  Widget _buildWalletStatePanel(ThemeData theme) {
+    final status = _baseService.walletStatus;
+    final view = BaseWalletRecoveryViewModel.fromStatus(status);
+    final requiresAttention = status.state != SecureWalletState.healthy &&
+        status.state != SecureWalletState.absent;
+    final accent = requiresAttention
+        ? theme.colorScheme.error
+        : status.state == SecureWalletState.healthy
+            ? Colors.greenAccent
+            : theme.colorScheme.primary;
+
+    return GlassCard(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  requiresAttention
+                      ? Icons.gpp_maybe_outlined
+                      : Icons.verified_user_outlined,
+                  color: accent,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        view.title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(view.consequence, style: theme.textTheme.bodySmall),
+                      const SizedBox(height: 5),
+                      Text(
+                        view.guidance,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (status.errorCode.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Status code: ${status.errorCode}',
+                style: GoogleFonts.robotoMono(
+                  fontSize: 10,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Divider(color: theme.dividerColor.withValues(alpha: 0.35)),
+            const SizedBox(height: 8),
+            Text(
+              'Signed app updates preserve this wallet. Clearing Plawie app data or '
+              'uninstalling removes it from this device, so export a backup before funding.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildRecoveryActionCards(ThemeData theme) {
+    final view = BaseWalletRecoveryViewModel.fromStatus(
+      _baseService.walletStatus,
+    );
+    final cards = <Widget>[];
+    const chevron = Icon(Icons.chevron_right);
+
+    if (view.canCreate) {
+      cards.add(
+        StatusCard(
+          title: 'Create Wallet',
+          subtitle: 'Generate and protect a new Base EVM keypair',
+          icon: Icons.add_circle_outline,
+          trailing: chevron,
+          onTap: _showCreateWalletDialog,
+        ),
+      );
+    }
+    if (view.canImport) {
+      cards.add(
+        StatusCard(
+          title: 'Import Wallet',
+          subtitle: 'Restore a 32-byte private-key backup',
+          icon: Icons.file_download,
+          trailing: chevron,
+          onTap: _showImportWalletDialog,
+        ),
+      );
+    }
+    if (view.canMigrate) {
+      cards.add(
+        StatusCard(
+          title: 'Secure existing wallet',
+          subtitle: 'Move the historical key into Android Keystore protection',
+          icon: Icons.security,
+          trailing: chevron,
+          onTap: _migrateLegacyWallet,
+        ),
+      );
+    }
+    if (view.canRestoreBackup) {
+      cards.add(
+        StatusCard(
+          title: 'Restore from backup',
+          subtitle: 'Remove the unusable record, then import its private key',
+          icon: Icons.restore,
+          trailing: chevron,
+          onTap: _recoverAndImportWallet,
+        ),
+      );
+    }
+    if (view.canRemoveDamaged) {
+      cards.add(
+        StatusCard(
+          title: 'Remove damaged wallet',
+          subtitle: 'Permanently remove only the classified unusable record',
+          icon: Icons.delete_forever_outlined,
+          trailing: Icon(Icons.chevron_right, color: theme.colorScheme.error),
+          onTap: _removeDamagedWallet,
+        ),
+      );
+    }
+    if (view.canRemoveOrphanedAlias) {
+      cards.add(
+        StatusCard(
+          title: 'Remove orphaned protection record',
+          subtitle:
+              'Delete the lone Plawie Keystore alias; no wallet is present',
+          icon: Icons.cleaning_services_outlined,
+          trailing: Icon(Icons.chevron_right, color: theme.colorScheme.error),
+          onTap: _removeOrphanedWalletProtection,
+        ),
+      );
+    }
+    if (!view.actionsEnabled) {
+      cards.add(
+        StatusCard(
+          title: 'Retry wallet status',
+          subtitle: view.guidance,
+          icon: Icons.refresh,
+          trailing: chevron,
+          onTap: _isLoading ? null : _refreshBalance,
+        ),
+      );
+    }
+    return cards;
+  }
+
   Widget _buildWalletHeader(ThemeData theme) {
     final addr = _baseService.address;
+    final recovery = BaseWalletRecoveryViewModel.fromStatus(
+      _baseService.walletStatus,
+    );
     final shortAddr = addr != null && addr.length >= 8
         ? '${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}'
-        : 'Not Connected';
+        : recovery.title;
 
     return Container(
       width: double.infinity,
@@ -1485,13 +1642,76 @@ class _BaseScreenState extends State<BaseScreen> {
 
   // ── Dialogs ────────────────────────────────────────────────────────────────
 
+  Future<bool> _runWalletRecovery(
+    Future<void> Function() operation,
+    String successMessage,
+  ) async {
+    if (_isLoading) return false;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      await operation();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(successMessage)),
+        );
+      }
+      return true;
+    } on SecureWalletException catch (error) {
+      if (error.code != 'WALLET_RECOVERY_CANCELLED' && mounted) {
+        setState(() => _error = error.toString());
+      }
+      return false;
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+      return false;
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _recoverAndImportWallet() async {
+    final recovered = await _runWalletRecovery(
+      _baseService.removeDamagedWallet,
+      'Damaged wallet record removed. Restore your backup now.',
+    );
+    if (!recovered || !mounted) return;
+    final view = BaseWalletRecoveryViewModel.fromStatus(
+      _baseService.walletStatus,
+    );
+    if (view.canImport) {
+      _showImportWalletDialog();
+    } else {
+      setState(() => _error = view.guidance);
+    }
+  }
+
+  Future<void> _removeDamagedWallet() async {
+    await _runWalletRecovery(
+      _baseService.removeDamagedWallet,
+      'Damaged wallet record removed.',
+    );
+  }
+
+  Future<void> _removeOrphanedWalletProtection() async {
+    await _runWalletRecovery(
+      _baseService.recoverOrphanedWalletProtection,
+      'Orphaned wallet protection record removed.',
+    );
+  }
+
   void _showCreateWalletDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Create Base Wallet'),
         content: const Text(
-            'Generate a new EVM keypair on Base. Store your private key safely — it cannot be recovered if lost.'),
+          'Generate a new EVM keypair protected by Android Keystore and your '
+          'device lock. Signed app updates preserve it, but clearing app data '
+          'or uninstalling removes it. Export a private-key backup before funding.',
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
@@ -1520,13 +1740,26 @@ class _BaseScreenState extends State<BaseScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Import Wallet'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(
-            labelText: 'Private Key (hex)',
-            hintText: '0x... or raw hex',
-          ),
-          obscureText: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Plawie does not persist this input in Dart. Temporary key bytes are '
+              'passed to the native Android wallet manager and zeroed after the attempt.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              decoration: const InputDecoration(
+                labelText: 'Private Key (hex)',
+                hintText: '0x... or raw 64-character hex',
+              ),
+              obscureText: true,
+              autocorrect: false,
+              enableSuggestions: false,
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -1789,9 +2022,11 @@ class _BaseScreenState extends State<BaseScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Disconnect Wallet'),
+        title: const Text('Remove Base Wallet'),
         content: const Text(
-            'This will remove your private key from this device. Make sure you have a backup first.'),
+          'This permanently removes the encrypted wallet and Android Keystore '
+          'protection key from this device. Make sure you have exported a backup first.',
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
@@ -1800,10 +2035,16 @@ class _BaseScreenState extends State<BaseScreen> {
                 backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () async {
               Navigator.pop(ctx);
-              await _baseService.deleteWallet();
-              setState(() {});
+              setState(() => _isLoading = true);
+              try {
+                await _baseService.deleteWallet();
+              } catch (error) {
+                if (mounted) setState(() => _error = error.toString());
+              } finally {
+                if (mounted) setState(() => _isLoading = false);
+              }
             },
-            child: const Text('Disconnect'),
+            child: const Text('Remove wallet'),
           ),
         ],
       ),

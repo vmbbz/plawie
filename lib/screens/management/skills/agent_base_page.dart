@@ -7,7 +7,9 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:decimal/decimal.dart';
 import '../../../services/skills_service.dart';
 import '../../../services/base_service.dart';
+import '../../../services/base_wallet_recovery_view_model.dart';
 import '../../../app.dart';
+import '../../base_screen.dart';
 
 /// Base Chain skill page — device-native wallet powered by BaseService.
 /// Always available (no gateway install needed).
@@ -53,6 +55,13 @@ class _AgentBasePageState extends State<AgentBasePage>
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _openWalletManager() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => const BaseScreen()),
+    );
+    if (mounted) await _load();
   }
 
   @override
@@ -114,8 +123,9 @@ class _AgentBasePageState extends State<AgentBasePage>
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Container(
-              color:
-                  Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.5),
+              color: Theme.of(context)
+                  .scaffoldBackgroundColor
+                  .withValues(alpha: 0.5),
             ),
           ),
         ),
@@ -127,6 +137,9 @@ class _AgentBasePageState extends State<AgentBasePage>
 
   Widget _buildBalanceCard(BuildContext context) {
     final connected = _baseService.isConnected;
+    final recovery = BaseWalletRecoveryViewModel.fromStatus(
+      _baseService.walletStatus,
+    );
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -211,33 +224,31 @@ class _AgentBasePageState extends State<AgentBasePage>
               child: Text(
                 _shortAddr(_baseService.address ?? ''),
                 style: GoogleFonts.robotoMono(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 11),
+                    color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
               ),
             ),
           ] else ...[
             Text(
-              'No wallet connected',
+              recovery.title,
               style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.75), fontSize: 14),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              recovery.guidance,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.65),
+                fontSize: 11,
+              ),
             ),
             const SizedBox(height: 8),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: const Color(0xFF0052FF)),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Create Wallet'),
-              onPressed: () async {
-                setState(() => _loading = true);
-                try {
-                  await _baseService.createWallet();
-                } catch (e) {
-                  if (mounted) setState(() => _error = e.toString());
-                } finally {
-                  if (mounted) setState(() => _loading = false);
-                }
-              },
+              icon: const Icon(Icons.settings_outlined, size: 18),
+              label: const Text('Manage Wallet'),
+              onPressed: _openWalletManager,
             ),
           ],
         ],
@@ -281,8 +292,7 @@ class _AgentBasePageState extends State<AgentBasePage>
           OutlinedButton(
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Colors.purple),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
@@ -310,8 +320,7 @@ class _AgentBasePageState extends State<AgentBasePage>
   Widget _buildTabBar(BuildContext context, ThemeData theme) {
     return TabBar(
       controller: _tabs,
-      labelStyle:
-          GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13),
+      labelStyle: GoogleFonts.outfit(fontWeight: FontWeight.w600, fontSize: 13),
       tabs: const [
         Tab(text: 'Actions'),
         Tab(text: 'Skill Docs'),
@@ -334,13 +343,27 @@ class _AgentBasePageState extends State<AgentBasePage>
 
   Widget _buildActionsTab(BuildContext context, ThemeData theme) {
     if (!_baseService.isConnected) {
+      final recovery = BaseWalletRecoveryViewModel.fromStatus(
+        _baseService.walletStatus,
+      );
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
-          child: Text(
-            'Create a wallet above to use Base actions.',
-            style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-            textAlign: TextAlign.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                recovery.guidance,
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _openWalletManager,
+                icon: const Icon(Icons.account_balance_wallet_outlined),
+                label: const Text('Open wallet manager'),
+              ),
+            ],
           ),
         ),
       );
@@ -349,16 +372,20 @@ class _AgentBasePageState extends State<AgentBasePage>
       children: [
         _actionRow(context, Icons.account_balance_wallet, 'Check Balance',
             'Returns ETH + USDC balance', () => _runAction('get_balance')),
-        _actionRow(context, Icons.send, 'Send ETH',
+        _actionRow(
+            context,
+            Icons.send,
+            'Send ETH',
             'Transfer ETH to address or .base.eth',
             () => _promptSend(context, 'eth')),
         _actionRow(context, Icons.attach_money, 'Send USDC',
-            'Transfer USDC stablecoin',
-            () => _promptSend(context, 'usdc')),
+            'Transfer USDC stablecoin', () => _promptSend(context, 'usdc')),
         _actionRow(context, Icons.person_search, 'Resolve Basename',
-            'Look up a .base.eth address',
-            () => _promptResolve(context)),
-        _actionRow(context, Icons.history, 'View History',
+            'Look up a .base.eth address', () => _promptResolve(context)),
+        _actionRow(
+            context,
+            Icons.history,
+            'View History',
             'Last 10 transactions from Basescan',
             () => _runAction('get_history')),
         const SizedBox(height: 16),
@@ -382,8 +409,7 @@ class _AgentBasePageState extends State<AgentBasePage>
       ),
       title: Text(title,
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle,
-          style: const TextStyle(fontSize: 11)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
       trailing: const Icon(Icons.chevron_right, size: 18),
       onTap: onTap,
     );
@@ -483,8 +509,8 @@ class _AgentBasePageState extends State<AgentBasePage>
             const SizedBox(height: 12),
             TextField(
               controller: amtCtrl,
-              decoration: InputDecoration(
-                  labelText: 'Amount (${token.toUpperCase()})'),
+              decoration:
+                  InputDecoration(labelText: 'Amount (${token.toUpperCase()})'),
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
             ),
@@ -492,8 +518,7 @@ class _AgentBasePageState extends State<AgentBasePage>
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               final to = toCtrl.text.trim();
@@ -554,8 +579,7 @@ class _AgentBasePageState extends State<AgentBasePage>
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
               final name = ctrl.text.trim();
@@ -609,8 +633,7 @@ class _AgentBasePageState extends State<AgentBasePage>
       decoration: BoxDecoration(
         color: AppColors.statusAmber.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border:
-            Border.all(color: AppColors.statusAmber.withValues(alpha: 0.3)),
+        border: Border.all(color: AppColors.statusAmber.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
@@ -620,8 +643,8 @@ class _AgentBasePageState extends State<AgentBasePage>
           Expanded(
             child: Text(
               _error ?? 'Something went wrong',
-              style: const TextStyle(
-                  color: AppColors.statusAmber, fontSize: 12),
+              style:
+                  const TextStyle(color: AppColors.statusAmber, fontSize: 12),
             ),
           ),
           TextButton(
@@ -639,4 +662,3 @@ class _AgentBasePageState extends State<AgentBasePage>
     return '${addr.substring(0, 6)}…${addr.substring(addr.length - 4)}';
   }
 }
-
