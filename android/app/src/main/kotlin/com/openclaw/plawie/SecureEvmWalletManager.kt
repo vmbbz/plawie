@@ -87,21 +87,13 @@ class SecureEvmWalletManager(private val activity: Activity) {
     private val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
     fun status(): Map<String, Any> {
-        val envelopePresent = envelopeFile.baseFile.exists()
-        val envelope = readEnvelopeOrNull()
-        val auth = authenticationStatus()
-        val keyProbe = probeEnvelopeKey(envelope, envelopePresent)
-        val state = SecureEvmWalletStateClassifier.classify(
-            WalletStorageFacts(
-                envelopePresent = envelopePresent,
-                envelopeParseable = envelope != null,
-                keyAliasPresent = keyProbe.aliasPresent,
-                keyInvalidated = keyProbe.invalidated,
-                authenticationAvailable = auth.first,
-                operationActive = operationActive.get(),
-            ),
-        )
-        val securityLevel = keySecurityLevel()
+        val snapshot = walletStateSnapshot()
+        val envelopePresent = snapshot.envelopePresent
+        val envelope = snapshot.envelope
+        val auth = snapshot.authentication
+        val keyProbe = snapshot.keyProbe
+        val state = snapshot.state
+        val securityLevel = snapshot.securityLevel
         Log.i(
             TAG,
             "status state=${state.wireName} envelopePresent=$envelopePresent " +
@@ -132,9 +124,36 @@ class SecureEvmWalletManager(private val activity: Activity) {
         )
     }
 
+    private fun walletStateSnapshot(): WalletStateSnapshot {
+        val envelopePresent = envelopeFile.baseFile.exists()
+        val envelope = readEnvelopeOrNull()
+        val auth = authenticationStatus()
+        val keyProbe = probeEnvelopeKey(envelope, envelopePresent)
+        val state = SecureEvmWalletStateClassifier.classify(
+            WalletStorageFacts(
+                envelopePresent = envelopePresent,
+                envelopeParseable = envelope != null,
+                keyAliasPresent = keyProbe.aliasPresent,
+                keyInvalidated = keyProbe.invalidated,
+                authenticationAvailable = auth.first,
+                operationActive = operationActive.get(),
+            ),
+        )
+        val securityLevel = keySecurityLevel()
+        return WalletStateSnapshot(
+            envelopePresent = envelopePresent,
+            envelope = envelope,
+            authentication = auth,
+            keyProbe = keyProbe,
+            state = state,
+            securityLevel = securityLevel,
+        )
+    }
+
     fun createWallet(result: MethodChannel.Result) {
-        if (envelopeFile.baseFile.exists()) {
-            result.error("WALLET_EXISTS", "A secure wallet already exists.", null)
+        val state = walletStateSnapshot().state
+        if (!state.canCreate) {
+            result.error(state.createErrorCode, createBlockedMessage(state), null)
             return
         }
         val pair = Keys.createEcKeyPair()
@@ -144,9 +163,10 @@ class SecureEvmWalletManager(private val activity: Activity) {
     }
 
     fun importWallet(privateKey: ByteArray?, result: MethodChannel.Result) {
-        if (envelopeFile.baseFile.exists()) {
+        val state = walletStateSnapshot().state
+        if (!state.canCreate) {
             privateKey?.let { Arrays.fill(it, 0) }
-            result.error("WALLET_EXISTS", "Remove the existing wallet before importing another.", null)
+            result.error(state.createErrorCode, createBlockedMessage(state), null)
             return
         }
         if (privateKey == null || privateKey.size != 32) {
@@ -345,6 +365,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
                                 ciphertext = encrypted,
                             ),
                         )
+                        endOperation()
                         result.success(status())
                     } catch (error: Exception) {
                         result.error("WALLET_STORE_ERROR", safeMessage(error), null)
@@ -578,6 +599,25 @@ class SecureEvmWalletManager(private val activity: Activity) {
         } catch (_: Exception) {
             "unknown"
         }
+    }
+
+    private fun createBlockedMessage(state: SecureEvmWalletState): String = when (state) {
+        SecureEvmWalletState.HEALTHY ->
+            "A secure wallet already exists. Remove it before importing another wallet."
+        SecureEvmWalletState.AUTHENTICATION_UNAVAILABLE ->
+            "Set up a supported device lock before creating or importing a wallet."
+        SecureEvmWalletState.ENVELOPE_CORRUPT ->
+            "The wallet envelope is damaged. Restore or remove it through explicit recovery."
+        SecureEvmWalletState.KEY_MISSING ->
+            "The wallet protection key is missing. Restore or remove the damaged wallet explicitly."
+        SecureEvmWalletState.KEY_INVALIDATED ->
+            "Device security invalidated the wallet key. Restore the wallet from backup."
+        SecureEvmWalletState.ORPHANED_ALIAS ->
+            "An orphaned wallet protection record must be removed through explicit recovery first."
+        SecureEvmWalletState.OPERATION_BUSY ->
+            "Another wallet authentication is already active."
+        SecureEvmWalletState.ABSENT ->
+            "Wallet creation is available."
     }
 
     /**
@@ -911,6 +951,15 @@ class SecureEvmWalletManager(private val activity: Activity) {
     private data class EnvelopeKeyProbe(
         val aliasPresent: Boolean,
         val invalidated: Boolean,
+    )
+
+    private data class WalletStateSnapshot(
+        val envelopePresent: Boolean,
+        val envelope: WalletEnvelope?,
+        val authentication: Pair<Boolean, String>,
+        val keyProbe: EnvelopeKeyProbe,
+        val state: SecureEvmWalletState,
+        val securityLevel: String,
     )
 
     private data class TransactionRequest(

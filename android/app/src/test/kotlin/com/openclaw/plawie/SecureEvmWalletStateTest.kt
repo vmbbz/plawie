@@ -136,7 +136,13 @@ class SecureEvmWalletStateTest {
         assertEquals("WALLET_OPERATION_BUSY", SecureEvmWalletState.OPERATION_BUSY.errorCode)
 
         assertEquals(true, SecureEvmWalletState.ABSENT.canCreate)
+        assertEquals("", SecureEvmWalletState.ABSENT.createErrorCode)
+        assertEquals("WALLET_EXISTS", SecureEvmWalletState.HEALTHY.createErrorCode)
         assertEquals(false, SecureEvmWalletState.ORPHANED_ALIAS.canCreate)
+        assertEquals(
+            "WALLET_ORPHANED_KEY_ALIAS",
+            SecureEvmWalletState.ORPHANED_ALIAS.createErrorCode,
+        )
         assertEquals(false, SecureEvmWalletState.ENVELOPE_CORRUPT.canCreate)
         assertEquals(false, SecureEvmWalletState.OPERATION_BUSY.canRestore)
         assertEquals(true, SecureEvmWalletState.KEY_MISSING.canRestore)

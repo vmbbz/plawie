@@ -31,6 +31,13 @@ internal enum class SecureEvmWalletState(
     val canCreate: Boolean
         get() = this == ABSENT
 
+    val createErrorCode: String
+        get() = when (this) {
+            ABSENT -> ""
+            HEALTHY -> "WALLET_EXISTS"
+            else -> errorCode
+        }
+
     val canRestore: Boolean
         get() = this != OPERATION_BUSY
 
