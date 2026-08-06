@@ -1,5 +1,10 @@
 # External Wallet Bridge Execution Implementation Plan
 
+> **Superseded:** Do not execute this plan. It is replaced by
+> `docs/superpowers/plans/2026-08-07-hybrid-base-funding.md`, which corrects the
+> deprecated Solana signing flow and adds the approved strict Relay funding
+> strategy.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn the existing Ethereum, Solana, and Robinhood Chain to Base-USDC quote flow into a fresh-quote, externally signed, resumable LI.FI bridge flow with exact user review and settlement receipts.
