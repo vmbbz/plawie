@@ -77,6 +77,26 @@ the same exception in the Base-service status call. The app had passed
 envelope had been written. The fix separates the masks, adds regression tests,
 and makes status fail closed on OEM `SecurityException` responses.
 
+## 2026-08-06 legacy migration incident
+
+The same device retained a historical FlutterSecureStorage wallet whose public
+address could be derived, but `Secure existing wallet` failed in Dart with
+`FormatException: Legacy wallet key is invalid.` Android authentication and
+Keystore import were never reached, and no native envelope had been written.
+
+The historical Web3dart creator serialized its scalar through a signed,
+minimal ASN.1 integer representation. Valid secp256k1 keys could therefore be
+33 bytes with a zero sign prefix or shorter than 32 bytes when high-order bytes
+were zero. The migration incorrectly accepted only exactly 32 serialized
+bytes.
+
+Legacy migration now accepts only those bounded historical forms, normalizes
+them to exactly 32 bytes, validates the secp256k1 range, and proves the derived
+address is unchanged. Android must then report the same address from the new
+envelope before Dart removes the legacy record. Authentication cancellation,
+invalid input, or any identity mismatch retains the legacy record. No key,
+ciphertext, or signature is written to logs.
+
 ## Mainnet payment boundary
 
 Base Mainnet does not remove the approval boundary. Plawie must show the asset,
