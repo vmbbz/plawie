@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:clawa/services/capabilities/ai_payments_capability.dart';
 import 'package:clawa/services/gateway_tool_catalog.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -47,5 +48,48 @@ void main() {
         'avatar_status',
       ]),
     );
+  });
+
+  test('payment and bridge node commands are explicitly allowlisted', () {
+    final capability = AiPaymentsCapability();
+    final declaredCommands = <String>{};
+
+    for (final command in capability.commands) {
+      if (command.contains('.')) {
+        declaredCommands.add(command);
+      } else {
+        declaredCommands.add('${capability.name}.$command');
+        declaredCommands.add('${capability.name}_$command');
+      }
+    }
+
+    expect(
+      declaredCommands,
+      equals(const <String>{
+        'payments.capabilities',
+        'payments.status',
+        'payments.receipts',
+        'payments_capabilities',
+        'payments_status',
+        'payments_receipts',
+        'bridge.capabilities',
+        'bridge.quote',
+      }),
+    );
+    expect(
+      GatewayToolCatalog.mobileNodeAllowCommands,
+      containsAll(declaredCommands),
+    );
+    for (final forbiddenCommand in const <String>[
+      'payments.approve',
+      'payments.sign',
+      'payments.submit',
+      'bridge.execute',
+    ]) {
+      expect(
+        GatewayToolCatalog.mobileNodeAllowCommands,
+        isNot(contains(forbiddenCommand)),
+      );
+    }
   });
 }
