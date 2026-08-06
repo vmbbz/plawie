@@ -68,6 +68,23 @@ retains the atomically verified wallet and returns
 `WALLET_CREATED_VERIFICATION_PENDING`; a cryptographic identity mismatch
 removes that newly created attempt.
 
+### Bounded Venice identity signing
+
+Venice wallet authentication uses a dedicated native SIWE operation; it does
+not add `personal_sign`, arbitrary typed-data signing, or a caller-controlled
+domain or statement. Native policy builds `Sign in to Venice AI` itself and
+accepts only these exact HTTPS resources:
+
+- `GET /api/v1/models`;
+- `POST /api/v1/chat/completions`;
+- `GET /api/v1/x402/balance/{the same secure wallet address}`.
+
+`POST /api/v1/responses` remains disabled until its proxy contract is enabled
+and tested. Every inference authorization uses a fresh alphanumeric nonce and
+a lifetime of at most five minutes, verifies the returned payer and exact SIWE
+message in Dart, and is never cached. The existing balance-read compatibility
+path may cache its exact identity header in memory for up to five minutes.
+
 ## Recovery states
 
 | State | User-visible behavior | Recovery |
