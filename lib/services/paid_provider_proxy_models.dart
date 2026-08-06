@@ -120,9 +120,13 @@ class PaidProviderProxyRequest {
 class PaidProviderProxyResponse {
   const PaidProviderProxyResponse({
     required this.statusCode,
-    required this.bodyBytes,
+    this.bodyBytes,
+    this.bodyStream,
     this.headers = const <String, String>{},
-  });
+  }) : assert(
+          (bodyBytes == null) != (bodyStream == null),
+          'Provide exactly one response body source.',
+        );
 
   factory PaidProviderProxyResponse.json({
     int statusCode = HttpStatus.ok,
@@ -139,9 +143,28 @@ class PaidProviderProxyResponse {
     );
   }
 
+  factory PaidProviderProxyResponse.stream({
+    required int statusCode,
+    required Stream<List<int>> bodyStream,
+    Map<String, String> headers = const <String, String>{},
+  }) {
+    return PaidProviderProxyResponse(
+      statusCode: statusCode,
+      bodyStream: bodyStream,
+      headers: headers,
+    );
+  }
+
   final int statusCode;
-  final List<int> bodyBytes;
+  final List<int>? bodyBytes;
+  final Stream<List<int>>? bodyStream;
   final Map<String, String> headers;
+
+  Stream<List<int>> openBodyStream() {
+    final stream = bodyStream;
+    if (stream != null) return stream;
+    return Stream<List<int>>.value(bodyBytes!);
+  }
 }
 
 typedef PaidProviderProxyHandler = Future<PaidProviderProxyResponse> Function(

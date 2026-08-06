@@ -175,28 +175,28 @@ class PaidProviderProxyService {
       ));
       await _writeResponse(request.response, response);
     } on _RequestBodyTooLargeException {
-      await _writeError(
+      await _safeWriteError(
         request.response,
         HttpStatus.requestEntityTooLarge,
         'request_too_large',
         'Request body exceeds the local proxy limit.',
       );
     } on PaidProviderProxyException catch (error) {
-      await _writeError(
+      await _safeWriteError(
         request.response,
         error.statusCode,
         error.code,
         error.message,
       );
     } on FormatException {
-      await _writeError(
+      await _safeWriteError(
         request.response,
         HttpStatus.badRequest,
         'invalid_json',
         'Expected a valid JSON object.',
       );
     } catch (_) {
-      await _writeError(
+      await _safeWriteError(
         request.response,
         HttpStatus.internalServerError,
         'proxy_error',
@@ -256,6 +256,21 @@ class PaidProviderProxyService {
     );
   }
 
+  Future<void> _safeWriteError(
+    HttpResponse response,
+    int statusCode,
+    String code,
+    String message,
+  ) async {
+    try {
+      await _writeError(response, statusCode, code, message);
+    } catch (_) {
+      try {
+        await response.close();
+      } catch (_) {}
+    }
+  }
+
   Future<void> _writeResponse(
     HttpResponse response,
     PaidProviderProxyResponse proxyResponse,
@@ -263,8 +278,12 @@ class PaidProviderProxyService {
     response.statusCode = proxyResponse.statusCode;
     proxyResponse.headers.forEach(response.headers.set);
     response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
-    response.contentLength = proxyResponse.bodyBytes.length;
-    response.add(proxyResponse.bodyBytes);
+    final bodyBytes = proxyResponse.bodyBytes;
+    if (bodyBytes != null) response.contentLength = bodyBytes.length;
+    await for (final chunk in proxyResponse.openBodyStream()) {
+      response.add(chunk);
+      await response.flush();
+    }
     await response.close();
   }
 
