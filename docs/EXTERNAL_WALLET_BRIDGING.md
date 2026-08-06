@@ -1,0 +1,54 @@
+# External Wallet Bridging
+
+Status: dependency baseline only
+
+Date reviewed: 2026-08-07
+
+## Reown dependency and license review
+
+Pub resolved `reown_appkit` **1.7.6** (`pubspec.lock` SHA-256
+`6ea7d0145608d41f38c2286119dfbf1cdabad6644ebe8c8ecb13c0177dae14ee`).
+The reviewed license text is the package artifact
+`reown_appkit-1.7.6/LICENSE`, SHA-256
+`5EB00FF6EA068D9DBAB1AFB20E6D44B5992A6955E7623D1271C5BE98947861E6`.
+It identifies itself as the **Reown Community License Agreement**, released
+20 August 2025; the package does not declare an SPDX license identifier.
+
+For a distributed application using AppKit, that license requires Plawie to:
+
+- include `Portions © 2025 Reown, Inc. All Rights Reserved` in product notices,
+  a readme, or an about surface;
+- provide a copy of the license with the application;
+- satisfy the applicable logo and branding requirements; and
+- use the Reown network unless Reown explicitly approves otherwise.
+
+The license also states royalty-free thresholds of 2,500,000 remote processing
+calls per month and 500 monthly active users, after which a commercial license
+is required. This records the package text, not a conclusion that Plawie's
+planned use qualifies for a particular tier or for production release.
+
+## Service terms requiring release-time confirmation
+
+The package license alone does not establish the applicable Reown account,
+project, subscription, billing, branding entitlement, acceptable-use rules,
+privacy/data-processing terms, geographic restrictions, or how current usage is
+measured. Before enabling connected mode, the release owner must review and
+accept the then-current [Reown Terms of Service](https://reown.com/terms-of-service),
+[pricing and project limits](https://reown.com/pricing), and
+[Flutter project configuration guidance](https://docs.reown.com/appkit/flutter/cloud/relay).
+The release must use a valid Plawie-specific project ID, restrict it to the
+shipped application identity where supported, keep it out of source control,
+and confirm that the selected plan and branding treatment cover expected use.
+
+## Task 1 release decision
+
+This round adds dependencies only and does not enable wallet connection or
+transaction execution. Connected LI.FI execution remains compile-time disabled
+by default. It must remain disabled unless a valid Reown project configuration
+is supplied and the release owner completes and records the current license,
+service-terms, attribution, branding, and projected-usage check. An unresolved
+check requires shipping with connected mode disabled; dependency resolution is
+not production approval.
+
+Task 11 will expand this document with operational architecture, threat model,
+recovery, release gates, and user-flow guidance.
