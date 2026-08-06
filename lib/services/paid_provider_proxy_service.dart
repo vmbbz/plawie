@@ -178,6 +178,9 @@ class PaidProviderProxyService {
         provider: route.provider,
         route: route,
         gatewayModelId: gatewayModelId,
+        exactJsonBodyBytes: jsonBody == null
+            ? null
+            : List<int>.unmodifiable(utf8.encode(jsonEncode(jsonBody))),
         jsonBody: jsonBody,
       ));
       await _writeResponse(request.response, response);

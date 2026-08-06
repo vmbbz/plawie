@@ -110,6 +110,7 @@ class PaidProviderProxyRequest {
     required this.provider,
     required this.route,
     this.gatewayModelId,
+    this.exactJsonBodyBytes,
     this.jsonBody,
   });
 
@@ -119,7 +120,18 @@ class PaidProviderProxyRequest {
   /// Original namespaced model selected in OpenClaw. This is retained only as
   /// process-local authorization metadata; it is never sent upstream.
   final String? gatewayModelId;
+
+  /// Canonical mapped request bytes generated once at the loopback boundary.
+  /// Paid retries reuse this exact immutable sequence.
+  final List<int>? exactJsonBodyBytes;
   final Map<String, dynamic>? jsonBody;
+
+  List<int>? get encodedJsonBodyBytes {
+    final exact = exactJsonBodyBytes;
+    if (exact != null) return exact;
+    final body = jsonBody;
+    return body == null ? null : utf8.encode(jsonEncode(body));
+  }
 }
 
 class PaidProviderProxyResponse {

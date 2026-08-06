@@ -239,6 +239,9 @@ class X402PaymentReceipt {
     this.resourceUrl,
     this.challengeHash,
     this.httpStatus,
+    this.requestFingerprint,
+    this.modelId,
+    this.paidRetryConsumed = false,
   });
 
   final String intentId;
@@ -255,6 +258,9 @@ class X402PaymentReceipt {
   final String? resourceUrl;
   final String? challengeHash;
   final int? httpStatus;
+  final String? requestFingerprint;
+  final String? modelId;
+  final bool paidRetryConsumed;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'intentId': intentId,
@@ -271,6 +277,10 @@ class X402PaymentReceipt {
         if (resourceUrl != null) 'resourceUrl': resourceUrl,
         if (challengeHash != null) 'challengeHash': challengeHash,
         if (httpStatus != null) 'httpStatus': httpStatus,
+        if (requestFingerprint != null)
+          'requestFingerprint': requestFingerprint,
+        if (modelId != null) 'modelId': modelId,
+        if (paidRetryConsumed) 'paidRetryConsumed': true,
       };
 
   factory X402PaymentReceipt.fromJson(Map<String, dynamic> json) {
@@ -301,6 +311,9 @@ class X402PaymentReceipt {
       resourceUrl: json['resourceUrl']?.toString(),
       challengeHash: json['challengeHash']?.toString(),
       httpStatus: (json['httpStatus'] as num?)?.toInt(),
+      requestFingerprint: json['requestFingerprint']?.toString(),
+      modelId: json['modelId']?.toString(),
+      paidRetryConsumed: json['paidRetryConsumed'] == true,
     );
   }
 }
@@ -432,6 +445,9 @@ class X402PaymentApprovalService {
     String? errorCode,
     String? providerId,
     int? httpStatus,
+    String? requestFingerprint,
+    String? modelId,
+    bool paidRetryConsumed = false,
   }) {
     final intent = _requireActive(intentId);
     if (!const {
@@ -459,6 +475,9 @@ class X402PaymentApprovalService {
       resourceUrl: intent.requestUrl.toString(),
       challengeHash: intent.challenge.challengeHash,
       httpStatus: httpStatus,
+      requestFingerprint: requestFingerprint,
+      modelId: modelId,
+      paidRetryConsumed: paidRetryConsumed,
     );
   }
 

@@ -1380,14 +1380,18 @@ Exit criteria: a payment signature cannot be produced without an approved intent
 and a fresh device-authenticated cryptographic unlock; the Gateway and agent
 cannot access raw key material.
 
-### Phase 8 — x402 v2 intent and approval on Base Mainnet (implemented;
-device settlement proof pending)
+### Phase 8 — x402 v2 intent and approval on Base Mainnet (transport core
+implemented; app integration and device settlement proof pending)
 
 - Add v2 `PAYMENT-REQUIRED` parsing and provider
   host/network/token/facilitator allowlists.
 - Add `PendingPaymentIntent` and receipt records.
-- Add the explicit approval screen and cancellation/expiry behavior.
-- Add the Gateway-compatible provider transport and approval bridge.
+- The foreground-only approval broker and cancellation/expiry behavior are
+  implemented. The canonical visible approval dialog is wired in the later app
+  lifecycle/UI phase; until then, listenerless requests fail closed.
+- The Gateway-compatible BlockRun transport handler and approval bridge are
+  implemented. Proxy startup, Gateway configuration injection, and the
+  top-level foreground listener remain separate integration gates.
 - Add `exact/eip3009` EIP-712 construction and the approval-bound signer; do not
   call generic `sendUsdc`.
 - Retry the byte-identical method/URL/body once with the provider's documented
@@ -1405,10 +1409,11 @@ Exit criteria: reject/cancel/expiry paths are safe, approval is required, exact
 payment details are displayed and validated, and the provider accepts one
 approved payment in a controlled test with no automatic second attempt.
 
-Code-level parsing, approval, exact-retry, terminal receipt, redirect, and
-single-attempt tests pass. The remaining release gate is one user-approved
-Base Mainnet settlement against the current live provider challenge on a
-hardware-backed connected Android device.
+Code-level parsing, foreground-broker, exact immutable-body retry, terminal
+receipt, redirect, recovery, and single-attempt tests pass. The remaining
+release gates are proxy/Gateway lifecycle wiring, the canonical visible
+approval dialog, and one user-approved Base Mainnet settlement against the
+current live provider challenge on a hardware-backed connected Android device.
 
 ### Phase 9 — Provider-specific live validation (balance/read-only agent
 contract implemented; live provider proof pending)

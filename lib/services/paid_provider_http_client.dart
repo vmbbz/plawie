@@ -57,6 +57,7 @@ class PaidProviderHttpClient {
   Future<PaidProviderProxyResponse> send(
     PaidProviderProxyRequest proxyRequest, {
     Map<String, String> upstreamHeaders = const <String, String>{},
+    List<int>? exactRequestBodyBytes,
   }) async {
     if (_closed) throw StateError('Paid-provider HTTP client is closed.');
     if (proxyRequest.route.provider != proxyRequest.provider) {
@@ -96,7 +97,8 @@ class PaidProviderHttpClient {
       }
       request.headers[HttpHeaders.contentTypeHeader] =
           ContentType.json.mimeType;
-      request.bodyBytes = utf8.encode(jsonEncode(body));
+      request.bodyBytes =
+          exactRequestBodyBytes ?? proxyRequest.encodedJsonBodyBytes!;
     }
     _applyProviderHeaders(
       request.headers,

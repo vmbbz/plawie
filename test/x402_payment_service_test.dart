@@ -61,6 +61,37 @@ void main() {
     );
   });
 
+  test('rejects wrong version, payee, timeout, and token-domain metadata', () {
+    expect(
+      () => X402PaymentChallenge.fromHeader(
+        _encodedChallenge(x402Version: 1),
+        policy: policy,
+      ),
+      throwsA(isA<X402PaymentPolicyException>()),
+    );
+    for (final changed in <Map<String, dynamic>>[
+      _requirement(payTo: 'not-an-address'),
+      _requirement(timeout: 301),
+      _requirement(timeout: 0),
+      _requirement(extra: <String, dynamic>{
+        'name': '',
+        'version': '2',
+      }),
+      _requirement(extra: <String, dynamic>{
+        'name': 'USD Coin',
+        'version': '',
+      }),
+    ]) {
+      expect(
+        () => X402PaymentChallenge.fromHeader(
+          _encodedChallenge(accepts: <Map<String, dynamic>>[changed]),
+          policy: policy,
+        ),
+        throwsA(isA<X402PaymentPolicyException>()),
+      );
+    }
+  });
+
   test('approval is bound to the exact request and cannot be replayed', () {
     final service = X402PaymentApprovalService(clock: () => now);
     final challenge = X402PaymentChallenge.fromHeader(
@@ -145,12 +176,29 @@ void main() {
       state: X402PaymentState.settled,
       transactionHash: '0x${'a' * 64}',
       payer: '0x1111111111111111111111111111111111111111',
+      requestFingerprint: 'f' * 64,
+      modelId: 'blockrun/openai/gpt-5.5',
+      paidRetryConsumed: true,
     );
     final encoded = jsonEncode(receipt.toJson());
 
     expect(encoded, contains('transactionHash'));
+    expect(encoded, contains('requestFingerprint'));
+    expect(encoded, contains('paidRetryConsumed'));
     expect(encoded, isNot(contains('signature')));
     expect(encoded, isNot(contains('privateKey')));
+  });
+
+  test('older receipts remain readable without inference replay fields', () {
+    final receipt = X402PaymentReceipt.fromJson(<String, dynamic>{
+      'intentId': 'legacy',
+      'state': 'settled',
+      'recordedAt': now.toIso8601String(),
+    });
+
+    expect(receipt.requestFingerprint, isNull);
+    expect(receipt.modelId, isNull);
+    expect(receipt.paidRetryConsumed, isFalse);
   });
 }
 
@@ -158,9 +206,10 @@ String _encodedChallenge({
   String resourceUrl = 'https://api.example.test/data',
   List<Map<String, dynamic>>? accepts,
   int timeout = 60,
+  int x402Version = 2,
 }) {
   final body = <String, dynamic>{
-    'x402Version': 2,
+    'x402Version': x402Version,
     'resource': <String, dynamic>{
       'url': resourceUrl,
       'description': 'Test paid resource',
@@ -176,6 +225,7 @@ Map<String, dynamic> _requirement({
   String network = X402PaymentPolicy.network,
   String amount = '10000',
   String asset = X402PaymentPolicy.usdc,
+  String payTo = '0x2222222222222222222222222222222222222222',
   int timeout = 60,
   Map<String, dynamic>? extra,
 }) {
@@ -184,7 +234,7 @@ Map<String, dynamic> _requirement({
     'network': network,
     'amount': amount,
     'asset': asset,
-    'payTo': '0x2222222222222222222222222222222222222222',
+    'payTo': payTo,
     'maxTimeoutSeconds': timeout,
     'extra': extra ??
         <String, dynamic>{

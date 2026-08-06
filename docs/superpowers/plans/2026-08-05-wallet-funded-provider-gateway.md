@@ -235,7 +235,7 @@ Add `ProviderDiscoveryAuth.veniceWalletIdentity` and inject `VeniceWalletAuthSer
 
 `DynamicModelCatalog` records `fresh`, `stale`, `offlineFallback`, or `unavailable`. Setup/model picker may display stale models but cannot label payment/provider readiness without wallet/proxy/balance state.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```powershell
 flutter test test/model_provider_catalog_test.dart test/provider_model_discovery_service_test.dart test/dynamic_model_catalog_test.dart test/ai_payment_provider_catalog_test.dart
@@ -272,27 +272,27 @@ git commit -m "feat: route Venice wallet inference through OpenClaw"
 
 ## Task 6: Broker exact per-request BlockRun x402 approvals
 
-- [ ] **Step 1: Add broker and BlockRun red tests**
+- [x] **Step 1: Add broker and BlockRun red tests**
 
 Cover no-payment 200, exact 402 parse, wrong version/network/asset/payee/resource/host/amount/expiry, policy cap, background request, approval displayed, cancel, Android auth cancel, sign failure, same-body single retry, second 402, receipt success, network loss after payment, receipt recovery, duplicate fingerprint, and concurrent requests.
 
-- [ ] **Step 2: Add a foreground-only approval broker**
+- [x] **Step 2: Add a foreground-only approval broker**
 
 `PaidProviderApprovalBroker` publishes `PendingPaidProviderApproval` through a stream and waits on a private `Completer`. The intent contains provider/model, exact USDC amount, payee, resource, expiry, request fingerprint, and user-facing reason. Only the canonical dialog can call `approve(intentId)`/`cancel(intentId)`; stale or mismatched IDs fail. If there is no foreground listener, return `approval_required` immediately.
 
-- [ ] **Step 3: Reuse the x402 policy as a pure validator**
+- [x] **Step 3: Reuse the x402 policy as a pure validator**
 
 Extract or expose the current challenge parser/policy from `x402_payment_service.dart` so top-up and inference share version-2, Base Mainnet, native-USDC, allowlisted-host, time-window, amount-cap, and nonce validation. Keep transport-specific orchestration separate.
 
-- [ ] **Step 4: Implement exactly one paid retry**
+- [x] **Step 4: Implement exactly one paid retry**
 
 Compute SHA-256 over provider, method, exact upstream URI, and mapped request body bytes. Send once without payment. On a valid 402, persist pending intent, await visible approval, call `NativeBridge.signSecureX402Authorization`, build `PAYMENT-SIGNATURE`, and retry the same method/URI/body bytes once. A second 402 or connection ambiguity enters receipt-recovery and never signs/retries blindly.
 
-- [ ] **Step 5: Persist a redacted inference receipt**
+- [x] **Step 5: Persist a redacted inference receipt**
 
 Extend receipt schema with request fingerprint, provider, model, upstream resource, amount/payee/network/asset, challenge fingerprint, provider receipt/transaction hash when returned, status, timestamp, and `paidRetryConsumed`. Omit signature, payment header, raw challenge, prompts, and response body.
 
-- [ ] **Step 6: Run tests and commit**
+- [x] **Step 6: Run tests and commit**
 
 ```powershell
 flutter test test/paid_provider_approval_broker_test.dart test/blockrun_paid_provider_proxy_test.dart test/x402_payment_service_test.dart test/x402_payment_transport_service_test.dart
