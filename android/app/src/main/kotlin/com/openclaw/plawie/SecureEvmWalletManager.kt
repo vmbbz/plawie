@@ -85,6 +85,28 @@ class SecureEvmWalletManager(private val activity: Activity) {
     private val executor: Executor = activity.mainExecutor
     private val envelopeFile = AtomicFile(File(activity.noBackupFilesDir, ENVELOPE_FILE))
     private val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    private val walletCommitStore = object : WalletCommitStore {
+        override fun aliasExists(): Boolean = keyStore.containsAlias(KEY_ALIAS)
+
+        override fun deleteAlias() {
+            if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS)
+        }
+
+        override fun envelopeExists(): Boolean = envelopeFile.baseFile.exists()
+
+        override fun writeEnvelope(envelope: WalletEnvelopeRecord) {
+            this@SecureEvmWalletManager.writeEnvelope(envelope)
+        }
+
+        override fun readEnvelope(): WalletEnvelopeRecord =
+            readEnvelopeOrNull() ?: throw IllegalStateException(
+                "The committed wallet envelope could not be read back.",
+            )
+
+        override fun deletePartialEnvelope() {
+            envelopeFile.delete()
+        }
+    }
 
     fun status(): Map<String, Any> {
         val snapshot = walletStateSnapshot()
@@ -345,49 +367,157 @@ class SecureEvmWalletManager(private val activity: Activity) {
             Arrays.fill(privateKey, 0)
             return
         }
+        val transaction = try {
+            SecureEvmWalletTransaction(walletCommitStore)
+        } catch (error: Exception) {
+            Arrays.fill(privateKey, 0)
+            endOperation()
+            result.error("WALLET_STATE_CHANGED", safeMessage(error), null)
+            return
+        }
+        val completed = AtomicBoolean(false)
+
+        fun finishError(
+            code: String,
+            message: String,
+            abortCommittedAttempt: Boolean = false,
+        ) {
+            if (!completed.compareAndSet(false, true)) return
+            if (abortCommittedAttempt) {
+                try {
+                    transaction.abortCommittedAttempt()
+                } catch (_: Throwable) {
+                    Log.e(TAG, "Secure wallet verification cleanup failed; recovery remains explicit")
+                }
+            } else {
+                rollbackWalletTransaction(transaction)
+            }
+            Arrays.fill(privateKey, 0)
+            endOperation()
+            result.error(code, message.take(240), null)
+        }
+
+        fun finishSuccess(verificationPending: Boolean) {
+            if (!completed.compareAndSet(false, true)) return
+            Arrays.fill(privateKey, 0)
+            endOperation()
+            try {
+                val response = status().toMutableMap()
+                response["verificationPending"] = verificationPending
+                response["verificationCode"] = if (verificationPending) {
+                    "WALLET_CREATED_VERIFICATION_PENDING"
+                } else {
+                    ""
+                }
+                result.success(response)
+            } catch (error: Exception) {
+                result.error("WALLET_STATUS_ERROR", safeMessage(error), null)
+            }
+        }
+
         try {
             ensureAuthenticationAvailable()
             val secretKey = getOrCreateEnvelopeKey()
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, secretKey)
-            authenticateCipher(
+            requestAuthenticatedCipher(
                 cipher = cipher,
                 title = title,
                 description = "Protect $address with your device lock",
-                result = result,
                 onSuccess = { authenticatedCipher ->
                     try {
                         val encrypted = authenticatedCipher.doFinal(privateKey)
-                        writeEnvelope(
-                            WalletEnvelope(
-                                address = address,
-                                iv = authenticatedCipher.iv,
-                                ciphertext = encrypted,
-                            ),
+                        val envelope = WalletEnvelopeRecord(
+                            version = ENVELOPE_VERSION,
+                            address = address,
+                            iv = authenticatedCipher.iv,
+                            ciphertext = encrypted,
                         )
-                        endOperation()
-                        result.success(status())
-                    } catch (error: Exception) {
-                        result.error("WALLET_STORE_ERROR", safeMessage(error), null)
-                    } finally {
+                        transaction.commit(envelope)
+
+                        val pair = ECKeyPair.create(BigInteger(1, privateKey))
+                        val derivedAddress = Keys.toChecksumAddress("0x${Keys.getAddress(pair)}")
+                        require(derivedAddress == address) {
+                            "The in-memory wallet identity changed before commit."
+                        }
                         Arrays.fill(privateKey, 0)
-                        endOperation()
+
+                        val committedKey = keyStore.getKey(KEY_ALIAS, null) as? SecretKey
+                            ?: throw IllegalStateException(
+                                "The committed wallet protection key is missing.",
+                            )
+                        val verificationCipher = Cipher.getInstance("AES/GCM/NoPadding")
+                        verificationCipher.init(
+                            Cipher.DECRYPT_MODE,
+                            committedKey,
+                            GCMParameterSpec(128, envelope.iv),
+                        )
+                        try {
+                            requestAuthenticatedCipher(
+                                cipher = verificationCipher,
+                                title = "Verify protected wallet",
+                                description = "Confirm $address can be unlocked on this device",
+                                onSuccess = { authenticatedVerificationCipher ->
+                                    var decryptedKey: ByteArray? = null
+                                    try {
+                                        decryptedKey = authenticatedVerificationCipher.doFinal(
+                                            envelope.ciphertext,
+                                        )
+                                        require(decryptedKey.size == 32) {
+                                            "The committed wallet envelope is invalid."
+                                        }
+                                        val verifiedPair = ECKeyPair.create(BigInteger(1, decryptedKey))
+                                        val verifiedAddress = Keys.toChecksumAddress(
+                                            "0x${Keys.getAddress(verifiedPair)}",
+                                        )
+                                        require(verifiedAddress == address) {
+                                            "The committed wallet identity could not be verified."
+                                        }
+                                        finishSuccess(verificationPending = false)
+                                    } catch (error: Exception) {
+                                        finishError(
+                                            code = "WALLET_STORE_VERIFICATION_ERROR",
+                                            message = safeMessage(error),
+                                            abortCommittedAttempt = true,
+                                        )
+                                    } finally {
+                                        decryptedKey?.let { Arrays.fill(it, 0) }
+                                    }
+                                },
+                                onError = { _, _ ->
+                                    // The envelope already passed atomic read-back. A cancelled
+                                    // second prompt defers, rather than destroys, verification.
+                                    finishSuccess(verificationPending = true)
+                                },
+                            )
+                        } catch (_: Exception) {
+                            // Prompt presentation itself can fail during an Activity transition.
+                            // Keep the verified atomic envelope and retry verification later.
+                            finishSuccess(verificationPending = true)
+                        }
+                    } catch (error: Exception) {
+                        finishError(
+                            code = if (transaction.isCommitted) {
+                                "WALLET_STORE_VERIFICATION_ERROR"
+                            } else {
+                                "WALLET_STORE_ERROR"
+                            },
+                            message = safeMessage(error),
+                            abortCommittedAttempt = transaction.isCommitted,
+                        )
                     }
                 },
-                onFailure = {
-                    Arrays.fill(privateKey, 0)
-                    endOperation()
+                onError = { code, message ->
+                    finishError(code, message)
                 },
             )
         } catch (error: Exception) {
-            Arrays.fill(privateKey, 0)
-            endOperation()
-            result.error("WALLET_SECURITY_ERROR", safeMessage(error), null)
+            finishError("WALLET_SECURITY_ERROR", safeMessage(error))
         }
     }
 
     private fun <T> withDecryptedKey(
-        envelope: WalletEnvelope,
+        envelope: WalletEnvelopeRecord,
         title: String,
         description: String,
         result: MethodChannel.Result,
@@ -443,11 +573,29 @@ class SecureEvmWalletManager(private val activity: Activity) {
         onSuccess: (Cipher) -> Unit,
         onFailure: () -> Unit,
     ) {
+        requestAuthenticatedCipher(
+            cipher = cipher,
+            title = title,
+            description = description,
+            onSuccess = onSuccess,
+            onError = { code, message ->
+                onFailure()
+                result.error(code, message, null)
+            },
+        )
+    }
+
+    private fun requestAuthenticatedCipher(
+        cipher: Cipher,
+        title: String,
+        description: String,
+        onSuccess: (Cipher) -> Unit,
+        onError: (String, String) -> Unit,
+    ) {
         val finished = AtomicBoolean(false)
         fun fail(code: String, message: String) {
             if (!finished.compareAndSet(false, true)) return
-            onFailure()
-            result.error(code, message, null)
+            onError(code, message)
         }
 
         val builder = BiometricPrompt.Builder(activity)
@@ -475,11 +623,9 @@ class SecureEvmWalletManager(private val activity: Activity) {
                     if (!finished.compareAndSet(false, true)) return
                     val authenticated = authenticationResult.cryptoObject?.cipher
                     if (authenticated == null) {
-                        onFailure()
-                        result.error(
+                        onError(
                             "WALLET_AUTH_ERROR",
                             "Android did not return the authenticated cryptographic operation.",
-                            null,
                         )
                         return
                     }
@@ -627,7 +773,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
      * turns a potentially protected wallet into an ordinary create flow.
      */
     private fun probeEnvelopeKey(
-        envelope: WalletEnvelope?,
+        envelope: WalletEnvelopeRecord?,
         envelopePresent: Boolean,
     ): EnvelopeKeyProbe {
         val aliasPresent = try {
@@ -653,9 +799,9 @@ class SecureEvmWalletManager(private val activity: Activity) {
         }
     }
 
-    private fun writeEnvelope(envelope: WalletEnvelope) {
+    private fun writeEnvelope(envelope: WalletEnvelopeRecord) {
         val json = JSONObject()
-            .put("version", ENVELOPE_VERSION)
+            .put("version", envelope.version)
             .put("address", envelope.address)
             .put("iv", Base64.encodeToString(envelope.iv, Base64.NO_WRAP))
             .put(
@@ -673,25 +819,26 @@ class SecureEvmWalletManager(private val activity: Activity) {
         }
     }
 
-    private fun readEnvelopeOrNull(): WalletEnvelope? {
+    private fun readEnvelopeOrNull(): WalletEnvelopeRecord? {
         if (!envelopeFile.baseFile.exists()) return null
         return try {
             val json = JSONObject(
                 envelopeFile.openRead().bufferedReader(StandardCharsets.UTF_8).use { it.readText() },
             )
-            require(json.getInt("version") == ENVELOPE_VERSION)
+            val version = json.getInt("version")
+            require(version == ENVELOPE_VERSION)
             val address = json.getString("address")
             require(HEX_ADDRESS.matches(address))
             val iv = Base64.decode(json.getString("iv"), Base64.NO_WRAP)
             val ciphertext = Base64.decode(json.getString("ciphertext"), Base64.NO_WRAP)
             require(iv.size == 12 && ciphertext.size >= 48)
-            WalletEnvelope(address, iv, ciphertext)
+            WalletEnvelopeRecord(version, address, iv, ciphertext)
         } catch (_: Exception) {
             null
         }
     }
 
-    private fun requireEnvelope(result: MethodChannel.Result): WalletEnvelope? {
+    private fun requireEnvelope(result: MethodChannel.Result): WalletEnvelopeRecord? {
         val envelope = readEnvelopeOrNull()
         if (envelope == null) {
             if (envelopeFile.baseFile.exists()) {
@@ -715,6 +862,21 @@ class SecureEvmWalletManager(private val activity: Activity) {
             throw IllegalStateException("Could not remove the wallet envelope.")
         }
         if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS)
+    }
+
+    private fun rollbackWalletTransaction(
+        transaction: SecureEvmWalletTransaction,
+        originalError: Throwable? = null,
+    ) {
+        try {
+            transaction.rollback()
+        } catch (rollbackError: Throwable) {
+            if (originalError != null) {
+                originalError.addSuppressed(rollbackError)
+            } else {
+                Log.e(TAG, "Secure wallet rollback failed; recovery state will remain explicit")
+            }
+        }
     }
 
     private fun showBackupDialog(privateKey: String, result: MethodChannel.Result) {
@@ -942,12 +1104,6 @@ class SecureEvmWalletManager(private val activity: Activity) {
     private fun safeMessage(error: Exception): String =
         error.message?.take(240) ?: error.javaClass.simpleName
 
-    private data class WalletEnvelope(
-        val address: String,
-        val iv: ByteArray,
-        val ciphertext: ByteArray,
-    )
-
     private data class EnvelopeKeyProbe(
         val aliasPresent: Boolean,
         val invalidated: Boolean,
@@ -955,7 +1111,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
 
     private data class WalletStateSnapshot(
         val envelopePresent: Boolean,
-        val envelope: WalletEnvelope?,
+        val envelope: WalletEnvelopeRecord?,
         val authentication: Pair<Boolean, String>,
         val keyProbe: EnvelopeKeyProbe,
         val state: SecureEvmWalletState,

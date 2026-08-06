@@ -46,27 +46,45 @@ it does not crash initialization or weaken the signing policy.
 
 ## Creation and signing lifecycle
 
-1. Check that secure device authentication is available.
-2. Create or load the authenticated AES envelope key in Android Keystore.
-3. Ask Android to authenticate the user for the exact cryptographic operation.
-4. Encrypt the new EVM key and atomically persist the envelope.
-5. On each later operation, authenticate again, decrypt in Android memory,
+1. Classify envelope, Keystore alias, authenticator, invalidation, and busy
+   state without decrypting or prompting. Create/import is allowed only from
+   the explicit `absent` state.
+2. Start a transaction that records whether the known envelope and alias
+   existed before this attempt.
+3. Create the authenticated AES envelope key in Android Keystore and ask
+   Android to authenticate the user for the exact encryption operation.
+4. Encrypt the new EVM key, atomically persist the envelope, reopen it, and
+   compare version, address, IV, and ciphertext byte-for-byte.
+5. Re-derive the address from the still-in-memory key, clear those bytes, then
+   perform a second authenticated decrypt and verify the recovered address.
+6. On each later operation, authenticate again, decrypt in Android memory,
    validate the bounded request, sign, self-verify where applicable, and clear
    private-key bytes.
 
-Creation does not persist a wallet before successful authentication and
-encryption. An error before the prompt therefore leaves no partial envelope.
+Cancellation or failure before a verified atomic commit removes only an
+envelope or Keystore alias created by that attempt. It never removes a
+pre-existing alias or envelope. Cancelling the second verification prompt
+retains the atomically verified wallet and returns
+`WALLET_CREATED_VERIFICATION_PENDING`; a cryptographic identity mismatch
+removes that newly created attempt.
 
 ## Recovery states
 
 | State | User-visible behavior | Recovery |
 | --- | --- | --- |
-| Envelope absent | Wallet can be created or imported | Create a wallet or import a backup |
-| Envelope verified | Wallet address and security level are available | Authenticate for operations |
-| Envelope corrupt | Wallet is not treated as usable | Restore from exported private key after removing corrupt state |
-| Keystore key invalidated | Signing and export are blocked | Restore from exported private key |
-| Authentication unavailable | Creation/signing fail closed | Configure a secure lock or Class 3 biometric |
-| Authentication cancelled | Current operation stops without mutation | Retry only when ready |
+| `absent` | Wallet can be created or imported | Create a wallet or import a backup |
+| `healthy` | Wallet address and security level are available | Authenticate for operations |
+| `authenticationUnavailable` | Creation and signing fail closed | Configure a secure lock or Class 3 biometric |
+| `envelopeCorrupt` | The damaged envelope is never treated as absent | Restore from backup or use explicit destructive recovery |
+| `keystoreKeyMissing` | Address remains known but signing/export is blocked | Restore from backup or use explicit destructive recovery |
+| `keystoreKeyInvalidated` | Signing and export are blocked | Restore from backup or use explicit destructive recovery |
+| `orphanedKeystoreAlias` | Ordinary creation/import remains blocked | Explicitly remove only the orphaned protection record |
+| `operationBusy` | Wallet actions are temporarily disabled | Wait for the active authentication to finish |
+
+The compatibility fields remain available to older Dart callers, but product
+decisions must use the stable `state` and `errorCode` fields. In particular,
+neither a damaged envelope nor an unknown Keystore probe is inferred as an
+ordinary missing wallet.
 
 ## 2026-08-06 device incident
 
