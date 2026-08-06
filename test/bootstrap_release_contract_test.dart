@@ -208,7 +208,7 @@ void main() {
     ).readAsString();
     final nativeRuntime = await File(
       'android/app/src/main/kotlin/com/openclaw/plawie/NativeNodeEmbeddedService.kt',
-    ).readAsString();
+    ).readAsString().then((source) => source.replaceAll('\r\n', '\n'));
     final gateway =
         await File('lib/services/gateway_service.dart').readAsString();
     final providers =
@@ -432,7 +432,7 @@ void main() {
     ).readAsString();
     final mainActivity = await File(
       'android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt',
-    ).readAsString();
+    ).readAsString().then((source) => source.replaceAll('\r\n', '\n'));
     final nativeRuntime = await File(
       'android/app/src/main/kotlin/com/openclaw/plawie/NativeNodeEmbeddedService.kt',
     ).readAsString();
