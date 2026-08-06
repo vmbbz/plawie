@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
 import 'package:decimal/decimal.dart';
 import 'package:http/http.dart' as http;
+import 'legacy_evm_key_normalizer.dart';
 import 'native_bridge.dart';
 
 /// A short-lived capability minted only after a visible wallet UI confirms an
@@ -162,11 +163,17 @@ class BaseService {
         final storedKey = await _secureStorage.read(key: 'base_private_key');
         if (storedKey != null && storedKey.trim().isNotEmpty) {
           // Existing installs need one explicit, device-authenticated migration.
-          // Derive only the public address here; do not retain credentials.
-          final legacy = EthPrivateKey.fromHex(storedKey);
-          _address = legacy.address.hexEip55;
           _legacyMigrationRequired = true;
           _isConnected = false;
+          _address = null;
+          Uint8List? normalized;
+          try {
+            normalized = LegacyEvmKeyNormalizer.normalize(storedKey);
+            // Derive only the public address here; do not retain credentials.
+            _address = EthPrivateKey(normalized).address.hexEip55;
+          } finally {
+            normalized?.fillRange(0, normalized.length, 0);
+          }
         }
       }
     } catch (e) {
@@ -174,12 +181,16 @@ class BaseService {
     }
   }
 
-  void _applyNativeWalletStatus(Map<String, dynamic> status) {
+  String _validatedNativeWalletAddress(Map<String, dynamic> status) {
     final address = status['address']?.toString().trim() ?? '';
     if (status['exists'] != true || address.isEmpty) {
       throw StateError('Android reported an invalid secure wallet status.');
     }
-    _address = EthereumAddress.fromHex(address).hexEip55;
+    return EthereumAddress.fromHex(address).hexEip55;
+  }
+
+  void _applyNativeWalletStatus(Map<String, dynamic> status) {
+    _address = _validatedNativeWalletAddress(status);
     _isConnected = true;
     _legacyMigrationRequired = false;
     _securityLevel = status['securityLevel']?.toString() ?? 'unknown';
@@ -245,14 +256,26 @@ class BaseService {
       if (stored == null || stored.trim().isEmpty) {
         throw StateError('No legacy wallet is available to migrate.');
       }
-      final clean = stored.startsWith('0x') ? stored.substring(2) : stored;
-      if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(clean)) {
-        throw const FormatException('Legacy wallet key is invalid.');
+      final expectedAddress = _address;
+      if (expectedAddress == null || expectedAddress.isEmpty) {
+        throw StateError('Legacy wallet identity cannot be verified.');
       }
-      privateKey = Uint8List.fromList(hexToBytes(clean));
+
+      privateKey = LegacyEvmKeyNormalizer.normalize(stored);
+      final normalizedAddress = EthPrivateKey(privateKey).address.hexEip55;
+      if (normalizedAddress.toLowerCase() != expectedAddress.toLowerCase()) {
+        throw StateError(
+          'Legacy wallet identity changed during normalization.',
+        );
+      }
+
       final status = await NativeBridge.importSecureEvmWallet(privateKey);
-      await _secureStorage.delete(key: 'base_private_key');
+      final nativeAddress = _validatedNativeWalletAddress(status);
+      if (nativeAddress.toLowerCase() != normalizedAddress.toLowerCase()) {
+        throw StateError('Android imported a different wallet identity.');
+      }
       _applyNativeWalletStatus(status);
+      await _secureStorage.delete(key: 'base_private_key');
       await refreshBalance();
     } finally {
       privateKey?.fillRange(0, privateKey.length, 0);
