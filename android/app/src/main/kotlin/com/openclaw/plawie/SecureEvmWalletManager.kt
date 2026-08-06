@@ -87,20 +87,48 @@ class SecureEvmWalletManager(private val activity: Activity) {
     private val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
     fun status(): Map<String, Any> {
+        val envelopePresent = envelopeFile.baseFile.exists()
         val envelope = readEnvelopeOrNull()
         val auth = authenticationStatus()
+        val keyProbe = probeEnvelopeKey(envelope, envelopePresent)
+        val state = SecureEvmWalletStateClassifier.classify(
+            WalletStorageFacts(
+                envelopePresent = envelopePresent,
+                envelopeParseable = envelope != null,
+                keyAliasPresent = keyProbe.aliasPresent,
+                keyInvalidated = keyProbe.invalidated,
+                authenticationAvailable = auth.first,
+                operationActive = operationActive.get(),
+            ),
+        )
         val securityLevel = keySecurityLevel()
-        val corrupt = envelope == null && envelopeFile.baseFile.exists()
+        Log.i(
+            TAG,
+            "status state=${state.wireName} envelopePresent=$envelopePresent " +
+                "aliasPresent=${keyProbe.aliasPresent} securityLevel=$securityLevel " +
+                "errorCode=${state.errorCode}",
+        )
         return mapOf(
             "exists" to (envelope != null),
             "address" to (envelope?.address ?: ""),
-            "envelopeIntegrity" to if (corrupt) "corrupt" else if (envelope != null) "verified" else "absent",
+            "envelopeIntegrity" to if (envelopePresent && envelope == null) {
+                "corrupt"
+            } else if (envelope != null) {
+                "verified"
+            } else {
+                "absent"
+            },
             "securityLevel" to securityLevel,
             "hardwareBacked" to isHardwareSecurityLevel(securityLevel),
             "authenticationAvailable" to auth.first,
             "authenticationMode" to auth.second,
             "privateKeyLeavesAndroid" to false,
             "genericSigningAvailable" to false,
+            "state" to state.wireName,
+            "errorCode" to state.errorCode,
+            "canCreate" to state.canCreate,
+            "canRestore" to state.canRestore,
+            "requiresDestructiveRecovery" to state.requiresDestructiveRecovery,
         )
     }
 
@@ -552,6 +580,39 @@ class SecureEvmWalletManager(private val activity: Activity) {
         }
     }
 
+    /**
+     * Checks whether the known envelope key can be initialized without
+     * decrypting wallet material or displaying an authentication prompt.
+     * Unknown Keystore failures are classified as unusable so status never
+     * turns a potentially protected wallet into an ordinary create flow.
+     */
+    private fun probeEnvelopeKey(
+        envelope: WalletEnvelope?,
+        envelopePresent: Boolean,
+    ): EnvelopeKeyProbe {
+        val aliasPresent = try {
+            keyStore.containsAlias(KEY_ALIAS)
+        } catch (_: Exception) {
+            Log.w(TAG, "Wallet key alias probe failed; preserving a fail-closed state")
+            return EnvelopeKeyProbe(aliasPresent = true, invalidated = envelopePresent)
+        }
+        if (!aliasPresent) return EnvelopeKeyProbe(aliasPresent = false, invalidated = false)
+        if (envelope == null) return EnvelopeKeyProbe(aliasPresent = true, invalidated = false)
+
+        return try {
+            val key = keyStore.getKey(KEY_ALIAS, null) as? SecretKey
+                ?: return EnvelopeKeyProbe(aliasPresent = true, invalidated = true)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, envelope.iv))
+            EnvelopeKeyProbe(aliasPresent = true, invalidated = false)
+        } catch (_: KeyPermanentlyInvalidatedException) {
+            EnvelopeKeyProbe(aliasPresent = true, invalidated = true)
+        } catch (_: Exception) {
+            Log.w(TAG, "Wallet key usability probe failed; preserving a fail-closed state")
+            EnvelopeKeyProbe(aliasPresent = true, invalidated = true)
+        }
+    }
+
     private fun writeEnvelope(envelope: WalletEnvelope) {
         val json = JSONObject()
             .put("version", ENVELOPE_VERSION)
@@ -845,6 +906,11 @@ class SecureEvmWalletManager(private val activity: Activity) {
         val address: String,
         val iv: ByteArray,
         val ciphertext: ByteArray,
+    )
+
+    private data class EnvelopeKeyProbe(
+        val aliasPresent: Boolean,
+        val invalidated: Boolean,
     )
 
     private data class TransactionRequest(
