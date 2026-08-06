@@ -223,6 +223,10 @@ class ModelProviderCatalog {
     'openrouter',
     // Zenmux uses the core OpenAI-compatible provider configuration.
     'zenmux',
+    // Wallet-funded providers use the bounded app-owned OpenAI-compatible
+    // loopback proxy and require no external Gateway plugin.
+    'venice',
+    'blockrun',
   };
 
   /// Bundled upstream plugins that are safe to activate in the stock Android

@@ -197,11 +197,26 @@ class PaidProviderRequestMapper {
   }) {
     final model = request['model'];
     final prefix = '${provider.wireName}/';
-    if (model is! String ||
-        !model.startsWith(prefix) ||
-        model.length == prefix.length) {
+    if (model is! String || model.isEmpty || model.trim() != model) {
       throw PaidProviderProxyException(
-        'Expected a non-empty ${provider.wireName}/ model identifier.',
+        'Expected a non-empty ${provider.wireName} model identifier.',
+        code: 'invalid_provider_model',
+      );
+    }
+
+    for (final other in PaidProviderId.values) {
+      if (other != provider && model.startsWith('${other.wireName}/')) {
+        throw const PaidProviderProxyException(
+          'The model identifier belongs to another paid-provider route.',
+          code: 'invalid_provider_model',
+        );
+      }
+    }
+    final providerModelId =
+        model.startsWith(prefix) ? model.substring(prefix.length) : model;
+    if (providerModelId.isEmpty) {
+      throw PaidProviderProxyException(
+        'Expected a non-empty ${provider.wireName} model identifier.',
         code: 'invalid_provider_model',
       );
     }
@@ -213,7 +228,7 @@ class PaidProviderRequestMapper {
         code: 'invalid_request',
       );
     }
-    copied['model'] = model.substring(prefix.length);
+    copied['model'] = providerModelId;
     return copied;
   }
 }

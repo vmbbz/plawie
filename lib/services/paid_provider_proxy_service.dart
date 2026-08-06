@@ -10,7 +10,19 @@ import 'paid_provider_turn_authorization_service.dart';
 import 'provider_balance_service.dart';
 import 'venice_wallet_auth_service.dart';
 
-class PaidProviderProxyService {
+abstract interface class PaidProviderProxyController {
+  bool get isRunning;
+  bool get ownsServer;
+  bool get attachedToExisting;
+  int get port;
+  Uri get uri;
+
+  Future<Uri> start();
+  Future<bool> verifyHealth();
+  Future<void> stop();
+}
+
+class PaidProviderProxyService implements PaidProviderProxyController {
   PaidProviderProxyService({
     required PaidProviderLoopbackCredentialService credentialService,
     required PaidProviderProxyHandler handler,
@@ -27,22 +39,37 @@ class PaidProviderProxyService {
   final PaidProviderProxyHandler _handler;
   final Set<PaidProviderId> Function() _readyProviders;
   final InternetAddress _bindAddress;
+  @override
   final int port;
   final int maxRequestBodyBytes;
 
   HttpServer? _server;
+  Uri? _attachedUri;
   Future<Uri>? _startFuture;
 
-  bool get isRunning => _server != null;
+  @override
+  bool get isRunning => _server != null || _attachedUri != null;
 
+  @override
+  bool get ownsServer => _server != null;
+
+  @override
+  bool get attachedToExisting => _attachedUri != null;
+
+  @override
   Uri get uri {
     final server = _server;
-    if (server == null) throw StateError('Paid-provider proxy is not running.');
-    return Uri.parse('http://${server.address.address}:${server.port}/');
+    if (server != null) {
+      return Uri.parse('http://${server.address.address}:${server.port}/');
+    }
+    final attached = _attachedUri;
+    if (attached != null) return attached;
+    throw StateError('Paid-provider proxy is not running.');
   }
 
+  @override
   Future<Uri> start() {
-    if (_server != null) return Future<Uri>.value(uri);
+    if (isRunning) return Future<Uri>.value(uri);
     return _startFuture ??= _start();
   }
 
@@ -73,15 +100,66 @@ class PaidProviderProxyService {
     } catch (_) {
       _server = null;
       _startFuture = null;
+      if (port != 0) {
+        final candidate = Uri.parse(
+          'http://${InternetAddress.loopbackIPv4.address}:$port/',
+        );
+        if (await _verifyHealthAt(candidate)) {
+          _attachedUri = candidate;
+          return candidate;
+        }
+      }
       rethrow;
     }
   }
 
+  @override
   Future<void> stop() async {
     final server = _server;
     _server = null;
+    _attachedUri = null;
     _startFuture = null;
     await server?.close(force: true);
+  }
+
+  @override
+  Future<bool> verifyHealth() async {
+    if (!isRunning) return false;
+    return _verifyHealthAt(uri);
+  }
+
+  Future<bool> _verifyHealthAt(Uri baseUri) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
+    try {
+      final request = await client
+          .getUrl(baseUri.resolve('/health'))
+          .timeout(const Duration(seconds: 2));
+      request.followRedirects = false;
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer ${_credentialService.credentialForGatewayConfiguration()}',
+      );
+      final response =
+          await request.close().timeout(const Duration(seconds: 2));
+      if (response.statusCode != HttpStatus.ok ||
+          (response.contentLength > 16 * 1024)) {
+        return false;
+      }
+      final bodyBytes = BytesBuilder(copy: false);
+      await for (final chunk in response.timeout(const Duration(seconds: 2))) {
+        bodyBytes.add(chunk);
+        if (bodyBytes.length > 16 * 1024) return false;
+      }
+      final body = utf8.decode(bodyBytes.takeBytes());
+      final decoded = jsonDecode(body);
+      return decoded is Map &&
+          decoded['status'] == 'ok' &&
+          decoded['scope'] == 'paid_provider_proxy';
+    } catch (_) {
+      return false;
+    } finally {
+      client.close(force: true);
+    }
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
@@ -166,11 +244,12 @@ class PaidProviderProxyService {
       if (route.method == 'POST') {
         jsonBody = await _readJsonObject(request);
         if (route.kind == PaidProviderProxyRouteKind.chatCompletions) {
-          gatewayModelId = jsonBody['model']?.toString();
           jsonBody = PaidProviderRequestMapper.mapChatRequest(
             jsonBody,
             provider: route.provider,
           );
+          gatewayModelId =
+              '${route.provider.wireName}/${jsonBody['model']?.toString() ?? ''}';
         }
       }
 

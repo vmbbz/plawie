@@ -4,8 +4,10 @@ import 'dart:typed_data';
 
 typedef SecureRandomBytes = Uint8List Function(int length);
 
-/// Owns the in-memory capability used only between the local gateway and the
-/// paid-provider loopback proxy. The capability is never persisted or logged.
+/// Owns the capability used only between the local gateway and the
+/// paid-provider loopback proxy. It is never exposed to UI, logs, preferences,
+/// receipts, or analytics. Native Gateway continuity may restore it from the
+/// app-private OpenClaw provider config after a Flutter process restart.
 class PaidProviderLoopbackCredentialService {
   PaidProviderLoopbackCredentialService({SecureRandomBytes? randomBytes})
       : _randomBytes = randomBytes ?? _secureRandomBytes {
@@ -39,6 +41,24 @@ class PaidProviderLoopbackCredentialService {
     }
     _credential = _issueCredential();
   }
+
+  void restoreFromGatewayConfiguration(
+    String credential, {
+    required bool proxyStopped,
+  }) {
+    if (!proxyStopped) {
+      throw StateError(
+        'The loopback capability cannot change while the proxy is running.',
+      );
+    }
+    if (!isValidGatewayCredential(credential)) {
+      throw const FormatException('Invalid paid-provider loopback capability.');
+    }
+    _credential = credential;
+  }
+
+  static bool isValidGatewayCredential(String credential) =>
+      RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(credential);
 
   String _issueCredential() {
     final bytes = _randomBytes(32);

@@ -91,6 +91,24 @@ void main() {
       expect(blockrun['model'], 'vendor/model-b');
     });
 
+    test('preserves the provider-local model id emitted by OpenClaw', () {
+      final original = <String, dynamic>{
+        'model': 'openai/gpt-5.5',
+        'messages': <Map<String, dynamic>>[
+          {'role': 'user', 'content': 'keep the exact Gateway payload'},
+        ],
+        'stream': true,
+      };
+
+      final mapped = PaidProviderRequestMapper.mapChatRequest(
+        original,
+        provider: PaidProviderId.blockrun,
+      );
+
+      expect(mapped, original);
+      expect(identical(mapped, original), isFalse);
+    });
+
     test('rejects missing, empty, and cross-provider model identifiers', () {
       for (final body in <Map<String, dynamic>>[
         <String, dynamic>{},
@@ -215,7 +233,7 @@ void main() {
         method: 'POST',
         credential: credential,
         body: jsonEncode({
-          'model': 'blockrun/model-a',
+          'model': 'model-a',
           'messages': [
             {'role': 'user', 'content': 'keep me'},
           ],
@@ -287,6 +305,40 @@ void main() {
     );
 
     await expectLater(proxy.start(), throwsStateError);
+  });
+
+  test('port collision attaches only to the authenticated Plawie proxy',
+      () async {
+    final credentials = PaidProviderLoopbackCredentialService();
+    final owner = PaidProviderProxyService(
+      credentialService: credentials,
+      port: 0,
+      handler: (_) async => PaidProviderProxyResponse.json(body: const {}),
+    );
+    await owner.start();
+
+    final trustedCollision = PaidProviderProxyService(
+      credentialService: credentials,
+      port: owner.uri.port,
+      handler: (_) async => PaidProviderProxyResponse.json(body: const {}),
+    );
+    final attachedUri = await trustedCollision.start();
+    expect(attachedUri, owner.uri);
+    expect(trustedCollision.isRunning, isTrue);
+    expect(trustedCollision.ownsServer, isFalse);
+    expect(trustedCollision.attachedToExisting, isTrue);
+
+    final unknownCollision = PaidProviderProxyService(
+      credentialService: PaidProviderLoopbackCredentialService(),
+      port: owner.uri.port,
+      handler: (_) async => PaidProviderProxyResponse.json(body: const {}),
+    );
+    await expectLater(unknownCollision.start(), throwsA(anything));
+    expect(unknownCollision.isRunning, isFalse);
+
+    await unknownCollision.stop();
+    await trustedCollision.stop();
+    await owner.stop();
   });
 
   test('allows only the exact HTTPS upstream origin for each provider', () {

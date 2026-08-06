@@ -302,23 +302,23 @@ git commit -m "feat: add approved BlockRun x402 inference"
 
 ## Task 7: Integrate proxy lifecycle and provider config with Gateway startup
 
-- [ ] **Step 1: Add Gateway integration red tests**
+- [x] **Step 1: Add Gateway integration red tests**
 
 Test startup order, current capability injection, provider defaults, stop/rotation, port collision, health failure, paid provider selected while proxy unavailable, and unchanged BYOK/NDK/native routes. Add a regression asserting `gatewayRuntimeOwner` remains native and no PRoot path is selected.
 
-- [ ] **Step 2: Start proxy before native Gateway configuration**
+- [x] **Step 2: Start proxy before native Gateway configuration**
 
 `GatewayService` starts/health-checks the paid proxy, obtains the current capability, merges Venice/BlockRun base URLs and `apiKey` capability into OpenClaw config, then starts the native Gateway. Stop the proxy after Gateway stop. On port collision, verify whether the endpoint answers the current capability; never attach to an unknown process.
 
-- [ ] **Step 3: Preserve provider configuration merge rules**
+- [x] **Step 3: Preserve provider configuration merge rules**
 
 Extend `_ensureCatalogProviderDefaults` without overwriting user BYOK providers. Paid-provider fields may replace only Plawie-owned `baseUrl`, `api`, current loopback `apiKey`, and dynamic model list. Remove stale paid-provider capability when the proxy is disabled.
 
-- [ ] **Step 4: Add end-to-end context/tool invariance tests**
+- [x] **Step 4: Add end-to-end context/tool invariance tests**
 
 Feed the same Gateway request through a fake BYOK upstream and each paid route. Deep-compare system prompt, history, tools, tool results, session metadata, and stream tool-call events. Permit only provider/model endpoint/header differences. Assert native skill routing and tool continuation tests remain green.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```powershell
 flutter test test/paid_provider_proxy_contract_test.dart test/paid_provider_proxy_stream_test.dart test/gateway_service_tool_continuation_test.dart test/gateway_required_mobile_route_test.dart test/gateway_connection_session_patch_test.dart

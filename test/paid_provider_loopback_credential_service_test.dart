@@ -54,4 +54,35 @@ void main() {
     service.rotate(gatewayStopped: true, proxyStopped: true);
     expect(service.credentialForGatewayConfiguration(), isNot(before));
   });
+
+  test('restores only a valid app-private Gateway capability while stopped',
+      () {
+    final service = PaidProviderLoopbackCredentialService();
+    final persisted = PaidProviderLoopbackCredentialService(
+      randomBytes: (length) => Uint8List.fromList(
+        List<int>.generate(length, (index) => 255 - index),
+      ),
+    ).credentialForGatewayConfiguration();
+
+    service.restoreFromGatewayConfiguration(
+      persisted,
+      proxyStopped: true,
+    );
+    expect(service.credentialForGatewayConfiguration(), persisted);
+
+    expect(
+      () => service.restoreFromGatewayConfiguration(
+        'not-a-capability',
+        proxyStopped: true,
+      ),
+      throwsFormatException,
+    );
+    expect(
+      () => service.restoreFromGatewayConfiguration(
+        persisted,
+        proxyStopped: false,
+      ),
+      throwsStateError,
+    );
+  });
 }

@@ -1411,9 +1411,30 @@ approved payment in a controlled test with no automatic second attempt.
 
 Code-level parsing, foreground-broker, exact immutable-body retry, terminal
 receipt, redirect, recovery, and single-attempt tests pass. The remaining
-release gates are proxy/Gateway lifecycle wiring, the canonical visible
-approval dialog, and one user-approved Base Mainnet settlement against the
-current live provider challenge on a hardware-backed connected Android device.
+release gates are the canonical visible approval dialog and one user-approved
+Base Mainnet settlement against the current live provider challenge on a
+hardware-backed connected Android device.
+
+The paid-provider proxy is now owned by `GatewayService`: it starts and passes
+an authenticated loopback health check before the selected native Gateway is
+started, and it stops only after the Gateway process is confirmed stopped. The
+same lifecycle applies to an explicitly selected PRoot rollback owner without
+ever selecting PRoot automatically. On Flutter process recreation, the proxy
+may restore its capability only from the exact paid-provider block in the
+app-private OpenClaw config; it never reads a capability from chat, preferences,
+receipts, logs, or an arbitrary endpoint. Port collisions attach only when the
+existing loopback listener answers authenticated Plawie health.
+On an orderly stop, the app persists removal of those Gateway capabilities
+after Gateway shutdown and before proxy shutdown or capability rotation. A
+failed scrub leaves the authenticated loopback owner running and reports an
+error instead of rotating into a stale recoverable configuration.
+
+Current official OpenClaw sends the provider-local `model.id` in its
+OpenAI-compatible request body. The fixed `/venice/v1` or `/blockrun/v1` route
+therefore supplies provider identity; the proxy preserves that local model ID
+upstream and reconstructs the namespaced ID only as process-local authorization
+metadata. System prompts, message history, tools, tool results, session
+metadata, and SSE tool-call bytes remain unchanged.
 
 ### Phase 9 — Provider-specific live validation (balance/read-only agent
 contract implemented; live provider proof pending)

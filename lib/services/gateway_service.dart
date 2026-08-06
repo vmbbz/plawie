@@ -32,6 +32,7 @@ import 'openclaw_service.dart';
 import 'diagnostic_service.dart';
 import 'node_service.dart';
 import 'tts_service.dart';
+import 'paid_provider_gateway_coordinator.dart';
 
 class _FastCloudRoute {
   final String provider;
@@ -223,6 +224,8 @@ class GatewayService {
   StreamSubscription? _logSubscription;
   StreamSubscription<Map<String, dynamic>>? _gatewayEventSubscription;
   GatewayRuntime _runtime = GatewayRuntimeRegistry.current;
+  final PaidProviderGatewayCoordinator _paidProviderGateway =
+      PaidProviderGatewayCoordinator.instance;
   GatewayConnection? _connection;
   bool _healthCheckInFlight = false;
   bool _rpcDiscoveryDone =
@@ -233,6 +236,7 @@ class GatewayService {
   GatewayState _state = const GatewayState();
   bool _isStarting = false;
   bool _isStopping = false;
+  Future<bool>? _paidProviderPreparationInFlight;
   final _chatActivityController = StreamController<String>.broadcast();
   final List<String> _activityBuffer = []; // replay buffer for late subscribers
 
@@ -399,6 +403,146 @@ class GatewayService {
             .timeout(const Duration(seconds: 2), onTimeout: () {})
             .catchError((_) {}),
       );
+    }
+  }
+
+  Future<bool> _preparePaidProviderRouting(
+    PreferencesService prefs, {
+    required bool gatewayAlreadyRunning,
+  }) {
+    final existing = _paidProviderPreparationInFlight;
+    if (existing != null) return existing;
+    late Future<bool> preparation;
+    preparation = _preparePaidProviderRoutingOnce(
+      prefs,
+      gatewayAlreadyRunning: gatewayAlreadyRunning,
+    ).whenComplete(() {
+      if (identical(_paidProviderPreparationInFlight, preparation)) {
+        _paidProviderPreparationInFlight = null;
+      }
+    });
+    _paidProviderPreparationInFlight = preparation;
+    return preparation;
+  }
+
+  Future<void> _retirePaidProviderRoutingAfterGatewayStop() async {
+    final config = await _readConfig();
+    if (config.isEmpty) {
+      final file = await _activeOpenClawConfigFile();
+      if (await file.exists()) {
+        throw StateError(
+          'Gateway configuration is unreadable; paid-provider capabilities '
+          'were not retired.',
+        );
+      }
+    }
+
+    final before = jsonEncode(config);
+    _paidProviderGateway.removeGatewayCapabilities(config);
+    if (jsonEncode(config) != before) {
+      // Persist the scrub while both owners are stopped. Rotating first would
+      // leave a recoverable stale capability behind if this write failed.
+      await _writeConfig(config);
+    }
+    if (_paidProviderGateway.isRunning) {
+      await _paidProviderGateway.stopAfterGateway(gatewayStopped: true);
+    }
+  }
+
+  Future<bool> _preparePaidProviderRoutingOnce(
+    PreferencesService prefs, {
+    required bool gatewayAlreadyRunning,
+  }) async {
+    final config = await _readConfig();
+    if (config.isEmpty) {
+      final file = await _activeOpenClawConfigFile();
+      if (await file.exists()) {
+        _updateState(_state.copyWith(
+          status: GatewayStatus.error,
+          errorMessage:
+              'Gateway configuration is unreadable; paid-provider routing was not changed.',
+        ));
+        return false;
+      }
+    }
+
+    final configuredModel = (prefs.configuredModel ?? '').trim();
+    final primaryModel = config['agents']?['defaults']?['model']?['primary']
+            ?.toString()
+            .trim() ??
+        '';
+    final selectedModel =
+        configuredModel.isNotEmpty ? configuredModel : primaryModel;
+    final paidProvider = _paidProviderGateway.providerForModel(selectedModel);
+    final before = jsonEncode(config);
+
+    if (paidProvider == null) {
+      // Never rewrite a live Gateway merely to remove an inactive capability.
+      // The next clean start removes it after the selected owner is confirmed
+      // stopped, preserving the existing attach-without-churn contract.
+      if (!gatewayAlreadyRunning) {
+        await _retirePaidProviderRoutingAfterGatewayStop();
+      }
+      return true;
+    }
+
+    try {
+      final preparation = await _paidProviderGateway.prepareGatewayConfig(
+        config,
+        selectedModel: selectedModel,
+      );
+      if (!preparation.enabled) {
+        throw const PaidProviderGatewayException(
+          'provider_not_selected',
+          'The selected wallet-funded provider was not recognized.',
+        );
+      }
+      if (_runtime.id ==
+          GatewayRuntimeRegistry.nativeNodeFullGatewayProduction.id) {
+        await _applyNativeProviderConfigPolicy(config);
+      } else {
+        _ensureCatalogProviderDefaults(config);
+      }
+      if (jsonEncode(config) != before) {
+        if (gatewayAlreadyRunning) {
+          _beginGatewayConfigTransition(
+            'paid-provider proxy capability refresh',
+            minimumSettle: _gatewayConfigSoftSettle,
+          );
+        }
+        await _writeConfig(config);
+      }
+      _addActivity(
+        '[PAID-PROVIDER] Authenticated loopback routing is ready for $paidProvider.',
+      );
+      return true;
+    } on PaidProviderGatewayException catch (error) {
+      if (!gatewayAlreadyRunning && _paidProviderGateway.isRunning) {
+        await _retirePaidProviderRoutingAfterGatewayStop().catchError((_) {});
+      }
+      _updateState(_state.copyWith(
+        status: GatewayStatus.error,
+        errorMessage:
+            'The selected wallet-funded provider is unavailable (${error.code}).',
+        logs: [
+          ..._state.logs,
+          '[ERROR] Paid-provider startup failed: ${error.code}',
+        ],
+      ));
+      return false;
+    } catch (_) {
+      if (!gatewayAlreadyRunning && _paidProviderGateway.isRunning) {
+        await _retirePaidProviderRoutingAfterGatewayStop().catchError((_) {});
+      }
+      _updateState(_state.copyWith(
+        status: GatewayStatus.error,
+        errorMessage: 'The selected wallet-funded provider is unavailable.',
+        logs: [
+          ..._state.logs,
+          '[ERROR] Paid-provider startup failed: gateway_config_error',
+        ],
+      ));
+      return false;
     }
   }
 
@@ -1627,6 +1771,13 @@ class GatewayService {
     final listenerRunning = await _isSelectedRuntimeListenerAlive();
     final alreadyRunning = processRunning || listenerRunning;
 
+    if (!await _preparePaidProviderRouting(
+      prefs,
+      gatewayAlreadyRunning: alreadyRunning,
+    )) {
+      return;
+    }
+
     if (alreadyRunning && listenerRunning) {
       // FAST PATH: already healthy → skip config write + doctor + reload
       if (_state.status != GatewayStatus.running) {
@@ -1839,6 +1990,12 @@ class GatewayService {
       _startHealthCheck();
       unawaited(_checkHealth());
     } catch (e) {
+      try {
+        final runtimeStillRunning = await _runtime.isRunning();
+        if (!runtimeStillRunning && _paidProviderGateway.isRunning) {
+          await _retirePaidProviderRoutingAfterGatewayStop();
+        }
+      } catch (_) {}
       if (nativeProductionOwner) {
         _updateState(_state.copyWith(
           status: GatewayStatus.error,
@@ -2926,11 +3083,16 @@ HEARTBEAT_OK.
         '$provider is not supported by the embedded native gateway.',
       );
     }
-    if (!await hasProviderCredential(provider)) {
+    final config = await _readConfig();
+    final paidProvider = _paidProviderGateway.providerForModel(canonical);
+    if (paidProvider != null) {
+      await _paidProviderGateway.prepareGatewayConfig(
+        config,
+        selectedModel: canonical,
+      );
+    } else if (!await hasProviderCredential(provider)) {
       throw StateError('Configure the $provider provider before selecting it.');
     }
-
-    final config = await _readConfig();
     config['models'] ??= <String, dynamic>{};
     final models = config['models'];
     if (models is! Map) {
@@ -3023,6 +3185,9 @@ HEARTBEAT_OK.
 
     try {
       final config = await _readConfig();
+      if (PaidProviderGatewayCoordinator.providerIds.contains(normalized)) {
+        return _paidProviderGateway.hasCurrentCapability(config, normalized);
+      }
       final providerConfig = config['models']?['providers']?[normalized];
       if (providerConfig is Map) {
         final apiKey = providerConfig['apiKey'];
@@ -4146,12 +4311,17 @@ HEARTBEAT_OK.
 
     try {
       await _runtime.stop();
+      var runtimeStillRunning = false;
       for (var attempt = 0; attempt < 8; attempt++) {
-        final stillRunning =
+        runtimeStillRunning =
             await _runtime.isRunning().catchError((_) => false);
-        if (!stillRunning) break;
+        if (!runtimeStillRunning) break;
         await Future.delayed(const Duration(milliseconds: 350));
       }
+      if (runtimeStillRunning) {
+        throw StateError('Gateway process did not stop cleanly.');
+      }
+      await _retirePaidProviderRoutingAfterGatewayStop();
       _updateState(_state.copyWith(
         status: GatewayStatus.stopped,
         isWebsocketConnected: false,

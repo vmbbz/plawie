@@ -33,6 +33,14 @@ void main() {
       ModelProviderCatalog.mergeProviderConfig('venice', const {}),
       isNot(contains('apiKey')),
     );
+    expect(
+      ModelProviderCatalog.isProviderSupportedByNativeGateway('venice'),
+      isTrue,
+    );
+    expect(
+      ModelProviderCatalog.isProviderSupportedByNativeGateway('blockrun'),
+      isTrue,
+    );
   });
 
   test('OpenRouter Auto keeps the upstream router model id', () {
