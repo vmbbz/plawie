@@ -9,6 +9,13 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+# fllama is a separately resolved Git-linked package with its own analyzer
+# configuration and dev dependencies. Analyze it from that package, not through
+# the root application's package configuration.
+analyzer:
+  exclude:
+    - fllama/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`
