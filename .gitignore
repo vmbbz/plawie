@@ -63,3 +63,6 @@ android/app/src/main/jniLibs/arm64-v8a/libplawie_node_bridge.so.manifest.json
 
 # Local native Node source/build products stay outside version control.
 build/native-node/
+
+# Isolated Superpowers/Codex implementation worktrees.
+.worktrees/
