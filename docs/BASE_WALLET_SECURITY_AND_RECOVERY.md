@@ -165,3 +165,24 @@ Base Mainnet does not remove the approval boundary. Plawie must show the asset,
 amount, destination, network, provider, and estimated network fee before asking
 Android to authenticate. Agent-initiated payment intents may prepare this
 review, but they cannot authenticate, sign, or broadcast without the human.
+
+## Canonical interactive payment approval
+
+`PaidProviderApprovalHost` is the single app-scoped owner of paid-provider
+foreground state and BlockRun approval dialogs. A request fails closed unless
+the app is resumed, the host is subscribed, and no other approval is active.
+The non-dismissible dialog shows the exact USDC amount, provider, model,
+network, purpose, resource host, expiry, full recipient, and redacted request
+fingerprint. It never shows or stores the prompt, tool payload, signature, or
+private key.
+
+Backgrounding completes the broker decision as `appBackgrounded`, removes the
+owned dialog route, invalidates Venice foreground-turn authorization, and never
+calls the signer. Approval completes only the one process-local broker intent;
+the Android wallet then independently requires strong biometric or device
+credential authentication and revalidates the bounded EIP-3009 payload.
+
+While the dialog is visible, Android applies `FLAG_SECURE`, filters touches from
+obscuring windows, and on Android 12 or newer hides non-system overlays. If that
+secure surface cannot be enabled, the dialog is not shown and the payment is
+cancelled. The app clears the temporary window policy after the dialog closes.

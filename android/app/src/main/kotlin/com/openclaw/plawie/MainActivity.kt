@@ -45,6 +45,7 @@ import android.net.NetworkRequest
 import android.app.AlarmManager
 import android.os.BatteryManager
 import android.os.SystemClock
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -252,6 +253,40 @@ class MainActivity : FlutterActivity() {
                         call.arguments as? Map<*, *>,
                         result,
                     )
+                }
+                "setSensitiveUiVisible" -> {
+                    val visible = call.arguments as? Boolean
+                    if (visible == null) {
+                        result.error("SENSITIVE_UI_ERROR", "Sensitive UI state is missing.", null)
+                    } else {
+                        runOnUiThread {
+                            try {
+                                if (visible) {
+                                    window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                                } else {
+                                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                                }
+                                window.decorView.filterTouchesWhenObscured = visible
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    window.setHideOverlayWindows(visible)
+                                }
+                                result.success(true)
+                            } catch (error: Exception) {
+                                if (visible) {
+                                    // Avoid leaving the whole app permanently capture-blocked
+                                    // when an OEM rejects a later protection in this bundle.
+                                    try {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                            window.setHideOverlayWindows(false)
+                                        }
+                                        window.decorView.filterTouchesWhenObscured = false
+                                        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                                    } catch (_: Exception) {}
+                                }
+                                result.error("SENSITIVE_UI_ERROR", error.message, null)
+                            }
+                        }
+                    }
                 }
                 "signSecureVeniceProviderIdentity" -> {
                     secureEvmWalletManager.signVeniceProviderIdentity(

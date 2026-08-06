@@ -171,12 +171,6 @@ class _ChatScreenState extends State<ChatScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    final lifecycleState = WidgetsBinding.instance.lifecycleState;
-    if (lifecycleState == null || lifecycleState == AppLifecycleState.resumed) {
-      PaidProviderTurnAuthorizationService.instance.markAppForeground();
-    } else {
-      PaidProviderTurnAuthorizationService.instance.markAppBackground();
-    }
     _scrollController.addListener(_handleChatScroll);
     _chatRuntime.addListener(_syncChatRuntimeState);
     _configurationRequestSub =
@@ -3058,13 +3052,7 @@ class _ChatScreenState extends State<ChatScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      PaidProviderTurnAuthorizationService.instance.markAppForeground();
       _scrollToBottom(instant: true);
-    } else if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.detached ||
-        state == AppLifecycleState.hidden) {
-      PaidProviderTurnAuthorizationService.instance.markAppBackground();
     }
 
     final mode = PreferencesService().wakeWordMode;

@@ -237,6 +237,21 @@ class NativeBridge {
     return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
   }
 
+  /// Enables the Android-secured surface used by the canonical payment dialog.
+  /// A failed enable is fatal to approval; callers must cancel the payment.
+  static Future<void> setSensitiveUiVisible(bool visible) async {
+    final applied = await _channel.invokeMethod<bool>(
+      'setSensitiveUiVisible',
+      visible,
+    );
+    if (applied != true) {
+      throw PlatformException(
+        code: 'SENSITIVE_UI_ERROR',
+        message: 'Android did not apply the sensitive UI policy.',
+      );
+    }
+  }
+
   static Future<Map<String, dynamic>> signSecureVeniceBalanceIdentity(
     Map<String, dynamic> identity,
   ) async {

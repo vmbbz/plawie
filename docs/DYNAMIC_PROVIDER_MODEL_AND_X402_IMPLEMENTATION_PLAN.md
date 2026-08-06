@@ -1387,11 +1387,13 @@ implemented; app integration and device settlement proof pending)
   host/network/token/facilitator allowlists.
 - Add `PendingPaymentIntent` and receipt records.
 - The foreground-only approval broker and cancellation/expiry behavior are
-  implemented. The canonical visible approval dialog is wired in the later app
-  lifecycle/UI phase; until then, listenerless requests fail closed.
+  implemented. One app-scoped listener now owns the canonical visible approval
+  dialog and both paid-provider foreground lifecycles. Listenerless,
+  backgrounded, expired, concurrent, and unsecured-surface requests fail
+  closed.
 - The Gateway-compatible BlockRun transport handler and approval bridge are
-  implemented. Proxy startup, Gateway configuration injection, and the
-  top-level foreground listener remain separate integration gates.
+  implemented. Proxy startup and Gateway configuration injection are owned by
+  the selected Gateway lifecycle.
 - Add `exact/eip3009` EIP-712 construction and the approval-bound signer; do not
   call generic `sendUsdc`.
 - Retry the byte-identical method/URL/body once with the provider's documented
@@ -1410,10 +1412,19 @@ payment details are displayed and validated, and the provider accepts one
 approved payment in a controlled test with no automatic second attempt.
 
 Code-level parsing, foreground-broker, exact immutable-body retry, terminal
-receipt, redirect, recovery, and single-attempt tests pass. The remaining
-release gates are the canonical visible approval dialog and one user-approved
-Base Mainnet settlement against the current live provider challenge on a
-hardware-backed connected Android device.
+receipt, redirect, recovery, single-attempt, canonical approval UI, background
+cancellation, and Android secure-surface contract tests pass. The remaining
+payment release gate is one user-approved Base Mainnet settlement against the
+current live provider challenge on a hardware-backed connected Android device.
+
+The approval dialog is an explicitly owned, non-dismissible route showing the
+exact amount, provider/model, Base Mainnet, purpose, host, expiry, recipient,
+and redacted fingerprint. `FLAG_SECURE`, obscured-touch filtering, and Android
+12+ overlay hiding are active before it is presented. Failure to apply that
+policy cancels without displaying an approvable control. Backgrounding resolves
+the broker as cancelled-by-lifecycle and removes the exact route before the app
+can resume; approval still leads to a separate Android device-authenticated
+signer policy check.
 
 The paid-provider proxy is now owned by `GatewayService`: it starts and passes
 an authenticated loopback health check before the selected native Gateway is

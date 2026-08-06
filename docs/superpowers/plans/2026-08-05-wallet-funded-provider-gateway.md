@@ -337,7 +337,7 @@ Test BYOK key input remains unchanged; Venice/BlockRun show no key field; setup 
 
 Wallet-funded selection explains Base Mainnet, ETH gas, native USDC, wallet backup, Venice prepaid top-up versus BlockRun per-request approval, and that setup performs no blockchain action. Completion routes to a clear Base funding action when not ready.
 
-- [ ] **Step 3: Use one canonical approval surface**
+- [x] **Step 3: Use one canonical approval surface**
 
 `PaidProviderApprovalDialog` is opened by the top-level foreground UI listener and shows provider/model, exact amount, payee short address with copy/full-view, Base Mainnet, expiry, and request reason. Approve leads to Android authentication; Cancel completes the broker with no payment. Chat and Settings link to this same mechanism rather than creating alternate flows.
 
