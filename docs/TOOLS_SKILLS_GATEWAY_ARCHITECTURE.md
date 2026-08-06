@@ -540,6 +540,11 @@ Device capabilities belong in node command policy, for example:
   "gateway": {
     "nodes": {
       "allowCommands": [
+        "payments.capabilities",
+        "payments.status",
+        "payments.receipts",
+        "bridge.capabilities",
+        "bridge.quote",
         "camera.snap",
         "camera.clip",
         "camera.list",
@@ -579,6 +584,21 @@ Device capabilities belong in node command policy, for example:
   }
 }
 ```
+
+Payment and inbound bridge commands are read-only Android node surfaces. The
+canonical commands are `payments.capabilities`, `payments.status`,
+`payments.receipts`, `bridge.capabilities`, and `bridge.quote`; payment
+commands also retain the underscore aliases emitted by `NodeProvider` for
+mobile compatibility. None of these commands can approve, unlock, sign,
+submit, broadcast, or execute a bridge. Every spending action remains in the
+visible Base-page approval flow with a fresh Android device authentication.
+
+`GatewayToolCatalog.mobileNodeAllowCommands` is the reviewed source of truth.
+`GatewayService._ensureNodeAllowCommands()` writes that exact set into the
+active native config before startup, allowing official OpenClaw to persist the
+same command surface that the Android node declares. Pairing verification must
+remain strict; a missing command is a policy/config defect, not a reason to
+weaken the stored-snapshot check.
 
 Node command declarations and Gateway tool allowlists are separate contracts.
 
