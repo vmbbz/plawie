@@ -54,8 +54,8 @@ class BaseWalletRecoveryViewModel {
               ? 'The encrypted wallet was saved, but the final unlock check was deferred.'
               : 'Every signing operation requires device authentication.',
           guidance: status.verificationPending
-              ? 'Use Backup to authenticate and confirm access before funding.'
-              : 'Export a backup before clearing app data or uninstalling.',
+              ? 'Authenticate with Backup before funding. Signed updates preserve it; clearing app data or uninstalling removes it.'
+              : 'Signed updates preserve it. Export a backup before clearing app data or uninstalling.',
           actionsEnabled: true,
           canBackup: true,
           canRemove: true,

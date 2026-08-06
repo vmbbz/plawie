@@ -1149,17 +1149,19 @@ class _BaseScreenState extends State<BaseScreen> {
                 ),
               ),
             ],
-            const SizedBox(height: 12),
-            Divider(color: theme.dividerColor.withValues(alpha: 0.35)),
-            const SizedBox(height: 8),
-            Text(
-              'Signed app updates preserve this wallet. Clearing Plawie app data or '
-              'uninstalling removes it from this device, so export a backup before funding.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontSize: 11,
+            if (status.state != SecureWalletState.healthy) ...[
+              const SizedBox(height: 12),
+              Divider(color: theme.dividerColor.withValues(alpha: 0.35)),
+              const SizedBox(height: 8),
+              Text(
+                'Wallet storage survives signed app updates. Clearing Plawie app data '
+                'or uninstalling removes any wallet record on this device.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 11,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

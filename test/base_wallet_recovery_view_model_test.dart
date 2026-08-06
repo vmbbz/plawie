@@ -22,6 +22,7 @@ void main() {
     expect(view.canRemove, isTrue);
     expect(view.canCreate, isFalse);
     expect(view.canImport, isFalse);
+    expect(view.guidance.toLowerCase(), contains('signed updates'));
   });
 
   test('legacy wallet offers migration but blocks replacement', () {
