@@ -68,6 +68,14 @@ class PaidProviderGatewayCoordinator {
 
   bool get isRunning => _proxy.isRunning;
 
+  /// Returns null when the transport is stopped. A running transport is
+  /// inspected through its authenticated health endpoint without starting,
+  /// stopping, or rotating any capability.
+  Future<bool?> inspectHealth() async {
+    if (!_proxy.isRunning) return null;
+    return _proxy.verifyHealth();
+  }
+
   String? providerForModel(String? modelId) {
     final value = modelId?.trim() ?? '';
     final separator = value.indexOf('/');

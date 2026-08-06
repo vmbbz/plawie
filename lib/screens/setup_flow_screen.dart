@@ -195,10 +195,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           // Wallet-funded providers do not accept a BYOK secret. Install the
           // Gateway without inventing a credential or silently substituting a
           // different paid provider; wallet activation continues in Base.
-          await ProviderSetupService().clearPending();
-          prefs.apiProvider = null;
-          prefs.configuredModel = null;
-          prefs.aiPaymentProvider = activeProvider.paymentProviderId;
+          await ProviderSetupService().selectWalletFundedProvider(
+            activeProvider.paymentProviderId!,
+          );
         } else {
           final apiProvider =
               ModelProviderCatalog.apiProviderForSetupId(activeProvider.id);
@@ -519,6 +518,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       _ProviderInfo provider, ThemeData theme, bool isDark) {
     final isSelected = _selectedProvider == provider.id;
     return GestureDetector(
+      key: Key('setup-provider-${provider.id}'),
       onTap: () {
         if (_selectedProvider == provider.id) return;
         setState(() {
@@ -640,6 +640,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
   Widget _buildApiKeyStep(ThemeData theme, bool isDark) {
     final provider = _activeProvider;
     if (provider == null) return const SizedBox.shrink();
+    final paymentProvider =
+        AiPaymentProviderCatalog.byId(provider.paymentProviderId);
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -708,8 +710,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  provider.paymentProviderId != null
-                      ? '${provider.name} uses your Plawie Base wallet on ${AiPaymentProviderCatalog.networkLabel}. No provider API key or password is collected. After installation, create or import a wallet in Base, fund it with USDC, and approve each payment visibly.'
+                  paymentProvider != null
+                      ? _walletProviderSetupDescription(paymentProvider)
                       : 'Plawie will boot the Gateway first. Private offline models can be downloaded later from Local LLM and do not require a provider key.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -728,7 +730,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                           color: Colors.amber.withValues(alpha: 0.3)),
                     ),
                     child: const Text(
-                      'Installation never funds the wallet or signs a payment. Live mainnet signing stays locked until the device-authenticated signer is ready.',
+                      'Setup performs no blockchain action. It does not create or fund a wallet, top up a provider, sign, or spend. Every later payment still requires visible approval and device authentication.',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 11, height: 1.4),
                     ),
@@ -882,6 +884,17 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
     );
   }
 
+  String _walletProviderSetupDescription(
+    AiPaymentProviderOption provider,
+  ) {
+    final common =
+        '${provider.label} uses the app-owned wallet on ${AiPaymentProviderCatalog.networkLabel}; no provider API key or password is collected. After installation, create or import the wallet in Base, then back up or export the wallet before funding it with native Base USDC. Some bridge or wallet-transfer actions may also require Base ETH for gas.';
+    if (provider.fundingMode == AiPaymentFundingMode.prepaidBalance) {
+      return '$common ${provider.label} uses a prepaid Venice balance: make an explicit top-up and check the refreshed balance before selecting a model.';
+    }
+    return '$common ${provider.label} has no prepaid provider balance or top-up. If a request needs payment, Plawie shows the exact Base USDC amount, recipient, reason, and expiry for a separate approval.';
+  }
+
   // ─── Step 2: Agent Name ───────────────────────────────────────────
 
   Widget _buildAgentNameStep(ThemeData theme, bool isDark) {
@@ -970,6 +983,8 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
   // ─── Step 3: Settings ─────────────────────────────────────────────
 
   Widget _buildSettingsStep(ThemeData theme, bool isDark) {
+    final paymentProvider =
+        AiPaymentProviderCatalog.byId(_activeProvider?.paymentProviderId);
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       children: [
@@ -1062,7 +1077,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
                   theme, _activeProvider?.name ?? 'No provider selected'),
               if (_activeProvider?.paymentProviderId != null)
                 _buildSummaryRow(theme,
-                    '${AiPaymentProviderCatalog.networkLabel} · ${AiPaymentProviderCatalog.assetLabel} · approval every payment'),
+                    '${AiPaymentProviderCatalog.networkLabel} · ${AiPaymentProviderCatalog.assetLabel} · ${paymentProvider?.fundingLabel ?? 'wallet payment'}'),
               _buildSummaryRow(
                   theme, 'Agent: ${_agentNameController.text.trim()}'),
               _buildSummaryRow(

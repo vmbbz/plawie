@@ -1,7 +1,8 @@
 # Dynamic Providers, Models, Accounts, and Human-Approved x402
 
-Status: Phases 1-9 and inbound Base bridge quoting implemented; wallet,
-external-wallet execution, and paid-provider completion approved but pending
+Status: Phases 1-9, inbound Base bridge quoting, and wallet-funded provider
+Gateway/UI integration implemented; external-wallet execution and controlled
+Base Mainnet release proof remain pending
 
 Date: 2026-08-05
 
@@ -34,10 +35,10 @@ Current implementation status:
 - Venice top-up remains a separate visible-approval x402 flow. A settled,
   redacted receipt is persisted before provider balance refresh, and a refresh
   failure never makes a confirmed payment look retryable.
-- The Venice handler is implemented and covered in isolation. Production use
-  remains unavailable until the shared loopback proxy lifecycle and current
-  capability are integrated into native Gateway startup; BlockRun per-request
-  approval brokerage is also still pending.
+- Venice and BlockRun run through the shared authenticated loopback lifecycle
+  owned by native Gateway startup. Venice uses its bounded foreground lease and
+  BlockRun uses the app-scoped exact-payment approval broker; ordinary and SSE
+  response bytes return through the same OpenClaw conversation.
 - Catalog truth is separate from provider/payment readiness. Each provider now
   records fresh, stale, offline-fallback, or unavailable metadata, and shipped
   wallet-provider explanations are explicitly non-live and cannot become a
@@ -48,6 +49,12 @@ Current implementation status:
 - First setup distinguishes BYOK providers from wallet-funded providers. The Base
   page owns wallet funding, prepaid provider top-ups, per-request payment
   explanations, and receipts; Chat and Settings link to that management surface.
+- Chat, Settings, and Base now derive wallet-funded model status from one
+  read-only readiness service. It keeps live/stale catalog truth, secure-wallet
+  state, Base network, cached Venice balance freshness, and authenticated proxy
+  health separate. Opening the picker never signs or spends; non-live fallback
+  entries are disabled, Venice is not ready from wallet existence alone, and
+  BlockRun is always labeled payment-per-request rather than funded.
 - Ordinary Base ETH/USDC transfers now require a short-lived exact-request
   visible-UI approval capability and a second confirmation step. This does not
   enable x402 spending.
@@ -1516,9 +1523,11 @@ agent capability. It also connects Venice and BlockRun to OpenClaw through a
 payment-aware loopback provider proxy so provider changes do not bypass Gateway
 context, tools, or skills.
 
-This continuation is not implemented until its wallet-reliability, callback,
-replay, exact-approval, receipt-recovery, and context-invariance tests pass. The
-quote-only path remains the rollback behavior.
+The paid-provider proxy, bounded wallet identity, exact BlockRun approval,
+receipt handling, context-invariance tests, and aligned app UI are implemented.
+External-wallet bridge execution remains pending, so the quote-only bridge path
+continues to be the safe shipped fallback. Production enablement still requires
+the controlled on-device Base Mainnet settlement proofs in the release plan.
 
 References:
 

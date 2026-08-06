@@ -5,21 +5,34 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:decimal/decimal.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../providers/gateway_provider.dart';
 import '../services/ai_payment_provider_catalog.dart';
 import '../services/base_service.dart';
 import '../services/base_wallet_recovery_view_model.dart';
 import '../services/bridge_quote_service.dart';
+import '../services/dynamic_model_catalog.dart';
 import '../services/native_bridge.dart';
+import '../services/paid_provider_gateway_coordinator.dart';
 import '../services/preferences_service.dart';
 import '../services/provider_balance_service.dart';
+import '../services/provider_model_discovery_service.dart';
+import '../services/wallet_funded_provider_readiness.dart';
 import '../services/x402_payment_service.dart';
 import '../services/x402_payment_transport_service.dart';
 import '../widgets/status_card.dart';
 import '../widgets/glass_card.dart';
 
 class BaseScreen extends StatefulWidget {
-  const BaseScreen({super.key});
+  const BaseScreen({
+    super.key,
+    this.initialPaymentProviderId,
+    this.initialAction,
+  });
+
+  final String? initialPaymentProviderId;
+  final WalletFundedProviderAction? initialAction;
 
   @override
   State<BaseScreen> createState() => _BaseScreenState();
@@ -43,6 +56,12 @@ class _BaseScreenState extends State<BaseScreen> {
   String? _aiPaymentProgress;
   ProviderBalanceSnapshot? _providerBalance;
   bool _providerBalanceBusy = false;
+  bool _providerReadinessBusy = false;
+  DynamicCatalogSnapshot _modelCatalog =
+      DynamicCatalogSnapshot.bundledFallback();
+  PaidProviderTransportState _paidTransportState =
+      PaidProviderTransportState.stopped;
+  bool _initialActionHandled = false;
 
   @override
   void initState() {
@@ -72,13 +91,26 @@ class _BaseScreenState extends State<BaseScreen> {
     setState(() => _isLoading = true);
     try {
       await _prefs.init();
-      final savedPaymentProvider =
-          AiPaymentProviderCatalog.byId(_prefs.aiPaymentProvider);
-      if (savedPaymentProvider != null) {
-        _selectedAiPaymentProvider = savedPaymentProvider.id;
-        _providerBalance = _providerBalances.cached(savedPaymentProvider.id);
+      final selectedPaymentProvider =
+          AiPaymentProviderCatalog.byId(widget.initialPaymentProviderId) ??
+              AiPaymentProviderCatalog.byId(_prefs.aiPaymentProvider);
+      if (selectedPaymentProvider != null) {
+        _selectedAiPaymentProvider = selectedPaymentProvider.id;
+        _providerBalance = _providerBalances.cached(selectedPaymentProvider.id);
+        _prefs.aiPaymentProvider = selectedPaymentProvider.id;
       }
       await _baseService.initialize();
+      final cachedCatalog = await DynamicModelCatalogRepository().load();
+      _modelCatalog =
+          (cachedCatalog ?? DynamicCatalogSnapshot.bundledFallback())
+              .withEffectiveState(DateTime.now());
+      final transportHealth =
+          await PaidProviderGatewayCoordinator.instance.inspectHealth();
+      _paidTransportState = transportHealth == null
+          ? PaidProviderTransportState.stopped
+          : transportHealth
+              ? PaidProviderTransportState.healthy
+              : PaidProviderTransportState.unhealthy;
       _paymentReceipts = await _x402Transport.receiptStore.read();
       if (_baseService.isConnected) {
         await _baseService.refreshBalance();
@@ -87,6 +119,55 @@ class _BaseScreenState extends State<BaseScreen> {
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+    if (mounted && !_initialActionHandled && widget.initialAction != null) {
+      _initialActionHandled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_runInitialProviderAction());
+      });
+    }
+  }
+
+  Future<void> _runInitialProviderAction() async {
+    final action = widget.initialAction;
+    final provider =
+        AiPaymentProviderCatalog.byId(_selectedAiPaymentProvider) ??
+            AiPaymentProviderCatalog.providers.first;
+    switch (action) {
+      case WalletFundedProviderAction.fundWallet:
+        _baseService.isConnected
+            ? _showReceiveDialog()
+            : _showWalletRequiredDialog();
+        break;
+      case WalletFundedProviderAction.switchToMainnet:
+        if (_baseService.isConnected) {
+          await _switchToMainnetForAiPayments();
+        } else {
+          _showWalletRequiredDialog();
+        }
+        break;
+      case WalletFundedProviderAction.refreshBalance:
+        if (_baseService.isConnected) {
+          await _refreshProviderBalance(provider);
+        } else {
+          _showWalletRequiredDialog();
+        }
+        break;
+      case WalletFundedProviderAction.topUpVenice:
+        if (!_baseService.isConnected) {
+          _showWalletRequiredDialog();
+        } else if (_baseService.useSepolia) {
+          await _switchToMainnetForAiPayments();
+        } else {
+          await _showTopUpPreparation(provider);
+        }
+        break;
+      case WalletFundedProviderAction.none:
+      case WalletFundedProviderAction.openBase:
+      case WalletFundedProviderAction.restartGateway:
+      case WalletFundedProviderAction.refreshModels:
+      case null:
+        break;
     }
   }
 
@@ -636,6 +717,7 @@ class _BaseScreenState extends State<BaseScreen> {
         AiPaymentProviderCatalog.byId(_selectedAiPaymentProvider) ??
             AiPaymentProviderCatalog.providers.first;
     final mainnetReady = !_baseService.useSepolia;
+    final readiness = _readinessFor(selected);
 
     return GlassCard(
       child: Padding(
@@ -746,52 +828,98 @@ class _BaseScreenState extends State<BaseScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(selected.fundingLabel,
+                  Text(readiness?.title ?? selected.fundingLabel,
                       style: const TextStyle(
                           fontWeight: FontWeight.w700, fontSize: 13)),
                   const SizedBox(height: 4),
-                  Text(selected.description,
+                  Text(readiness?.detail ?? selected.description,
                       style: TextStyle(
                           color: theme.colorScheme.onSurfaceVariant,
                           fontSize: 11,
                           height: 1.4)),
                   const SizedBox(height: 10),
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
                     children: [
-                      Expanded(
-                        child: Text(
-                          _providerBalance?.summary ??
-                              (selected.fundingMode ==
-                                      AiPaymentFundingMode.perRequest
-                                  ? 'No prepaid provider balance.'
-                                  : 'Balance not checked on this device.'),
+                      if (readiness != null)
+                        Text(
+                          readiness.catalogLabel,
                           style: TextStyle(
-                            color: _providerBalance?.needsAttention == true
-                                ? Colors.orangeAccent
-                                : theme.colorScheme.onSurfaceVariant,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 10,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      TextButton.icon(
-                        onPressed:
-                            _baseService.isConnected && !_providerBalanceBusy
-                                ? () => _refreshProviderBalance(selected)
-                                : null,
-                        icon: _providerBalanceBusy
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.refresh_rounded, size: 16),
-                        label: const Text('Balance'),
-                      ),
+                      if (readiness != null)
+                        Text(
+                          readiness.transportLabel,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 10,
+                          ),
+                        ),
+                      if (readiness != null &&
+                          const <WalletFundedProviderAction>{
+                            WalletFundedProviderAction.refreshModels,
+                            WalletFundedProviderAction.restartGateway,
+                          }.contains(readiness.primaryAction))
+                        TextButton(
+                          key: const Key('base-provider-readiness-action'),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                          ),
+                          onPressed: _providerReadinessBusy
+                              ? null
+                              : () => _runBaseReadinessAction(
+                                    selected,
+                                    readiness,
+                                  ),
+                          child: Text(_providerReadinessBusy
+                              ? 'Working…'
+                              : readiness.primaryActionLabel),
+                        ),
                     ],
                   ),
+                  if (selected.supportsTopUp) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _providerBalance?.summary ??
+                                (selected.fundingMode ==
+                                        AiPaymentFundingMode.perRequest
+                                    ? 'No prepaid provider balance.'
+                                    : 'Balance not checked on this device.'),
+                            style: TextStyle(
+                              color: _providerBalance?.needsAttention == true
+                                  ? Colors.orangeAccent
+                                  : theme.colorScheme.onSurfaceVariant,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          onPressed:
+                              _baseService.isConnected && !_providerBalanceBusy
+                                  ? () => _refreshProviderBalance(selected)
+                                  : null,
+                          icon: _providerBalanceBusy
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.refresh_rounded, size: 16),
+                          label: const Text('Balance'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -893,6 +1021,71 @@ class _BaseScreenState extends State<BaseScreen> {
         ),
       ),
     );
+  }
+
+  WalletFundedProviderReadiness? _readinessFor(
+    AiPaymentProviderOption selected,
+  ) {
+    DynamicProviderRecord? provider;
+    for (final candidate in _modelCatalog.providers) {
+      if (candidate.id == selected.id) {
+        provider = candidate;
+        break;
+      }
+    }
+    if (provider == null) return null;
+    return WalletFundedProviderReadinessService.evaluate(
+      provider: provider,
+      walletStatus: _baseService.walletStatus,
+      isBaseMainnet: !_baseService.useSepolia,
+      transportState: _paidTransportState,
+      balance: _providerBalance,
+      now: DateTime.now().toUtc(),
+    );
+  }
+
+  Future<void> _runBaseReadinessAction(
+    AiPaymentProviderOption selected,
+    WalletFundedProviderReadiness readiness,
+  ) async {
+    if (_providerReadinessBusy) return;
+    setState(() => _providerReadinessBusy = true);
+    try {
+      if (readiness.primaryAction == WalletFundedProviderAction.refreshModels) {
+        final refreshed =
+            await ProviderModelDiscoveryService().refreshProvider(selected.id);
+        _modelCatalog = refreshed.withEffectiveState(DateTime.now());
+      } else if (readiness.primaryAction ==
+          WalletFundedProviderAction.restartGateway) {
+        final gateway = context.read<GatewayProvider>();
+        await gateway.stop();
+        await gateway.start();
+        final health =
+            await PaidProviderGatewayCoordinator.instance.inspectHealth();
+        _paidTransportState = health == true
+            ? PaidProviderTransportState.healthy
+            : health == null
+                ? PaidProviderTransportState.stopped
+                : PaidProviderTransportState.unhealthy;
+      }
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(readiness.primaryAction ==
+                  WalletFundedProviderAction.refreshModels
+              ? '${selected.label} models refreshed.'
+              : 'Gateway transport restarted.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Provider readiness action failed: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _providerReadinessBusy = false);
+    }
   }
 
   void _showWalletRequiredDialog() {

@@ -8,6 +8,24 @@ import 'package:clawa/services/paid_provider_loopback_credential_service.dart';
 import 'package:clawa/services/paid_provider_proxy_service.dart';
 
 void main() {
+  test('read-only health inspection never starts a stopped proxy', () async {
+    final stopped = _FakeProxy();
+    final stoppedCoordinator = PaidProviderGatewayCoordinator(
+      credentials: _credentials(0),
+      proxy: stopped,
+    );
+    expect(await stoppedCoordinator.inspectHealth(), isNull);
+    expect(stopped.events, isEmpty);
+
+    final running = _FakeProxy(running: true, healthy: true);
+    final runningCoordinator = PaidProviderGatewayCoordinator(
+      credentials: _credentials(0),
+      proxy: running,
+    );
+    expect(await runningCoordinator.inspectHealth(), isTrue);
+    expect(running.events, <String>['health']);
+  });
+
   test('starts and health-checks before injecting only paid providers',
       () async {
     final events = <String>[];

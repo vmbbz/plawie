@@ -15,6 +15,8 @@ import '../services/diagnostic_service.dart';
 import '../services/gateway_service.dart';
 import '../services/model_provider_catalog.dart';
 import '../services/dynamic_model_catalog.dart';
+import '../services/ai_payment_provider_catalog.dart';
+import '../services/wallet_funded_provider_readiness.dart';
 import '../services/provider_model_discovery_service.dart';
 import '../services/preferences_service.dart';
 import '../services/tts_service.dart';
@@ -22,6 +24,8 @@ import '../services/local_llm_service.dart';
 import '../services/storage_service.dart';
 import '../services/ui_chrome_service.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/dynamic_model_picker_panel.dart';
+import '../widgets/wallet_funded_provider_actions.dart';
 import 'node_screen.dart';
 import 'setup_wizard_screen.dart';
 import 'vrm_store_screen.dart';
@@ -298,17 +302,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _sectionHeader(theme, 'API KEYS & MODEL'),
                       ListTile(
                         title: const Text('Current Provider'),
-                        subtitle: Text(_getProviderLabel(
-                            _prefs.configuredModel ??
+                        subtitle: Text(_currentWalletProviderId != null &&
+                                _prefs.configuredModel == null
+                            ? '${AiPaymentProviderCatalog.byId(_currentWalletProviderId)!.label} · finish setup in Base'
+                            : _getProviderLabel(_prefs.configuredModel ??
                                 'google/gemini-3.1-pro-preview')),
-                        leading: const Icon(Icons.key),
+                        leading: Icon(_currentWalletProviderId == null
+                            ? Icons.key
+                            : Icons.account_balance_wallet_outlined),
                         trailing: const Icon(Icons.edit, size: 18),
-                        onTap: () => _showUpdateApiKeyDialog(context),
+                        onTap: () {
+                          final walletProvider = _currentWalletProviderId;
+                          if (walletProvider == null) {
+                            _showUpdateApiKeyDialog(context);
+                            return;
+                          }
+                          unawaited(runWalletFundedProviderAction(
+                            context,
+                            providerId: walletProvider,
+                            action: WalletFundedProviderAction.openBase,
+                          ));
+                        },
                       ),
                       ListTile(
                         title: const Text('Active Model'),
-                        subtitle: Text(_getModelLabel(_prefs.configuredModel ??
-                            'google/gemini-3.1-pro-preview')),
+                        subtitle: Text(_prefs.configuredModel == null &&
+                                _currentWalletProviderId != null
+                            ? 'Select after wallet and provider readiness checks'
+                            : _getModelLabel(_prefs.configuredModel ??
+                                'google/gemini-3.1-pro-preview')),
                         leading: const Icon(Icons.psychology),
                         trailing: const Icon(Icons.swap_horiz, size: 18),
                         onTap: () => _showChangeModelDialog(context),
@@ -1031,6 +1053,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return modelId.split('/').first.toUpperCase();
   }
 
+  String? get _currentWalletProviderId {
+    final configured = _prefs.configuredModel?.trim() ?? '';
+    if (configured.isNotEmpty) {
+      final providerId = configured.split('/').first.toLowerCase();
+      return AiPaymentProviderCatalog.byId(providerId)?.id;
+    }
+    return AiPaymentProviderCatalog.byId(_prefs.aiPaymentProvider)?.id;
+  }
+
   String _providerName(String provider) {
     final option = ModelProviderCatalog.providerById(provider);
     if (option == null) return provider;
@@ -1175,12 +1206,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _showChangeModelDialog(BuildContext context) async {
     final cached = await DynamicModelCatalogRepository().load();
-    final snapshot = cached != null &&
-            cached.providers.any(
-              (provider) => provider.models.isNotEmpty,
-            )
+    final loadedSnapshot = cached != null &&
+            cached.providers.any((provider) => provider.models.isNotEmpty)
         ? cached
         : DynamicCatalogSnapshot.bundledFallback();
+    final snapshot = loadedSnapshot.withEffectiveState(DateTime.now());
+    final walletReadiness =
+        await WalletFundedProviderReadinessService().inspect(snapshot);
     if (!context.mounted) return;
 
     final dynamicModels = <DynamicModelRecord>[
@@ -1191,31 +1223,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final localModelId = llmReady && llmService.state.activeModelId != null
         ? 'local-llm/${llmService.state.activeModelId}'
         : null;
-    final localLabel = llmReady
-        ? '🧠 ${_getModelLabel(localModelId!)} (Free · On-Device)'
-        : null;
-
-    String current = ModelProviderCatalog.canonicalizeModelId(
-        _prefs.configuredModel ??
-            ModelProviderCatalog.defaultCloudFallbackModel);
+    final localOption = localModelId == null
+        ? null
+        : DynamicModelPickerLocalOption(
+            id: localModelId,
+            label: '${_getModelLabel(localModelId)} (Free · On-Device)',
+            subtitle: 'No API key · No internet · Private',
+          );
+    final current = ModelProviderCatalog.canonicalizeModelId(
+      _prefs.configuredModel ?? ModelProviderCatalog.defaultCloudFallbackModel,
+    );
 
     Future<void> switchModel(
-      String val,
-      String label,
+      String value,
       DynamicModelRecord? dynamicModel,
     ) async {
-      final modelId = ModelProviderCatalog.canonicalizeModelId(val);
+      final modelId = ModelProviderCatalog.canonicalizeModelId(value);
+      final label =
+          dynamicModel == null ? _getModelLabel(modelId) : dynamicModel.label;
+      if (dynamicModel != null && !dynamicModel.liveAvailable) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(dynamicModel.unavailableReason ??
+                'This model is not available from a live catalog.'),
+          ),
+        );
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Switching model...')),
       );
       try {
-        final gw = context.read<GatewayProvider>();
+        final gateway = context.read<GatewayProvider>();
         final catalogModel = ModelProviderCatalog.modelById(modelId);
         final providerId = dynamicModel?.providerId ?? catalogModel?.providerId;
-        if (providerId != null &&
-            !await GatewayService().hasProviderCredential(providerId)) {
+        final provider = ModelProviderCatalog.providerById(providerId ?? '');
+        if (provider?.requiresApiKey == true &&
+            !await GatewayService().hasProviderCredential(providerId!)) {
           if (!context.mounted) return;
-          final provider = ModelProviderCatalog.providerById(providerId);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -1225,213 +1271,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
           return;
         }
+
         if (dynamicModel != null &&
-            dynamicModel.sourceModelId != null &&
             !ModelProviderCatalog.cloudModelIds.contains(modelId)) {
-          await gw.persistDynamicModel(dynamicModel);
+          await gateway.persistDynamicModel(dynamicModel);
         } else {
-          await gw.persistModel(modelId);
+          await gateway.persistModel(modelId);
         }
         if (!context.mounted) return;
+
         _prefs.configuredModel = modelId;
+        if (!ModelProviderCatalog.isDirectLocalModelId(modelId)) {
+          _prefs.lastCloudModel = modelId;
+        }
+        if (provider?.requiresApiKey == false && providerId != null) {
+          _prefs.aiPaymentProvider = providerId;
+        }
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Model set to $label. OpenClaw will hot-reload.')),
+            content: Text('Model set to $label. OpenClaw will hot-reload.'),
+          ),
         );
-      } catch (e) {
+      } catch (error) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
+          SnackBar(content: Text('Model switch failed: $error')),
         );
       }
     }
 
-    final cloudIds = dynamicModels.map((model) => model.id).toSet();
-    if (!cloudIds.contains(current) && localModelId != current) {
-      current = dynamicModels.isNotEmpty
-          ? dynamicModels.first.id
-          : ModelProviderCatalog.defaultCloudFallbackModel;
-    }
-
     final selection = await showDialog<String>(
       context: context,
-      builder: (ctx) {
-        var query = '';
-        final expanded = <String>{
-          for (final provider in snapshot.providers) provider.id,
-        };
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            final normalizedQuery = query.trim().toLowerCase();
-            final providerGroups = snapshot.providers
-                .map((provider) {
-                  final models = normalizedQuery.isEmpty
-                      ? provider.models
-                      : provider.models
-                          .where((model) =>
-                              model.label
-                                  .toLowerCase()
-                                  .contains(normalizedQuery) ||
-                              model.id.toLowerCase().contains(normalizedQuery))
-                          .toList(growable: false);
-                  return (provider: provider, models: models);
-                })
-                .where((group) => group.models.isNotEmpty)
-                .toList(growable: false);
-
-            return AlertDialog(
-              title: Row(
-                children: [
-                  const Expanded(child: Text('Select Model')),
-                  IconButton(
-                    tooltip: 'Manage provider keys and refresh models',
-                    icon: const Icon(Icons.refresh_rounded, size: 20),
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _showUpdateApiKeyDialog(context);
-                    },
-                  ),
-                ],
-              ),
-              content: SizedBox(
-                width: double.maxFinite,
-                height: MediaQuery.sizeOf(context).height * 0.66,
-                child: RadioGroup<String>(
-                  groupValue: current,
-                  onChanged: (val) => Navigator.pop(ctx, val),
-                  child: Column(
-                    children: [
-                      TextField(
-                        autofocus: true,
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search_rounded),
-                          hintText: 'Search models or providers',
-                        ),
-                        onChanged: (value) =>
-                            setDialogState(() => query = value),
-                      ),
-                      if (snapshot.state == DynamicCatalogSnapshotState.stale ||
-                          snapshot.state == DynamicCatalogSnapshotState.error)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              snapshot.state ==
-                                      DynamicCatalogSnapshotState.stale
-                                  ? 'Cached model list · refresh from Provider keys'
-                                  : 'Provider refresh had an error · showing cached models',
-                              style: const TextStyle(
-                                  color: Colors.amber, fontSize: 11),
-                            ),
-                          ),
-                        ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: ListView(
-                          children: [
-                            if (llmReady && localModelId != null) ...[
-                              const Text('ON-DEVICE',
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 1.5,
-                                      color: AppColors.statusGreen)),
-                              RadioListTile<String>(
-                                title: Text(localLabel!),
-                                subtitle: const Text(
-                                    'No API key · No internet · Private',
-                                    style: TextStyle(fontSize: 11)),
-                                value: localModelId,
-                              ),
-                              const Divider(),
-                            ],
-                            if (providerGroups.isNotEmpty)
-                              const Padding(
-                                padding: EdgeInsets.only(bottom: 4),
-                                child: Text('CLOUD PROVIDERS',
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 1.5,
-                                        color: Colors.white38)),
-                              ),
-                            ...providerGroups.map((group) {
-                              final provider = group.provider;
-                              final isExpanded = normalizedQuery.isNotEmpty ||
-                                  expanded.contains(provider.id);
-                              return ExpansionTile(
-                                key: PageStorageKey<String>(provider.id),
-                                initiallyExpanded: isExpanded,
-                                onExpansionChanged: (value) {
-                                  if (value) {
-                                    expanded.add(provider.id);
-                                  } else {
-                                    expanded.remove(provider.id);
-                                  }
-                                  setDialogState(() {});
-                                },
-                                tilePadding: EdgeInsets.zero,
-                                title: Text(provider.label,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w700)),
-                                subtitle: Text(
-                                  '${group.models.length} models · ${provider.connectionState.name}',
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                children: isExpanded
-                                    ? group.models
-                                        .map((model) => RadioListTile<String>(
-                                              dense: true,
-                                              title: Text(model.label,
-                                                  overflow:
-                                                      TextOverflow.ellipsis),
-                                              subtitle: Text(
-                                                '${model.agentReady ? 'Agent-ready' : 'Tool support unknown'} · ${model.id}',
-                                                style: const TextStyle(
-                                                    fontSize: 10),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              value: model.id,
-                                            ))
-                                        .toList(growable: false)
-                                    : const <Widget>[],
-                              );
-                            }),
-                            if (providerGroups.isEmpty)
-                              const Padding(
-                                padding: EdgeInsets.all(24),
-                                child:
-                                    Text('No cached models match that search.'),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-    if (selection == null || !context.mounted) return;
-    final dynamicModel = dynamicModels.firstWhere(
-      (model) => model.id == selection,
-      orElse: () => const DynamicModelRecord(
-        id: '',
-        providerId: '',
-        label: '',
-        route: ModelRouteKind.cloud,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            const Expanded(child: Text('Select Model')),
+            IconButton(
+              tooltip: 'Manage BYOK provider keys',
+              icon: const Icon(Icons.key_rounded, size: 20),
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _showUpdateApiKeyDialog(context);
+              },
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: MediaQuery.sizeOf(context).height * 0.68,
+          child: DynamicModelPickerPanel(
+            snapshot: snapshot,
+            currentModelId: current,
+            walletReadiness: walletReadiness,
+            localOption: localOption,
+            initiallyExpandedProviderIds: {
+              for (final provider in snapshot.providers) provider.id,
+            },
+            autofocusSearch: true,
+            onSelected: (model) => Navigator.pop(dialogContext, model.id),
+            onLocalSelected: (modelId) => Navigator.pop(dialogContext, modelId),
+            onProviderAction: (providerId, action) {
+              Navigator.pop(dialogContext);
+              unawaited(runWalletFundedProviderAction(
+                context,
+                providerId: providerId,
+                action: action,
+              ));
+            },
+          ),
+        ),
       ),
     );
-    await switchModel(
-      selection,
-      dynamicModel.id.isEmpty ? _getModelLabel(selection) : dynamicModel.label,
-      dynamicModel.id.isEmpty ? null : dynamicModel,
-    );
+    if (selection == null || !context.mounted) return;
+
+    DynamicModelRecord? selectedDynamicModel;
+    for (final model in dynamicModels) {
+      if (model.id == selection) {
+        selectedDynamicModel = model;
+        break;
+      }
+    }
+    await switchModel(selection, selectedDynamicModel);
   }
 
   Widget _sectionHeader(ThemeData theme, String title) {

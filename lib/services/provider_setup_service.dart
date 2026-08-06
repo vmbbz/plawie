@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import 'preferences_service.dart';
 import 'model_provider_catalog.dart';
+import 'ai_payment_provider_catalog.dart';
 
 /// Small abstraction around the platform secure store so setup lifecycle tests
 /// can exercise cleanup and recovery without depending on Android storage.
@@ -82,6 +83,25 @@ class ProviderSetupService {
   final Uuid _uuid;
 
   Future<void> init() => _preferences.init();
+
+  /// Records a wallet-funded first-run choice without fabricating a model,
+  /// provider credential, wallet, top-up, or payment. Any previous BYOK
+  /// handoff is securely cleared before the choice becomes visible to setup.
+  Future<void> selectWalletFundedProvider(String providerId) async {
+    await init();
+    final provider = AiPaymentProviderCatalog.byId(providerId);
+    if (provider == null) {
+      throw ArgumentError.value(
+        providerId,
+        'providerId',
+        'Unknown wallet-funded provider.',
+      );
+    }
+    await clearPending();
+    _preferences.apiProvider = null;
+    _preferences.configuredModel = null;
+    _preferences.aiPaymentProvider = provider.id;
+  }
 
   /// Stages a provider selection and optional API key for setup.
   ///

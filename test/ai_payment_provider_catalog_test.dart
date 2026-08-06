@@ -49,15 +49,21 @@ void main() {
       () async {
     final setup =
         await File('lib/screens/setup_flow_screen.dart').readAsString();
+    final setupService =
+        await File('lib/services/provider_setup_service.dart').readAsString();
 
     expect(setup, contains('...AiPaymentProviderCatalog.providers.map('));
     expect(setup, contains('activeProvider.paymentProviderId != null'));
-    expect(setup, contains('prefs.apiProvider = null;'));
-    expect(setup, contains('prefs.configuredModel = null;'));
     expect(
-        setup,
-        contains(
-            'prefs.aiPaymentProvider = activeProvider.paymentProviderId;'));
+      setup,
+      contains('ProviderSetupService().selectWalletFundedProvider('),
+    );
+    expect(setupService, contains('_preferences.apiProvider = null;'));
+    expect(setupService, contains('_preferences.configuredModel = null;'));
+    expect(
+      setupService,
+      contains('_preferences.aiPaymentProvider = provider.id;'),
+    );
     expect(setup, isNot(contains("apiKey: 'wallet'")));
   });
 }

@@ -31,6 +31,9 @@ import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/model_provider_catalog.dart';
 import '../services/dynamic_model_catalog.dart';
+import '../services/wallet_funded_provider_readiness.dart';
+import '../widgets/dynamic_model_picker_panel.dart';
+import '../widgets/wallet_funded_provider_actions.dart';
 import '../widgets/aura_dot.dart';
 import '../services/gateway_service.dart';
 import '../services/agent_skill_server.dart';
@@ -2300,10 +2303,13 @@ class _ChatScreenState extends State<ChatScreen>
 
   Future<void> _showDynamicModelPicker() async {
     final cached = await DynamicModelCatalogRepository().load();
-    final snapshot = cached != null &&
+    final loadedSnapshot = cached != null &&
             cached.providers.any((provider) => provider.models.isNotEmpty)
         ? cached
         : DynamicCatalogSnapshot.bundledFallback();
+    final snapshot = loadedSnapshot.withEffectiveState(DateTime.now());
+    final readiness =
+        await WalletFundedProviderReadinessService().inspect(snapshot);
     if (!mounted) return;
 
     final selection = await showModalBottomSheet<String>(
@@ -2311,143 +2317,60 @@ class _ChatScreenState extends State<ChatScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        var query = '';
-        final expanded = <String>{};
-        return StatefulBuilder(
-          builder: (sheetContext, setSheetState) {
-            final normalizedQuery = query.trim().toLowerCase();
-            final groups = snapshot.providers
-                .map((provider) {
-                  final providerMatches =
-                      provider.label.toLowerCase().contains(normalizedQuery);
-                  final models = normalizedQuery.isEmpty || providerMatches
-                      ? provider.models
-                      : provider.models
-                          .where((model) =>
-                              model.label
-                                  .toLowerCase()
-                                  .contains(normalizedQuery) ||
-                              model.id.toLowerCase().contains(normalizedQuery))
-                          .toList(growable: false);
-                  return (provider: provider, models: models);
-                })
-                .where((group) => group.models.isNotEmpty)
-                .toList(growable: false);
-            return SafeArea(
-              child: Container(
-                height: MediaQuery.sizeOf(context).height * 0.78,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF101216),
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(24)),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                ),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: RadioGroup<String>(
-                  groupValue: _selectedModel,
-                  onChanged: (value) => Navigator.pop(sheetContext, value),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 42,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.white24,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text('CLOUD MODEL CATALOG',
-                          style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.2)),
-                      if (snapshot.state == DynamicCatalogSnapshotState.stale)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 4),
-                          child: Text(
-                              'Showing cached metadata · refresh from Settings',
-                              style:
-                                  TextStyle(color: Colors.amber, fontSize: 11)),
-                        ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search_rounded),
-                          hintText: 'Search models or providers',
-                        ),
-                        onChanged: (value) =>
-                            setSheetState(() => query = value),
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: ListView(
-                          children: [
-                            ...groups.map((group) {
-                              final provider = group.provider;
-                              final isExpanded = normalizedQuery.isNotEmpty ||
-                                  expanded.contains(provider.id);
-                              return ExpansionTile(
-                                key: PageStorageKey<String>(
-                                    'chat-${provider.id}'),
-                                initiallyExpanded: isExpanded,
-                                onExpansionChanged: (value) {
-                                  if (value) {
-                                    expanded.add(provider.id);
-                                  } else {
-                                    expanded.remove(provider.id);
-                                  }
-                                  setSheetState(() {});
-                                },
-                                tilePadding: EdgeInsets.zero,
-                                title: Text(provider.label,
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700)),
-                                subtitle: Text(
-                                    '${group.models.length} models · ${provider.connectionState.name}',
-                                    style: const TextStyle(
-                                        color: Colors.white38, fontSize: 11)),
-                                children: isExpanded
-                                    ? group.models
-                                        .map((model) => RadioListTile<String>(
-                                              dense: true,
-                                              title: Text(model.label,
-                                                  overflow:
-                                                      TextOverflow.ellipsis),
-                                              subtitle: Text(
-                                                '${model.agentReady ? 'Agent-ready' : 'Tool support unknown'} · ${model.id}',
-                                                style: const TextStyle(
-                                                    color: Colors.white38,
-                                                    fontSize: 10),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              value: model.id,
-                                            ))
-                                        .toList(growable: false)
-                                    : const <Widget>[],
-                              );
-                            }),
-                            if (groups.isEmpty)
-                              const Padding(
-                                padding: EdgeInsets.all(24),
-                                child:
-                                    Text('No cached models match that search.'),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
+        return SafeArea(
+          child: Container(
+            height: MediaQuery.sizeOf(context).height * 0.82,
+            decoration: BoxDecoration(
+              color: const Color(0xFF101216),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
+                const SizedBox(height: 12),
+                const Text(
+                  'CLOUD MODEL CATALOG',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: DynamicModelPickerPanel(
+                    snapshot: snapshot,
+                    currentModelId: _selectedModel,
+                    walletReadiness: readiness,
+                    onSelected: (model) =>
+                        Navigator.pop(sheetContext, model.id),
+                    onProviderAction: (providerId, action) {
+                      Navigator.pop(sheetContext);
+                      unawaited(runWalletFundedProviderAction(
+                        context,
+                        providerId: providerId,
+                        action: action,
+                      ));
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -2459,11 +2382,27 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _selectDynamicModel(DynamicModelRecord model) async {
-    final provider = model.providerId;
-    if (!await GatewayService().hasProviderCredential(provider)) {
+    if (!model.liveAvailable) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Add a $provider API key in Settings first.')),
+        SnackBar(
+          content: Text(model.unavailableReason ??
+              'This model is not available from a live catalog.'),
+        ),
+      );
+      return;
+    }
+    final provider = model.providerId;
+    final providerOption = ModelProviderCatalog.providerById(provider);
+    if (providerOption?.requiresApiKey == true &&
+        !await GatewayService().hasProviderCredential(provider)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Add a ${providerOption?.label ?? provider} API key in Settings first.',
+          ),
+        ),
       );
       return;
     }
@@ -2478,6 +2417,9 @@ class _ChatScreenState extends State<ChatScreen>
       });
       prefs.configuredModel = model.id;
       prefs.lastCloudModel = model.id;
+      if (providerOption?.requiresApiKey == false) {
+        prefs.aiPaymentProvider = provider;
+      }
       GatewayService().disconnectWebSocket();
       _addDiagnosticLog('Selected dynamic provider model: ${model.id}');
     } catch (error) {
@@ -2998,17 +2940,20 @@ class _ChatScreenState extends State<ChatScreen>
         }
         final isNowCloud = !ModelProviderCatalog.isDirectLocalModelId(model);
         final catalogModel = ModelProviderCatalog.modelById(model);
-        if (isNowCloud && catalogModel != null) {
+        final catalogProvider = catalogModel == null
+            ? null
+            : ModelProviderCatalog.providerById(catalogModel.providerId);
+        if (isNowCloud &&
+            catalogModel != null &&
+            catalogProvider?.requiresApiKey == true) {
           final hasCredential = await GatewayService()
               .hasProviderCredential(catalogModel.providerId);
           if (!context.mounted) return;
           if (!hasCredential) {
-            final provider =
-                ModelProviderCatalog.providerById(catalogModel.providerId);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'Add a ${provider?.label ?? catalogModel.providerId} API key in Settings before using ${catalogModel.label}.',
+                  'Add a ${catalogProvider?.label ?? catalogModel.providerId} API key in Settings before using ${catalogModel.label}.',
                 ),
               ),
             );

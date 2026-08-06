@@ -3,19 +3,20 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app.dart';
-import '../constants.dart';
 import '../models/setup_state.dart';
 import '../models/optional_package.dart';
 import '../providers/setup_provider.dart';
 import '../services/package_service.dart';
 import '../services/gateway_service.dart';
 import '../services/native_bridge.dart';
+import '../services/preferences_service.dart';
 import '../models/gateway_state.dart';
 import '../widgets/progress_step.dart';
 import '../widgets/avatar_logo.dart';
 import '../widgets/glass_card.dart';
 import 'package_install_screen.dart';
 import 'dashboard_screen.dart';
+import 'base_screen.dart';
 
 class SetupWizardScreen extends StatefulWidget {
   const SetupWizardScreen({super.key});
@@ -27,6 +28,7 @@ class SetupWizardScreen extends StatefulWidget {
 class _SetupWizardScreenState extends State<SetupWizardScreen>
     with SingleTickerProviderStateMixin {
   bool _started = false;
+  String? _selectedAiPaymentProvider;
   Map<String, bool> _pkgStatuses = {};
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -69,7 +71,12 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
   }
 
   Future<void> _loadPrefs() async {
-    // Preferences are now handled by services; no LLM config needed here
+    final preferences = PreferencesService();
+    await preferences.init();
+    if (!mounted) return;
+    setState(() {
+      _selectedAiPaymentProvider = preferences.aiPaymentProvider;
+    });
   }
 
   Future<void> _savePrefs() async {
@@ -454,7 +461,9 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'Continue to App',
+                    _selectedAiPaymentProvider == null
+                        ? 'Continue to App'
+                        : 'Set up Base wallet',
                     style: GoogleFonts.outfit(
                       color: Colors.white,
                       fontSize: 18,
@@ -463,8 +472,13 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Icon(Icons.arrow_forward_rounded,
-                      color: Colors.white, size: 22),
+                  Icon(
+                    _selectedAiPaymentProvider == null
+                        ? Icons.arrow_forward_rounded
+                        : Icons.account_balance_wallet_outlined,
+                    color: Colors.white,
+                    size: 22,
+                  ),
                 ],
               ),
             ),
@@ -815,10 +829,22 @@ class _SetupWizardScreenState extends State<SetupWizardScreen>
     // SetupFlowScreen always precedes SetupWizardScreen, so by the time we reach
     // this point the gateway is running and the API key is already live — go straight
     // to the dashboard without any intermediate setup screen.
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => DashboardScreen()),
-      );
+    if (!mounted) return;
+    final openBase = _selectedAiPaymentProvider != null;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => DashboardScreen()),
+      (_) => false,
+    );
+    if (openBase) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        plawieNavigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (_) => BaseScreen(
+              initialPaymentProviderId: _selectedAiPaymentProvider,
+            ),
+          ),
+        );
+      });
     }
   }
 }
