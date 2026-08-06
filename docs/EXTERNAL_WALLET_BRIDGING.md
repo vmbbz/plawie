@@ -42,13 +42,14 @@ and confirm that the selected plan and branding treatment cover expected use.
 
 ## Task 1 release decision
 
-This round adds dependencies only and does not enable wallet connection or
-transaction execution. Connected LI.FI execution remains compile-time disabled
-by default. It must remain disabled unless a valid Reown project configuration
-is supplied and the release owner completes and records the current license,
-service-terms, attribution, branding, and projected-usage check. An unresolved
-check requires shipping with connected mode disabled; dependency resolution is
-not production approval.
+This round adds dependencies only. No connected LI.FI execution implementation
+exists in the current app. Before such code is added or shipped, Task 2 must
+introduce the planned compile-time `ENABLE_LIFI_CONNECTED_BRIDGE` feature gate,
+defaulting to disabled. That gate may be enabled only after a valid Reown
+project configuration is supplied and the release owner completes and records
+the current license, service-terms, attribution, branding, and projected-usage
+check. An unresolved check requires the gate to remain disabled; dependency
+resolution is not production approval.
 
 Task 11 will expand this document with operational architecture, threat model,
 recovery, release gates, and user-flow guidance.
