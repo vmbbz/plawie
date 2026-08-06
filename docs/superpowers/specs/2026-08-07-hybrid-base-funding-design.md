@@ -4,6 +4,11 @@ Status: approved
 
 Date: 2026-08-07
 
+Wallet interoperability amendment:
+`2026-08-07-protocol-wallet-interoperability-design.md`. Where wallet-specific
+language in this document names Reown, MetaMask, Phantom, or Solflare as the
+architecture, the approved protocol-router amendment takes precedence.
+
 ## Decision
 
 Plawie will replace the current quote-only bridge card with one canonical Base
