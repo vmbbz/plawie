@@ -1,6 +1,6 @@
 # Hybrid External-Wallet to Base Funding Design
 
-Status: proposed for user review
+Status: approved
 
 Date: 2026-08-07
 
