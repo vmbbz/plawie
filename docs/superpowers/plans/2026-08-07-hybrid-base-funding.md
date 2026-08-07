@@ -204,7 +204,7 @@ bounded analysis was clean.
 - Test: `test/bridge_state_machine_test.dart`
 - Test: `test/bridge_receipt_store_test.dart`
 
-- [ ] **Step 1: Write failing model and redaction tests**
+- [x] **Step 1: Write failing model and redaction tests**
 
 Create tests that construct a connected receipt and a Relay receipt and assert:
 
@@ -233,7 +233,7 @@ flutter test test/bridge_models_test.dart
 
 Expected: compilation fails because the typed bridge models do not exist.
 
-- [ ] **Step 2: Define the public domain types**
+- [x] **Step 2: Define the public domain types**
 
 Implement these exact top-level contracts in `bridge_models.dart`:
 
@@ -586,7 +586,7 @@ serialized message bytes;
 `sourceBlockhash` is stored only for bounded Solana expiry reconciliation. Both
 are excluded from agent JSON and logs.
 
-- [ ] **Step 3: Define the internal provider strategy boundary**
+- [x] **Step 3: Define the internal provider strategy boundary**
 
 Create `bridge_funding_strategy.dart` with an interface unavailable to agent
 handlers:
@@ -631,7 +631,7 @@ abstract interface class BridgeFundingStrategy {
 The controller owns strategy instances; capability and agent services receive
 read-only facades that do not expose `submit`.
 
-- [ ] **Step 4: Write failing transition tests**
+- [x] **Step 4: Write failing transition tests**
 
 Assert the state machine accepts only the intended paths and rejects skips:
 
@@ -669,7 +669,7 @@ expect(() => machine.requireMove(
 
 Run `flutter test test/bridge_state_machine_test.dart` and expect missing symbols.
 
-- [ ] **Step 5: Implement the transition matrix**
+- [x] **Step 5: Implement the transition matrix**
 
 Use one immutable map in `bridge_state_machine.dart`:
 
@@ -787,7 +787,7 @@ final class SolanaNoSubmissionEvidence {
 `requireMoveWithEvidence()` may authorize it, and it rejects evidence for every
 other transition so callers cannot use the object as a general bypass.
 
-- [ ] **Step 6: Write failing persistence tests**
+- [x] **Step 6: Write failing persistence tests**
 
 Use `SharedPreferences.setMockInitialValues` to prove:
 
@@ -804,7 +804,7 @@ Use `SharedPreferences.setMockInitialValues` to prove:
 
 Run `flutter test test/bridge_receipt_store_test.dart` and expect missing store/preferences members.
 
-- [ ] **Step 7: Add bridge preference keys and the receipt store**
+- [x] **Step 7: Add bridge preference keys and the receipt store**
 
 Add these members to `PreferencesService`:
 
@@ -830,7 +830,7 @@ Future<bool> setBridgeReceipts(List<String> value) =>
 
 `BridgeReceiptStore.upsert()` validates the transition, writes the receipt list first, then updates or clears the active key. A failed write throws `BridgePersistenceException` before any external action continues.
 
-- [ ] **Step 8: Run tests and commit**
+- [x] **Step 8: Run tests and commit**
 
 ```powershell
 flutter test test/bridge_models_test.dart test/bridge_state_machine_test.dart test/bridge_receipt_store_test.dart
@@ -847,7 +847,7 @@ git commit -m "feat: add durable bridge funding state"
 - Test: `test/bridge_http_client_test.dart`
 - Test: `test/bridge_capability_service_test.dart`
 
-- [ ] **Step 1: Write failing HTTP boundary tests**
+- [x] **Step 1: Write failing HTTP boundary tests**
 
 Test HTTPS/host enforcement, redirect rejection, JSON content type, response caps, 25-second timeout mapping, `Retry-After`, malformed JSON, and redacted errors. The only provider hosts are:
 
@@ -857,7 +857,7 @@ const providerHosts = <String>{'li.quest', 'api.relay.link'};
 
 Run `flutter test test/bridge_http_client_test.dart` and expect the client type to be absent.
 
-- [ ] **Step 2: Implement the bounded transport**
+- [x] **Step 2: Implement the bounded transport**
 
 Expose:
 
@@ -885,7 +885,7 @@ final class BridgeHttpResponse {
 
 Build `http.Request` with `followRedirects = false`, `maxRedirects = 0`, `persistentConnection = false`, `Accept: application/json`, and a 25-second timeout. Reject non-2xx redirects before parsing. Do not include API keys; public LI.FI and Relay limits are sufficient for first release.
 
-- [ ] **Step 3: Write failing capability fixtures**
+- [x] **Step 3: Write failing capability fixtures**
 
 For LI.FI `/v1/chains`, `/v1/connections`, and `/v1/token`, and Relay `/chains`, prove that:
 
@@ -902,7 +902,7 @@ expect(snapshot.relayChains.any((c) => c.id == 4663), isFalse);
 
 Also reject Relay chains that are disabled, lagging, not deposit-enabled, or have no `solverCurrencies`; include Robinhood only when its live record passes every check.
 
-- [ ] **Step 4: Implement live capability intersection and cache**
+- [x] **Step 4: Implement live capability intersection and cache**
 
 `BridgeCapabilityService.refresh()`:
 
@@ -919,7 +919,7 @@ Also reject Relay chains that are disabled, lagging, not deposit-enabled, or hav
 
 Use a ten-minute in-memory freshness window and provider ETag/`If-None-Match` when supplied. A failed refresh keeps a non-expired cached display but disables new execution until a live provider quote succeeds.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```powershell
 flutter test test/bridge_http_client_test.dart test/bridge_capability_service_test.dart
@@ -937,7 +937,7 @@ git commit -m "feat: discover live bridge funding capabilities"
 - Modify: `test/bridge_quote_service_test.dart`
 - Test: `test/lifi_transaction_validator_test.dart`
 
-- [ ] **Step 1: Extend fixtures with executable EVM and Solana payloads**
+- [x] **Step 1: Extend fixtures with executable EVM and Solana payloads**
 
 Add an EVM fixture containing `from`, `to`, `data`, `value`, `gasLimit`, `chainId`, and `estimate.approvalAddress`. Add an SVM fixture whose `transactionRequest.data` is bounded base64. Assert the executable service retains them, while `BridgeQuoteService.quoteToBaseUsdc()` and `toAgentJson()` never expose either payload.
 
@@ -949,7 +949,7 @@ flutter test test/bridge_quote_service_test.dart test/lifi_transaction_validator
 
 Expected: failures show that the current service discards `transactionRequest`.
 
-- [ ] **Step 2: Implement separate estimate and executable quote APIs**
+- [x] **Step 2: Implement separate estimate and executable quote APIs**
 
 `LifiBridgeService` exposes:
 
@@ -966,10 +966,13 @@ Both use the same strict action/token/amount parsing. Only `executableQuote` par
 
 `LifiConnectedWalletStrategy implements BridgeFundingStrategy` composes this
 service, the transaction validator, external-wallet service, and LI.FI status
-service. Its `submit` accepts only `ValidatedConnectedBridgeIntent`; any Relay
-intent throws `BridgeValidationException('strategy_intent_mismatch')`.
+service. Because the wallet and status services are created in Tasks 5 through
+8, the concrete strategy is completed in Task 8 with those real dependencies;
+Task 4 does not create placeholder wallet or status collaborators. Its `submit`
+accepts only `ValidatedConnectedBridgeIntent`; any Relay intent throws
+`BridgeValidationException('strategy_intent_mismatch')`.
 
-- [ ] **Step 3: Implement pure executable validation**
+- [x] **Step 3: Implement pure executable validation**
 
 `LifiTransactionValidator.validate()` checks:
 
@@ -987,11 +990,11 @@ if (quote.sourceChain.id != request.sourceChain.id ||
 
 For EVM, additionally require matching `from`, chain ID, valid 0x `to/data/value/gasLimit`, payload at most 256 KiB, and an approval target equal to `estimate.approvalAddress`. For SVM, require only `data`, valid base64, decoded length from 1 through 1232 bytes, exact-case source key, and no EVM fields.
 
-- [ ] **Step 4: Prove hostile quote rejection**
+- [x] **Step 4: Prove hostile quote rejection**
 
 Add tests for changed sender, destination, chain, token contract, amount, decimals, slippage, expired quote, malformed hex, malformed base64, oversized calldata, wrong Solana key case, and response redirect.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```powershell
 flutter test test/bridge_quote_service_test.dart test/lifi_transaction_validator_test.dart

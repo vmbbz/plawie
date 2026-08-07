@@ -6,6 +6,20 @@ import 'package:http/testing.dart';
 
 import 'package:clawa/services/bridge_quote_service.dart';
 
+http.Response _jsonResponse(
+  Object body, {
+  int statusCode = 200,
+  Map<String, String> headers = const <String, String>{},
+}) =>
+    http.Response(
+      jsonEncode(body),
+      statusCode,
+      headers: <String, String>{
+        'content-type': 'application/json; charset=utf-8',
+        ...headers,
+      },
+    );
+
 void main() {
   const sourceAddress = '0x1111111111111111111111111111111111111111';
   const destinationAddress = '0x2222222222222222222222222222222222222222';
@@ -21,100 +35,92 @@ void main() {
         paths.add(request.url.path);
         expect(request.url.host, 'li.quest');
         if (request.url.path == '/v1/chains') {
-          return http.Response(
-              jsonEncode({
-                'chains': [
-                  {'id': 4663, 'name': 'Robinhood Chain', 'mainnet': true},
-                  {'id': 8453, 'name': 'Base', 'mainnet': true},
-                ],
-              }),
-              200);
+          return _jsonResponse({
+            'chains': [
+              {'id': 4663, 'name': 'Robinhood Chain', 'mainnet': true},
+              {'id': 8453, 'name': 'Base', 'mainnet': true},
+            ],
+          });
         }
         if (request.url.path == '/v1/token') {
           final chain = request.url.queryParameters['chain'];
           return chain == '4663'
-              ? http.Response(
-                  jsonEncode({
-                    'address': robinhoodNative,
-                    'chainId': 4663,
-                    'symbol': 'ETH',
-                    'decimals': 18,
-                  }),
-                  200,
-                )
-              : http.Response(
-                  jsonEncode({
-                    'address': baseUsdc,
-                    'chainId': 8453,
-                    'symbol': 'USDC',
-                    'decimals': 6,
-                  }),
-                  200,
-                );
+              ? _jsonResponse({
+                  'address': robinhoodNative,
+                  'chainId': 4663,
+                  'symbol': 'ETH',
+                  'decimals': 18,
+                })
+              : _jsonResponse({
+                  'address': baseUsdc,
+                  'chainId': 8453,
+                  'symbol': 'USDC',
+                  'decimals': 6,
+                });
         }
         if (request.url.path == '/v1/connections') {
-          return http.Response(
-              jsonEncode({
-                'connections': [
-                  {
-                    'fromChainId': 4663,
-                    'toChainId': 8453,
-                    'fromTokens': [
-                      {'address': robinhoodNative, 'chainId': 4663},
-                    ],
-                    'toTokens': [
-                      {'address': baseUsdc, 'chainId': 8453},
-                    ],
-                  },
+          return _jsonResponse({
+            'connections': [
+              {
+                'fromChainId': 4663,
+                'toChainId': 8453,
+                'fromTokens': [
+                  {'address': robinhoodNative, 'chainId': 4663},
                 ],
-              }),
-              200);
+                'toTokens': [
+                  {'address': baseUsdc, 'chainId': 8453},
+                ],
+              },
+            ],
+          });
         }
         expect(request.url.queryParameters['fromChain'], '4663');
         expect(request.url.queryParameters['toChain'], '8453');
         expect(request.url.queryParameters['fromToken'], robinhoodNative);
         expect(request.url.queryParameters['toToken'], baseUsdc);
         expect(request.url.queryParameters.containsKey('order'), isFalse);
-        return http.Response(
-            jsonEncode({
-              'id': 'quote-robinhood-base',
-              'tool': 'across',
-              'toolDetails': {'name': 'Across'},
-              'action': {
-                'fromChainId': 4663,
-                'toChainId': 8453,
-                'fromAddress': sourceAddress,
-                'toAddress': destinationAddress,
-                'fromAmount': '10000000000000000',
-                'fromToken': {
-                  'address': robinhoodNative,
-                  'chainId': 4663,
-                  'symbol': 'ETH',
-                  'decimals': 18,
-                },
-                'toToken': {
-                  'address': baseUsdc,
-                  'chainId': 8453,
-                  'symbol': 'USDC',
-                  'decimals': 6,
-                },
-              },
-              'estimate': {
-                'toAmountMin': '24100000',
-                'executionDuration': 45,
-                'feeCosts': [
-                  {'amountUSD': '0.12'},
-                ],
-                'gasCosts': [
-                  {'amountUSD': '0.03'},
-                ],
-              },
-              'transactionRequest': {
-                'to': '0x3333333333333333333333333333333333333333',
-                'data': '0xdeadbeef',
-              },
-            }),
-            200);
+        return _jsonResponse({
+          'id': 'quote-robinhood-base',
+          'tool': 'across',
+          'toolDetails': {'name': 'Across'},
+          'action': {
+            'fromChainId': 4663,
+            'toChainId': 8453,
+            'fromAddress': sourceAddress,
+            'toAddress': destinationAddress,
+            'fromAmount': '10000000000000000',
+            'fromToken': {
+              'address': robinhoodNative,
+              'chainId': 4663,
+              'symbol': 'ETH',
+              'decimals': 18,
+            },
+            'toToken': {
+              'address': baseUsdc,
+              'chainId': 8453,
+              'symbol': 'USDC',
+              'decimals': 6,
+            },
+          },
+          'estimate': {
+            'toAmountMin': '24100000',
+            'executionDuration': 45,
+            'feeCosts': [
+              {'amountUSD': '0.12'},
+            ],
+            'gasCosts': [
+              {'amountUSD': '0.03'},
+            ],
+          },
+          'transactionRequest': {
+            'chainId': 4663,
+            'from': sourceAddress,
+            'to': '0x3333333333333333333333333333333333333333',
+            'value': '0x0',
+            'data': '0xdeadbeef',
+            'gasLimit': '0x5208',
+          },
+        });
       }),
     );
 
@@ -164,38 +170,30 @@ void main() {
     final service = BridgeQuoteService(
       client: MockClient((request) async {
         if (request.url.path == '/v1/chains') {
-          return http.Response(
-              jsonEncode({
-                'chains': [
-                  {'id': 1, 'mainnet': true},
-                  {'id': 8453, 'mainnet': true},
-                ],
-              }),
-              200);
+          return _jsonResponse({
+            'chains': [
+              {'id': 1, 'mainnet': true},
+              {'id': 8453, 'mainnet': true},
+            ],
+          });
         }
         if (request.url.path == '/v1/token') {
           final chain = request.url.queryParameters['chain'];
           return chain == '1'
-              ? http.Response(
-                  jsonEncode({
-                    'address': robinhoodNative,
-                    'chainId': 1,
-                    'symbol': 'ETH',
-                    'decimals': 18,
-                  }),
-                  200,
-                )
-              : http.Response(
-                  jsonEncode({
-                    'address': baseUsdc,
-                    'chainId': 8453,
-                    'symbol': 'USDC',
-                    'decimals': 6,
-                  }),
-                  200,
-                );
+              ? _jsonResponse({
+                  'address': robinhoodNative,
+                  'chainId': 1,
+                  'symbol': 'ETH',
+                  'decimals': 18,
+                })
+              : _jsonResponse({
+                  'address': baseUsdc,
+                  'chainId': 8453,
+                  'symbol': 'USDC',
+                  'decimals': 6,
+                });
         }
-        return http.Response(jsonEncode({'connections': []}), 200);
+        return _jsonResponse({'connections': []});
       }),
     );
 
@@ -209,5 +207,36 @@ void main() {
       )),
       throwsA(isA<BridgeQuoteException>()),
     );
+  });
+
+  test('rejects provider JSON served with a non-JSON content type', () async {
+    var calls = 0;
+    final service = BridgeQuoteService(
+      client: MockClient((_) async {
+        calls += 1;
+        return http.Response(
+          jsonEncode({
+            'chains': [
+              {'id': 1, 'mainnet': true},
+              {'id': 8453, 'mainnet': true},
+            ],
+          }),
+          200,
+          headers: const {'content-type': 'text/plain'},
+        );
+      }),
+    );
+
+    await expectLater(
+      service.quoteToBaseUsdc(BridgeQuoteRequest(
+        sourceChain: BridgeQuoteService.sourceChains.first,
+        sourceToken: 'ETH',
+        amount: '0.1',
+        sourceAddress: sourceAddress,
+        baseDestinationAddress: destinationAddress,
+      )),
+      throwsA(isA<BridgeQuoteException>()),
+    );
+    expect(calls, 1);
   });
 }

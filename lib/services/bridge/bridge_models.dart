@@ -234,6 +234,7 @@ final class BridgeEstimate extends Equatable {
     required this.routeTool,
     required this.quotedAt,
     required this.expiresAt,
+    this.approvalAddress,
     this.estimatedDurationSeconds,
     this.estimatedFeesUsd,
   });
@@ -246,6 +247,7 @@ final class BridgeEstimate extends Equatable {
   final String routeTool;
   final DateTime quotedAt;
   final DateTime expiresAt;
+  final String? approvalAddress;
   final int? estimatedDurationSeconds;
   final double? estimatedFeesUsd;
 
@@ -259,6 +261,7 @@ final class BridgeEstimate extends Equatable {
         routeTool,
         quotedAt,
         expiresAt,
+        approvalAddress,
         estimatedDurationSeconds,
         estimatedFeesUsd,
       ];
@@ -373,6 +376,42 @@ final class BridgeCapabilitySnapshot extends Equatable {
   final Map<int, List<BridgeToken>> relayTokensByChain;
   final Map<String, String> availabilityReasons;
 
+  List<BridgeToken> connectedTokensFor(int chainId) =>
+      List<BridgeToken>.unmodifiable(
+        connectedTokensByChain[chainId] ?? const <BridgeToken>[],
+      );
+
+  List<BridgeToken> relayTokensFor(int chainId) =>
+      List<BridgeToken>.unmodifiable(
+        relayTokensByChain[chainId] ?? const <BridgeToken>[],
+      );
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'schemaVersion': schemaVersion,
+        'refreshedAt': refreshedAt.toUtc().toIso8601String(),
+        'connectedChains': connectedChains.map(_chainToJson).toList(),
+        'relayChains': relayChains.map(_chainToJson).toList(),
+        'connectedTokensByChain': _tokenMapToJson(connectedTokensByChain),
+        'relayTokensByChain': _tokenMapToJson(relayTokensByChain),
+        'availabilityReasons': availabilityReasons,
+      };
+
+  factory BridgeCapabilitySnapshot.fromJson(Map<String, dynamic> json) {
+    final connectedChains = _chainListFromJson(json['connectedChains']);
+    final relayChains = _chainListFromJson(json['relayChains']);
+    return BridgeCapabilitySnapshot(
+      schemaVersion: _requiredInt(json, 'schemaVersion'),
+      refreshedAt: _requiredDateTime(json, 'refreshedAt'),
+      connectedChains: List<BridgeChain>.unmodifiable(connectedChains),
+      relayChains: List<BridgeChain>.unmodifiable(relayChains),
+      connectedTokensByChain: _tokenMapFromJson(json['connectedTokensByChain']),
+      relayTokensByChain: _tokenMapFromJson(json['relayTokensByChain']),
+      availabilityReasons: Map<String, String>.unmodifiable(
+        _stringMapFromJson(json['availabilityReasons']),
+      ),
+    );
+  }
+
   @override
   List<Object?> get props => <Object?>[
         schemaVersion,
@@ -383,6 +422,77 @@ final class BridgeCapabilitySnapshot extends Equatable {
         relayTokensByChain,
         availabilityReasons,
       ];
+}
+
+Map<String, dynamic> _chainToJson(BridgeChain chain) => <String, dynamic>{
+      'id': chain.id,
+      'key': chain.key,
+      'name': chain.name,
+      'type': chain.type.name,
+      'nativeTokenSymbol': chain.nativeTokenSymbol,
+    };
+
+List<BridgeChain> _chainListFromJson(Object? raw) {
+  if (raw is! List) throw const FormatException('Invalid bridge chain list.');
+  return raw.map((item) {
+    if (item is! Map) throw const FormatException('Invalid bridge chain.');
+    final json = Map<String, dynamic>.from(item);
+    return BridgeChain(
+      id: _requiredInt(json, 'id'),
+      key: _requiredString(json, 'key'),
+      name: _requiredString(json, 'name'),
+      type: _requiredEnum(BridgeChainType.values, json['type'], 'type'),
+      nativeTokenSymbol: _requiredString(json, 'nativeTokenSymbol'),
+    );
+  }).toList();
+}
+
+Map<String, dynamic> _tokenMapToJson(Map<int, List<BridgeToken>> source) =>
+    <String, dynamic>{
+      for (final entry in source.entries)
+        entry.key.toString(): entry.value
+            .map((token) => <String, dynamic>{
+                  'chainId': token.chainId,
+                  'address': token.address,
+                  'symbol': token.symbol,
+                  'decimals': token.decimals,
+                  'solverDepositable': token.solverDepositable,
+                })
+            .toList(),
+    };
+
+Map<int, List<BridgeToken>> _tokenMapFromJson(Object? raw) {
+  if (raw is! Map) throw const FormatException('Invalid bridge token map.');
+  final result = <int, List<BridgeToken>>{};
+  for (final entry in raw.entries) {
+    final chainId = int.tryParse(entry.key.toString());
+    if (chainId == null || entry.value is! List) {
+      throw const FormatException('Invalid bridge token map entry.');
+    }
+    result[chainId] = List<BridgeToken>.unmodifiable(
+      (entry.value as List).map((item) {
+        if (item is! Map) throw const FormatException('Invalid bridge token.');
+        final json = Map<String, dynamic>.from(item);
+        return BridgeToken(
+          chainId: _requiredInt(json, 'chainId'),
+          address: _requiredString(json, 'address'),
+          symbol: _requiredString(json, 'symbol'),
+          decimals: _requiredInt(json, 'decimals'),
+          solverDepositable: _optionalBool(json, 'solverDepositable'),
+        );
+      }),
+    );
+  }
+  return Map<int, List<BridgeToken>>.unmodifiable(result);
+}
+
+Map<String, String> _stringMapFromJson(Object? raw) {
+  if (raw is! Map) throw const FormatException('Invalid bridge string map.');
+  return <String, String>{
+    for (final entry in raw.entries)
+      if (entry.key is String && entry.value is String)
+        entry.key as String: entry.value as String,
+  };
 }
 
 final class BridgeFundingReceipt extends Equatable {
