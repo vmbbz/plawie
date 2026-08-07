@@ -29,11 +29,16 @@ challenges:
 - Venice top-up currently advertises both Base USDC and Solana USDC.
 - BlockRun's default `blockrun.ai` gateway advertises Base USDC, while its
   separate `sol.blockrun.ai` gateway advertises Solana USDC.
+- BlockRun also documents a separate `nano.blockrun.ai` Circle Gateway surface
+  for Polygon, Arbitrum, Optimism, and Unichain. That surface is not part of
+  Plawie's first-release provider transport; prices and accepted settlement
+  must always be read from the live `402` challenge rather than hard-coded.
 - Neither provider advertises Robinhood Chain as a payment network.
 
 Plawie's production payment rail remains the Android-owned Base Mainnet wallet.
 This is a deliberate product and security boundary, not a claim that Venice or
-BlockRun supports only Base. Ethereum, Robinhood Chain, or Solana funds may
+BlockRun supports only Base or only the gateway surfaces currently integrated
+by Plawie. Ethereum, Robinhood Chain, or Solana funds may
 reach the Plawie wallet through the separately reviewed funding flow; provider
 top-up or per-request payment begins only after Base USDC is present.
 

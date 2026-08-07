@@ -40,7 +40,10 @@ live, unsigned `402 Payment Required` challenges on 2026-08-07:
 | Venice `POST /api/v1/x402/top-up` | Base USDC and Solana USDC | Not offered |
 | BlockRun `blockrun.ai` | Base USDC per request | Not offered |
 | BlockRun `sol.blockrun.ai` | Solana USDC per request | Not offered |
+| BlockRun `nano.blockrun.ai` | Polygon, Arbitrum, Optimism, and Unichain USDC through Circle Gateway | Not offered |
 
+The first-release Plawie transport integrates BlockRun's default Base surface;
+the additional BlockRun gateways do not expand the app's signing authority.
 Therefore, `Base-canonical` describes Plawie's selected app payment rail, not
 every rail each provider supports. Plawie continues settling Venice and
 BlockRun through its Android-owned Base wallet so wallet authentication,
