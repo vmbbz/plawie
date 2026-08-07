@@ -93,6 +93,25 @@ final class SolanaNoSubmissionEvidence {
       !exactMatchFound;
 }
 
+final class RelayLateDepositEvidence {
+  const RelayLateDepositEvidence({
+    required this.requestId,
+    required this.depositAddress,
+    required this.sourceTransactionHash,
+  });
+
+  final String requestId;
+  final String depositAddress;
+  final String sourceTransactionHash;
+
+  bool get isComplete =>
+      RegExp(r'^0x[0-9a-fA-F]{64}$').hasMatch(requestId) &&
+      depositAddress.isNotEmpty &&
+      (RegExp(r'^0x[0-9a-fA-F]{64}$').hasMatch(sourceTransactionHash) ||
+          RegExp(r'^[1-9A-HJ-NP-Za-km-z]{80,90}$')
+              .hasMatch(sourceTransactionHash));
+}
+
 final class BridgeFundingStateMachine {
   const BridgeFundingStateMachine();
 
@@ -108,6 +127,15 @@ final class BridgeFundingStateMachine {
       to == BridgeFundingState.expired &&
       evidence.provesExpiry;
 
+  bool canMoveAfterRelayLateDeposit(
+    BridgeFundingState from,
+    BridgeFundingState to, {
+    required RelayLateDepositEvidence evidence,
+  }) =>
+      from == BridgeFundingState.expired &&
+      to == BridgeFundingState.depositDetected &&
+      evidence.isComplete;
+
   void requireMove(BridgeFundingState from, BridgeFundingState to) {
     if (!canMove(from, to)) {
       throw StateError('Illegal bridge funding transition: $from -> $to.');
@@ -122,6 +150,18 @@ final class BridgeFundingStateMachine {
     if (!canMoveWithEvidence(from, to, evidence: evidence)) {
       throw StateError(
         'Illegal evidenced bridge funding transition: $from -> $to.',
+      );
+    }
+  }
+
+  void requireMoveAfterRelayLateDeposit(
+    BridgeFundingState from,
+    BridgeFundingState to, {
+    required RelayLateDepositEvidence evidence,
+  }) {
+    if (!canMoveAfterRelayLateDeposit(from, to, evidence: evidence)) {
+      throw StateError(
+        'Illegal Relay late-deposit transition: $from -> $to.',
       );
     }
   }

@@ -68,6 +68,7 @@ final class BridgeReceiptStore {
   Future<void> upsert(
     BridgeFundingReceipt receipt, {
     SolanaNoSubmissionEvidence? evidence,
+    RelayLateDepositEvidence? relayLateDepositEvidence,
   }) async {
     receipt.toJson();
     _validateReceiptPolicy(receipt);
@@ -81,14 +82,19 @@ final class BridgeReceiptStore {
       }
     }
     if (existing == null) {
-      if (evidence != null) {
+      if (evidence != null || relayLateDepositEvidence != null) {
         throw const BridgeValidationException(
           'unexpected_transition_evidence',
           'Transition evidence cannot create a new receipt.',
         );
       }
     } else {
-      _validateUpdate(existing, receipt, evidence: evidence);
+      _validateUpdate(
+        existing,
+        receipt,
+        evidence: evidence,
+        relayLateDepositEvidence: relayLateDepositEvidence,
+      );
     }
 
     final next = <BridgeFundingReceipt>[
@@ -143,7 +149,14 @@ final class BridgeReceiptStore {
     BridgeFundingReceipt existing,
     BridgeFundingReceipt replacement, {
     required SolanaNoSubmissionEvidence? evidence,
+    required RelayLateDepositEvidence? relayLateDepositEvidence,
   }) {
+    if (evidence != null && relayLateDepositEvidence != null) {
+      throw const BridgeValidationException(
+        'conflicting_transition_evidence',
+        'Only one bridge transition proof may be supplied.',
+      );
+    }
     if (existing.archivedAt != null && replacement.archivedAt == null) {
       throw const BridgeValidationException(
         'archival_is_permanent',
@@ -182,7 +195,7 @@ final class BridgeReceiptStore {
     }
 
     if (existing.state == replacement.state) {
-      if (evidence != null) {
+      if (evidence != null || relayLateDepositEvidence != null) {
         throw const BridgeValidationException(
           'unexpected_transition_evidence',
           'Transition evidence is valid only for an evidenced state change.',
@@ -192,14 +205,32 @@ final class BridgeReceiptStore {
     }
 
     try {
-      if (evidence == null) {
-        _stateMachine.requireMove(existing.state, replacement.state);
-      } else {
+      if (evidence != null) {
         _stateMachine.requireMoveWithEvidence(
           existing.state,
           replacement.state,
           evidence: evidence,
         );
+      } else if (relayLateDepositEvidence != null) {
+        final relayEvidenceMatches = existing.provider == 'relay' &&
+            existing.method == BridgeFundingMethod.relayDeposit &&
+            existing.providerRequestId == relayLateDepositEvidence.requestId &&
+            existing.depositAddress ==
+                relayLateDepositEvidence.depositAddress &&
+            replacement.sourceTransactionHash ==
+                relayLateDepositEvidence.sourceTransactionHash;
+        if (!relayEvidenceMatches) {
+          throw const BridgeValidationException(
+            'relay_late_deposit_evidence_mismatch',
+          );
+        }
+        _stateMachine.requireMoveAfterRelayLateDeposit(
+          existing.state,
+          replacement.state,
+          evidence: relayLateDepositEvidence,
+        );
+      } else {
+        _stateMachine.requireMove(existing.state, replacement.state);
       }
     } on StateError catch (error) {
       throw BridgeValidationException(

@@ -463,6 +463,7 @@ final class RelayDepositInstruction {
     required this.minimumOutputDisplay,
     required this.createdAt,
     required this.expiresAt,
+    this.estimatedFeesUsd,
   });
   final String requestId;
   final String depositAddress;
@@ -471,6 +472,7 @@ final class RelayDepositInstruction {
   final String minimumOutputDisplay;
   final DateTime createdAt;
   final DateTime expiresAt;
+  final double? estimatedFeesUsd;
 }
 
 final class BridgeFundingObservation {
@@ -1497,7 +1499,7 @@ git commit -m "feat: recover and track LI.FI bridge settlement"
 - Test: `test/relay_deposit_service_test.dart`
 - Modify: `test/bridge_funding_controller_test.dart`
 
-- [ ] **Step 1: Write failing strict request tests**
+- [x] **Step 1: Write failing strict request tests**
 
 Assert the exact request body:
 
@@ -1519,11 +1521,18 @@ expect(body, <String, Object?>{
 
 Reject absent ownership confirmation, CEX origin, invalid source/refund address, unsupported solver currency, disabled chain, non-Base destination, non-USDC destination, and non-exact trade type.
 
-- [ ] **Step 2: Write failing instruction-validation tests**
+- [x] **Step 2: Write failing instruction-validation tests**
 
-Parse `requestId`, `depositAddress`, `details.currencyIn`, `details.currencyOut`, exact input, minimum output, fees, and quote timestamps. Reject missing or duplicate deposit steps, wrong VM address, changed input/output currency, changed recipient/refund identity, impossible amount, absent request ID, and oversized response.
+Parse `requestId`, `depositAddress`, `details.currencyIn`, `details.currencyOut`,
+exact input, minimum output, and fees. Relay's current deposit response does not
+reliably echo authoritative quote timestamps or `refundTo`; bind the validated
+request locally, reject a changed refund whenever Relay echoes it, and apply a
+trusted-device-clock ten-minute instruction lifetime. Reject missing or
+duplicate deposit steps, wrong VM address, changed input/output currency,
+changed recipient/refund identity, impossible amount, absent request ID, and
+oversized response.
 
-- [ ] **Step 3: Implement strict quote creation**
+- [x] **Step 3: Implement strict quote creation**
 
 POST to `https://api.relay.link/quote/v2` only after the user checks `I am sending from a wallet I control`. Validate the response completely, persist `awaitingDeposit`, then reveal the address. A persistence failure prevents reveal.
 
@@ -1532,20 +1541,48 @@ quote/status operations. Its `submit` accepts only
 `ValidatedRelayDepositIntent`; any connected intent throws
 `BridgeValidationException('strategy_intent_mismatch')`.
 
-- [ ] **Step 4: Write failing status and archive tests**
+- [x] **Step 4: Write failing status and archive tests**
 
 Cover `/requests/v2?depositAddress=...&includeChildRequests=true`, `/intents/status/v3?requestId=...`, waiting, depositing, pending, submitted, delayed, success, refund/refunded, failure, child request replacement, exact input under/overpayment, expired unsent instruction, and archive behavior.
 
-- [ ] **Step 5: Implement read-only Relay tracking**
+- [x] **Step 5: Implement read-only Relay tracking**
 
-Track by deposit address first and request ID second. Map `inTxHashes` to source/deposit hashes and `txHashes` to Base destination hashes. Do not call Relay reindex automatically. `Hide instructions` sets `archivedAt`; it never marks the provider request cancelled or deletes status history. A new instruction requires a warning that the old address may still receive funds and must not be reused.
+Track by deposit address and bound parent request first, and request ID second.
+Request the first result set sorted by `updatedAt desc`, filtered by persisted
+address, parent request and source/destination chains; validate each returned
+recipient, child evidence, transaction VM and any reported exact input amounts.
+Ignore hashless pending placeholders rather than recording them as evidence.
+Map `inTxHashes` to
+source/deposit hashes and `txHashes` to Base destination hashes. Do not call
+Relay reindex automatically. `Hide instructions` sets `archivedAt`; it never
+marks the provider request cancelled or deletes status history. A new
+instruction requires an explicit warning acknowledgement that the old address
+may still receive funds and must not be reused.
 
-- [ ] **Step 6: Run tests and commit**
+Use the public `/requests/v2` deposit-address lookup with child requests and the
+public `/intents/status/v3` request-ID fallback. Do not move status tracking to
+`/requests/v3`, which requires server-side API-key injection that must not be
+embedded in the APK.
+
+Local instruction expiry is a display/sending boundary, not proof that the
+provider address cannot receive funds. A late Relay deposit may reopen
+`expired -> depositDetected` only through a request/address/source-hash-bound
+`RelayLateDepositEvidence`; the ordinary terminal-state transition map remains
+closed. Exact successful input completes normally, an evidenced fill plus
+refund becomes `partial`, underpayment follows Relay's refund state, and an
+overpaid success remains destination-pending until refund evidence arrives.
+A request-ID-only success remains `success_amount_unverified` until the
+address-indexed response supplies exact `metadata.currencyIn` units. Creating a
+replacement after local expiry first requires acknowledgement and archives the
+old receipt, preserving late-deposit tracking without creating two active
+intents.
+
+- [x] **Step 6: Run tests and commit**
 
 ```powershell
-flutter test test/relay_deposit_service_test.dart test/bridge_funding_controller_test.dart
-dart analyze lib/services/bridge/relay_deposit_service.dart lib/services/bridge/bridge_funding_controller.dart
-git add lib/services/bridge/relay_deposit_service.dart lib/services/bridge/bridge_funding_controller.dart test/relay_deposit_service_test.dart test/bridge_funding_controller_test.dart
+flutter test test/relay_deposit_service_test.dart test/bridge_funding_controller_test.dart test/bridge_models_test.dart test/bridge_state_machine_test.dart test/bridge_receipt_store_test.dart
+flutter analyze lib/services/bridge/relay_deposit_service.dart lib/services/bridge/bridge_funding_controller.dart lib/services/bridge/bridge_models.dart lib/services/bridge/bridge_state_machine.dart lib/services/bridge/bridge_receipt_store.dart
+git add lib/services/bridge/relay_deposit_service.dart lib/services/bridge/bridge_funding_controller.dart lib/services/bridge/bridge_models.dart lib/services/bridge/bridge_state_machine.dart lib/services/bridge/bridge_receipt_store.dart test/relay_deposit_service_test.dart test/bridge_funding_controller_test.dart test/bridge_state_machine_test.dart docs/superpowers/plans/2026-08-07-hybrid-base-funding.md docs/superpowers/specs/2026-08-07-hybrid-base-funding-design.md
 git commit -m "feat: add strict Relay deposit funding"
 ```
 

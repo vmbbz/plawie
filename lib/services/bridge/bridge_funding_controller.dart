@@ -11,6 +11,7 @@ import 'external_wallet_session_service.dart';
 import 'lifi_bridge_service.dart';
 import 'lifi_status_service.dart';
 import 'lifi_transaction_validator.dart';
+import 'relay_deposit_service.dart';
 import 'solana_rpc_broadcaster.dart';
 import 'solana_transaction_envelope.dart';
 
@@ -56,7 +57,9 @@ final class BridgeFundingController {
     required BaseBalanceRefreshService baseBalance,
     required String Function() internalBaseAddress,
     LifiSettlementStatusProvider? lifiStatus,
+    RelayDepositProvider? relay,
     bool lifiConnectedEnabled = BridgeFeatureConfig.lifiConnectedEnabled,
+    bool relayDepositEnabled = BridgeFeatureConfig.relayDepositEnabled,
     bool reownEvmEnabled = BridgeFeatureConfig.reownEvmWalletsEnabled,
     bool solanaMwaEnabled = BridgeFeatureConfig.solanaMwaWalletsEnabled,
     bool reownSolanaFallbackEnabled =
@@ -75,9 +78,11 @@ final class BridgeFundingController {
         _rpc = rpc,
         _solanaRpc = solanaRpc,
         _lifiStatus = lifiStatus ?? LifiStatusService(),
+        _relay = relay,
         _baseBalance = baseBalance,
         _internalBaseAddress = internalBaseAddress,
         _lifiConnectedEnabled = lifiConnectedEnabled,
+        _relayDepositEnabled = relayDepositEnabled,
         _reownEvmEnabled = reownEvmEnabled,
         _solanaMwaEnabled = solanaMwaEnabled,
         _reownSolanaFallbackEnabled = reownSolanaFallbackEnabled,
@@ -94,9 +99,11 @@ final class BridgeFundingController {
   final EvmBridgeRpc _rpc;
   final SolanaRpcBroadcaster _solanaRpc;
   final LifiSettlementStatusProvider _lifiStatus;
+  final RelayDepositProvider? _relay;
   final BaseBalanceRefreshService _baseBalance;
   final String Function() _internalBaseAddress;
   final bool _lifiConnectedEnabled;
+  final bool _relayDepositEnabled;
   final bool _reownEvmEnabled;
   final bool _solanaMwaEnabled;
   final bool _reownSolanaFallbackEnabled;
@@ -193,6 +200,97 @@ final class BridgeFundingController {
       );
       _prepared = prepared;
       await _persistReview(receipt, prepared);
+    } catch (_) {
+      await _failPreparationIfPossible(intentId);
+      rethrow;
+    }
+  }
+
+  Future<RelayDepositInstruction> prepareRelayDeposit(
+    BridgeFundingRequest request, {
+    bool oldAddressWarningAcknowledged = false,
+  }) async {
+    final relay = _relay;
+    if (!_relayDepositEnabled || relay == null) {
+      throw const BridgeValidationException('relay_deposit_disabled');
+    }
+    if (request.method != BridgeFundingMethod.relayDeposit) {
+      throw const BridgeValidationException('strategy_intent_mismatch');
+    }
+    if (_store.activeReceipt != null) {
+      throw const BridgeValidationException('active_bridge_receipt_exists');
+    }
+    if (!_sameEvmAddress(
+      request.baseDestinationAddress,
+      _currentBaseAddress(),
+    )) {
+      throw const BridgeValidationException('base_destination_changed');
+    }
+    final intentId = _intentIdFactory();
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(intentId)) {
+      throw const BridgeValidationException('invalid_bridge_intent_id');
+    }
+    final priorInstructions = _store.receipts
+        .where(
+          (receipt) =>
+              receipt.method == BridgeFundingMethod.relayDeposit &&
+              receipt.depositAddressExposed &&
+              (receipt.archivedAt != null ||
+                  receipt.state == BridgeFundingState.expired),
+        )
+        .toList();
+    if (priorInstructions.isNotEmpty && !oldAddressWarningAcknowledged) {
+      throw const BridgeValidationException(
+        'old_relay_address_warning_required',
+      );
+    }
+    for (final prior in priorInstructions) {
+      if (prior.archivedAt == null) {
+        await _store.upsert(_copyReceipt(prior, archivedAt: _now()));
+      }
+    }
+    var receipt = _newReceipt(request, intentId, _now());
+    await _store.upsert(receipt);
+    try {
+      receipt = _copyReceipt(
+        receipt,
+        state: BridgeFundingState.checkingCapabilities,
+      );
+      await _store.upsert(receipt);
+      receipt = _copyReceipt(
+        receipt,
+        state: BridgeFundingState.collectingRefundAddress,
+      );
+      await _store.upsert(receipt);
+      receipt = _copyReceipt(receipt, state: BridgeFundingState.quoting);
+      await _store.upsert(receipt);
+      final instruction = await relay.createInstruction(request);
+      if (instruction.request != request ||
+          instruction.createdAt.isAfter(_now()) ||
+          !instruction.expiresAt.isAfter(instruction.createdAt)) {
+        throw const BridgeValidationException(
+          'relay_instruction_request_mismatch',
+        );
+      }
+      final persisted = _copyReceipt(
+        receipt,
+        provider: 'relay',
+        state: BridgeFundingState.awaitingDeposit,
+        depositAddress: instruction.depositAddress,
+        providerRequestId: instruction.requestId,
+        minimumOutputUnits: instruction.minimumOutputUnits,
+        providerStatus: 'waiting',
+        providerSubstatus: null,
+        expiresAt: instruction.expiresAt,
+        depositAddressExposed: false,
+      );
+      await _store.upsert(persisted);
+      await _store.upsert(
+        _copyReceipt(persisted, depositAddressExposed: true),
+      );
+      return instruction;
+    } on BridgePersistenceException {
+      rethrow;
     } catch (_) {
       await _failPreparationIfPossible(intentId);
       rethrow;
@@ -301,6 +399,15 @@ final class BridgeFundingController {
 
   Future<void> refreshStatus(String intentId) async {
     final receipt = _requireReceipt(intentId);
+    if (receipt.provider == 'relay' &&
+        receipt.method == BridgeFundingMethod.relayDeposit &&
+        (receipt.state == BridgeFundingState.awaitingDeposit ||
+            receipt.state == BridgeFundingState.depositDetected ||
+            receipt.state == BridgeFundingState.destinationPending ||
+            receipt.state == BridgeFundingState.expired)) {
+      await _refreshRelayStatus(intentId);
+      return;
+    }
     if (receipt.state == BridgeFundingState.awaitingExternalWallet &&
         receipt.sourceTransactionHash == null) {
       if (!receipt.submissionOutcomeUnknown) {
@@ -374,7 +481,8 @@ final class BridgeFundingController {
 
   Future<void> refreshBaseBalance(String intentId) async {
     final receipt = _requireReceipt(intentId);
-    if (receipt.state != BridgeFundingState.completed ||
+    if ((receipt.state != BridgeFundingState.completed &&
+            receipt.state != BridgeFundingState.partial) ||
         !receipt.balanceRefreshPending) {
       throw const BridgeValidationException(
         'base_balance_refresh_not_available',
@@ -388,6 +496,19 @@ final class BridgeFundingController {
             receipt.provider == 'direct_base' ? null : _unchanged,
         balanceRefreshPending: false,
       ),
+    );
+  }
+
+  Future<void> archiveRelayInstructions(String intentId) async {
+    final receipt = _requireReceipt(intentId);
+    if (receipt.provider != 'relay' ||
+        receipt.method != BridgeFundingMethod.relayDeposit ||
+        !receipt.depositAddressExposed ||
+        receipt.archivedAt != null) {
+      throw const BridgeValidationException('relay_archive_not_available');
+    }
+    await _store.upsert(
+      _copyReceipt(receipt, archivedAt: _now()),
     );
   }
 
@@ -1317,6 +1438,106 @@ final class BridgeFundingController {
     );
   }
 
+  Future<void> _refreshRelayStatus(String intentId) async {
+    final relay = _relay;
+    if (relay == null) {
+      throw const BridgeValidationException('relay_deposit_disabled');
+    }
+    var receipt = _requireReceipt(intentId);
+    final observation = await relay.status(receipt);
+    final observedSourceHash = observation.sourceTransactionHash;
+    if (receipt.state == BridgeFundingState.awaitingDeposit &&
+        observation.state == BridgeFundingState.awaitingDeposit &&
+        observedSourceHash == null &&
+        receipt.sourceTransactionHash == null &&
+        receipt.expiresAt != null &&
+        !_now().isBefore(receipt.expiresAt!)) {
+      await _store.upsert(
+        _copyReceipt(
+          receipt,
+          state: BridgeFundingState.expired,
+          providerStatus: observation.providerStatus,
+          providerSubstatus: 'instruction_expired_without_deposit',
+        ),
+      );
+      return;
+    }
+
+    final terminal = observation.state == BridgeFundingState.completed ||
+        observation.state == BridgeFundingState.refunded ||
+        observation.state == BridgeFundingState.partial;
+    if ((receipt.state == BridgeFundingState.awaitingDeposit ||
+            receipt.state == BridgeFundingState.expired) &&
+        (observation.state == BridgeFundingState.depositDetected ||
+            observation.state == BridgeFundingState.destinationPending ||
+            terminal)) {
+      final lateDepositEvidence = receipt.state == BridgeFundingState.expired
+          ? _relayLateDepositEvidence(receipt, observation)
+          : null;
+      receipt = _copyReceipt(
+        receipt,
+        state: BridgeFundingState.depositDetected,
+        sourceTransactionHash: observation.sourceTransactionHash ?? _unchanged,
+        providerStatus: 'deposit_detected',
+        providerSubstatus: null,
+      );
+      await _store.upsert(
+        receipt,
+        relayLateDepositEvidence: lateDepositEvidence,
+      );
+    }
+    var nextState = observation.state;
+    if (receipt.state == BridgeFundingState.expired &&
+        observation.state == BridgeFundingState.awaitingDeposit) {
+      nextState = BridgeFundingState.expired;
+    } else if ((receipt.state == BridgeFundingState.depositDetected ||
+            receipt.state == BridgeFundingState.destinationPending) &&
+        observation.state == BridgeFundingState.awaitingDeposit) {
+      nextState = receipt.state;
+    } else if (receipt.state == BridgeFundingState.destinationPending &&
+        observation.state == BridgeFundingState.depositDetected) {
+      nextState = receipt.state;
+    }
+    final refreshBaseBalance = nextState == BridgeFundingState.completed ||
+        nextState == BridgeFundingState.partial;
+    final observed = _copyReceipt(
+      receipt,
+      state: nextState,
+      sourceTransactionHash: observation.sourceTransactionHash ?? _unchanged,
+      destinationTransactionHash:
+          observation.destinationTransactionHash ?? _unchanged,
+      actualOutputUnits: observation.actualOutputUnits ?? _unchanged,
+      providerStatus: observation.providerStatus,
+      providerSubstatus: observation.providerSubstatus,
+      balanceRefreshPending: refreshBaseBalance,
+    );
+    await _store.upsert(observed);
+    if (!refreshBaseBalance) return;
+    if (!await _baseBalance.refresh()) return;
+    await _store.upsert(
+      _copyReceipt(observed, balanceRefreshPending: false),
+    );
+  }
+
+  RelayLateDepositEvidence _relayLateDepositEvidence(
+    BridgeFundingReceipt receipt,
+    BridgeFundingObservation observation,
+  ) {
+    final requestId = receipt.providerRequestId;
+    final depositAddress = receipt.depositAddress;
+    final sourceHash = observation.sourceTransactionHash;
+    if (requestId == null || depositAddress == null || sourceHash == null) {
+      throw const BridgeValidationException(
+        'relay_late_deposit_evidence_missing',
+      );
+    }
+    return RelayLateDepositEvidence(
+      requestId: requestId,
+      depositAddress: depositAddress,
+      sourceTransactionHash: sourceHash,
+    );
+  }
+
   Future<ExternalWalletIdentity> _connectedIdentity(BridgeChain chain) async {
     final existing = _wallet.identity;
     final identity = existing ??
@@ -1613,7 +1834,9 @@ BridgeFundingReceipt _copyReceipt(
   BridgeFundingState? state,
   String? provider,
   Object? sourceAddress = _unchanged,
+  Object? depositAddress = _unchanged,
   Object? providerQuoteId = _unchanged,
+  Object? providerRequestId = _unchanged,
   Object? routeTool = _unchanged,
   Object? minimumOutputUnits = _unchanged,
   Object? actualOutputUnits = _unchanged,
@@ -1625,6 +1848,8 @@ BridgeFundingReceipt _copyReceipt(
   Object? reviewedPayloadHash = _unchanged,
   Object? sourceBlockhash = _unchanged,
   Object? expiresAt = _unchanged,
+  Object? archivedAt = _unchanged,
+  bool? depositAddressExposed,
   bool? balanceRefreshPending,
   bool? submissionOutcomeUnknown,
 }) =>
@@ -1643,11 +1868,15 @@ BridgeFundingReceipt _copyReceipt(
           ? source.sourceAddress
           : sourceAddress as String?,
       refundAddress: source.refundAddress,
-      depositAddress: source.depositAddress,
+      depositAddress: identical(depositAddress, _unchanged)
+          ? source.depositAddress
+          : depositAddress as String?,
       providerQuoteId: identical(providerQuoteId, _unchanged)
           ? source.providerQuoteId
           : providerQuoteId as String?,
-      providerRequestId: source.providerRequestId,
+      providerRequestId: identical(providerRequestId, _unchanged)
+          ? source.providerRequestId
+          : providerRequestId as String?,
       routeTool: identical(routeTool, _unchanged)
           ? source.routeTool
           : routeTool as String?,
@@ -1684,8 +1913,11 @@ BridgeFundingReceipt _copyReceipt(
       expiresAt: identical(expiresAt, _unchanged)
           ? source.expiresAt
           : expiresAt as DateTime?,
-      archivedAt: source.archivedAt,
-      depositAddressExposed: source.depositAddressExposed,
+      archivedAt: identical(archivedAt, _unchanged)
+          ? source.archivedAt
+          : archivedAt as DateTime?,
+      depositAddressExposed:
+          depositAddressExposed ?? source.depositAddressExposed,
       balanceRefreshPending:
           balanceRefreshPending ?? source.balanceRefreshPending,
       submissionOutcomeUnknown:

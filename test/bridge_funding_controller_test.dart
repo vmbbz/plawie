@@ -7,6 +7,7 @@ import 'package:clawa/services/bridge/bridge_receipt_store.dart';
 import 'package:clawa/services/bridge/evm_bridge_rpc_service.dart';
 import 'package:clawa/services/bridge/external_wallet_session_service.dart';
 import 'package:clawa/services/bridge/lifi_status_service.dart';
+import 'package:clawa/services/bridge/relay_deposit_service.dart';
 import 'package:clawa/services/bridge/solana_rpc_broadcaster.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,6 +32,7 @@ void main() {
   late _FakeBaseBalance baseBalance;
   late _FakeLifiStatus lifiStatus;
   late _FakeSolanaRpc solanaRpc;
+  late _FakeRelayDeposit relay;
   late SolanaTransactionFixture solanaFixture;
 
   setUp(() async {
@@ -48,6 +50,7 @@ void main() {
     baseBalance = _FakeBaseBalance();
     lifiStatus = _FakeLifiStatus();
     solanaRpc = _FakeSolanaRpc();
+    relay = _FakeRelayDeposit();
   });
 
   BridgeFundingController controller({
@@ -56,6 +59,7 @@ void main() {
     String Function()? internalBaseAddress,
     Future<void> Function(Duration)? delay,
     bool Function()? isForeground,
+    bool relayEnabled = true,
   }) =>
       BridgeFundingController(
         quoteProvider: quotes,
@@ -64,9 +68,11 @@ void main() {
         rpc: rpc,
         solanaRpc: solanaRpc,
         lifiStatus: lifiStatus,
+        relay: relay,
         baseBalance: baseBalance,
         internalBaseAddress: internalBaseAddress ?? () => destination,
         lifiConnectedEnabled: lifiEnabled,
+        relayDepositEnabled: relayEnabled,
         reownEvmEnabled: reownEnabled,
         solanaMwaEnabled: true,
         reownSolanaFallbackEnabled: true,
@@ -1172,6 +1178,247 @@ void main() {
     expect(solanaRpc.blockhashRequests, isEmpty);
     expect(solanaRpc.broadcasts, isEmpty);
   });
+
+  test('Relay instruction is persisted as awaiting deposit before reveal',
+      () async {
+    final request = _relayRequest();
+    relay.instructions.add(_relayInstruction(now: now, request: request));
+    persistence.onWrite = () {
+      final current = store.receiptForIntent(
+        '0123456789abcdef0123456789abcdef',
+      );
+      if (current?.depositAddressExposed == true) {
+        expect(current!.state, BridgeFundingState.awaitingDeposit);
+        expect(current.depositAddress, isNotNull);
+      }
+    };
+
+    final instruction = await controller().prepareRelayDeposit(request);
+
+    expect(instruction.depositAddress,
+        '0x7777777777777777777777777777777777777777');
+    final receipt = store.activeReceipt!;
+    expect(receipt.state, BridgeFundingState.awaitingDeposit);
+    expect(receipt.depositAddressExposed, isTrue);
+    expect(receipt.provider, 'relay');
+    expect(receipt.providerRequestId, instruction.requestId);
+    expect(wallet.sentPayloads, isEmpty);
+    expect(quotes.requests, isEmpty);
+  });
+
+  test('Relay persistence failure prevents instruction reveal', () async {
+    final request = _relayRequest();
+    relay.instructions.add(_relayInstruction(now: now, request: request));
+    persistence.rejectExposedReceipt = true;
+
+    await expectLater(
+      controller().prepareRelayDeposit(request),
+      throwsA(isA<BridgePersistenceException>()),
+    );
+
+    expect(relay.instructionsReturned, 1);
+  });
+
+  test('Relay status advances legally and persists completion before refresh',
+      () async {
+    final receipt = _relayReceipt(now: now);
+    await store.upsert(receipt);
+    relay.observations.add(
+      BridgeFundingObservation(
+        state: BridgeFundingState.completed,
+        providerStatus: 'success',
+        sourceTransactionHash: sourceHash,
+        destinationTransactionHash:
+            '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        actualOutputUnits: '990000',
+        observedAt: now,
+      ),
+    );
+    baseBalance.onRefresh = () {
+      final completed = store.receiptForIntent(receipt.intentId)!;
+      expect(completed.state, BridgeFundingState.completed);
+      expect(completed.balanceRefreshPending, isTrue);
+    };
+
+    await controller().refreshStatus(receipt.intentId);
+
+    final completed = store.receiptForIntent(receipt.intentId)!;
+    expect(completed.state, BridgeFundingState.completed);
+    expect(completed.sourceTransactionHash, sourceHash);
+    expect(completed.actualOutputUnits, '990000');
+    expect(completed.balanceRefreshPending, isFalse);
+  });
+
+  test('Relay partial fill persists before refreshing the Base balance',
+      () async {
+    final receipt = _relayReceipt(now: now);
+    await store.upsert(receipt);
+    relay.observations.add(
+      BridgeFundingObservation(
+        state: BridgeFundingState.partial,
+        providerStatus: 'success_with_refund',
+        sourceTransactionHash: sourceHash,
+        destinationTransactionHash:
+            '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        actualOutputUnits: '900000',
+        observedAt: now,
+      ),
+    );
+    baseBalance.onRefresh = () {
+      final partial = store.receiptForIntent(receipt.intentId)!;
+      expect(partial.state, BridgeFundingState.partial);
+      expect(partial.balanceRefreshPending, isTrue);
+    };
+
+    await controller().refreshStatus(receipt.intentId);
+
+    final partial = store.receiptForIntent(receipt.intentId)!;
+    expect(baseBalance.refreshCalls, 1);
+    expect(partial.state, BridgeFundingState.partial);
+    expect(partial.actualOutputUnits, '900000');
+    expect(partial.balanceRefreshPending, isFalse);
+  });
+
+  test('Relay partial Base balance reconciliation can be retried', () async {
+    final receipt = _relayReceipt(now: now);
+    await store.upsert(receipt);
+    relay.observations.add(
+      BridgeFundingObservation(
+        state: BridgeFundingState.partial,
+        providerStatus: 'success_with_refund',
+        actualOutputUnits: '900000',
+        observedAt: now,
+      ),
+    );
+    baseBalance.succeeds = false;
+
+    await controller().refreshStatus(receipt.intentId);
+    expect(store.receiptForIntent(receipt.intentId)!.balanceRefreshPending,
+        isTrue);
+
+    baseBalance.succeeds = true;
+    await controller().refreshBaseBalance(receipt.intentId);
+    expect(baseBalance.refreshCalls, 2);
+    expect(store.receiptForIntent(receipt.intentId)!.balanceRefreshPending,
+        isFalse);
+  });
+
+  test('Relay waiting instruction expires locally only when still unsent',
+      () async {
+    final receipt = _relayReceipt(
+      now: now.subtract(const Duration(minutes: 20)),
+      expiresAt: now.subtract(const Duration(minutes: 10)),
+    );
+    await store.upsert(receipt);
+    relay.observations.add(
+      BridgeFundingObservation(
+        state: BridgeFundingState.awaitingDeposit,
+        providerStatus: 'waiting',
+        observedAt: now,
+      ),
+    );
+
+    await controller().refreshStatus(receipt.intentId);
+
+    expect(store.receiptForIntent(receipt.intentId)!.state,
+        BridgeFundingState.expired);
+  });
+
+  test('hiding Relay instructions archives without cancelling provider state',
+      () async {
+    final receipt = _relayReceipt(now: now);
+    await store.upsert(receipt);
+
+    await controller().archiveRelayInstructions(receipt.intentId);
+
+    final archived = store.receiptForIntent(receipt.intentId)!;
+    expect(archived.state, BridgeFundingState.awaitingDeposit);
+    expect(archived.providerStatus, 'waiting');
+    expect(archived.archivedAt, now);
+    expect(archived.depositAddressExposed, isTrue);
+  });
+
+  test('replacement Relay instruction requires old-address acknowledgement',
+      () async {
+    final oldReceipt = _relayReceipt(now: now);
+    await store.upsert(oldReceipt);
+    await controller().archiveRelayInstructions(oldReceipt.intentId);
+    final request = _relayRequest();
+    relay.instructions.add(_relayInstruction(now: now, request: request));
+
+    await expectLater(
+      controller().prepareRelayDeposit(request),
+      throwsA(_bridgeCode('old_relay_address_warning_required')),
+    );
+    expect(relay.instructionsReturned, 0);
+
+    await controller().prepareRelayDeposit(
+      request,
+      oldAddressWarningAcknowledged: true,
+    );
+    expect(relay.instructionsReturned, 1);
+  });
+
+  test('locally expired Relay instruction still tracks a late deposit',
+      () async {
+    final receipt = _relayReceipt(
+      now: now.subtract(const Duration(minutes: 20)),
+      expiresAt: now.subtract(const Duration(minutes: 10)),
+    );
+    await store.upsert(receipt);
+    relay.observations.add(
+      BridgeFundingObservation(
+        state: BridgeFundingState.awaitingDeposit,
+        providerStatus: 'waiting',
+        observedAt: now,
+      ),
+    );
+    await controller().refreshStatus(receipt.intentId);
+    expect(store.receiptForIntent(receipt.intentId)!.state,
+        BridgeFundingState.expired);
+
+    final replacementRequest = _relayRequest();
+    relay.instructions.add(
+      _relayInstruction(now: now, request: replacementRequest),
+    );
+    await controller().prepareRelayDeposit(
+      replacementRequest,
+      oldAddressWarningAcknowledged: true,
+    );
+    expect(store.receiptForIntent(receipt.intentId)!.archivedAt, isNotNull);
+
+    relay.observations.add(
+      BridgeFundingObservation(
+        state: BridgeFundingState.depositDetected,
+        providerStatus: 'depositing',
+        sourceTransactionHash: sourceHash,
+        observedAt: now.add(const Duration(seconds: 30)),
+      ),
+    );
+    await controller().refreshStatus(receipt.intentId);
+
+    expect(store.receiptForIntent(receipt.intentId)!.state,
+        BridgeFundingState.depositDetected);
+    expect(store.activeReceipt!.state, BridgeFundingState.awaitingDeposit);
+
+    relay.observations.add(
+      BridgeFundingObservation(
+        state: BridgeFundingState.completed,
+        providerStatus: 'success',
+        sourceTransactionHash: sourceHash,
+        destinationTransactionHash:
+            '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        actualOutputUnits: '990000',
+        observedAt: now.add(const Duration(minutes: 1)),
+      ),
+    );
+    await controller().refreshStatus(receipt.intentId);
+
+    expect(store.receiptForIntent(receipt.intentId)!.state,
+        BridgeFundingState.completed);
+    expect(store.activeReceipt!.state, BridgeFundingState.awaitingDeposit);
+    expect(baseBalance.refreshCalls, 1);
+  });
 }
 
 Matcher _bridgeCode(String code) => isA<BridgeValidationException>()
@@ -1456,6 +1703,65 @@ BridgeFundingReceipt _trackingReceipt({required DateTime now}) =>
       updatedAt: now,
     );
 
+BridgeFundingRequest _relayRequest() => BridgeFundingRequest(
+      method: BridgeFundingMethod.relayDeposit,
+      sourceChain: _ethereumChain,
+      sourceToken: const BridgeToken(
+        chainId: BridgeConstants.ethereumChainId,
+        address: '0x4444444444444444444444444444444444444444',
+        symbol: 'USDC',
+        decimals: 6,
+        solverDepositable: true,
+      ),
+      amount: '1',
+      amountUnits: '1000000',
+      baseDestinationAddress: '0x3333333333333333333333333333333333333333',
+      refundAddress: '0x6666666666666666666666666666666666666666',
+      selfCustodyConfirmed: true,
+    );
+
+RelayDepositInstruction _relayInstruction({
+  required DateTime now,
+  required BridgeFundingRequest request,
+}) =>
+    RelayDepositInstruction(
+      requestId:
+          '0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+      depositAddress: '0x7777777777777777777777777777777777777777',
+      request: request,
+      minimumOutputUnits: '990000',
+      minimumOutputDisplay: '0.99',
+      createdAt: now,
+      expiresAt: now.add(const Duration(minutes: 10)),
+    );
+
+BridgeFundingReceipt _relayReceipt({
+  required DateTime now,
+  DateTime? expiresAt,
+}) =>
+    BridgeFundingReceipt(
+      schemaVersion: 2,
+      intentId: 'relay-tracking-intent',
+      method: BridgeFundingMethod.relayDeposit,
+      provider: 'relay',
+      state: BridgeFundingState.awaitingDeposit,
+      sourceChainId: BridgeConstants.ethereumChainId,
+      sourceTokenAddress: '0x4444444444444444444444444444444444444444',
+      sourceTokenSymbol: 'USDC',
+      sourceAmountUnits: '1000000',
+      baseDestinationAddress: '0x3333333333333333333333333333333333333333',
+      refundAddress: '0x6666666666666666666666666666666666666666',
+      depositAddress: '0x7777777777777777777777777777777777777777',
+      providerRequestId:
+          '0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+      minimumOutputUnits: '990000',
+      providerStatus: 'waiting',
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: expiresAt ?? now.add(const Duration(minutes: 10)),
+      depositAddressExposed: true,
+    );
+
 final class _FakeQuoteProvider implements BridgeExecutableQuoteProvider {
   final List<BridgeExecutableQuote> quotes = <BridgeExecutableQuote>[];
   final List<BridgeFundingRequest> requests = <BridgeFundingRequest>[];
@@ -1623,6 +1929,30 @@ final class _FakeLifiStatus implements LifiSettlementStatusProvider {
   }
 }
 
+final class _FakeRelayDeposit implements RelayDepositProvider {
+  final List<RelayDepositInstruction> instructions =
+      <RelayDepositInstruction>[];
+  final List<BridgeFundingObservation> observations =
+      <BridgeFundingObservation>[];
+  final List<BridgeFundingRequest> requests = <BridgeFundingRequest>[];
+  int instructionsReturned = 0;
+
+  @override
+  Future<RelayDepositInstruction> createInstruction(
+    BridgeFundingRequest request,
+  ) async {
+    requests.add(request);
+    instructionsReturned += 1;
+    return instructions.removeAt(0);
+  }
+
+  @override
+  Future<BridgeFundingObservation> status(
+    BridgeFundingReceipt receipt,
+  ) async =>
+      observations.removeAt(0);
+}
+
 final class _FakeSolanaRpc implements SolanaRpcBroadcaster {
   final List<Uint8List> broadcasts = <Uint8List>[];
   final List<String> statusRequests = <String>[];
@@ -1686,16 +2016,28 @@ final class _MemoryReceiptPersistence implements BridgeReceiptPersistence {
 
   @override
   List<String> bridgeReceipts = <String>[];
+  bool rejectExposedReceipt = false;
+  void Function()? onWrite;
 
   @override
   Future<bool> setActiveBridgeReceiptJson(String? value) async {
+    if (rejectExposedReceipt &&
+        value?.contains('"depositAddressExposed":true') == true) {
+      return false;
+    }
     activeBridgeReceiptJson = value;
+    onWrite?.call();
     return true;
   }
 
   @override
   Future<bool> setBridgeReceipts(List<String> value) async {
+    if (rejectExposedReceipt &&
+        value.any((item) => item.contains('"depositAddressExposed":true'))) {
+      return false;
+    }
     bridgeReceipts = List<String>.from(value);
+    onWrite?.call();
     return true;
   }
 }

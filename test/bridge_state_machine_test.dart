@@ -174,6 +174,33 @@ void main() {
     );
   });
 
+  test('late Relay deposit reopens expiry only with complete bound evidence',
+      () {
+    const evidence = RelayLateDepositEvidence(
+      requestId:
+          '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      depositAddress: '0x1111111111111111111111111111111111111111',
+      sourceTransactionHash:
+          '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    );
+
+    expect(
+      machine.canMoveAfterRelayLateDeposit(
+        BridgeFundingState.expired,
+        BridgeFundingState.depositDetected,
+        evidence: evidence,
+      ),
+      isTrue,
+    );
+    expect(
+      machine.canMove(
+        BridgeFundingState.expired,
+        BridgeFundingState.depositDetected,
+      ),
+      isFalse,
+    );
+  });
+
   test('terminal states have no outgoing transitions', () {
     const terminalStates = <BridgeFundingState>[
       BridgeFundingState.completed,

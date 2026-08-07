@@ -304,6 +304,7 @@ final class RelayDepositInstruction extends Equatable {
     required this.minimumOutputDisplay,
     required this.createdAt,
     required this.expiresAt,
+    this.estimatedFeesUsd,
   });
 
   final String requestId;
@@ -313,6 +314,7 @@ final class RelayDepositInstruction extends Equatable {
   final String minimumOutputDisplay;
   final DateTime createdAt;
   final DateTime expiresAt;
+  final double? estimatedFeesUsd;
 
   @override
   List<Object?> get props => <Object?>[
@@ -323,6 +325,7 @@ final class RelayDepositInstruction extends Equatable {
         minimumOutputDisplay,
         createdAt,
         expiresAt,
+        estimatedFeesUsd,
       ];
 }
 

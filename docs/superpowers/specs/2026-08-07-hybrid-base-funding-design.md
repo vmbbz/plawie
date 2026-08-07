@@ -177,6 +177,13 @@ USDC as `destinationCurrency`, and the user's personal source-chain address as
 to the current strict-deposit request schema and verified contract fixtures; it
 is not inferred from the differently described generic quote semantics.
 
+Relay's current strict-deposit response does not reliably echo `refundTo` or
+authoritative quote timestamps. Plawie therefore binds the response to the
+already validated local request, rejects any mismatched refund value Relay does
+echo, and applies a ten-minute display lifetime from the trusted device clock.
+This lifetime controls whether Plawie continues to show an unsent instruction;
+it does not claim to revoke the provider address.
+
 The transfer instruction is single-use in Plawie's UI. Inputs freeze once the
 address is shown. Revealing an address cannot be undone onchain: after reveal,
 `Cancel` becomes `Hide instructions`, and the receipt remains tracked until a
@@ -188,6 +195,7 @@ deletes status history or makes the old address safe to reuse. The page presents
 - one-time deposit address with copy and QR;
 - personal refund address;
 - expected/minimum Base USDC where the provider supplies it;
+- provider fee estimate where Relay supplies validated USD fee components;
 - quote/instruction freshness and `Send immediately` guidance;
 - explicit warnings that a wrong token, wrong VM, or unsupported asset can be
   unrecoverable;
@@ -288,8 +296,9 @@ wallet request:
 
 `RelayDepositInstructionValidator` separately validates live strict-deposit
 responses, including provider/request ID, deposit address format for the source
-VM, exact input, recipient, destination chain/currency, refund address, expiry,
-and solver-depositable currency membership.
+VM, exact input, recipient, destination chain/currency, any echoed refund
+address, fee components, local bounded display lifetime, and
+solver-depositable currency membership.
 
 ### Persistent state and receipts
 
@@ -359,11 +368,32 @@ notification; they do not create a second persistent Gateway notification.
   returned and persisted.
 - A deposit flow becomes `depositDetected` only from Relay's observed status,
   not from the user pressing `I sent it`.
+- Relay tracking queries the public `/requests/v2` endpoint by deposit address
+  and persisted parent request with source/destination filters, `updatedAt desc`,
+  child requests and a bounded first page, then the public
+  `/intents/status/v3` endpoint by request ID. It validates every returned
+  child and its recipient, requires the persisted parent, prefers the newest
+  evidenced child, binds transaction hashes to the correct chain VM, ignores
+  hashless pending placeholders, and represents a successful fill plus refund
+  as `partial`. Reported underpayment cannot become success;
+  overpaid success remains pending until refund evidence appears. The app does
+  not embed a Relay API key, use API-key-only request indexing, or trigger
+  reindex automatically.
+- Local expiry prevents Plawie from encouraging a stale send, but it does not
+  make the provider address inert. Manual/read-only tracking remains available;
+  a late deposit can reopen `expired -> depositDetected` only through evidence
+  bound to the persisted request ID, deposit address and source transaction
+  hash. The ordinary terminal transition map remains closed.
+- A request-ID-only `success` does not prove the exact deposited amount. It
+  remains `destinationPending` with `success_amount_unverified` until the
+  address-indexed request supplies validated `metadata.currencyIn` units. When
+  both transaction and metadata amounts are present, they must agree.
 - LI.FI and Relay polling uses bounded exponential backoff, `Retry-After`, app
   lifecycle pause/resume, and a manual refresh action.
 - Polling timeout means `still pending`, not `failed`.
-- A terminal provider success remains success if Base balance refresh fails;
-  the receipt records `balanceRefreshPending` and offers refresh.
+- A completed or partially filled provider settlement remains terminal if Base
+  balance refresh fails; the receipt records `balanceRefreshPending` and offers
+  the same retry path for both.
 - Ambiguous wallet return or network loss after submission enters status
   recovery. It never resends automatically.
 - EVM unknown-return recovery accepts only a user-supplied source hash whose
@@ -410,6 +440,9 @@ Provider exceptions, raw bodies and callbacks are sanitized before display.
   terminal and remains status-trackable after expiry/archive. Creating a new
   instruction after expiry requires an explicit warning that the old address
   must never be used.
+- Acknowledging replacement of an expired instruction archives that old receipt
+  before creating the new active intent. Late provider evidence may still
+  update the archived receipt without violating the single-active-intent rule.
 - Status polling backs off and stops at terminal state.
 
 ## Alternatives Considered
