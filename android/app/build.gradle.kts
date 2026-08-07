@@ -164,6 +164,13 @@ android {
         }
     }
 
+    lint {
+        // Flutter rewrites the ignored, machine-local android/local.properties
+        // during every build. Its Windows path escaping is valid for Gradle but
+        // triggers PropertyEscape, so suppress only that generated-file check.
+        disable += "PropertyEscape"
+    }
+
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")

@@ -183,11 +183,12 @@ class MainActivity : FlutterFragmentActivity() {
         }
 
         // Register the PIP mic broadcast receiver
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(pipMicReceiver, IntentFilter(ACTION_PIP_MIC), Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(pipMicReceiver, IntentFilter(ACTION_PIP_MIC))
-        }
+        ContextCompat.registerReceiver(
+            this,
+            pipMicReceiver,
+            IntentFilter(ACTION_PIP_MIC),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         pipMethodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -1105,11 +1106,12 @@ class MainActivity : FlutterFragmentActivity() {
 
         // Register wake word broadcast receiver
         val wakeFilter = IntentFilter(HotwordService.ACTION_WAKE_WORD_DETECTED)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(wakeWordReceiver, wakeFilter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(wakeWordReceiver, wakeFilter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            wakeWordReceiver,
+            wakeFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         // EventChannel: Flutter subscribes to receive wake word events
         EventChannel(
