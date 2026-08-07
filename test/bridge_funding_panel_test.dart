@@ -74,6 +74,35 @@ void main() {
     expect(find.text('Ethereum'), findsOneWidget);
   });
 
+  testWidgets('prefers live Robinhood USDG without hiding ETH', (tester) async {
+    await _pumpPanel(
+      tester,
+      controller: _FakeController(),
+      capabilities: _FakeCapabilities(_robinhoodSnapshot()),
+      initialSourceChainId: BridgeConstants.robinhoodChainId,
+      initialSourceTokenSymbol: 'USDG',
+    );
+
+    final chain = tester.widget<DropdownButtonFormField<BridgeChain>>(
+      find.byKey(const Key('bridge-source-chain')),
+    );
+    final token = tester.widget<DropdownButtonFormField<BridgeToken>>(
+      find.byKey(
+        const ValueKey<String>('bridge-source-token-4663'),
+      ),
+    );
+    expect(chain.initialValue?.id, BridgeConstants.robinhoodChainId);
+    expect(token.initialValue?.symbol, 'USDG');
+    expect(find.textContaining('Keep some ETH'), findsOneWidget);
+
+    await tester.tap(find.byKey(
+      const ValueKey<String>('bridge-source-token-4663'),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('ETH ·'), findsWidgets);
+    expect(find.textContaining('USDG ·'), findsWidgets);
+  });
+
   testWidgets('uses cached routes read-only when live refresh fails',
       (tester) async {
     final capabilities = _FakeCapabilities.error(
@@ -137,6 +166,37 @@ void main() {
     expect(find.text('Review Base funding'), findsOneWidget);
     expect(find.textContaining('at least 1.2 USDC'), findsOneWidget);
     expect(find.text('Approve in wallet'), findsOneWidget);
+  });
+
+  testWidgets('completion callback fires once for this session intent only',
+      (tester) async {
+    final completions = <BridgeFundingReceipt>[];
+    final controller = _FakeController()
+      ..completeOnConfirm = true
+      ..walletOptions = const <ExternalWalletOption>[
+        ExternalWalletOption(
+          transport: ExternalWalletTransport.reownEvm,
+          label: 'Compatible EVM wallet',
+          available: true,
+        ),
+      ];
+    await _pumpPanel(
+      tester,
+      controller: controller,
+      capabilities: _FakeCapabilities(_snapshot()),
+      onFundingCompleted: completions.add,
+    );
+
+    await tester.enterText(find.byKey(const Key('bridge-amount')), '1.25');
+    await tester.ensureVisible(find.byKey(const Key('bridge-primary-action')));
+    await tester.tap(find.byKey(const Key('bridge-primary-action')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Approve in wallet'));
+    await tester.pumpAndSettle();
+
+    expect(completions, hasLength(1));
+    expect(completions.single.state, BridgeFundingState.completed);
+    expect(completions.single.intentId, controller.currentReceipt?.intentId);
   });
 
   testWidgets('execution stops when mandatory capability refresh fails',
@@ -339,6 +399,9 @@ Future<void> _pumpPanel(
   String? baseAddress = _baseAddress,
   bool baseWalletAvailable = true,
   bool baseMainnetSelected = true,
+  int? initialSourceChainId,
+  String? initialSourceTokenSymbol,
+  ValueChanged<BridgeFundingReceipt>? onFundingCompleted,
   bool settle = true,
   Size size = const Size(430, 900),
   TextScaler textScaler = TextScaler.noScaling,
@@ -356,6 +419,9 @@ Future<void> _pumpPanel(
               baseDestinationAddress: baseAddress,
               baseWalletAvailable: baseWalletAvailable,
               baseMainnetSelected: baseMainnetSelected,
+              initialSourceChainId: initialSourceChainId,
+              initialSourceTokenSymbol: initialSourceTokenSymbol,
+              onFundingCompleted: onFundingCompleted,
               launchExternal: (_) async => true,
               copyText: (_) async {},
             ),
@@ -424,6 +490,7 @@ final class _FakeController implements BridgeFundingUiController {
   final List<BridgeFundingRequest> connectedRequests = <BridgeFundingRequest>[];
   ExternalWalletTransport? selectedTransport;
   bool relayPersistedBeforeReturn = false;
+  bool completeOnConfirm = false;
   int pollCalls = 0;
 
   @override
@@ -494,7 +561,10 @@ final class _FakeController implements BridgeFundingUiController {
   Future<void> cancelBeforeSubmission(String intentId) async {}
 
   @override
-  Future<void> confirmConnectedBridge(String intentId) async {}
+  Future<void> confirmConnectedBridge(String intentId) async {
+    if (!completeOnConfirm || currentReceipt?.intentId != intentId) return;
+    currentReceipt = _completedReceipt(currentReceipt!);
+  }
 
   @override
   Future<void> confirmEvmAllowance(String intentId) async {}
@@ -558,6 +628,30 @@ BridgeCapabilitySnapshot _snapshot({
   );
 }
 
+BridgeCapabilitySnapshot _robinhoodSnapshot() {
+  const robinhood = BridgeChain(
+    id: BridgeConstants.robinhoodChainId,
+    key: 'rhc',
+    name: 'Robinhood Chain',
+    type: BridgeChainType.evm,
+    nativeTokenSymbol: 'ETH',
+  );
+  return BridgeCapabilitySnapshot(
+    schemaVersion: 1,
+    refreshedAt: DateTime.now().toUtc(),
+    connectedChains: const <BridgeChain>[robinhood],
+    relayChains: const <BridgeChain>[],
+    connectedTokensByChain: const <int, List<BridgeToken>>{
+      BridgeConstants.robinhoodChainId: <BridgeToken>[
+        _robinhoodEth,
+        _robinhoodUsdg,
+      ],
+    },
+    relayTokensByChain: const <int, List<BridgeToken>>{},
+    availabilityReasons: const <String, String>{},
+  );
+}
+
 BridgeFundingRequest _request({
   BridgeFundingMethod method = BridgeFundingMethod.externalJumper,
   bool selfCustody = false,
@@ -595,6 +689,31 @@ BridgeFundingReceipt _reviewReceipt(BridgeFundingRequest request) =>
       createdAt: DateTime.utc(2026, 8, 7, 12),
       updatedAt: DateTime.utc(2026, 8, 7, 12),
       expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 1)),
+    );
+
+BridgeFundingReceipt _completedReceipt(BridgeFundingReceipt receipt) =>
+    BridgeFundingReceipt(
+      schemaVersion: receipt.schemaVersion,
+      intentId: receipt.intentId,
+      method: receipt.method,
+      provider: receipt.provider,
+      state: BridgeFundingState.completed,
+      sourceChainId: receipt.sourceChainId,
+      sourceTokenAddress: receipt.sourceTokenAddress,
+      sourceTokenSymbol: receipt.sourceTokenSymbol,
+      sourceAmountUnits: receipt.sourceAmountUnits,
+      baseDestinationAddress: receipt.baseDestinationAddress,
+      sourceAddress: receipt.sourceAddress,
+      providerQuoteId: receipt.providerQuoteId,
+      routeTool: receipt.routeTool,
+      minimumOutputUnits: receipt.minimumOutputUnits,
+      actualOutputUnits: receipt.minimumOutputUnits,
+      sourceTransactionHash:
+          '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      destinationTransactionHash:
+          '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      createdAt: receipt.createdAt,
+      updatedAt: DateTime.now().toUtc(),
     );
 
 BridgeFundingReceipt _relayReceipt(BridgeFundingRequest request) =>
@@ -693,6 +812,22 @@ const _ethUsdc = BridgeToken(
   chainId: BridgeConstants.ethereumChainId,
   address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
   symbol: 'USDC',
+  decimals: 6,
+  solverDepositable: true,
+);
+
+const _robinhoodEth = BridgeToken(
+  chainId: BridgeConstants.robinhoodChainId,
+  address: '0x0000000000000000000000000000000000000000',
+  symbol: 'ETH',
+  decimals: 18,
+  solverDepositable: true,
+);
+
+const _robinhoodUsdg = BridgeToken(
+  chainId: BridgeConstants.robinhoodChainId,
+  address: BridgeConstants.robinhoodUsdg,
+  symbol: 'USDG',
   decimals: 6,
   solverDepositable: true,
 );

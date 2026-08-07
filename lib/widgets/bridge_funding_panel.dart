@@ -21,6 +21,9 @@ final class BridgeFundingPanel extends StatefulWidget {
     required this.baseDestinationAddress,
     required this.baseWalletAvailable,
     required this.baseMainnetSelected,
+    this.initialSourceChainId,
+    this.initialSourceTokenSymbol,
+    this.onFundingCompleted,
     this.launchExternal = _launchExternal,
     this.copyText = _copyText,
     this.clock = DateTime.now,
@@ -31,6 +34,9 @@ final class BridgeFundingPanel extends StatefulWidget {
   final String? baseDestinationAddress;
   final bool baseWalletAvailable;
   final bool baseMainnetSelected;
+  final int? initialSourceChainId;
+  final String? initialSourceTokenSymbol;
+  final ValueChanged<BridgeFundingReceipt>? onFundingCompleted;
   final Future<bool> Function(Uri uri) launchExternal;
   final Future<void> Function(String text) copyText;
   final DateTime Function() clock;
@@ -55,6 +61,8 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
   bool _resumeStarted = false;
   bool _selfCustodyConfirmed = false;
   String? _error;
+  final Set<String> _sessionIntentIds = <String>{};
+  final Set<String> _completionCallbacksDelivered = <String>{};
 
   bool get _entryAvailable =>
       widget.baseWalletAvailable &&
@@ -82,7 +90,9 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.baseDestinationAddress != widget.baseDestinationAddress ||
         oldWidget.baseWalletAvailable != widget.baseWalletAvailable ||
-        oldWidget.baseMainnetSelected != widget.baseMainnetSelected) {
+        oldWidget.baseMainnetSelected != widget.baseMainnetSelected ||
+        oldWidget.initialSourceChainId != widget.initialSourceChainId ||
+        oldWidget.initialSourceTokenSymbol != widget.initialSourceTokenSymbol) {
       _snapshot = null;
       _sourceChain = null;
       _sourceToken = null;
@@ -136,12 +146,34 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
   void _selectDefaults() {
     final chains = _chainsFor(_method);
     if (!chains.contains(_sourceChain)) {
-      _sourceChain = chains.isEmpty ? null : chains.first;
+      _sourceChain = _preferredChain(chains);
     }
     final tokens = _tokensFor(_method, _sourceChain);
     if (!tokens.contains(_sourceToken)) {
-      _sourceToken = tokens.isEmpty ? null : tokens.first;
+      _sourceToken = _preferredToken(tokens);
     }
+  }
+
+  BridgeChain? _preferredChain(List<BridgeChain> chains) {
+    if (chains.isEmpty) return null;
+    final preferredId = widget.initialSourceChainId;
+    if (preferredId != null) {
+      for (final chain in chains) {
+        if (chain.id == preferredId) return chain;
+      }
+    }
+    return chains.first;
+  }
+
+  BridgeToken? _preferredToken(List<BridgeToken> tokens) {
+    if (tokens.isEmpty) return null;
+    final preferredSymbol = widget.initialSourceTokenSymbol?.toUpperCase();
+    if (preferredSymbol != null) {
+      for (final token in tokens) {
+        if (token.symbol.toUpperCase() == preferredSymbol) return token;
+      }
+    }
+    return tokens.first;
   }
 
   List<BridgeChain> _chainsFor(BridgeFundingMethod method) {
@@ -347,7 +379,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
                   setState(() {
                     _sourceChain = chain;
                     final available = _tokensFor(_method, chain);
-                    _sourceToken = available.isEmpty ? null : available.first;
+                    _sourceToken = _preferredToken(available);
                     _walletOptions = const <ExternalWalletOption>[];
                     _error = null;
                   });
@@ -388,6 +420,14 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
             suffixText: _sourceToken?.symbol,
           ),
         ),
+        if (_sourceChain?.id == BridgeConstants.robinhoodChainId) ...[
+          const SizedBox(height: 8),
+          const _Notice(
+            icon: Icons.local_gas_station_outlined,
+            text:
+                'Keep some ETH in the Robinhood source wallet for gas. Do not bridge the full ETH balance; USDG transfers also require ETH gas.',
+          ),
+        ],
         if (_method == BridgeFundingMethod.relayDeposit) ...[
           const SizedBox(height: 12),
           const _Notice(
@@ -535,6 +575,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
           transport: transport,
         );
       }
+      _trackCurrentIntent();
       if (!mounted) return;
       await _runReviewFlow(request);
     });
@@ -631,6 +672,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
       } else {
         await widget.controller.confirmConnectedBridge(receipt.intentId);
       }
+      _notifyIfCompleted(receipt.intentId);
       if (mounted) setState(() {});
       if (kind == BridgeReviewKind.bridge) {
         final current = widget.controller.activeReceipt;
@@ -667,6 +709,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
           oldAddressWarningAcknowledged: true,
         );
       }
+      _trackCurrentIntent();
       if (!mounted) return;
       final action = await RelayDepositSheet.show(
         context,
@@ -1047,12 +1090,16 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
   }
 
   Future<void> _refreshReceipt(BridgeFundingReceipt receipt) => _runBusy(
-        () => widget.controller.refreshStatus(receipt.intentId),
+        () async {
+          await widget.controller.refreshStatus(receipt.intentId);
+          _notifyIfCompleted(receipt.intentId);
+        },
       );
 
   Future<void> _pollInBackground(String intentId) async {
     try {
       await widget.controller.pollSettlement(intentId);
+      _notifyIfCompleted(intentId);
       if (mounted) setState(() {});
     } catch (_) {
       if (mounted) {
@@ -1060,6 +1107,31 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
             'Transfer was not resent. Status can be refreshed safely.');
       }
     }
+  }
+
+  void _trackCurrentIntent() {
+    final receipt = widget.controller.activeReceipt;
+    if (receipt != null) _sessionIntentIds.add(receipt.intentId);
+  }
+
+  void _notifyIfCompleted(String intentId) {
+    if (!_sessionIntentIds.contains(intentId) ||
+        _completionCallbacksDelivered.contains(intentId)) {
+      return;
+    }
+    BridgeFundingReceipt? completed;
+    for (final receipt in widget.controller.receipts) {
+      if (receipt.intentId == intentId &&
+          receipt.state == BridgeFundingState.completed &&
+          receipt.baseDestinationAddress.toLowerCase() ==
+              widget.baseDestinationAddress?.toLowerCase()) {
+        completed = receipt;
+        break;
+      }
+    }
+    if (completed == null) return;
+    _completionCallbacksDelivered.add(intentId);
+    widget.onFundingCompleted?.call(completed);
   }
 
   void _resumeActiveReceipt() {
