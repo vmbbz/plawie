@@ -1021,7 +1021,7 @@ git commit -m "feat: retain validated LI.FI execution quotes"
 - Test: `test/external_wallet_session_service_test.dart`
 - Test: `test/external_wallet_transport_router_test.dart`
 
-- [ ] **Step 1: Write failing Android contract tests**
+- [x] **Step 1: Write failing Android contract tests**
 
 Read only the real `com/openclaw/plawie` Android sources, Gradle file, and
 manifest. Assert:
@@ -1039,7 +1039,7 @@ manifest. Assert:
 
 Run both native contract tests and expect missing files/dependency failures.
 
-- [ ] **Step 2: Add callback ownership and the native MWA bridge**
+- [x] **Step 2: Add callback ownership and the native MWA bridge**
 
 `WalletLinkBridge` owns:
 
@@ -1069,7 +1069,7 @@ SDK-scoped storage or memory and is never returned to Dart. Cancellation,
 authorization failure, invalid payload, and ambiguous submission use stable
 error codes and never trigger a second request.
 
-- [ ] **Step 3: Register protocol discovery and callback ownership**
+- [x] **Step 3: Register protocol discovery and callback ownership**
 
 Keep the exact callback filter and add only Android visibility required by the
 SDKs: a generic browsable HTTPS `VIEW` intent plus bounded package hints proven
@@ -1077,7 +1077,7 @@ necessary by the resolved Reown fallback. Do not add `QUERY_ALL_PACKAGES`; do
 not require any Solana wallet package for MWA discovery. Package visibility may
 improve ordering but cannot determine support.
 
-- [ ] **Step 4: Write failing provider-neutral session and router tests**
+- [x] **Step 4: Write failing provider-neutral session and router tests**
 
 Define and test these contracts:
 
@@ -1120,7 +1120,7 @@ routing, explicit Reown fallback, Base Account's honest unavailable reason,
 wrong chain/account/method, rejection, duplicate callback, expiry, disconnect,
 and zero SDK session material in exported state.
 
-- [ ] **Step 5: Implement adapters and capability routing**
+- [x] **Step 5: Implement adapters and capability routing**
 
 Require non-empty Reown release defines:
 
@@ -1151,7 +1151,7 @@ session stores may persist internally, but Plawie preferences, receipts, logs,
 and agents never receive session topics, authorization tokens, shared secrets,
 callback envelopes, or operation IDs.
 
-- [ ] **Step 6: Verify, document the native dependency, and commit**
+- [x] **Step 6: Verify, document the native dependency, and commit**
 
 Record the MWA Apache-2.0 dependency and release attribution decision in
 `docs/EXTERNAL_WALLET_BRIDGING.md`, then run:

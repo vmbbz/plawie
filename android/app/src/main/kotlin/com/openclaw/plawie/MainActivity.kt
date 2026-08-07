@@ -46,7 +46,7 @@ import android.app.AlarmManager
 import android.os.BatteryManager
 import android.os.SystemClock
 import android.view.WindowManager
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
@@ -55,7 +55,7 @@ import com.chaquo.python.android.AndroidPlatform
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     private val CHANNEL = "com.openclaw.plawie/native"
     private val EVENT_CHANNEL = "com.openclaw.plawie/gateway_logs"
     companion object {
@@ -74,6 +74,8 @@ class MainActivity : FlutterActivity() {
     private lateinit var processManager: ProcessManager
     private lateinit var nativeNodeSmokeProcess: NativeNodeSmokeProcess
     private lateinit var secureEvmWalletManager: SecureEvmWalletManager
+    private var walletLinkBridge: WalletLinkBridge? = null
+    private var solanaMwaBridge: SolanaMwaBridge? = null
     private var screenCaptureResult: MethodChannel.Result? = null
     private var gifImportResult: MethodChannel.Result? = null
     private var screenCaptureDurationMs: Long = 5000L
@@ -153,6 +155,12 @@ class MainActivity : FlutterActivity() {
         bootstrapManager = BootstrapManager(applicationContext, filesDir, nativeLibDir, processManager)
         nativeNodeSmokeProcess = NativeNodeSmokeProcess(applicationContext, nativeLibDir)
         secureEvmWalletManager = SecureEvmWalletManager(this)
+        walletLinkBridge = WalletLinkBridge(
+            flutterEngine.dartExecutor.binaryMessenger
+        ).also { it.captureInitialIntent(intent) }
+        solanaMwaBridge = SolanaMwaBridge(this).also {
+            it.attach(flutterEngine.dartExecutor.binaryMessenger)
+        }
         handleDebugNativeFullGatewayBootstrapIntent(intent)
 
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vrm/pip_mode")
@@ -1170,6 +1178,7 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        walletLinkBridge?.onNewIntent(intent)
         handleDebugNativeFullGatewayBootstrapIntent(intent)
     }
 
@@ -1654,7 +1663,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onPictureInPictureModeChanged(
         isInPictureInPictureMode: Boolean,
-        newConfig: android.content.res.Configuration?
+        newConfig: android.content.res.Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         pipMethodChannel?.invokeMethod("onPiPModeChanged", isInPictureInPictureMode)
@@ -1732,6 +1741,10 @@ class MainActivity : FlutterActivity() {
         nativeTts = null
         nativeTtsReady = false
         hotwordEventSink = null
+        walletLinkBridge?.dispose()
+        walletLinkBridge = null
+        solanaMwaBridge?.dispose()
+        solanaMwaBridge = null
         super.onDestroy()
     }
 }

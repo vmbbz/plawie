@@ -1,6 +1,6 @@
 # External Wallet Bridging
 
-Status: dependency baseline only
+Status: protocol-routed session foundation; execution and UI gates disabled
 
 Date reviewed: 2026-08-07
 
@@ -80,3 +80,66 @@ resolution is not production approval.
 
 Task 11 will expand this document with operational architecture, threat model,
 recovery, release gates, and user-flow guidance.
+
+## Mobile Wallet Adapter dependency and attribution
+
+Android now resolves the exact dependency
+`com.solanamobile:mobile-wallet-adapter-clientlib-ktx:2.1.0`. Its published
+Maven POM identifies the artifact as **Apache License 2.0** and points to the
+upstream `solana-mobile/mobile-wallet-adapter` repository. The integration uses
+the official Android chooser and `Solana.Mainnet`; it does not select Solana
+wallets by package name.
+
+The release decision is to include the Apache 2.0 license text and applicable
+third-party notices in the same shipped legal bundle owned by Task 11. Until
+that bundle and its in-app legal surface are verified, Solana MWA remains
+disabled by its compile-time feature gate. This is separate from the stricter
+Reown license and service-terms review above; satisfying one dependency's
+notice requirements does not satisfy the other.
+
+MWA's Activity Result API requires an AndroidX `ComponentActivity`. The app's
+activity therefore uses Flutter's supported `FlutterFragmentActivity` base.
+The existing canvas screenshot and picture-in-picture integrations were kept
+on Android activity APIs and compile-verified after that migration.
+MWA's AndroidX graph also requires a modern compile SDK. The root Gradle policy
+uses Android Components `finalizeDsl` to raise Android library subprojects to
+compile SDK 36 after each plugin's own DSL runs. This specifically prevents
+older Flutter plugins from restoring an incompatible compile SDK; it does not
+change their minimum SDK, target SDK, or runtime opt-in behavior.
+
+## Task 5 session architecture
+
+Task 5 adds session transports only. It does not submit LI.FI routes, transfer
+USDC, expose a bridge execution button, or enable any wallet gate by default.
+
+- Android owns exactly one callback route, `plawie://wallet-callback`. Flutter's
+  automatic deep-link handling is disabled for this route. One native owner
+  retains the initial link and streams later links without logging URI data.
+- EVM sessions use Reown AppKit's protocol and dynamic Explorer catalog. The
+  selected chain, public account, and `eth_sendTransaction` approval must match
+  exactly; display names never choose EVM execution code.
+- Solana uses native MWA first. If sign-only is advertised, Dart receives the
+  signed bytes. Otherwise MWA's mandatory sign-and-send path returns one
+  signature. Native authorization state never crosses the platform channel.
+- Phantom and Solflare are bounded sign-only compatibility fallbacks. They are
+  shown only after MWA is proven unavailable and must be selected explicitly.
+  Their base58 response is decoded once into raw bytes before leaving the
+  adapter.
+- Base Account remains an honest unavailable option while its independent gate
+  has no production adapter.
+- Connect, sign, and send operations are serialized by an in-memory 128-bit
+  operation identifier, reviewed-payload fingerprint, and ten-minute expiry.
+  Disconnect invalidates the operation. Operation IDs, callback envelopes,
+  session topics, authorization tokens, and shared secrets are not persisted,
+  logged, exported to receipts, or exposed to agents.
+
+The release build must provide non-empty `REOWN_PROJECT_ID` and an HTTPS
+`PLAWIE_DAPP_URL`, then independently enable only the reviewed feature gates:
+`ENABLE_REOWN_EVM_WALLETS`, `ENABLE_SOLANA_MWA_WALLETS`, and, if approved,
+`ENABLE_REOWN_SOLANA_FALLBACK`. A missing define or disabled gate produces an
+unavailable capability instead of a partially working connector.
+
+Task 6 owns exact EVM RPC/approval execution. Later controller and UI tasks own
+fresh-quote review, settlement monitoring, retry/recovery, and the explicit
+human approval surface. The session layer must not be presented as a completed
+bridge until those tasks and Task 11's release evidence are complete.

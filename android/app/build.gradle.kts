@@ -226,5 +226,6 @@ dependencies {
     implementation("org.web3j:rlp:4.12.3-android")
     implementation("org.web3j:utils:4.12.3-android")
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation("com.solanamobile:mobile-wallet-adapter-clientlib-ktx:2.1.0")
     testImplementation("junit:junit:4.13.2")
 }
