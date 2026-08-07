@@ -60,8 +60,9 @@ support without a production-safe native client.
   limited to the branded Base App.
 - **Base App/Base Account:** Coinbase's branded smart-account product using
   Base Account and Mobile Wallet Protocol surfaces.
-- **Compatible Solana wallet:** A wallet that responds to MWA 2.0 or a bounded
-  Reown Phantom/Solflare fallback and supports sign-only requests.
+- **Compatible Solana wallet:** A wallet that responds to MWA 2.0 and supports
+  its required sign-and-send operation, optionally including sign-only, or a
+  bounded Reown Phantom/Solflare fallback that supports sign-only requests.
 - **Installed hint:** Best-effort Android package visibility used to improve
   ordering. It never grants support or hides a wallet from protocol discovery.
 
@@ -124,10 +125,22 @@ abstract interface class ExternalWalletSessionService {
   });
   Future<void> disconnect();
   Future<String> sendEvmTransaction(EvmBridgeExecutionPayload payload);
-  Future<Uint8List> signSolanaTransaction(
+  Future<SolanaWalletSubmissionResult> submitSolanaTransaction(
     SolanaBridgeExecutionPayload payload,
   );
   ExternalWalletIdentity? get identity;
+}
+
+enum SolanaWalletSubmissionMode { signOnly, signAndSend }
+
+sealed class SolanaWalletSubmissionResult {}
+
+final class SignedSolanaTransaction extends SolanaWalletSubmissionResult {
+  final Uint8List signedTransaction;
+}
+
+final class SubmittedSolanaTransaction extends SolanaWalletSubmissionResult {
+  final String signature;
 }
 ```
 
@@ -168,7 +181,9 @@ official Kotlin MWA client. A dedicated platform bridge exposes only:
 
 - discover/authorize a Mainnet wallet;
 - return the wallet-selected case-sensitive public key and supported features;
-- sign one exact serialized transaction;
+- submit one exact serialized transaction using the strongest wallet-advertised
+  mode: sign-only when available, otherwise the standard MWA
+  `signAndSendTransactions` operation;
 - deauthorize and clear SDK-scoped authorization state.
 
 The Android MWA intent invokes the system-compatible wallet chooser. Plawie does
@@ -176,10 +191,24 @@ not query or launch Phantom, Solflare, Jupiter, or another MWA wallet by package
 name. SDK authorization material stays in SDK-scoped secure storage or memory
 and never enters Dart preferences, receipts, logs, or agent payloads.
 
-MWA is sign-only in this architecture. Plawie compares the returned signed
-transaction with the reviewed message and signer, then broadcasts those exact
-bytes once through its bounded Solana broadcaster. It never requests a
-wallet-managed sign-and-send action.
+Selection is capability-based, never brand-based. When the wallet still exposes
+sign-only, Plawie compares the returned signed transaction with the reviewed
+message and signer, persists the derived transaction signature, and broadcasts
+those exact bytes once through its bounded Solana broadcaster.
+
+MWA 2.0 requires wallets to expose `signAndSendTransactions`, while sign-only is
+deprecated and may be absent. In that case Plawie validates and freezes the
+exact serialized unsigned transaction before invoking the wallet. The wallet
+signs and broadcasts it, then returns the transaction signature. Plawie validates
+the returned signature, binds it to the reviewed message and selected signer
+where the transaction format permits local verification, persists it before any
+status request, and polls settlement without broadcasting from Plawie.
+
+If wallet return or transport status is ambiguous and no trustworthy signature
+is available, the operation becomes `submissionOutcomeUnknown`. Plawie does not
+automatically retry, resubmit, or claim that the transaction was not sent. The
+user may only refresh status or start a newly reviewed operation after the
+pending operation is safely reconciled or expired.
 
 ### Reown Solana fallback
 
@@ -277,6 +306,7 @@ Transport failures use stable categories rather than wallet-specific guesses:
 - `wallet_callback_invalid`
 - `wallet_operation_expired`
 - `wallet_signature_mismatch`
+- `wallet_submission_outcome_unknown`
 
 The UI names the safe next action: choose another compatible wallet, switch
 funding method, request a fresh quote, copy a Relay instruction, or continue in
@@ -307,11 +337,18 @@ unmonitored Jumper. It never instructs the user to import a seed or private key.
 
 - Reown EVM supports any fake wallet exposing the requested namespace, chain,
   account, and method, regardless of brand label.
-- MWA authorizes, rejects, deauthorizes, signs one transaction, and rejects a
-  changed account/message.
+- MWA authorizes, rejects, and deauthorizes; capability negotiation chooses
+  sign-only when exposed and otherwise chooses `signAndSendTransactions`.
+- The sign-only path rejects changed account/message bytes, persists the
+  signature, and invokes the Plawie broadcaster exactly once.
+- The sign-and-send path validates the reviewed bytes before invocation,
+  validates and persists the returned signature, never invokes the Plawie
+  broadcaster, and converts ambiguous completion into
+  `submissionOutcomeUnknown` without automatic resubmission.
 - Phantom and Solflare fallback callbacks reject replay, expiry, wrong state,
   wrong account, wrong chain, and changed transaction bytes.
-- No adapter exposes a sign-and-send Solana method.
+- One active pending operation prevents either Solana submission path from being
+  invoked twice.
 
 ### Device acceptance
 
@@ -339,8 +376,10 @@ The master implementation plan must be amended before Task 2 starts:
   Solana fallback.
 - Task 6 covers generic EVM WalletConnect execution and direct Base USDC
   transfer in addition to LI.FI EVM execution.
-- Task 7 covers MWA and fallback sign-only verification, then one Plawie RPC
-  broadcast.
+- Task 7 covers capability-negotiated MWA submission: verified sign-only plus
+  one Plawie RPC broadcast when supported, otherwise reviewed MWA sign-and-send
+  plus signature persistence and status polling. Reown fallback remains
+  sign-only.
 - Task 10 presents protocol-based wallet choice and capability errors.
 - Task 11 documents the compatibility matrix as capability-based and read-only
   to agents.
@@ -359,8 +398,10 @@ The master implementation plan must be amended before Task 2 starts:
       static support claim.
 - [ ] Base Account has a separate default-off gate and honest unavailable state.
 - [ ] Base USDC already on Base uses a direct reviewed transfer, not a bridge.
-- [ ] Namespace, chain, account, method, review, callback, and signed bytes are
-      bound before state advances.
+- [ ] Namespace, chain, account, method, review, callback, and returned signed
+      bytes or transaction signature are bound before state advances.
+- [ ] MWA sign-only broadcasts through Plawie at most once; MWA sign-and-send
+      never triggers a Plawie broadcast or an automatic resubmission.
 - [ ] Agent, Gateway, receipts, and logs receive no wallet session material.
 - [ ] Internal Base wallet, x402, setup, models, native Gateway, and skills are
       unchanged by wallet transport availability.
@@ -372,6 +413,7 @@ The master implementation plan must be amended before Task 2 starts:
 - [Reown AppKit platform feature matrix](https://docs.reown.com/appkit/features/index)
 - [Solana Mobile Wallet Adapter](https://docs.solanamobile.com/developers/mobile-wallet-adapter)
 - [Solana Mobile native MWA client](https://docs.solanamobile.com/android-native/using_mobile_wallet_adapter)
+- [MWA 2.0 wallet migration and mandatory sign-and-send](https://docs.solanamobile.com/mwa/migration/wallets/walletlib)
 - [Base Account mobile integration](https://docs.base.org/base-account/quickstart/mobile-integration)
 - [Base Account and Reown integration](https://docs.base.org/base-account/framework-integrations/reown)
 - [Uniswap Wallet WalletConnect support](https://support.uniswap.org/hc/en-us/articles/11306127816845-How-to-connect-my-wallet-to-a-site-dapp-using-WalletConnect)
