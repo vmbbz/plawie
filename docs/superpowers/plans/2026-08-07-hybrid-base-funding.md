@@ -1771,6 +1771,16 @@ git add lib/services/capabilities/ai_payments_capability.dart lib/services/app_n
 git commit -m "docs: finalize external wallet funding contract"
 ```
 
+## Execution-order amendment: multi-network Wallet before acceptance
+
+Before Task 12, execute
+`docs/superpowers/plans/2026-08-07-multinetwork-wallet-and-guided-topup.md`.
+It preserves this plan's Base-canonical settlement boundary while adding one
+secured EVM identity across Base and Robinhood, bounded Robinhood ETH and
+official-USDG transactions, Wallet-facing labels, and a guided
+Robinhood-to-Base-USDC return path for provider top-ups. It does not authorize
+Robinhood provider settlement.
+
 ## Task 12: Run full regression and controlled Android acceptance
 
 **Files:**
