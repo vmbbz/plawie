@@ -138,7 +138,7 @@ class WalletFundedProviderReadinessService {
     final health = await coordinator.inspectHealth();
     return WalletFundedProviderEnvironment(
       walletStatus: base.walletStatus,
-      isBaseMainnet: !base.useSepolia,
+      isBaseMainnet: base.isBaseMainnet,
       transportState: health == null
           ? PaidProviderTransportState.stopped
           : health
@@ -246,7 +246,8 @@ class WalletFundedProviderReadinessService {
         state: WalletFundedProviderState.baseMainnetRequired,
         canSelect: false,
         title: 'Switch to Base Mainnet',
-        detail: 'Wallet-funded AI payments do not use Base Sepolia.',
+        detail:
+            'Wallet-funded AI payments settle in native USDC on Base Mainnet.',
         action: WalletFundedProviderAction.switchToMainnet,
         actionLabel: 'Switch to Mainnet',
       );

@@ -66,15 +66,8 @@ class SecureEvmWalletManager(private val activity: Activity) {
         private const val KEY_ALIAS = "plawie_base_evm_envelope_v1"
         private const val ENVELOPE_VERSION = 1
         private const val ENVELOPE_FILE = "base_evm_wallet_v1.json"
-        private const val BASE_MAINNET_CHAIN_ID = 8453L
-        private const val BASE_SEPOLIA_CHAIN_ID = 84532L
         private const val MAX_X402_USDC_UNITS = 5_000_000L
         private const val MAX_X402_WINDOW_SECONDS = 300L
-        private const val USDC_MAINNET =
-            "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
-        private const val USDC_SEPOLIA =
-            "0x036cbd53842c5426634e7929541ec2318f3dcf7e"
-        private const val ERC20_TRANSFER_SELECTOR = "a9059cbb"
         private val X402_HOSTS = setOf("api.venice.ai", "blockrun.ai")
         private val HEX_ADDRESS = Regex("^0x[0-9a-fA-F]{40}$")
         private val HEX_BYTES32 = Regex("^0x[0-9a-fA-F]{64}$")
@@ -214,11 +207,11 @@ class SecureEvmWalletManager(private val activity: Activity) {
     fun signTransaction(arguments: Map<*, *>?, result: MethodChannel.Result) {
         val envelope = requireEnvelope(result) ?: return
         try {
-            val request = parseTransaction(arguments)
-            val summary = transactionSummary(request)
+            val request = OrdinaryEvmTransactionPolicy.parse(arguments)
+            val summary = OrdinaryEvmTransactionPolicy.summary(request)
             withDecryptedKey(
                 envelope = envelope,
-                title = "Approve Base transaction",
+                title = "Approve wallet transaction",
                 description = summary,
                 result = result,
             ) { privateKey ->
@@ -1113,56 +1106,6 @@ class SecureEvmWalletManager(private val activity: Activity) {
         dialog.show()
     }
 
-    private fun parseTransaction(arguments: Map<*, *>?): TransactionRequest {
-        require(arguments != null) { "Transaction arguments are missing." }
-        val kind = arguments["kind"]?.toString()?.lowercase(Locale.US) ?: ""
-        require(kind == "eth" || kind == "usdc") { "Only ETH and USDC transfers are allowed." }
-        val chainId = arguments["chainId"]?.toString()?.toLongOrNull()
-            ?: throw IllegalArgumentException("chainId is missing.")
-        require(chainId == BASE_MAINNET_CHAIN_ID || chainId == BASE_SEPOLIA_CHAIN_ID) {
-            "Only Base Mainnet and Base Sepolia transactions are allowed."
-        }
-        val nonce = positiveBigInt(arguments["nonce"], "nonce", allowZero = true)
-        val gasPrice = positiveBigInt(arguments["gasPrice"], "gasPrice")
-        val gasLimit = positiveBigInt(arguments["gasLimit"], "gasLimit")
-        require(gasLimit <= BigInteger.valueOf(2_000_000L)) { "Gas limit exceeds wallet policy." }
-        val to = arguments["to"]?.toString() ?: ""
-        require(HEX_ADDRESS.matches(to)) { "Destination is not an EVM address." }
-        val value = positiveBigInt(arguments["value"], "value", allowZero = kind == "usdc")
-        var data = arguments["data"]?.toString()?.lowercase(Locale.US) ?: "0x"
-        if (data.isEmpty()) data = "0x"
-        require(data.startsWith("0x") && data.length % 2 == 0) { "Transaction data is invalid." }
-        if (kind == "eth") {
-            require(data == "0x" && value > BigInteger.ZERO) { "ETH transfer payload is invalid." }
-        } else {
-            val expectedContract = if (chainId == BASE_MAINNET_CHAIN_ID) USDC_MAINNET else USDC_SEPOLIA
-            require(to.equals(expectedContract, ignoreCase = true)) { "USDC contract does not match the Base network." }
-            parseUsdcTransfer(data)
-            require(value == BigInteger.ZERO) { "USDC transaction must not send native ETH." }
-        }
-        return TransactionRequest(kind, chainId, nonce, gasPrice, gasLimit, to, value, data)
-    }
-
-    private fun transactionSummary(request: TransactionRequest): String {
-        if (request.kind == "eth") {
-            return "Send ${formatUnits(request.value, 18)} ETH to ${shortAddress(request.to)} on Base"
-        }
-        val transfer = parseUsdcTransfer(request.data)
-        return "Send ${formatUnits(transfer.second, 6)} USDC to ${shortAddress(transfer.first)} on Base"
-    }
-
-    private fun parseUsdcTransfer(data: String): Pair<String, BigInteger> {
-        val raw = data.removePrefix("0x")
-        require(raw.length == 136 && raw.startsWith(ERC20_TRANSFER_SELECTOR)) {
-            "Only ERC-20 transfer(address,uint256) is allowed for USDC."
-        }
-        val recipient = "0x${raw.substring(32, 72)}"
-        require(HEX_ADDRESS.matches(recipient)) { "USDC recipient is invalid." }
-        val amount = BigInteger(raw.substring(72, 136), 16)
-        require(amount > BigInteger.ZERO) { "USDC amount must be positive." }
-        return Pair(recipient, amount)
-    }
-
     private fun parseX402Authorization(arguments: Map<*, *>?, walletAddress: String): X402Request {
         require(arguments != null) { "x402 authorization is missing." }
         val host = arguments["host"]?.toString()?.trim()?.lowercase(Locale.US) ?: ""
@@ -1170,9 +1113,13 @@ class SecureEvmWalletManager(private val activity: Activity) {
             "x402 host is not allowlisted."
         }
         val chainId = arguments["chainId"]?.toString()?.toLongOrNull()
-        require(chainId == BASE_MAINNET_CHAIN_ID) { "x402 payments require Base Mainnet." }
+        require(chainId == OrdinaryEvmTransactionPolicy.BASE_MAINNET_CHAIN_ID) {
+            "x402 payments require Base Mainnet."
+        }
         val verifyingContract = arguments["verifyingContract"]?.toString()?.lowercase(Locale.US) ?: ""
-        require(verifyingContract == USDC_MAINNET) { "x402 asset is not native Base USDC." }
+        require(verifyingContract == OrdinaryEvmTransactionPolicy.USDC_MAINNET) {
+            "x402 asset is not native Base USDC."
+        }
         val from = arguments["from"]?.toString() ?: ""
         require(from.equals(walletAddress, ignoreCase = true)) { "x402 payer does not match the secure wallet." }
         val to = arguments["to"]?.toString() ?: ""
@@ -1276,17 +1223,6 @@ class SecureEvmWalletManager(private val activity: Activity) {
         val securityLevel: String,
     )
 
-    private data class TransactionRequest(
-        val kind: String,
-        val chainId: Long,
-        val nonce: BigInteger,
-        val gasPrice: BigInteger,
-        val gasLimit: BigInteger,
-        val to: String,
-        val value: BigInteger,
-        val data: String,
-    )
-
     private data class X402Request(
         val host: String,
         val name: String,
@@ -1301,6 +1237,162 @@ class SecureEvmWalletManager(private val activity: Activity) {
         val nonce: String,
     )
 
+}
+
+internal data class OrdinaryEvmTransactionRequest(
+    val kind: String,
+    val chainId: Long,
+    val nonce: BigInteger,
+    val gasPrice: BigInteger,
+    val gasLimit: BigInteger,
+    val to: String,
+    val value: BigInteger,
+    val data: String,
+)
+
+/**
+ * Pure allowlist used by the Android-owned signer and its JVM tests. A Dart
+ * payload cannot widen this policy into generic contract or cross-chain
+ * signing.
+ */
+internal object OrdinaryEvmTransactionPolicy {
+    const val BASE_MAINNET_CHAIN_ID = 8453L
+    const val ROBINHOOD_MAINNET_CHAIN_ID = 4663L
+    const val BASE_SEPOLIA_CHAIN_ID = 84532L
+    const val USDC_MAINNET = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+    const val USDC_SEPOLIA = "0x036cbd53842c5426634e7929541ec2318f3dcf7e"
+    const val USDG_ROBINHOOD = "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+    private const val ERC20_TRANSFER_SELECTOR = "a9059cbb"
+    private val HEX_ADDRESS = Regex("^0x[0-9a-fA-F]{40}$")
+
+    fun parse(arguments: Map<*, *>?): OrdinaryEvmTransactionRequest {
+        require(arguments != null) { "Transaction arguments are missing." }
+        val kind = arguments["kind"]?.toString()?.lowercase(Locale.US) ?: ""
+        require(kind == "eth" || kind == "usdc" || kind == "usdg") {
+            "Only ETH, Base USDC, and Robinhood USDG transfers are allowed."
+        }
+        val chainId = arguments["chainId"]?.toString()?.toLongOrNull()
+            ?: throw IllegalArgumentException("chainId is missing.")
+        require(
+            chainId == BASE_MAINNET_CHAIN_ID ||
+                chainId == ROBINHOOD_MAINNET_CHAIN_ID ||
+                chainId == BASE_SEPOLIA_CHAIN_ID,
+        ) { "The wallet network is not allowlisted." }
+
+        val nonce = positiveBigInt(arguments["nonce"], "nonce", allowZero = true)
+        val gasPrice = positiveBigInt(arguments["gasPrice"], "gasPrice")
+        val gasLimit = positiveBigInt(arguments["gasLimit"], "gasLimit")
+        require(gasLimit <= BigInteger.valueOf(2_000_000L)) {
+            "Gas limit exceeds wallet policy."
+        }
+        val to = arguments["to"]?.toString() ?: ""
+        require(HEX_ADDRESS.matches(to)) { "Destination is not an EVM address." }
+        val isToken = kind != "eth"
+        val value = positiveBigInt(arguments["value"], "value", allowZero = isToken)
+        var data = arguments["data"]?.toString()?.lowercase(Locale.US) ?: "0x"
+        if (data.isEmpty()) data = "0x"
+        require(data.startsWith("0x") && data.length % 2 == 0) {
+            "Transaction data is invalid."
+        }
+
+        when (kind) {
+            "eth" -> require(data == "0x" && value > BigInteger.ZERO) {
+                "ETH transfer payload is invalid."
+            }
+            "usdc" -> {
+                require(chainId != ROBINHOOD_MAINNET_CHAIN_ID) {
+                    "USDC transfers are not authorized on Robinhood Chain."
+                }
+                val expected = if (chainId == BASE_MAINNET_CHAIN_ID) {
+                    USDC_MAINNET
+                } else {
+                    USDC_SEPOLIA
+                }
+                require(to.equals(expected, ignoreCase = true)) {
+                    "USDC contract does not match the Base network."
+                }
+                parseTokenTransfer(data, "USDC")
+                require(value == BigInteger.ZERO) {
+                    "USDC transaction must not send native ETH."
+                }
+            }
+            "usdg" -> {
+                require(chainId == ROBINHOOD_MAINNET_CHAIN_ID) {
+                    "USDG transfers require Robinhood Chain."
+                }
+                require(to.equals(USDG_ROBINHOOD, ignoreCase = true)) {
+                    "USDG contract does not match Robinhood Chain."
+                }
+                parseTokenTransfer(data, "USDG")
+                require(value == BigInteger.ZERO) {
+                    "USDG transaction must not send native ETH."
+                }
+            }
+        }
+        return OrdinaryEvmTransactionRequest(
+            kind,
+            chainId,
+            nonce,
+            gasPrice,
+            gasLimit,
+            to,
+            value,
+            data,
+        )
+    }
+
+    fun summary(request: OrdinaryEvmTransactionRequest): String {
+        val network = when (request.chainId) {
+            BASE_MAINNET_CHAIN_ID -> "Base Mainnet"
+            BASE_SEPOLIA_CHAIN_ID -> "Base Sepolia"
+            ROBINHOOD_MAINNET_CHAIN_ID -> "Robinhood Chain"
+            else -> error("Unexpected allowlisted chain")
+        }
+        if (request.kind == "eth") {
+            return "Send ${formatUnits(request.value, 18)} ETH to " +
+                "${shortAddress(request.to)} on $network"
+        }
+        val symbol = if (request.kind == "usdg") "USDG" else "USDC"
+        val transfer = parseTokenTransfer(request.data, symbol)
+        return "Send ${formatUnits(transfer.second, 6)} $symbol to " +
+            "${shortAddress(transfer.first)} on $network"
+    }
+
+    private fun parseTokenTransfer(data: String, symbol: String): Pair<String, BigInteger> {
+        val raw = data.removePrefix("0x")
+        require(raw.length == 136 && raw.startsWith(ERC20_TRANSFER_SELECTOR)) {
+            "Only ERC-20 transfer(address,uint256) is allowed for $symbol."
+        }
+        val recipient = "0x${raw.substring(32, 72)}"
+        require(HEX_ADDRESS.matches(recipient)) { "$symbol recipient is invalid." }
+        val amount = BigInteger(raw.substring(72, 136), 16)
+        require(amount > BigInteger.ZERO) { "$symbol amount must be positive." }
+        return Pair(recipient, amount)
+    }
+
+    private fun positiveBigInt(raw: Any?, name: String, allowZero: Boolean = false): BigInteger {
+        val value = raw?.toString()?.let {
+            try {
+                BigInteger(it)
+            } catch (_: NumberFormatException) {
+                null
+            }
+        } ?: throw IllegalArgumentException("$name is missing or invalid.")
+        require(if (allowZero) value >= BigInteger.ZERO else value > BigInteger.ZERO) {
+            "$name is outside the allowed range."
+        }
+        return value
+    }
+
+    private fun formatUnits(value: BigInteger, decimals: Int): String {
+        val divisor = BigInteger.TEN.pow(decimals)
+        val whole = value.divide(divisor)
+        val fraction = value.mod(divisor).toString().padStart(decimals, '0').trimEnd('0')
+        return if (fraction.isEmpty()) whole.toString() else "$whole.$fraction"
+    }
+
+    private fun shortAddress(value: String): String =
+        if (value.length > 12) "${value.take(6)}…${value.takeLast(4)}" else value
 }
 
 /**
