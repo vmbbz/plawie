@@ -1294,7 +1294,7 @@ git commit -m "feat: execute reviewed EVM bridge requests"
 - Test: `test/solana_rpc_broadcaster_test.dart`
 - Modify: `test/bridge_funding_controller_test.dart`
 
-- [ ] **Step 1: Write failing Solana envelope and signature tests**
+- [x] **Step 1: Write failing Solana envelope and signature tests**
 
 Use fixed legacy and versioned transaction fixtures. Assert bounded base58
 encode/decode, compact-u16 parsing, exact unsigned/signed message equality, first
@@ -1304,7 +1304,7 @@ reviewed message and first required signer, malformed length rejection,
 changed-message rejection, wrong signer/signature rejection, and a 1232-byte
 maximum.
 
-- [ ] **Step 2: Implement the focused wire parser**
+- [x] **Step 2: Implement the focused wire parser**
 
 `SolanaTransactionEnvelope.verifySigned()` must:
 
@@ -1336,7 +1336,7 @@ the existing `cryptography` Ed25519 implementation over the exact serialized
 message. Return only the normalized base58 signature. Never reconstruct or
 mutate the message.
 
-- [ ] **Step 3: Write failing broadcaster and read-only status tests**
+- [x] **Step 3: Write failing broadcaster and read-only status tests**
 
 Assert one POST to `https://api.mainnet-beta.solana.com`, method
 `sendTransaction`, base64 encoding, `skipPreflight: false`,
@@ -1345,7 +1345,7 @@ no redirect, and no retry after timeout. Separately assert
 `getSignatureStatuses` is read-only, accepts only a validated signature, handles
 `null`/processed/confirmed/finalized/error, and never invokes `sendTransaction`.
 
-- [ ] **Step 4: Implement one-call Solana broadcasting**
+- [x] **Step 4: Implement one-call Solana broadcasting**
 
 Send:
 
@@ -1368,7 +1368,7 @@ Send:
 
 Any timeout becomes `submissionOutcomeUnknown`; status recovery uses the already-derived signature and never broadcasts again.
 
-- [ ] **Step 5: Add capability-negotiated orchestration tests**
+- [x] **Step 5: Add capability-negotiated orchestration tests**
 
 Prove both branches start from a fresh validated SVM quote, an exact Plawie
 review, and a persisted `awaitingExternalWallet` receipt containing the exact
@@ -1394,7 +1394,7 @@ message SHA-256 `reviewedPayloadHash` and parsed `sourceBlockhash`:
 4. A duplicate callback, double tap, process resume, account change, method
    change, or late response invokes neither branch a second time.
 
-- [ ] **Step 6: Implement the two bounded submission branches**
+- [x] **Step 6: Implement the two bounded submission branches**
 
 `confirmConnectedBridge()` consumes the tagged
 `SolanaWalletSubmissionResult`. `SignedSolanaTransaction` enters the verified
@@ -1403,7 +1403,7 @@ signature verification and read-only status polling directly. The receipt is
 written before every irreversible boundary. Never fall from a failed
 sign-and-send request into sign-only, and never retry either mode automatically.
 
-- [ ] **Step 7: Run tests and commit**
+- [x] **Step 7: Run tests and commit**
 
 ```powershell
 flutter test test/solana_transaction_envelope_test.dart test/solana_rpc_broadcaster_test.dart test/bridge_funding_controller_test.dart

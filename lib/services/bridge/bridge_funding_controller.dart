@@ -9,6 +9,8 @@ import 'evm_bridge_rpc_service.dart';
 import 'external_wallet_session_service.dart';
 import 'lifi_bridge_service.dart';
 import 'lifi_transaction_validator.dart';
+import 'solana_rpc_broadcaster.dart';
+import 'solana_transaction_envelope.dart';
 
 enum BridgeReviewKind { allowance, bridge }
 
@@ -46,23 +48,33 @@ final class BridgeFundingController {
     required ExternalWalletSessionService wallet,
     required BridgeReceiptStore receiptStore,
     required EvmBridgeRpc rpc,
+    required SolanaRpcBroadcaster solanaRpc,
     required BaseBalanceRefreshService baseBalance,
     required String Function() internalBaseAddress,
     bool lifiConnectedEnabled = BridgeFeatureConfig.lifiConnectedEnabled,
     bool reownEvmEnabled = BridgeFeatureConfig.reownEvmWalletsEnabled,
+    bool solanaMwaEnabled = BridgeFeatureConfig.solanaMwaWalletsEnabled,
+    bool reownSolanaFallbackEnabled =
+        BridgeFeatureConfig.reownSolanaFallbackEnabled,
     LifiTransactionValidator transactionValidator =
         const LifiTransactionValidator(),
+    SolanaTransactionEnvelope solanaEnvelope =
+        const SolanaTransactionEnvelope(),
     DateTime Function()? clock,
     String Function()? intentIdFactory,
   })  : _quoteProvider = quoteProvider,
         _wallet = wallet,
         _store = receiptStore,
         _rpc = rpc,
+        _solanaRpc = solanaRpc,
         _baseBalance = baseBalance,
         _internalBaseAddress = internalBaseAddress,
         _lifiConnectedEnabled = lifiConnectedEnabled,
         _reownEvmEnabled = reownEvmEnabled,
+        _solanaMwaEnabled = solanaMwaEnabled,
+        _reownSolanaFallbackEnabled = reownSolanaFallbackEnabled,
         _transactionValidator = transactionValidator,
+        _solanaEnvelope = solanaEnvelope,
         _clock = clock ?? DateTime.now,
         _intentIdFactory = intentIdFactory ?? _secureIntentId;
 
@@ -70,18 +82,26 @@ final class BridgeFundingController {
   final ExternalWalletSessionService _wallet;
   final BridgeReceiptStore _store;
   final EvmBridgeRpc _rpc;
+  final SolanaRpcBroadcaster _solanaRpc;
   final BaseBalanceRefreshService _baseBalance;
   final String Function() _internalBaseAddress;
   final bool _lifiConnectedEnabled;
   final bool _reownEvmEnabled;
+  final bool _solanaMwaEnabled;
+  final bool _reownSolanaFallbackEnabled;
   final LifiTransactionValidator _transactionValidator;
+  final SolanaTransactionEnvelope _solanaEnvelope;
   final DateTime Function() _clock;
   final String Function() _intentIdFactory;
 
   _PreparedEvmIntent? _prepared;
+  _PreparedSolanaIntent? _preparedSolana;
   String? _confirmationInFlight;
 
   BridgeReviewKind? pendingReviewKind(String intentId) {
+    if (_preparedSolana?.intentId == intentId) {
+      return BridgeReviewKind.bridge;
+    }
     final prepared = _prepared;
     return prepared?.intentId == intentId ? prepared?.reviewKind : null;
   }
@@ -123,6 +143,17 @@ final class BridgeFundingController {
         walletTransport: identity.transport,
       );
       await _store.upsert(receipt);
+
+      if (request.sourceChain.type == BridgeChainType.svm) {
+        final prepared = await _prepareSolanaReview(
+          intentId: intentId,
+          request: request,
+          identity: identity,
+        );
+        _preparedSolana = prepared;
+        await _persistSolanaReview(receipt, prepared);
+        return;
+      }
 
       if (direct) {
         final quote = await _directQuote(
@@ -190,6 +221,10 @@ final class BridgeFundingController {
 
   Future<void> confirmConnectedBridge(String intentId) =>
       _runConfirmation(intentId, () async {
+        if (_preparedSolana?.intentId == intentId) {
+          await _confirmSolanaBridge(intentId);
+          return;
+        }
         final prepared = _requirePrepared(intentId, BridgeReviewKind.bridge);
         final receipt = _requireReviewReceipt(intentId);
         _validatePreparedIdentity(prepared);
@@ -247,6 +282,7 @@ final class BridgeFundingController {
       ),
     );
     _prepared = null;
+    _preparedSolana = null;
     await _wallet.disconnect();
   }
 
@@ -254,13 +290,23 @@ final class BridgeFundingController {
     final receipt = _requireReceipt(intentId);
     if (receipt.state == BridgeFundingState.awaitingExternalWallet &&
         receipt.sourceTransactionHash == null) {
-      await _store.upsert(
-        _copyReceipt(
-          receipt,
-          providerStatus: 'wallet_outcome_unknown',
-          submissionOutcomeUnknown: true,
-        ),
-      );
+      if (!receipt.submissionOutcomeUnknown) {
+        await _store.upsert(
+          _copyReceipt(
+            receipt,
+            providerStatus: 'wallet_outcome_unknown',
+            submissionOutcomeUnknown: true,
+          ),
+        );
+      }
+      return;
+    }
+    if (receipt.sourceChainId == BridgeConstants.solanaChainId &&
+        receipt.sourceTransactionHash != null &&
+        (receipt.state == BridgeFundingState.awaitingExternalWallet ||
+            receipt.state == BridgeFundingState.submitted ||
+            receipt.state == BridgeFundingState.sourcePending)) {
+      await _refreshSolanaSubmitted(intentId);
       return;
     }
     if (receipt.providerStatus == 'approval_submitted' ||
@@ -350,6 +396,49 @@ final class BridgeFundingController {
     );
   }
 
+  Future<_PreparedSolanaIntent> _prepareSolanaReview({
+    required String intentId,
+    required BridgeFundingRequest request,
+    required ExternalWalletIdentity identity,
+  }) async {
+    final quote = await _quoteProvider.executableQuote(
+      request,
+      connectedSourceAddress: identity.publicAddress,
+    );
+    _transactionValidator.validate(
+      quote,
+      request: request,
+      connectedAddress: identity.publicAddress,
+      baseAddress: _currentBaseAddress(),
+      now: _now(),
+    );
+    final payload = quote.payload;
+    if (payload is! SolanaBridgeExecutionPayload) {
+      throw const BridgeValidationException('solana_payload_required');
+    }
+    final inspection = _solanaEnvelope.inspect(payload);
+    if (sha256.convert(inspection.transactionBytes).toString() !=
+        quote.fingerprint) {
+      throw const BridgeValidationException('quote_fingerprint_mismatch');
+    }
+    final mode = identity.approvedMethods.contains('solana_signTransaction')
+        ? SolanaWalletSubmissionMode.signOnly
+        : identity.approvedMethods.contains('solana_signAndSendTransaction')
+            ? SolanaWalletSubmissionMode.signAndSend
+            : throw const BridgeValidationException(
+                'connected_wallet_mismatch',
+              );
+    return _PreparedSolanaIntent(
+      intentId: intentId,
+      request: request,
+      identity: identity,
+      quote: quote,
+      payload: payload,
+      inspection: inspection,
+      submissionMode: mode,
+    );
+  }
+
   Future<BridgeExecutableQuote> _directQuote(
     BridgeFundingRequest request, {
     required String intentId,
@@ -425,6 +514,27 @@ final class BridgeFundingController {
         ),
       );
 
+  Future<void> _persistSolanaReview(
+    BridgeFundingReceipt receipt,
+    _PreparedSolanaIntent prepared,
+  ) =>
+      _store.upsert(
+        _copyReceipt(
+          receipt,
+          state: BridgeFundingState.awaitingPlawieReview,
+          provider: prepared.quote.estimate.provider,
+          providerQuoteId: prepared.quote.estimate.quoteId,
+          routeTool: prepared.quote.estimate.routeTool,
+          minimumOutputUnits: prepared.quote.estimate.minimumOutputUnits,
+          sourceAddress: prepared.identity.publicAddress,
+          walletTransport: prepared.identity.transport,
+          reviewedPayloadHash: prepared.fingerprint,
+          sourceBlockhash: prepared.inspection.recentBlockhash,
+          expiresAt: prepared.quote.estimate.expiresAt,
+          providerStatus: 'bridge_review',
+        ),
+      );
+
   Future<void> _persistAwaitingWallet(
     BridgeFundingReceipt receipt,
     _PreparedEvmIntent prepared,
@@ -476,6 +586,290 @@ final class BridgeFundingController {
           submissionOutcomeUnknown: true,
         ),
       );
+
+  Future<void> _confirmSolanaBridge(String intentId) async {
+    final prepared = _requirePreparedSolana(intentId);
+    final receipt = _requireReviewReceipt(intentId);
+    _validatePreparedSolanaIdentity(prepared);
+    if (!_sameEvmAddress(
+      receipt.baseDestinationAddress,
+      _currentBaseAddress(),
+    )) {
+      throw const BridgeValidationException('base_destination_changed');
+    }
+    await _persistSolanaAwaitingWallet(receipt, prepared);
+
+    late SolanaWalletSubmissionResult result;
+    try {
+      result = await _wallet.submitSolanaTransaction(prepared.payload);
+    } on ExternalWalletException catch (error) {
+      if (prepared.submissionMode == SolanaWalletSubmissionMode.signOnly ||
+          _isKnownWalletRejection(error.code)) {
+        await _returnSolanaToReview(
+          prepared,
+          providerStatus: _isKnownWalletRejection(error.code)
+              ? 'wallet_rejected'
+              : 'solana_signing_failed',
+        );
+      } else {
+        await _persistSolanaUnknown(
+          prepared,
+          providerStatus: 'wallet_outcome_unknown',
+          providerSubstatus: error.code,
+        );
+      }
+      rethrow;
+    }
+
+    if (result.mode != prepared.submissionMode) {
+      if (result is SubmittedSolanaTransaction) {
+        await _persistSolanaUnknown(
+          prepared,
+          providerStatus: 'wallet_mode_changed_outcome_unknown',
+        );
+      } else {
+        await _returnSolanaToReview(
+          prepared,
+          providerStatus: 'wallet_mode_changed',
+        );
+      }
+      throw const BridgeValidationException('solana_wallet_mode_changed');
+    }
+
+    switch (result) {
+      case SignedSolanaTransaction():
+        late SolanaVerifiedTransaction verified;
+        try {
+          verified = await _solanaEnvelope.verifySigned(
+            reviewed: prepared.payload,
+            signedTransaction: result.signedTransaction,
+          );
+        } on BridgeValidationException {
+          await _returnSolanaToReview(
+            prepared,
+            providerStatus: 'solana_signature_rejected',
+          );
+          rethrow;
+        }
+        await _store.upsert(
+          _copyReceipt(
+            _requireReceipt(intentId),
+            sourceTransactionHash: verified.signature,
+            providerStatus: 'solana_signature_verified',
+            submissionOutcomeUnknown: false,
+          ),
+        );
+        _preparedSolana = null;
+        late String broadcastSignature;
+        try {
+          broadcastSignature =
+              await _solanaRpc.sendTransaction(verified.transactionBytes);
+        } on SolanaRpcException catch (error) {
+          await _store.upsert(
+            _copyReceipt(
+              _requireReceipt(intentId),
+              providerStatus: 'solana_broadcast_outcome_unknown',
+              providerSubstatus: error.code,
+              submissionOutcomeUnknown: true,
+            ),
+          );
+          rethrow;
+        } catch (_) {
+          await _store.upsert(
+            _copyReceipt(
+              _requireReceipt(intentId),
+              providerStatus: 'solana_broadcast_outcome_unknown',
+              providerSubstatus: 'unexpected_broadcast_failure',
+              submissionOutcomeUnknown: true,
+            ),
+          );
+          rethrow;
+        }
+        if (broadcastSignature != verified.signature) {
+          await _store.upsert(
+            _copyReceipt(
+              _requireReceipt(intentId),
+              providerStatus: 'solana_broadcast_outcome_unknown',
+              providerSubstatus: 'signature_mismatch',
+              submissionOutcomeUnknown: true,
+            ),
+          );
+          throw const BridgeValidationException(
+            'solana_broadcast_signature_mismatch',
+          );
+        }
+        await _persistSolanaSubmitted(intentId, verified.signature);
+      case SubmittedSolanaTransaction():
+        late String signature;
+        try {
+          signature = await _solanaEnvelope.verifySubmittedSignature(
+            reviewed: prepared.payload,
+            signature: result.signature,
+          );
+        } on BridgeValidationException {
+          await _persistSolanaUnknown(
+            prepared,
+            providerStatus: 'solana_submitted_signature_invalid',
+          );
+          rethrow;
+        }
+        _preparedSolana = null;
+        await _persistSolanaSubmitted(intentId, signature);
+    }
+    await _refreshSolanaSubmitted(intentId);
+  }
+
+  Future<void> _persistSolanaAwaitingWallet(
+    BridgeFundingReceipt receipt,
+    _PreparedSolanaIntent prepared,
+  ) async {
+    if (receipt.reviewedPayloadHash != prepared.fingerprint ||
+        receipt.sourceBlockhash != prepared.inspection.recentBlockhash) {
+      throw const BridgeValidationException('reviewed_payload_changed');
+    }
+    await _store.upsert(
+      _copyReceipt(
+        receipt,
+        state: BridgeFundingState.awaitingExternalWallet,
+        reviewedPayloadHash: prepared.fingerprint,
+        sourceBlockhash: prepared.inspection.recentBlockhash,
+        providerStatus: 'awaiting_bridge_wallet',
+        submissionOutcomeUnknown: false,
+      ),
+    );
+  }
+
+  Future<void> _returnSolanaToReview(
+    _PreparedSolanaIntent prepared, {
+    required String providerStatus,
+  }) =>
+      _store.upsert(
+        _copyReceipt(
+          _requireReceipt(prepared.intentId),
+          state: BridgeFundingState.awaitingPlawieReview,
+          sourceTransactionHash: null,
+          providerStatus: providerStatus,
+          providerSubstatus: null,
+          submissionOutcomeUnknown: false,
+        ),
+      );
+
+  Future<void> _persistSolanaUnknown(
+    _PreparedSolanaIntent prepared, {
+    required String providerStatus,
+    String? providerSubstatus,
+  }) async {
+    _preparedSolana = null;
+    await _store.upsert(
+      _copyReceipt(
+        _requireReceipt(prepared.intentId),
+        providerStatus: providerStatus,
+        providerSubstatus: providerSubstatus,
+        reviewedPayloadHash: prepared.fingerprint,
+        sourceBlockhash: prepared.inspection.recentBlockhash,
+        submissionOutcomeUnknown: true,
+      ),
+    );
+  }
+
+  Future<void> _persistSolanaSubmitted(
+    String intentId,
+    String signature,
+  ) =>
+      _store.upsert(
+        _copyReceipt(
+          _requireReceipt(intentId),
+          state: BridgeFundingState.submitted,
+          sourceTransactionHash: signature,
+          providerStatus: 'submitted',
+          providerSubstatus: null,
+          submissionOutcomeUnknown: false,
+        ),
+      );
+
+  Future<void> _refreshSolanaSubmitted(String intentId) async {
+    final receipt = _requireReceipt(intentId);
+    final signature = receipt.sourceTransactionHash;
+    if (signature == null) {
+      throw const BridgeValidationException('source_transaction_hash_missing');
+    }
+    late SolanaSignatureObservation observation;
+    try {
+      observation = await _solanaRpc.signatureStatus(signature);
+    } on SolanaRpcException catch (error) {
+      await _store.upsert(
+        _copyReceipt(
+          receipt,
+          state: receipt.state == BridgeFundingState.submitted
+              ? BridgeFundingState.sourcePending
+              : receipt.state,
+          providerStatus: 'source_receipt_pending',
+          providerSubstatus: error.code,
+        ),
+      );
+      return;
+    }
+    switch (observation.status) {
+      case SolanaSignatureStatus.notFound:
+        if (receipt.state == BridgeFundingState.awaitingExternalWallet &&
+            receipt.submissionOutcomeUnknown) {
+          await _store.upsert(
+            _copyReceipt(
+              receipt,
+              providerStatus: 'solana_signature_not_found',
+            ),
+          );
+          return;
+        }
+        await _store.upsert(
+          _copyReceipt(
+            receipt,
+            state: receipt.state == BridgeFundingState.submitted
+                ? BridgeFundingState.sourcePending
+                : receipt.state,
+            providerStatus: 'source_receipt_pending',
+          ),
+        );
+      case SolanaSignatureStatus.processed:
+      case SolanaSignatureStatus.confirmed:
+      case SolanaSignatureStatus.finalized:
+        await _store.upsert(
+          _copyReceipt(
+            receipt,
+            state: BridgeFundingState.sourcePending,
+            providerStatus: switch (observation.status) {
+              SolanaSignatureStatus.processed => 'solana_processed',
+              SolanaSignatureStatus.confirmed => 'solana_confirmed',
+              SolanaSignatureStatus.finalized => 'solana_finalized',
+              _ => throw StateError('unreachable'),
+            },
+            providerSubstatus: null,
+            submissionOutcomeUnknown: false,
+          ),
+        );
+      case SolanaSignatureStatus.failed:
+        if (receipt.state == BridgeFundingState.awaitingExternalWallet) {
+          await _store.upsert(
+            _copyReceipt(
+              receipt,
+              state: BridgeFundingState.sourcePending,
+              providerStatus: 'source_transaction_observed',
+              providerSubstatus: null,
+              submissionOutcomeUnknown: false,
+            ),
+          );
+        }
+        await _store.upsert(
+          _copyReceipt(
+            _requireReceipt(intentId),
+            state: BridgeFundingState.failed,
+            providerStatus: 'source_transaction_failed',
+            providerSubstatus: null,
+            submissionOutcomeUnknown: false,
+          ),
+        );
+    }
+  }
 
   Future<void> _refreshAllowance(String intentId) async {
     final receipt = _requireReceipt(intentId);
@@ -621,15 +1015,28 @@ final class BridgeFundingController {
   Future<ExternalWalletIdentity> _connectedIdentity(BridgeChain chain) async {
     final existing = _wallet.identity;
     final identity = existing ??
-        await _wallet.connect(
-          chain,
-          transport: ExternalWalletTransport.reownEvm,
-        );
-    if (identity.transport != ExternalWalletTransport.reownEvm ||
-        identity.chainType != BridgeChainType.evm ||
-        identity.chainId != chain.id ||
-        !_validEvmAddress(identity.publicAddress) ||
-        !identity.approvedMethods.contains('eth_sendTransaction')) {
+        (chain.type == BridgeChainType.evm
+            ? await _wallet.connect(
+                chain,
+                transport: ExternalWalletTransport.reownEvm,
+              )
+            : await _wallet.connect(chain));
+    final valid = switch (chain.type) {
+      BridgeChainType.evm =>
+        identity.transport == ExternalWalletTransport.reownEvm &&
+            identity.chainType == BridgeChainType.evm &&
+            identity.chainId == chain.id &&
+            _validEvmAddress(identity.publicAddress) &&
+            identity.approvedMethods.contains('eth_sendTransaction'),
+      BridgeChainType.svm => identity.chainType == BridgeChainType.svm &&
+          identity.chainId == BridgeConstants.solanaChainId &&
+          _validSolanaPublicKey(identity.publicAddress) &&
+          _solanaTransportEnabled(identity.transport) &&
+          (identity.approvedMethods.contains('solana_signTransaction') ||
+              identity.approvedMethods
+                  .contains('solana_signAndSendTransaction')),
+    };
+    if (!valid) {
       throw const BridgeValidationException('connected_wallet_mismatch');
     }
     return identity;
@@ -646,6 +1053,32 @@ final class BridgeFundingController {
         ) ||
         !current.approvedMethods.contains('eth_sendTransaction') ||
         prepared.fingerprint != _payloadFingerprint(prepared.payload)) {
+      throw const BridgeValidationException('prepared_wallet_context_changed');
+    }
+  }
+
+  void _validatePreparedSolanaIdentity(_PreparedSolanaIntent prepared) {
+    final current = _wallet.identity;
+    final currentInspection = _solanaEnvelope.inspect(prepared.payload);
+    final methodUnchanged = switch (prepared.submissionMode) {
+      SolanaWalletSubmissionMode.signOnly =>
+        current?.approvedMethods.contains('solana_signTransaction') ?? false,
+      SolanaWalletSubmissionMode.signAndSend => !(current?.approvedMethods
+                  .contains('solana_signTransaction') ??
+              true) &&
+          (current?.approvedMethods.contains('solana_signAndSendTransaction') ??
+              false),
+    };
+    if (current == null ||
+        current.transport != prepared.identity.transport ||
+        current.chainType != BridgeChainType.svm ||
+        current.chainId != prepared.identity.chainId ||
+        current.publicAddress != prepared.identity.publicAddress ||
+        !_solanaTransportEnabled(current.transport) ||
+        !methodUnchanged ||
+        currentInspection.messageSha256 != prepared.fingerprint ||
+        currentInspection.recentBlockhash !=
+            prepared.inspection.recentBlockhash) {
       throw const BridgeValidationException('prepared_wallet_context_changed');
     }
   }
@@ -673,6 +1106,16 @@ final class BridgeFundingController {
     if (prepared == null ||
         prepared.intentId != intentId ||
         prepared.reviewKind != kind) {
+      throw const BridgeValidationException(
+        'bridge_confirmation_not_available',
+      );
+    }
+    return prepared;
+  }
+
+  _PreparedSolanaIntent _requirePreparedSolana(String intentId) {
+    final prepared = _preparedSolana;
+    if (prepared == null || prepared.intentId != intentId) {
       throw const BridgeValidationException(
         'bridge_confirmation_not_available',
       );
@@ -718,12 +1161,33 @@ final class BridgeFundingController {
       // Preserve the original preparation failure.
     }
     _prepared = null;
+    _preparedSolana = null;
   }
 
   void _validatePreparationRequest(BridgeFundingRequest request) {
-    if (request.method != BridgeFundingMethod.connectedWallet ||
-        request.sourceChain.type != BridgeChainType.evm ||
-        !_reownEvmEnabled) {
+    if (request.method != BridgeFundingMethod.connectedWallet) {
+      throw const BridgeValidationException('connected_bridge_disabled');
+    }
+    if (request.sourceChain.type == BridgeChainType.svm) {
+      if (request.sourceChain.id != BridgeConstants.solanaChainId ||
+          (!_solanaMwaEnabled && !_reownSolanaFallbackEnabled)) {
+        throw const BridgeValidationException(
+          'solana_connected_bridge_disabled',
+        );
+      }
+      if (request.sourceToken.chainId != request.sourceChain.id ||
+          !_validSolanaPublicKey(request.sourceToken.address) ||
+          !_validEvmAddress(request.baseDestinationAddress) ||
+          !_sameEvmAddress(
+            request.baseDestinationAddress,
+            _currentBaseAddress(),
+          )) {
+        throw const BridgeValidationException('invalid_bridge_request');
+      }
+      _positiveAmount(request.amountUnits);
+      return;
+    }
+    if (!_reownEvmEnabled) {
       throw const BridgeValidationException('evm_connected_bridge_disabled');
     }
     if (request.sourceToken.chainId != request.sourceChain.id ||
@@ -739,8 +1203,27 @@ final class BridgeFundingController {
   }
 
   bool _isDirectBaseUsdc(BridgeFundingRequest request) =>
+      request.sourceChain.type == BridgeChainType.evm &&
       request.sourceChain.id == BridgeConstants.baseChainId &&
       _sameEvmAddress(request.sourceToken.address, BridgeConstants.baseUsdc);
+
+  bool _solanaTransportEnabled(ExternalWalletTransport transport) =>
+      switch (transport) {
+        ExternalWalletTransport.solanaMwa => _solanaMwaEnabled,
+        ExternalWalletTransport.reownSolanaPhantom ||
+        ExternalWalletTransport.reownSolanaSolflare =>
+          _reownSolanaFallbackEnabled,
+        _ => false,
+      };
+
+  bool _validSolanaPublicKey(String value) {
+    try {
+      _solanaEnvelope.base58Decode(value, expectedLength: 32);
+      return true;
+    } on BridgeValidationException {
+      return false;
+    }
+  }
 
   String _currentBaseAddress() {
     final address = _internalBaseAddress();
@@ -772,6 +1255,28 @@ final class _PreparedEvmIntent {
   final BridgeReviewKind reviewKind;
 
   String get fingerprint => _payloadFingerprint(payload);
+}
+
+final class _PreparedSolanaIntent {
+  const _PreparedSolanaIntent({
+    required this.intentId,
+    required this.request,
+    required this.identity,
+    required this.quote,
+    required this.payload,
+    required this.inspection,
+    required this.submissionMode,
+  });
+
+  final String intentId;
+  final BridgeFundingRequest request;
+  final ExternalWalletIdentity identity;
+  final BridgeExecutableQuote quote;
+  final SolanaBridgeExecutionPayload payload;
+  final SolanaTransactionInspection inspection;
+  final SolanaWalletSubmissionMode submissionMode;
+
+  String get fingerprint => inspection.messageSha256;
 }
 
 BridgeFundingReceipt _newReceipt(
@@ -812,6 +1317,7 @@ BridgeFundingReceipt _copyReceipt(
   Object? providerSubstatus = _unchanged,
   Object? walletTransport = _unchanged,
   Object? reviewedPayloadHash = _unchanged,
+  Object? sourceBlockhash = _unchanged,
   Object? expiresAt = _unchanged,
   bool? balanceRefreshPending,
   bool? submissionOutcomeUnknown,
@@ -861,7 +1367,9 @@ BridgeFundingReceipt _copyReceipt(
       reviewedPayloadHash: identical(reviewedPayloadHash, _unchanged)
           ? source.reviewedPayloadHash
           : reviewedPayloadHash as String?,
-      sourceBlockhash: source.sourceBlockhash,
+      sourceBlockhash: identical(sourceBlockhash, _unchanged)
+          ? source.sourceBlockhash
+          : sourceBlockhash as String?,
       createdAt: source.createdAt,
       updatedAt: DateTime.now().toUtc(),
       expiresAt: identical(expiresAt, _unchanged)
@@ -949,6 +1457,7 @@ bool _isKnownWalletRejection(String code) {
   return normalized == '4001' ||
       normalized == 'user_rejected' ||
       normalized == 'request_rejected' ||
+      normalized == 'wallet_user_rejected' ||
       normalized.contains('user rejected');
 }
 

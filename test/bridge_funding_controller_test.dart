@@ -1,10 +1,16 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:clawa/services/bridge/bridge_funding_controller.dart';
 import 'package:clawa/services/bridge/bridge_models.dart';
 import 'package:clawa/services/bridge/bridge_receipt_store.dart';
 import 'package:clawa/services/bridge/evm_bridge_rpc_service.dart';
 import 'package:clawa/services/bridge/external_wallet_session_service.dart';
+import 'package:clawa/services/bridge/solana_rpc_broadcaster.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/solana_transaction_fixture.dart';
 
 void main() {
   const typedAddress = '0x1111111111111111111111111111111111111111';
@@ -22,8 +28,11 @@ void main() {
   late _FakeWallet wallet;
   late _FakeRpc rpc;
   late _FakeBaseBalance baseBalance;
+  late _FakeSolanaRpc solanaRpc;
+  late SolanaTransactionFixture solanaFixture;
 
-  setUp(() {
+  setUp(() async {
+    solanaFixture = await SolanaTransactionFixture.create();
     persistence = _MemoryReceiptPersistence();
     store = BridgeReceiptStore.withPersistence(persistence);
     quotes = _FakeQuoteProvider();
@@ -35,6 +44,7 @@ void main() {
     );
     rpc = _FakeRpc();
     baseBalance = _FakeBaseBalance();
+    solanaRpc = _FakeSolanaRpc();
   });
 
   BridgeFundingController controller({
@@ -47,10 +57,13 @@ void main() {
         wallet: wallet,
         receiptStore: store,
         rpc: rpc,
+        solanaRpc: solanaRpc,
         baseBalance: baseBalance,
         internalBaseAddress: internalBaseAddress ?? () => destination,
         lifiConnectedEnabled: lifiEnabled,
         reownEvmEnabled: reownEnabled,
+        solanaMwaEnabled: true,
+        reownSolanaFallbackEnabled: true,
         clock: () => now,
         intentIdFactory: () => '0123456789abcdef0123456789abcdef',
       );
@@ -353,6 +366,337 @@ void main() {
     );
     expect(wallet.sentPayloads, isEmpty);
   });
+
+  test('Solana sign-only freezes review and broadcasts verified bytes once',
+      () async {
+    wallet.identity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{
+        'solana_signTransaction',
+        'solana_signAndSendTransaction',
+      },
+    );
+    wallet.solanaResult = SignedSolanaTransaction(
+      solanaFixture.signedTransaction,
+    );
+    quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));
+    solanaRpc
+      ..broadcastResult = solanaFixture.signature
+      ..observations.add(
+        SolanaSignatureObservation(
+          signature: solanaFixture.signature,
+          status: SolanaSignatureStatus.processed,
+          slot: 10,
+        ),
+      );
+    wallet.onSolanaSubmit = (_) {
+      final receipt = store.activeReceipt!;
+      expect(receipt.state, BridgeFundingState.awaitingExternalWallet);
+      expect(receipt.reviewedPayloadHash,
+          sha256.convert(solanaFixture.message).toString());
+      expect(receipt.sourceBlockhash, solanaFixture.blockhash);
+      expect(receipt.sourceTransactionHash, isNull);
+    };
+    solanaRpc.onBroadcast = (_) {
+      final receipt = store.activeReceipt!;
+      expect(receipt.state, BridgeFundingState.awaitingExternalWallet);
+      expect(receipt.sourceTransactionHash, solanaFixture.signature);
+      expect(receipt.submissionOutcomeUnknown, isFalse);
+    };
+    solanaRpc.onStatus = (_) {
+      final receipt = store.activeReceipt!;
+      expect(receipt.state, BridgeFundingState.submitted);
+      expect(receipt.sourceTransactionHash, solanaFixture.signature);
+    };
+    final service = controller();
+
+    await service.prepareConnected(_solanaRequest(solanaFixture));
+    final intentId = store.activeReceipt!.intentId;
+    expect(service.pendingReviewKind(intentId), BridgeReviewKind.bridge);
+    await service.confirmConnectedBridge(intentId);
+
+    expect(wallet.solanaSubmissions, hasLength(1));
+    expect(solanaRpc.broadcasts.single, solanaFixture.signedTransaction);
+    expect(solanaRpc.statusRequests, <String>[solanaFixture.signature]);
+    expect(store.activeReceipt!.state, BridgeFundingState.sourcePending);
+    await expectLater(
+      service.confirmConnectedBridge(intentId),
+      throwsA(_bridgeCode('bridge_confirmation_not_available')),
+    );
+    expect(wallet.solanaSubmissions, hasLength(1));
+    expect(solanaRpc.broadcasts, hasLength(1));
+  });
+
+  test(
+      'Solana MWA sign-and-send verifies the returned signature without RPC send',
+      () async {
+    wallet.identity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signAndSendTransaction'},
+    );
+    wallet.solanaResult = SubmittedSolanaTransaction(solanaFixture.signature);
+    quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));
+    solanaRpc.observations.add(
+      SolanaSignatureObservation(
+        signature: solanaFixture.signature,
+        status: SolanaSignatureStatus.confirmed,
+        slot: 11,
+      ),
+    );
+    solanaRpc.onStatus = (_) {
+      final receipt = store.activeReceipt!;
+      expect(receipt.state, BridgeFundingState.submitted);
+      expect(receipt.sourceTransactionHash, solanaFixture.signature);
+    };
+    final service = controller();
+
+    await service.prepareConnected(_solanaRequest(solanaFixture));
+    await service.confirmConnectedBridge(store.activeReceipt!.intentId);
+
+    expect(wallet.solanaSubmissions, hasLength(1));
+    expect(solanaRpc.broadcasts, isEmpty);
+    expect(solanaRpc.statusRequests, <String>[solanaFixture.signature]);
+    expect(store.activeReceipt!.state, BridgeFundingState.sourcePending);
+  });
+
+  test(
+      'ambiguous Solana sign-and-send remains active and cannot retry or cancel',
+      () async {
+    wallet.identity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signAndSendTransaction'},
+    );
+    wallet.solanaError = const ExternalWalletException('wallet_request_failed');
+    quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));
+    final service = controller();
+
+    await service.prepareConnected(_solanaRequest(solanaFixture));
+    final intentId = store.activeReceipt!.intentId;
+    await expectLater(
+      service.confirmConnectedBridge(intentId),
+      throwsA(isA<ExternalWalletException>()),
+    );
+
+    final receipt = store.activeReceipt!;
+    expect(receipt.state, BridgeFundingState.awaitingExternalWallet);
+    expect(receipt.sourceTransactionHash, isNull);
+    expect(receipt.submissionOutcomeUnknown, isTrue);
+    await expectLater(
+      service.confirmConnectedBridge(intentId),
+      throwsA(_bridgeCode('bridge_confirmation_not_available')),
+    );
+    await expectLater(
+      service.cancelBeforeSubmission(intentId),
+      throwsA(_bridgeCode('bridge_cancellation_not_available')),
+    );
+    expect(wallet.solanaSubmissions, hasLength(1));
+    expect(solanaRpc.broadcasts, isEmpty);
+  });
+
+  test(
+      'malformed sign-and-send evidence is outcome-unknown and never broadcasts',
+      () async {
+    wallet.identity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signAndSendTransaction'},
+    );
+    wallet.solanaResult = const SubmittedSolanaTransaction('not-base58');
+    quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));
+    final service = controller();
+
+    await service.prepareConnected(_solanaRequest(solanaFixture));
+    await expectLater(
+      service.confirmConnectedBridge(store.activeReceipt!.intentId),
+      throwsA(isA<BridgeValidationException>()),
+    );
+
+    expect(store.activeReceipt!.submissionOutcomeUnknown, isTrue);
+    expect(store.activeReceipt!.sourceTransactionHash, isNull);
+    expect(solanaRpc.broadcasts, isEmpty);
+    expect(solanaRpc.statusRequests, isEmpty);
+  });
+
+  test('invalid sign-only bytes safely return to review without broadcasting',
+      () async {
+    final invalidSigned = Uint8List.fromList(solanaFixture.signedTransaction)
+      ..[1] ^= 1;
+    wallet.identity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signTransaction'},
+      transport: ExternalWalletTransport.reownSolanaPhantom,
+    );
+    wallet.solanaResult = SignedSolanaTransaction(invalidSigned);
+    quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));
+    final service = controller();
+
+    await service.prepareConnected(_solanaRequest(solanaFixture));
+    await expectLater(
+      service.confirmConnectedBridge(store.activeReceipt!.intentId),
+      throwsA(_bridgeCode('solana_signature_invalid')),
+    );
+
+    expect(store.activeReceipt!.state, BridgeFundingState.awaitingPlawieReview);
+    expect(store.activeReceipt!.submissionOutcomeUnknown, isFalse);
+    expect(solanaRpc.broadcasts, isEmpty);
+  });
+
+  test('Solana broadcast timeout recovers by status and never rebroadcasts',
+      () async {
+    wallet.identity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signTransaction'},
+    );
+    wallet.solanaResult = SignedSolanaTransaction(
+      solanaFixture.signedTransaction,
+    );
+    quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));
+    solanaRpc.broadcastError = const SolanaRpcException(
+      'timeout',
+      outcomeUnknown: true,
+    );
+    final service = controller();
+
+    await service.prepareConnected(_solanaRequest(solanaFixture));
+    final intentId = store.activeReceipt!.intentId;
+    await expectLater(
+      service.confirmConnectedBridge(intentId),
+      throwsA(isA<SolanaRpcException>()),
+    );
+
+    expect(
+        store.activeReceipt!.state, BridgeFundingState.awaitingExternalWallet);
+    expect(store.activeReceipt!.sourceTransactionHash, solanaFixture.signature);
+    expect(store.activeReceipt!.submissionOutcomeUnknown, isTrue);
+    solanaRpc
+      ..broadcastError = null
+      ..observations.add(
+        SolanaSignatureObservation(
+          signature: solanaFixture.signature,
+          status: SolanaSignatureStatus.processed,
+          slot: 13,
+        ),
+      );
+
+    await service.refreshStatus(intentId);
+
+    expect(store.activeReceipt!.state, BridgeFundingState.sourcePending);
+    expect(store.activeReceipt!.submissionOutcomeUnknown, isFalse);
+    expect(solanaRpc.broadcasts, hasLength(1));
+    expect(solanaRpc.statusRequests, <String>[solanaFixture.signature]);
+    await expectLater(
+      service.confirmConnectedBridge(intentId),
+      throwsA(_bridgeCode('bridge_confirmation_not_available')),
+    );
+    expect(solanaRpc.broadcasts, hasLength(1));
+  });
+
+  test('changed Solana wallet method invalidates review without wallet action',
+      () async {
+    wallet.identity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signAndSendTransaction'},
+    );
+    quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));
+    final service = controller();
+
+    await service.prepareConnected(_solanaRequest(solanaFixture));
+    wallet.identity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signTransaction'},
+    );
+
+    await expectLater(
+      service.confirmConnectedBridge(store.activeReceipt!.intentId),
+      throwsA(_bridgeCode('prepared_wallet_context_changed')),
+    );
+    expect(store.activeReceipt!.state, BridgeFundingState.awaitingPlawieReview);
+    expect(wallet.solanaSubmissions, isEmpty);
+    expect(solanaRpc.broadcasts, isEmpty);
+  });
+
+  test('changed Solana account invalidates review without wallet action',
+      () async {
+    wallet.identity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signTransaction'},
+    );
+    quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));
+    final service = controller();
+
+    await service.prepareConnected(_solanaRequest(solanaFixture));
+    wallet.identity = _solanaIdentity(
+      address: base58Encode(List<int>.filled(32, 9)),
+      methods: const <String>{'solana_signTransaction'},
+    );
+
+    await expectLater(
+      service.confirmConnectedBridge(store.activeReceipt!.intentId),
+      throwsA(_bridgeCode('prepared_wallet_context_changed')),
+    );
+    expect(wallet.solanaSubmissions, isEmpty);
+    expect(solanaRpc.broadcasts, isEmpty);
+  });
+
+  test('concurrent Solana confirmation invokes the wallet only once', () async {
+    wallet.identity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signAndSendTransaction'},
+    );
+    wallet.solanaCompleter = Completer<SolanaWalletSubmissionResult>();
+    quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));
+    solanaRpc.observations.add(
+      SolanaSignatureObservation(
+        signature: solanaFixture.signature,
+        status: SolanaSignatureStatus.processed,
+        slot: 14,
+      ),
+    );
+    final service = controller();
+
+    await service.prepareConnected(_solanaRequest(solanaFixture));
+    final intentId = store.activeReceipt!.intentId;
+    final first = service.confirmConnectedBridge(intentId);
+    while (wallet.solanaSubmissions.isEmpty) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    await expectLater(
+      service.confirmConnectedBridge(intentId),
+      throwsA(_bridgeCode('bridge_confirmation_in_progress')),
+    );
+    wallet.solanaCompleter!.complete(
+      SubmittedSolanaTransaction(solanaFixture.signature),
+    );
+    await first;
+
+    expect(wallet.solanaSubmissions, hasLength(1));
+    expect(solanaRpc.broadcasts, isEmpty);
+  });
+
+  test('Solana resume with a persisted signature performs status read only',
+      () async {
+    await store.upsert(
+      _solanaReceipt(
+        now: now,
+        fixture: solanaFixture,
+        state: BridgeFundingState.submitted,
+      ),
+    );
+    solanaRpc.observations.add(
+      SolanaSignatureObservation(
+        signature: solanaFixture.signature,
+        status: SolanaSignatureStatus.processed,
+        slot: 12,
+      ),
+    );
+    final resumed = controller();
+
+    await resumed.refreshStatus('solana-resume-intent');
+
+    expect(wallet.solanaSubmissions, isEmpty);
+    expect(solanaRpc.broadcasts, isEmpty);
+    expect(solanaRpc.statusRequests, <String>[solanaFixture.signature]);
+    expect(store.activeReceipt!.state, BridgeFundingState.sourcePending);
+  });
 }
 
 Matcher _bridgeCode(String code) => isA<BridgeValidationException>()
@@ -372,6 +716,22 @@ const _baseChain = BridgeChain(
   name: 'Base',
   type: BridgeChainType.evm,
   nativeTokenSymbol: 'ETH',
+);
+
+const _solanaChain = BridgeChain(
+  id: BridgeConstants.solanaChainId,
+  key: 'sol',
+  name: 'Solana',
+  type: BridgeChainType.svm,
+  nativeTokenSymbol: 'SOL',
+);
+
+const _solanaToken = BridgeToken(
+  chainId: BridgeConstants.solanaChainId,
+  address: 'So11111111111111111111111111111111111111112',
+  symbol: 'SOL',
+  decimals: 9,
+  solverDepositable: false,
 );
 
 BridgeFundingRequest _request({
@@ -447,6 +807,52 @@ BridgeExecutableQuote _quote({
   );
 }
 
+BridgeFundingRequest _solanaRequest(SolanaTransactionFixture fixture) =>
+    BridgeFundingRequest(
+      method: BridgeFundingMethod.connectedWallet,
+      sourceChain: _solanaChain,
+      sourceToken: _solanaToken,
+      amount: '0.01',
+      amountUnits: '10000000',
+      baseDestinationAddress: '0x3333333333333333333333333333333333333333',
+      sourceAddress: fixture.signer,
+      selfCustodyConfirmed: true,
+    );
+
+BridgeExecutableQuote _solanaQuote({
+  required DateTime now,
+  required SolanaTransactionFixture fixture,
+}) {
+  final request = _solanaRequest(fixture);
+  final payload = SolanaBridgeExecutionPayload(
+    from: fixture.signer,
+    base64Transaction: fixture.unsignedBase64,
+  );
+  return BridgeExecutableQuote(
+    estimate: BridgeEstimate(
+      provider: 'lifi',
+      quoteId: 'solana-quote-1',
+      request: request,
+      minimumOutputUnits: '990000',
+      minimumOutputDisplay: '0.99',
+      routeTool: 'mayan',
+      quotedAt: now,
+      expiresAt: now.add(const Duration(minutes: 1)),
+    ),
+    connectedSourceAddress: fixture.signer,
+    destinationChainId: BridgeConstants.baseChainId,
+    destinationToken: const BridgeToken(
+      chainId: BridgeConstants.baseChainId,
+      address: BridgeConstants.baseUsdc,
+      symbol: 'USDC',
+      decimals: 6,
+      solverDepositable: false,
+    ),
+    payload: payload,
+    fingerprint: sha256.convert(fixture.unsignedTransaction).toString(),
+  );
+}
+
 String _testPayloadFingerprint(EvmBridgeExecutionPayload payload) => sha256
     .convert(
       '${payload.chainId}|${payload.from.toLowerCase()}|'
@@ -467,6 +873,21 @@ ExternalWalletIdentity _identity({
       chainId: chainId,
       chainType: BridgeChainType.evm,
       approvedMethods: const <String>{'eth_sendTransaction'},
+      approvedFeatures: const <String>{},
+    );
+
+ExternalWalletIdentity _solanaIdentity({
+  required String address,
+  required Set<String> methods,
+  ExternalWalletTransport transport = ExternalWalletTransport.solanaMwa,
+}) =>
+    ExternalWalletIdentity(
+      transport: transport,
+      walletLabel: 'Test Solana Wallet',
+      publicAddress: address,
+      chainId: BridgeConstants.solanaChainId,
+      chainType: BridgeChainType.svm,
+      approvedMethods: methods,
       approvedFeatures: const <String>{},
     );
 
@@ -492,6 +913,35 @@ BridgeFundingReceipt _receipt({
       minimumOutputUnits: '990000',
       walletTransport: ExternalWalletTransport.reownEvm,
       reviewedPayloadHash: reviewedPayloadHash,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+BridgeFundingReceipt _solanaReceipt({
+  required DateTime now,
+  required SolanaTransactionFixture fixture,
+  required BridgeFundingState state,
+}) =>
+    BridgeFundingReceipt(
+      schemaVersion: 2,
+      intentId: 'solana-resume-intent',
+      method: BridgeFundingMethod.connectedWallet,
+      provider: 'lifi',
+      state: state,
+      sourceChainId: BridgeConstants.solanaChainId,
+      sourceTokenAddress: _solanaToken.address,
+      sourceTokenSymbol: _solanaToken.symbol,
+      sourceAmountUnits: '10000000',
+      baseDestinationAddress: '0x3333333333333333333333333333333333333333',
+      sourceAddress: fixture.signer,
+      providerQuoteId: 'solana-quote-1',
+      routeTool: 'mayan',
+      minimumOutputUnits: '990000',
+      walletTransport: ExternalWalletTransport.solanaMwa,
+      reviewedPayloadHash: sha256.convert(fixture.message).toString(),
+      sourceBlockhash: fixture.blockhash,
+      sourceTransactionHash: fixture.signature,
+      providerStatus: 'submitted',
       createdAt: now,
       updatedAt: now,
     );
@@ -523,6 +973,12 @@ final class _FakeWallet implements ExternalWalletSessionService {
       <EvmBridgeExecutionPayload>[];
   ExternalWalletException? sendError;
   void Function(EvmBridgeExecutionPayload payload)? onSend;
+  final List<SolanaBridgeExecutionPayload> solanaSubmissions =
+      <SolanaBridgeExecutionPayload>[];
+  SolanaWalletSubmissionResult? solanaResult;
+  Completer<SolanaWalletSubmissionResult>? solanaCompleter;
+  ExternalWalletException? solanaError;
+  void Function(SolanaBridgeExecutionPayload payload)? onSolanaSubmit;
 
   @override
   Future<ExternalWalletIdentity> connect(
@@ -550,8 +1006,16 @@ final class _FakeWallet implements ExternalWalletSessionService {
   @override
   Future<SolanaWalletSubmissionResult> submitSolanaTransaction(
     SolanaBridgeExecutionPayload payload,
-  ) =>
-      throw UnimplementedError();
+  ) async {
+    solanaSubmissions.add(payload);
+    onSolanaSubmit?.call(payload);
+    final error = solanaError;
+    if (error != null) throw error;
+    final completer = solanaCompleter;
+    if (completer != null) return completer.future;
+    return solanaResult ??
+        (throw StateError('No fake Solana wallet result was configured.'));
+  }
 }
 
 final class _FakeRpc implements EvmBridgeRpc {
@@ -611,6 +1075,37 @@ final class _FakeBaseBalance implements BaseBalanceRefreshService {
   Future<bool> refresh() async {
     refreshCalls += 1;
     return succeeds;
+  }
+}
+
+final class _FakeSolanaRpc implements SolanaRpcBroadcaster {
+  final List<Uint8List> broadcasts = <Uint8List>[];
+  final List<String> statusRequests = <String>[];
+  final List<SolanaSignatureObservation> observations =
+      <SolanaSignatureObservation>[];
+  String? broadcastResult;
+  SolanaRpcException? broadcastError;
+  SolanaRpcException? statusError;
+  void Function(Uint8List transaction)? onBroadcast;
+  void Function(String signature)? onStatus;
+
+  @override
+  Future<String> sendTransaction(Uint8List signedTransaction) async {
+    broadcasts.add(Uint8List.fromList(signedTransaction));
+    onBroadcast?.call(signedTransaction);
+    final failure = broadcastError;
+    if (failure != null) throw failure;
+    return broadcastResult ??
+        (throw StateError('No fake Solana broadcast result was configured.'));
+  }
+
+  @override
+  Future<SolanaSignatureObservation> signatureStatus(String signature) async {
+    statusRequests.add(signature);
+    onStatus?.call(signature);
+    final failure = statusError;
+    if (failure != null) throw failure;
+    return observations.removeAt(0);
   }
 }
 
