@@ -36,6 +36,8 @@ class GatewayToolCatalog {
     'payments_receipts',
     'bridge.capabilities',
     'bridge.quote',
+    'bridge.status',
+    'bridge.receipts',
     'blogwatcher.check',
     'blogwatcher_check',
     'blogwatcher',

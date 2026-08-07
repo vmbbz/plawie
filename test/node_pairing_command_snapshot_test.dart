@@ -74,6 +74,8 @@ void main() {
         'payments_receipts',
         'bridge.capabilities',
         'bridge.quote',
+        'bridge.status',
+        'bridge.receipts',
       }),
     );
     expect(
@@ -85,7 +87,14 @@ void main() {
       'payments.sign',
       'payments.submit',
       'bridge.execute',
+      'bridge.connect',
+      'bridge.approve',
+      'bridge.sign',
+      'bridge.submit',
+      'bridge.broadcast',
+      'bridge.deposit.create',
     ]) {
+      expect(declaredCommands, isNot(contains(forbiddenCommand)));
       expect(
         GatewayToolCatalog.mobileNodeAllowCommands,
         isNot(contains(forbiddenCommand)),

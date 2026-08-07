@@ -340,6 +340,8 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
           'payments.receipts',
           'bridge.capabilities',
           'bridge.quote',
+          'bridge.status',
+          'bridge.receipts',
           'camera.snap',
           'camera.clip',
           'camera.list',

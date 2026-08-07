@@ -42,6 +42,23 @@ by Plawie. Ethereum, Robinhood Chain, or Solana funds may
 reach the Plawie wallet through the separately reviewed funding flow; provider
 top-up or per-request payment begins only after Base USDC is present.
 
+The guided top-up sequence preserves two separate approvals:
+
+```text
+Choose provider top-up
+  -> Base USDC is insufficient
+  -> open Wallet funding modal with the provider/top-up return intent
+  -> connect the user's source wallet and switch it to Robinhood/Ethereum/etc.
+  -> review and approve the exact source-chain bridge
+  -> track settlement into the same Plawie Base address
+  -> return to the original provider top-up review
+  -> separately approve the Base x402 payment and authenticate on Android
+```
+
+Settlement does not authorize the following provider purchase. A bridge receipt
+and provider-payment receipt remain different records, and no chat message can
+approve either transaction.
+
 The app must parse each fresh provider challenge and continue accepting only
 the exact Base network and native Base USDC contract. Provider support for
 Solana does not authorize the bridge signer to make a provider payment. A
@@ -108,7 +125,8 @@ failure closes the request without payment. A chat message cannot approve it.
 
 ## Management surfaces
 
-- Base is canonical for wallet lifecycle, funding, network switching, Venice
+- Wallet (the existing Base module) is canonical for wallet lifecycle, funding,
+  network switching, Venice
   balance/top-up, BlockRun explanation, bridge quotes, and redacted receipts.
 - Chat and Settings use the same grouped/searchable picker and readiness text.
 - BYOK key management remains separate and unchanged.

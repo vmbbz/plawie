@@ -1,8 +1,8 @@
 # Dynamic Providers, Models, Accounts, and Human-Approved x402
 
-Status: Phases 1-9, inbound Base bridge quoting, and wallet-funded provider
-Gateway/UI integration implemented; external-wallet execution and controlled
-Base Mainnet release proof remain pending
+Status: Phases 1-10B and wallet-funded provider Gateway/UI integration
+implemented behind release gates; legal bundle and controlled Base Mainnet
+release proof remain pending
 
 Date: 2026-08-05
 
@@ -72,15 +72,15 @@ Current implementation status:
   receipts, visible approval, and exact-request retry are implemented. The
   release gate remains one controlled, user-approved on-device Base Mainnet
   settlement proof.
-- The Base page and read-only agent capability can request inbound Base USDC
-  quotes from Ethereum, Solana, and Robinhood Chain through LI.FI runtime
-  discovery. Source-chain execution remains in an external wallet; transaction
-  calldata is discarded and never enters the internal Base signer.
-- The approved production continuation is defined in
-  [`Native Wallet, Bridge, and Wallet-Funded Provider Completion Design`](superpowers/specs/2026-08-05-native-wallet-bridge-paid-provider-design.md).
-  It preserves the quote-only behavior as the shipped fallback while adding a
-  separate foreground coordinator for exact external-wallet handoff, LI.FI
-  status receipts, and context-preserving Venice/BlockRun Gateway transport.
+- The Wallet page and read-only agent capability discover inbound Base USDC
+  routes from Ethereum, Solana, Robinhood Chain, and live-supported sources.
+  Connected LI.FI execution, strict Relay deposit addresses, status recovery,
+  and an honest Jumper fallback are implemented behind independent gates.
+  Source-chain execution remains in an external wallet and transaction calldata
+  never enters the internal Base signer or agent output.
+- The approved production contract is
+  [`Hybrid External-Wallet to Base Funding Design`](superpowers/specs/2026-08-07-hybrid-base-funding-design.md).
+  The earlier 2026-08-05 connected-only plan remains superseded.
 
 ## 1. Purpose
 
@@ -1469,7 +1469,7 @@ contract implemented; live provider proof pending)
 Exit criteria: each enabled provider has a documented capability/payment matrix
 and a rollback switch.
 
-### Phase 10 — Inbound Base bridge planning (implemented quote-only baseline)
+### Phase 10 — Inbound Base funding planning and execution (implemented behind gates)
 
 - Treat bridging as wallet funding, not as an x402 payment or provider-credit
   settlement. The destination is always the app's displayed internal Base
@@ -1492,14 +1492,14 @@ and a rollback switch.
 - Show source amount, minimum Base USDC received, route tool, estimated route
   plus gas cost, estimated duration, 0.5% slippage, and a short quote lifetime.
   Quotes are estimates, not receipts or guarantees.
-- The currently shipped quote-only path discards LI.FI `transactionRequest` and
-  all bridge calldata. The agent may inspect capabilities and request a quote,
-  but cannot approve, sign, submit, broadcast, or claim completion. The internal
-  Base signer exposes no arbitrary message or bridge-calldata operation.
-- Send the user to an external source wallet/LI.FI surface for a fresh route and
-  final human review. Future execution integration must return with a source
-  transaction hash before status polling can begin; a quote ID alone is never a
-  completion receipt.
+- Agent quote output discards LI.FI `transactionRequest` and all bridge calldata.
+  Only the foreground Wallet coordinator can hold a fresh validated executable
+  route, and the internal Base signer still exposes no arbitrary message or
+  bridge-calldata operation.
+- Connected execution requires an exact Plawie review and the external wallet's
+  own confirmation. A source hash/signature is persisted before polling; a quote
+  ID alone is never a completion receipt. Relay strict deposits persist before
+  reveal and remain self-custody-only.
 - Treat runtime route discovery as authoritative. If LI.FI no longer advertises
   Robinhood-to-Base, fail honestly. Robinhood's canonical L2 withdrawal path is
   a separate Ethereum route with an approximately seven-day challenge period,
@@ -1511,10 +1511,10 @@ support disappears safely when runtime discovery removes it; and one external
 wallet handoff is verified per source ecosystem without claiming the app
 executed or tracked the transfer.
 
-### Phase 10B — External-wallet execution and paid-provider completion
+### Phase 10B — External-wallet execution and paid-provider completion (implemented behind gates)
 
-The approved successor to the quote-only baseline is specified in
-[`Native Wallet, Bridge, and Wallet-Funded Provider Completion Design`](superpowers/specs/2026-08-05-native-wallet-bridge-paid-provider-design.md).
+The approved successor contract is specified in
+[`Hybrid External-Wallet to Base Funding Design`](superpowers/specs/2026-08-07-hybrid-base-funding-design.md).
 
 It adds a foreground-only execution coordinator that may hold one fresh,
 strictly validated LI.FI transaction for handoff to Phantom or a connected EVM
@@ -1524,10 +1524,10 @@ payment-aware loopback provider proxy so provider changes do not bypass Gateway
 context, tools, or skills.
 
 The paid-provider proxy, bounded wallet identity, exact BlockRun approval,
-receipt handling, context-invariance tests, and aligned app UI are implemented.
-External-wallet bridge execution remains pending, so the quote-only bridge path
-continues to be the safe shipped fallback. Production enablement still requires
-the controlled on-device Base Mainnet settlement proofs in the release plan.
+receipt handling, context-invariance tests, connected LI.FI execution, strict
+Relay deposits, settlement recovery, and canonical funding UI are implemented.
+Production enablement still requires the legal/attribution bundle and controlled
+on-device Mainnet settlement proofs in the release plan.
 
 References:
 
@@ -1678,8 +1678,9 @@ PRoot fallback all pass the release checklist.
 - absent/malformed fees display as unknown, not zero;
 - `transactionRequest`, calldata, approvals, and signatures never enter agent
   output, app persistence, or the internal signer;
-- incomplete chat requests explain supported lanes; complete requests can only
-  call `bridge.quote`;
+- incomplete chat requests explain supported lanes; explicit estimate requests
+  can call `bridge.quote`; execute-like requests return foreground Wallet-page
+  guidance; `bridge.status` and `bridge.receipts` remain redacted local reads;
 - external-wallet completion is described as a new final quote and approval,
   never as execution of the app's earlier quote;
 - route removal, rate limit, provider outage, malformed response, and expired

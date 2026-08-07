@@ -1,6 +1,7 @@
 # External Wallet Bridging
 
-Status: reviewed EVM execution foundation; settlement and UI gates disabled
+Status: implementation complete behind independent release gates; legal bundle
+and controlled Mainnet acceptance remain pending
 
 Date reviewed: 2026-08-07
 
@@ -50,10 +51,10 @@ The release must use a valid Plawie-specific project ID, restrict it to the
 shipped application identity where supported, keep it out of source control,
 and confirm that the selected plan and branding treatment cover expected use.
 
-## Planned enablement evidence
+## Pending production enablement evidence
 
-Task 11 owns the following release evidence and must complete it before
-connected mode can be enabled:
+The release owner must complete the following evidence before connected mode
+can be enabled in a production bundle:
 
 - keep a dated production release review/checklist in
   `docs/EXTERNAL_WALLET_BRIDGING.md`, including the confirmed legal licensee
@@ -67,19 +68,15 @@ connected mode can be enabled:
 These assets and UI are intentionally not created in Task 1. If any required
 evidence or shipped surface is absent, the feature gate must remain disabled.
 
-## Task 1 release decision
+## Release decision
 
-This round adds dependencies only. No connected LI.FI execution implementation
-exists in the current app. Before such code is added or shipped, Task 2 must
-introduce the planned compile-time `ENABLE_LIFI_CONNECTED_BRIDGE` feature gate,
-defaulting to disabled. That gate may be enabled only after a valid Reown
-project configuration is supplied and the release owner completes and records
-the current license, service-terms, attribution, branding, and projected-usage
-check. An unresolved check requires the gate to remain disabled; dependency
-resolution is not production approval.
-
-Task 11 will expand this document with operational architecture, threat model,
-recovery, release gates, and user-flow guidance.
+The execution implementation now exists, but every release gate defaults to
+disabled. `ENABLE_LIFI_CONNECTED_BRIDGE` may be enabled only after a valid
+Reown project configuration is supplied and the release owner completes and
+records the current license, service-terms, attribution, branding, projected
+usage, and controlled Mainnet acceptance checks. An unresolved check requires
+the affected gate to remain disabled; implementation and dependency resolution
+are not production approval.
 
 ## Mobile Wallet Adapter dependency and attribution
 
@@ -165,7 +162,87 @@ does not expose an execution button or enable a wallet/bridge gate by default.
   a trustworthy hash becomes outcome-unknown and never invokes a wallet method.
   Task 8 owns evidence-bound hash recovery and LI.FI settlement monitoring.
 
-Tasks 7 through 10 still own verified Solana submission, full settlement and
-recovery, Relay deposits, and the explicit human-approval UI. The EVM execution
-foundation must not be presented as a completed bridge until those tasks and
-Task 11's release evidence are complete.
+## Production funding contract
+
+The Wallet page owns one `Fund Base from another chain` flow. Its destination
+is the displayed Android-owned Base address and native Base USDC. External
+wallet keys never enter Plawie, the OpenClaw Gateway, receipts, logs, or agent
+tools. The internal Base signer never receives source-chain bridge calldata.
+
+Runtime support is protocol- and capability-based:
+
+- compatible EVM wallets are discovered through Reown's live catalog and are
+  selected by approved namespace, chain, account, and method—not display name;
+- Solana uses the Android Mobile Wallet Adapter chooser first, without a wallet
+  package allowlist; Phantom and Solflare Reown fallbacks are bounded sign-only
+  compatibility paths shown only after MWA is unavailable;
+- Base Account remains unavailable until its independent production adapter
+  and default-off gate are reviewed; and
+- LI.FI/Relay chain and exact-token capability data is refreshed before wallet
+  discovery or deposit instruction creation. Cached data is display-only.
+
+### Connected EVM flow
+
+The connected account and chain are authoritative. Plawie requests a fresh
+executable LI.FI route and validates source/destination chains, exact contracts,
+amounts, recipient, calldata shape, route tool, minimum output, quote age, and
+slippage before displaying it. An insufficient ERC-20 allowance receives its
+own Plawie review and wallet confirmation for the exact amount; unlimited
+allowances are rejected. A confirmed allowance forces a fresh quote and a new
+bridge review. The source hash is persisted before status polling. A direct
+Base-USDC source skips LI.FI and allowance calls but still receives exact
+Plawie review and wallet confirmation.
+
+### Solana submission
+
+MWA sign-only returns signed bytes that must contain the exact reviewed message,
+blockhash, and signer; Plawie broadcasts those verified bytes at most once.
+MWA sign-and-send returns a signature that is verified and persisted; Plawie
+does not broadcast again. Unknown, stale, changed-account, changed-message, or
+ambiguous outcomes remain blocked from resubmission and require evidence-bound
+signature/history reconciliation.
+
+### Relay self-custody deposit
+
+Relay uses strict exact-input, a one-time deposit address, the app Base address
+as recipient, and a personal source-chain refund address controlled by the
+user. CEX withdrawal mode is excluded because safe recovery would require a
+Plawie-controlled recovery address. The UI shows exact chain, token, amount,
+expiry, refund address, minimum Base USDC, warnings, address-only QR, and copy
+action. There is no local `I sent it` state. Hiding archives but continues
+tracking; after local expiry the full address, QR, and copy action are removed
+to prevent reuse while the redacted receipt remains auditable.
+
+### Recovery, agents, and fallback
+
+Only one non-archived intent may be active. Restart recovery polls persisted
+hash/signature/request evidence and never reconnects a wallet, signs, broadcasts,
+or resends. Outcome-unknown receipts cannot be cancelled or archived. Agent
+commands are limited to `bridge.capabilities`, `bridge.quote`, `bridge.status`,
+and `bridge.receipts`; status/history are local redacted reads and cannot mint a
+UI approval. Execute-like chat language directs the user to the foreground
+Wallet page.
+
+Jumper remains an explicitly unmonitored fallback. It receives best-effort
+source/destination prefill fields but creates a new external route; Plawie does
+not claim to submit, resume, or monitor it.
+
+### Release configuration and rollback
+
+Release builds require non-empty `REOWN_PROJECT_ID` and HTTPS
+`PLAWIE_DAPP_URL`. Enable independently only after the matching acceptance:
+
+- `ENABLE_LIFI_CONNECTED_BRIDGE`;
+- `ENABLE_RELAY_DEPOSIT_BRIDGE`;
+- `ENABLE_REOWN_EVM_WALLETS`;
+- `ENABLE_SOLANA_MWA_WALLETS`;
+- `ENABLE_REOWN_SOLANA_FALLBACK`; and
+- default-off `ENABLE_BASE_ACCOUNT_MWP`.
+
+Named wallets are acceptance fixtures, not permanent compatibility claims.
+Production acceptance must prove reject/cancel paths, restart without replay,
+redacted logs, exact allowance, one-call Solana behavior, terminal provider
+status, Base balance refresh, and no Gateway/context regression. Incidents are
+contained by disabling the affected transport/provider gate independently;
+the internal wallet, native Gateway, read-only quote/status surfaces, and honest
+Jumper fallback remain available.

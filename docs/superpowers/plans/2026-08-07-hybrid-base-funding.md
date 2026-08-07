@@ -1702,7 +1702,7 @@ git commit -m "feat: add canonical Base funding panel"
 - Modify: `docs/WALLET_FUNDED_MODEL_PROVIDERS.md`
 - Modify: `docs/DYNAMIC_PROVIDER_MODEL_AND_X402_IMPLEMENTATION_PLAN.md`
 
-- [ ] **Step 1: Write failing agent-boundary tests**
+- [x] **Step 1: Write failing agent-boundary tests**
 
 Require declared commands:
 
@@ -1717,15 +1717,15 @@ const expectedBridgeCommands = <String>{
 
 Assert `bridge.execute`, `bridge.connect`, `bridge.approve`, `bridge.sign`, `bridge.submit`, `bridge.broadcast`, and `bridge.deposit.create` are absent from capability commands, node snapshots, and `GatewayToolCatalog.mobileNodeAllowCommands`.
 
-- [ ] **Step 2: Add redacted status and receipt handlers**
+- [x] **Step 2: Add redacted status and receipt handlers**
 
-`bridge.status` returns the active receipt's agent JSON plus `mayApproveOrSpend: false`. `bridge.receipts` returns at most 20 redacted receipts. Execute-like natural-language requests route to `bridge.capabilities` with `foregroundApprovalRequired: true` and a Base-page explanation; they invoke no controller, wallet, Relay mutation, or broadcast method.
+`bridge.status` returns the active receipt's agent JSON plus `mayApproveOrSpend: false`. `bridge.receipts` returns at most 20 redacted receipts. Execute-like natural-language requests route to `bridge.capabilities` with `foregroundApprovalRequired: true` and a Wallet-page explanation; they invoke no controller, wallet, Relay mutation, or broadcast method.
 
-- [ ] **Step 3: Update Gateway instructions and command snapshots**
+- [x] **Step 3: Update Gateway instructions and command snapshots**
 
 Advertise only the four read commands. Update the agent prompt to say that quotes are estimates, connected execution and deposit-address creation require visible Base UI, and agent status refresh is read-only. Preserve wildcard/tool-profile logic outside these explicit node commands.
 
-- [ ] **Step 4: Write production operations documentation**
+- [x] **Step 4: Write production operations documentation**
 
 `docs/EXTERNAL_WALLET_BRIDGING.md` documents:
 
@@ -1763,11 +1763,11 @@ Confirm the old 2026-08-05 connected-only plan remains marked superseded. Its
 wallet-specific deep-link execution and deprecated RPC method names do not
 override the approved MWA 2.0 capability-negotiated contract.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```powershell
 flutter test test/ai_payments_capability_test.dart test/bridge_app_native_adapter_test.dart test/node_pairing_command_snapshot_test.dart
-git add lib/services/capabilities/ai_payments_capability.dart lib/services/app_native_chat_tool_router.dart lib/services/gateway_tool_catalog.dart lib/providers/node_provider.dart lib/services/gateway_service.dart test/ai_payments_capability_test.dart test/bridge_app_native_adapter_test.dart test/node_pairing_command_snapshot_test.dart docs/EXTERNAL_WALLET_BRIDGING.md docs/WALLET_FUNDED_MODEL_PROVIDERS.md docs/DYNAMIC_PROVIDER_MODEL_AND_X402_IMPLEMENTATION_PLAN.md
+git add lib/services/capabilities/ai_payments_capability.dart lib/services/app_native_chat_tool_router.dart lib/services/gateway_tool_catalog.dart lib/providers/node_provider.dart lib/services/gateway_service.dart test/ai_payments_capability_test.dart test/bridge_app_native_adapter_test.dart test/node_pairing_command_snapshot_test.dart docs/EXTERNAL_WALLET_BRIDGING.md docs/WALLET_FUNDED_MODEL_PROVIDERS.md docs/DYNAMIC_PROVIDER_MODEL_AND_X402_IMPLEMENTATION_PLAN.md docs/superpowers/plans/2026-08-07-hybrid-base-funding.md
 git commit -m "docs: finalize external wallet funding contract"
 ```
 
