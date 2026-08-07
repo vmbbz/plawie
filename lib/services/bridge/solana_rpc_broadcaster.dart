@@ -30,6 +30,46 @@ final class SolanaSignatureObservation {
   final int? slot;
 }
 
+final class SolanaAddressSignature {
+  const SolanaAddressSignature({
+    required this.signature,
+    required this.slot,
+    required this.blockTime,
+    required this.failed,
+  });
+
+  final String signature;
+  final int slot;
+  final DateTime? blockTime;
+  final bool failed;
+}
+
+final class SolanaSignatureHistory {
+  const SolanaSignatureHistory({
+    required this.entries,
+    required this.complete,
+    required this.truncated,
+  });
+
+  final List<SolanaAddressSignature> entries;
+  final bool complete;
+  final bool truncated;
+}
+
+final class SolanaFetchedTransaction {
+  const SolanaFetchedTransaction({
+    required this.signature,
+    required this.transactionBytes,
+    required this.slot,
+    required this.failed,
+  });
+
+  final String signature;
+  final Uint8List transactionBytes;
+  final int slot;
+  final bool failed;
+}
+
 final class SolanaRpcException implements Exception {
   const SolanaRpcException(
     this.code, {
@@ -67,6 +107,16 @@ abstract interface class SolanaRpcBroadcaster {
   Future<String> sendTransaction(Uint8List signedTransaction);
 
   Future<SolanaSignatureObservation> signatureStatus(String signature);
+
+  Future<SolanaSignatureHistory> signaturesForAddress(
+    String address, {
+    required DateTime since,
+    int limit = 200,
+  });
+
+  Future<SolanaFetchedTransaction?> transaction(String signature);
+
+  Future<bool> isBlockhashValid(String blockhash);
 }
 
 final class HttpSolanaRpcTransport implements SolanaRpcTransport {
@@ -247,6 +297,151 @@ final class SolanaRpcBroadcasterService implements SolanaRpcBroadcaster {
     );
   }
 
+  @override
+  Future<SolanaSignatureHistory> signaturesForAddress(
+    String address, {
+    required DateTime since,
+    int limit = 200,
+  }) async {
+    _requirePublicKey(address);
+    if (limit < 1 || limit > 200) {
+      throw const SolanaRpcException('invalid_history_limit');
+    }
+    final result = await _rpc(
+      'getSignaturesForAddress',
+      <Object?>[
+        address,
+        <String, Object?>{
+          'limit': limit,
+          'commitment': 'confirmed',
+        },
+      ],
+    );
+    if (result is! List || result.length > limit) {
+      throw const SolanaRpcException('invalid_signature_history');
+    }
+    final all = <SolanaAddressSignature>[];
+    for (final raw in result) {
+      if (raw is! Map) {
+        throw const SolanaRpcException('invalid_signature_history');
+      }
+      final map = Map<String, Object?>.from(raw);
+      final signature = map['signature'];
+      final slot = map['slot'];
+      final blockTime = map['blockTime'];
+      if (signature is! String ||
+          slot is! int ||
+          slot < 0 ||
+          (blockTime != null && (blockTime is! int || blockTime < 0))) {
+        throw const SolanaRpcException('invalid_signature_history');
+      }
+      _requireSignature(signature);
+      all.add(
+        SolanaAddressSignature(
+          signature: signature,
+          slot: slot,
+          blockTime: blockTime == null
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(
+                  (blockTime as int) * 1000,
+                  isUtc: true,
+                ),
+          failed: map['err'] != null,
+        ),
+      );
+    }
+    final cutoff = since.toUtc();
+    final complete = all.length < limit ||
+        (all.isNotEmpty &&
+            all.last.blockTime != null &&
+            all.last.blockTime!.isBefore(cutoff));
+    return SolanaSignatureHistory(
+      entries: List<SolanaAddressSignature>.unmodifiable(
+        all.where(
+          (entry) =>
+              entry.blockTime == null || !entry.blockTime!.isBefore(cutoff),
+        ),
+      ),
+      complete: complete,
+      truncated: !complete,
+    );
+  }
+
+  @override
+  Future<SolanaFetchedTransaction?> transaction(String signature) async {
+    _requireSignature(signature);
+    final result = await _rpc(
+      'getTransaction',
+      <Object?>[
+        signature,
+        <String, Object?>{
+          'encoding': 'base64',
+          'commitment': 'confirmed',
+          'maxSupportedTransactionVersion': 0,
+        },
+      ],
+    );
+    if (result == null) return null;
+    if (result is! Map) {
+      throw const SolanaRpcException('invalid_transaction');
+    }
+    final map = Map<String, Object?>.from(result);
+    final slot = map['slot'];
+    final transaction = map['transaction'];
+    final meta = map['meta'];
+    if (slot is! int ||
+        slot < 0 ||
+        transaction is! List ||
+        transaction.length != 2 ||
+        transaction[0] is! String ||
+        transaction[1] != 'base64' ||
+        meta is! Map) {
+      throw const SolanaRpcException('invalid_transaction');
+    }
+    late Uint8List bytes;
+    try {
+      final decoded = base64Decode(transaction[0] as String);
+      if (decoded.isEmpty ||
+          decoded.length > SolanaTransactionEnvelope.maximumTransactionBytes ||
+          base64Encode(decoded) != transaction[0]) {
+        throw const SolanaRpcException('invalid_transaction');
+      }
+      bytes = Uint8List.fromList(decoded);
+    } on FormatException {
+      throw const SolanaRpcException('invalid_transaction');
+    }
+    return SolanaFetchedTransaction(
+      signature: signature,
+      transactionBytes: bytes,
+      slot: slot,
+      failed: Map<String, Object?>.from(meta)['err'] != null,
+    );
+  }
+
+  @override
+  Future<bool> isBlockhashValid(String blockhash) async {
+    _requireBlockhash(blockhash);
+    final result = await _rpc(
+      'isBlockhashValid',
+      <Object?>[
+        blockhash,
+        <String, Object?>{'commitment': 'confirmed'},
+      ],
+    );
+    if (result is! Map) {
+      throw const SolanaRpcException('invalid_blockhash_status');
+    }
+    final map = Map<String, Object?>.from(result);
+    final context = map['context'];
+    final value = map['value'];
+    if (context is! Map ||
+        Map<String, Object?>.from(context)['slot'] is! int ||
+        value is! bool) {
+      throw const SolanaRpcException('invalid_blockhash_status');
+    }
+    return value;
+  }
+
   Future<Object?> _rpc(String method, List<Object?> params) async {
     final id = _requestIdFactory();
     if (id < 1 || id > 0x7fffffff) {
@@ -326,6 +521,22 @@ final class SolanaRpcBroadcasterService implements SolanaRpcBroadcaster {
       _envelope.base58Decode(signature, expectedLength: 64);
     } catch (_) {
       throw const SolanaRpcException('invalid_signature');
+    }
+  }
+
+  void _requirePublicKey(String address) {
+    try {
+      _envelope.base58Decode(address, expectedLength: 32);
+    } catch (_) {
+      throw const SolanaRpcException('invalid_public_key');
+    }
+  }
+
+  void _requireBlockhash(String blockhash) {
+    try {
+      _envelope.base58Decode(blockhash, expectedLength: 32);
+    } catch (_) {
+      throw const SolanaRpcException('invalid_blockhash');
     }
   }
 }

@@ -5,14 +5,18 @@ import 'package:crypto/crypto.dart';
 
 import 'bridge_models.dart';
 import 'bridge_receipt_store.dart';
+import 'bridge_state_machine.dart';
 import 'evm_bridge_rpc_service.dart';
 import 'external_wallet_session_service.dart';
 import 'lifi_bridge_service.dart';
+import 'lifi_status_service.dart';
 import 'lifi_transaction_validator.dart';
 import 'solana_rpc_broadcaster.dart';
 import 'solana_transaction_envelope.dart';
 
 enum BridgeReviewKind { allowance, bridge }
+
+enum SolanaRecoveryScanResult { matched, inconclusive, ambiguous, expired }
 
 abstract interface class BridgeExecutableQuoteProvider {
   Future<BridgeExecutableQuote> executableQuote(
@@ -51,6 +55,7 @@ final class BridgeFundingController {
     required SolanaRpcBroadcaster solanaRpc,
     required BaseBalanceRefreshService baseBalance,
     required String Function() internalBaseAddress,
+    LifiSettlementStatusProvider? lifiStatus,
     bool lifiConnectedEnabled = BridgeFeatureConfig.lifiConnectedEnabled,
     bool reownEvmEnabled = BridgeFeatureConfig.reownEvmWalletsEnabled,
     bool solanaMwaEnabled = BridgeFeatureConfig.solanaMwaWalletsEnabled,
@@ -62,11 +67,14 @@ final class BridgeFundingController {
         const SolanaTransactionEnvelope(),
     DateTime Function()? clock,
     String Function()? intentIdFactory,
+    Future<void> Function(Duration)? delay,
+    bool Function()? isForeground,
   })  : _quoteProvider = quoteProvider,
         _wallet = wallet,
         _store = receiptStore,
         _rpc = rpc,
         _solanaRpc = solanaRpc,
+        _lifiStatus = lifiStatus ?? LifiStatusService(),
         _baseBalance = baseBalance,
         _internalBaseAddress = internalBaseAddress,
         _lifiConnectedEnabled = lifiConnectedEnabled,
@@ -76,13 +84,16 @@ final class BridgeFundingController {
         _transactionValidator = transactionValidator,
         _solanaEnvelope = solanaEnvelope,
         _clock = clock ?? DateTime.now,
-        _intentIdFactory = intentIdFactory ?? _secureIntentId;
+        _intentIdFactory = intentIdFactory ?? _secureIntentId,
+        _delay = delay ?? Future<void>.delayed,
+        _isForeground = isForeground ?? _alwaysForeground;
 
   final BridgeExecutableQuoteProvider _quoteProvider;
   final ExternalWalletSessionService _wallet;
   final BridgeReceiptStore _store;
   final EvmBridgeRpc _rpc;
   final SolanaRpcBroadcaster _solanaRpc;
+  final LifiSettlementStatusProvider _lifiStatus;
   final BaseBalanceRefreshService _baseBalance;
   final String Function() _internalBaseAddress;
   final bool _lifiConnectedEnabled;
@@ -93,6 +104,8 @@ final class BridgeFundingController {
   final SolanaTransactionEnvelope _solanaEnvelope;
   final DateTime Function() _clock;
   final String Function() _intentIdFactory;
+  final Future<void> Function(Duration) _delay;
+  final bool Function() _isForeground;
 
   _PreparedEvmIntent? _prepared;
   _PreparedSolanaIntent? _preparedSolana;
@@ -301,6 +314,13 @@ final class BridgeFundingController {
       }
       return;
     }
+    if (receipt.provider == 'lifi' &&
+        receipt.sourceTransactionHash != null &&
+        (receipt.state == BridgeFundingState.destinationPending ||
+            _hasLifiObservation(receipt))) {
+      await _refreshLifiStatus(intentId);
+      return;
+    }
     if (receipt.sourceChainId == BridgeConstants.solanaChainId &&
         receipt.sourceTransactionHash != null &&
         (receipt.state == BridgeFundingState.awaitingExternalWallet ||
@@ -319,6 +339,250 @@ final class BridgeFundingController {
       throw const BridgeValidationException('bridge_refresh_not_available');
     }
     await _refreshSubmitted(intentId);
+  }
+
+  Future<void> pollSettlement(
+    String intentId, {
+    int maxObservations = 7,
+  }) async {
+    if (maxObservations < 1 || maxObservations > 7) {
+      throw const BridgeValidationException('invalid_polling_bound');
+    }
+    const schedule = <Duration>[
+      Duration(seconds: 2),
+      Duration(seconds: 4),
+      Duration(seconds: 8),
+      Duration(seconds: 16),
+      Duration(seconds: 30),
+      Duration(seconds: 60),
+    ];
+    for (var index = 0; index < maxObservations; index += 1) {
+      if (!_isForeground()) return;
+      Duration? retryAfter;
+      try {
+        await refreshStatus(intentId);
+      } on LifiStatusException catch (error) {
+        if (error.code != 'rate_limited') rethrow;
+        retryAfter = error.retryAfter;
+      }
+      final receipt = _requireReceipt(intentId);
+      if (_isTerminalState(receipt.state)) return;
+      if (index + 1 >= maxObservations) return;
+      await _delay(retryAfter ?? schedule[index]);
+    }
+  }
+
+  Future<void> refreshBaseBalance(String intentId) async {
+    final receipt = _requireReceipt(intentId);
+    if (receipt.state != BridgeFundingState.completed ||
+        !receipt.balanceRefreshPending) {
+      throw const BridgeValidationException(
+        'base_balance_refresh_not_available',
+      );
+    }
+    if (!await _baseBalance.refresh()) return;
+    await _store.upsert(
+      _copyReceipt(
+        receipt,
+        providerSubstatus:
+            receipt.provider == 'direct_base' ? null : _unchanged,
+        balanceRefreshPending: false,
+      ),
+    );
+  }
+
+  Future<void> recoverEvmTransactionHash(
+    String intentId,
+    String transactionHash,
+  ) async {
+    final receipt = _requireReceipt(intentId);
+    if (receipt.sourceChainId == BridgeConstants.solanaChainId ||
+        receipt.state != BridgeFundingState.awaitingExternalWallet ||
+        receipt.sourceTransactionHash != null ||
+        !receipt.submissionOutcomeUnknown) {
+      throw const BridgeValidationException('evm_recovery_not_available');
+    }
+    if (!_validTransactionHash(transactionHash)) {
+      throw const BridgeValidationException('invalid_transaction_hash');
+    }
+    final transaction = await _rpc.transactionByHash(
+      chainId: receipt.sourceChainId,
+      transactionHash: transactionHash,
+    );
+    if (transaction == null) {
+      throw const BridgeValidationException('recovery_transaction_not_found');
+    }
+    final expectedSource = receipt.sourceAddress;
+    final reviewedHash = receipt.reviewedPayloadHash;
+    if (expectedSource == null ||
+        reviewedHash == null ||
+        transaction.chainId != receipt.sourceChainId ||
+        !_sameEvmAddress(transaction.from, expectedSource)) {
+      throw const BridgeValidationException('recovery_transaction_mismatch');
+    }
+    final recoveredPayload = EvmBridgeExecutionPayload(
+      chainId: transaction.chainId,
+      from: transaction.from,
+      to: transaction.to,
+      valueHex: transaction.valueHex,
+      dataHex: transaction.dataHex,
+      gasLimitHex: '0x5208',
+      approvalAddress: null,
+    );
+    if (_payloadFingerprint(recoveredPayload) != reviewedHash) {
+      throw const BridgeValidationException('recovery_transaction_mismatch');
+    }
+    if (receipt.provider == 'direct_base') {
+      final expectedData = _rpc.encodeExactTransfer(
+        receipt.baseDestinationAddress,
+        _positiveAmount(receipt.sourceAmountUnits),
+      );
+      if (transaction.chainId != BridgeConstants.baseChainId ||
+          !_sameEvmAddress(transaction.to, BridgeConstants.baseUsdc) ||
+          _normalizedQuantity(transaction.valueHex) != '0x0' ||
+          transaction.dataHex.toLowerCase() != expectedData.toLowerCase()) {
+        throw const BridgeValidationException('recovery_transaction_mismatch');
+      }
+    } else if (receipt.provider != 'lifi') {
+      throw const BridgeValidationException('evm_recovery_not_available');
+    }
+
+    await _store.upsert(
+      _copyReceipt(
+        receipt,
+        state: BridgeFundingState.sourcePending,
+        sourceTransactionHash: transaction.transactionHash,
+        providerStatus: 'recovery_transaction_verified',
+        providerSubstatus: null,
+        submissionOutcomeUnknown: false,
+      ),
+    );
+    if (receipt.provider == 'direct_base') {
+      await _refreshSubmitted(intentId);
+    } else {
+      await _refreshLifiStatus(intentId);
+    }
+  }
+
+  Future<void> recoverSolanaSignature(
+    String intentId,
+    String signature,
+  ) async {
+    final receipt = _requireSolanaRecoveryReceipt(intentId);
+    final fetched = await _solanaRpc.transaction(signature);
+    if (fetched == null) {
+      throw const BridgeValidationException('recovery_transaction_not_found');
+    }
+    final verified = await _solanaEnvelope.verifyRecovered(
+      transactionBytes: fetched.transactionBytes,
+      expectedSigner: receipt.sourceAddress!,
+      expectedMessageSha256: receipt.reviewedPayloadHash!,
+    );
+    if (verified.signature != signature || fetched.signature != signature) {
+      throw const BridgeValidationException('recovery_transaction_mismatch');
+    }
+    await _attachRecoveredSolana(receipt, signature);
+  }
+
+  Future<SolanaRecoveryScanResult> scanSolanaRecovery(
+    String intentId,
+  ) async {
+    final receipt = _requireSolanaRecoveryReceipt(intentId);
+    final history = await _solanaRpc.signaturesForAddress(
+      receipt.sourceAddress!,
+      since: receipt.createdAt,
+      limit: 200,
+    );
+    final matches = <String>{};
+    var scanInconclusive = false;
+    for (final candidate in history.entries) {
+      final fetched = await _solanaRpc.transaction(candidate.signature);
+      if (fetched == null) {
+        scanInconclusive = true;
+        continue;
+      }
+      try {
+        final verified = await _solanaEnvelope.verifyRecovered(
+          transactionBytes: fetched.transactionBytes,
+          expectedSigner: receipt.sourceAddress!,
+          expectedMessageSha256: receipt.reviewedPayloadHash!,
+        );
+        if (verified.signature != candidate.signature ||
+            fetched.signature != candidate.signature) {
+          scanInconclusive = true;
+          continue;
+        }
+        matches.add(candidate.signature);
+      } on BridgeValidationException catch (error) {
+        if (error.code == 'solana_message_changed' ||
+            error.code == 'solana_signer_changed' ||
+            error.code == 'solana_signature_invalid' ||
+            error.code == 'solana_signature_missing') {
+          continue;
+        }
+        scanInconclusive = true;
+      }
+    }
+    if (matches.length > 1) return SolanaRecoveryScanResult.ambiguous;
+    if (matches.length == 1) {
+      await _attachRecoveredSolana(receipt, matches.single);
+      return SolanaRecoveryScanResult.matched;
+    }
+    if (scanInconclusive || history.truncated || !history.complete) {
+      return SolanaRecoveryScanResult.inconclusive;
+    }
+    if (await _solanaRpc.isBlockhashValid(receipt.sourceBlockhash!)) {
+      return SolanaRecoveryScanResult.inconclusive;
+    }
+    final evidence = SolanaNoSubmissionEvidence(
+      sourceChainId: receipt.sourceChainId,
+      blockhashInvalid: true,
+      completeHistoryScan: true,
+      exactMatchFound: false,
+    );
+    await _store.upsert(
+      _copyReceipt(
+        receipt,
+        state: BridgeFundingState.expired,
+        providerStatus: 'solana_submission_not_found',
+        providerSubstatus: 'blockhash_expired_after_complete_scan',
+        expiresAt: _now(),
+        submissionOutcomeUnknown: false,
+      ),
+      evidence: evidence,
+    );
+    return SolanaRecoveryScanResult.expired;
+  }
+
+  BridgeFundingReceipt _requireSolanaRecoveryReceipt(String intentId) {
+    final receipt = _requireReceipt(intentId);
+    if (receipt.sourceChainId != BridgeConstants.solanaChainId ||
+        receipt.state != BridgeFundingState.awaitingExternalWallet ||
+        receipt.sourceTransactionHash != null ||
+        !receipt.submissionOutcomeUnknown ||
+        receipt.sourceAddress == null ||
+        receipt.reviewedPayloadHash == null ||
+        receipt.sourceBlockhash == null) {
+      throw const BridgeValidationException('solana_recovery_not_available');
+    }
+    return receipt;
+  }
+
+  Future<void> _attachRecoveredSolana(
+    BridgeFundingReceipt receipt,
+    String signature,
+  ) async {
+    await _store.upsert(
+      _copyReceipt(
+        receipt,
+        state: BridgeFundingState.sourcePending,
+        sourceTransactionHash: signature,
+        providerStatus: 'solana_recovery_transaction_verified',
+        providerSubstatus: null,
+        submissionOutcomeUnknown: false,
+      ),
+    );
+    await _refreshLifiStatus(receipt.intentId);
   }
 
   Future<_PreparedEvmIntent> _prepareLifiReview({
@@ -847,6 +1111,9 @@ final class BridgeFundingController {
             submissionOutcomeUnknown: false,
           ),
         );
+        if (observation.status == SolanaSignatureStatus.finalized) {
+          await _refreshLifiStatus(intentId);
+        }
       case SolanaSignatureStatus.failed:
         if (receipt.state == BridgeFundingState.awaitingExternalWallet) {
           await _store.upsert(
@@ -988,28 +1255,66 @@ final class BridgeFundingController {
               providerStatus: 'source_confirmed',
             ),
           );
+          await _refreshLifiStatus(intentId);
           return;
         }
+        final settled = _copyReceipt(
+          receipt,
+          state: BridgeFundingState.completed,
+          providerStatus: 'direct_transfer_completed',
+          providerSubstatus: null,
+          actualOutputUnits: receipt.sourceAmountUnits,
+          balanceRefreshPending: true,
+        );
+        await _store.upsert(settled);
         final reconciled = await _baseBalance.refresh();
         await _store.upsert(
           _copyReceipt(
-            receipt,
-            state: reconciled
-                ? BridgeFundingState.completed
-                : (receipt.state == BridgeFundingState.submitted
-                    ? BridgeFundingState.sourcePending
-                    : receipt.state),
-            providerStatus:
-                reconciled ? 'direct_transfer_completed' : 'source_confirmed',
+            settled,
             providerSubstatus:
                 reconciled ? null : 'base_balance_refresh_failed',
-            actualOutputUnits: reconciled
-                ? receipt.sourceAmountUnits
-                : receipt.actualOutputUnits,
             balanceRefreshPending: !reconciled,
           ),
         );
     }
+  }
+
+  Future<void> _refreshLifiStatus(String intentId) async {
+    final receipt = _requireReceipt(intentId);
+    final hash = receipt.sourceTransactionHash;
+    final tool = receipt.routeTool;
+    if (receipt.provider != 'lifi' || hash == null || tool == null) {
+      throw const BridgeValidationException('lifi_status_not_available');
+    }
+    final observation = await _lifiStatus.status(
+      sourceTransactionHash: hash,
+      sourceChainId: receipt.sourceChainId,
+      routeTool: tool,
+    );
+    final state = receipt.state == BridgeFundingState.destinationPending &&
+            observation.state == BridgeFundingState.sourcePending
+        ? BridgeFundingState.destinationPending
+        : observation.state;
+    final completed = state == BridgeFundingState.completed;
+    final observed = _copyReceipt(
+      receipt,
+      state: state,
+      destinationTransactionHash:
+          observation.destinationTransactionHash ?? _unchanged,
+      actualOutputUnits: observation.actualOutputUnits ?? _unchanged,
+      providerStatus: observation.providerStatus,
+      providerSubstatus: observation.providerSubstatus,
+      balanceRefreshPending: completed,
+      submissionOutcomeUnknown: false,
+    );
+    await _store.upsert(observed);
+    if (!completed) return;
+
+    final reconciled = await _baseBalance.refresh();
+    if (!reconciled) return;
+    await _store.upsert(
+      _copyReceipt(observed, balanceRefreshPending: false),
+    );
   }
 
   Future<ExternalWalletIdentity> _connectedIdentity(BridgeChain chain) async {
@@ -1313,6 +1618,7 @@ BridgeFundingReceipt _copyReceipt(
   Object? minimumOutputUnits = _unchanged,
   Object? actualOutputUnits = _unchanged,
   Object? sourceTransactionHash = _unchanged,
+  Object? destinationTransactionHash = _unchanged,
   Object? providerStatus = _unchanged,
   Object? providerSubstatus = _unchanged,
   Object? walletTransport = _unchanged,
@@ -1354,7 +1660,10 @@ BridgeFundingReceipt _copyReceipt(
       sourceTransactionHash: identical(sourceTransactionHash, _unchanged)
           ? source.sourceTransactionHash
           : sourceTransactionHash as String?,
-      destinationTransactionHash: source.destinationTransactionHash,
+      destinationTransactionHash:
+          identical(destinationTransactionHash, _unchanged)
+              ? source.destinationTransactionHash
+              : destinationTransactionHash as String?,
       providerStatus: identical(providerStatus, _unchanged)
           ? source.providerStatus
           : providerStatus as String?,
@@ -1445,6 +1754,22 @@ bool _sameEvmAddress(String left, String right) =>
 
 bool _validTransactionHash(String value) =>
     RegExp(r'^0x[0-9a-fA-F]{64}$').hasMatch(value);
+
+bool _hasLifiObservation(BridgeFundingReceipt receipt) =>
+    receipt.providerStatus == 'NOT_FOUND' ||
+    receipt.providerStatus == 'PENDING' ||
+    receipt.providerStatus == 'DONE' ||
+    receipt.providerStatus == 'FAILED';
+
+bool _isTerminalState(BridgeFundingState state) =>
+    state == BridgeFundingState.completed ||
+    state == BridgeFundingState.failed ||
+    state == BridgeFundingState.refunded ||
+    state == BridgeFundingState.partial ||
+    state == BridgeFundingState.expired ||
+    state == BridgeFundingState.cancelled;
+
+bool _alwaysForeground() => true;
 
 bool _isNativeToken(String address) {
   final normalized = address.toLowerCase();

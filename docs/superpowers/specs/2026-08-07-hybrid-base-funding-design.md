@@ -366,6 +366,15 @@ notification; they do not create a second persistent Gateway notification.
   the receipt records `balanceRefreshPending` and offers refresh.
 - Ambiguous wallet return or network loss after submission enters status
   recovery. It never resends automatically.
+- EVM unknown-return recovery accepts only a user-supplied source hash whose
+  shipped-chain RPC transaction exactly reproduces the persisted review
+  fingerprint. Direct Base recovery additionally requires the exact USDC
+  transfer target, zero native value, recipient, and amount.
+- Solana unknown-return recovery accepts a pasted signature or scans at most
+  200 source-address signatures since review creation. It attaches only a
+  transaction with the persisted first signer and message digest. Expiry
+  requires an invalid reviewed blockhash plus a complete, non-truncated,
+  error-free no-match scan passed through the evidenced state transition.
 - Refund and partial completion are first-class terminal states with explorer
   links and provider recovery guidance.
 - Expired unsent instructions remain visible in history but cannot be reused.

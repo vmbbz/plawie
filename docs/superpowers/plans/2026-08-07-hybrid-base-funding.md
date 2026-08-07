@@ -1425,11 +1425,11 @@ git commit -m "feat: add verified Solana bridge submission"
 - Modify: `test/solana_rpc_broadcaster_test.dart`
 - Modify: `test/bridge_funding_controller_test.dart`
 
-- [ ] **Step 1: Write failing LI.FI status tests**
+- [x] **Step 1: Write failing LI.FI status tests**
 
 Fixture `NOT_FOUND`, `PENDING/WAIT_SOURCE_CONFIRMATIONS`, `PENDING/WAIT_DESTINATION_TRANSACTION`, `DONE/COMPLETED`, `DONE/PARTIAL`, `DONE/REFUNDED`, `FAILED`, 429 with `Retry-After`, malformed JSON, wrong chains, wrong hashes, and timeout.
 
-- [ ] **Step 2: Implement status mapping**
+- [x] **Step 2: Implement status mapping**
 
 Call only:
 
@@ -1439,15 +1439,15 @@ GET https://li.quest/v1/status?txHash=<source>&fromChain=<sourceId>&toChain=8453
 
 Map `NOT_FOUND` and transport timeout to non-terminal `sourcePending`; map LI.FI substatuses to the domain states; accept explorer links only from trusted HTTPS explorer hosts returned with matching hashes/chains. Persist provider status/substatus and destination hash after every observation.
 
-- [ ] **Step 3: Add bounded polling and lifecycle tests**
+- [x] **Step 3: Add bounded polling and lifecycle tests**
 
 Use an injected delay function and assert delays `2s, 4s, 8s, 16s, 30s, 60s`, `Retry-After` clamped to 60 seconds, pause when the app is not foreground, stop at terminal, manual refresh availability, and zero wallet/broadcast calls after resume.
 
-- [ ] **Step 4: Reconcile Base balance without rewriting settlement**
+- [x] **Step 4: Reconcile Base balance without rewriting settlement**
 
 On `completed`, persist the receipt first, then call `BaseService.refreshBalance()`. If refresh reports an error, leave `state == completed`, set `balanceRefreshPending = true`, and expose a separate refresh action.
 
-- [ ] **Step 5: Add evidence-bound unknown-return recovery**
+- [x] **Step 5: Add evidence-bound unknown-return recovery**
 
 Every final review persists `reviewedPayloadHash` before invoking a wallet. A
 persisted `awaitingExternalWallet` receipt with no source hash/signature and
@@ -1481,7 +1481,7 @@ pass the successful scan result through
 `BridgeStateMachine.requireMoveWithEvidence()`; it may not write `expired`
 directly.
 
-- [ ] **Step 6: Run tests and commit**
+- [x] **Step 6: Run tests and commit**
 
 ```powershell
 flutter test test/lifi_status_service_test.dart test/evm_bridge_rpc_service_test.dart test/solana_transaction_envelope_test.dart test/solana_rpc_broadcaster_test.dart test/bridge_funding_controller_test.dart

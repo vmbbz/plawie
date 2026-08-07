@@ -6,6 +6,7 @@ import 'package:clawa/services/bridge/bridge_models.dart';
 import 'package:clawa/services/bridge/bridge_receipt_store.dart';
 import 'package:clawa/services/bridge/evm_bridge_rpc_service.dart';
 import 'package:clawa/services/bridge/external_wallet_session_service.dart';
+import 'package:clawa/services/bridge/lifi_status_service.dart';
 import 'package:clawa/services/bridge/solana_rpc_broadcaster.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -28,6 +29,7 @@ void main() {
   late _FakeWallet wallet;
   late _FakeRpc rpc;
   late _FakeBaseBalance baseBalance;
+  late _FakeLifiStatus lifiStatus;
   late _FakeSolanaRpc solanaRpc;
   late SolanaTransactionFixture solanaFixture;
 
@@ -44,6 +46,7 @@ void main() {
     );
     rpc = _FakeRpc();
     baseBalance = _FakeBaseBalance();
+    lifiStatus = _FakeLifiStatus();
     solanaRpc = _FakeSolanaRpc();
   });
 
@@ -51,6 +54,8 @@ void main() {
     bool lifiEnabled = true,
     bool reownEnabled = true,
     String Function()? internalBaseAddress,
+    Future<void> Function(Duration)? delay,
+    bool Function()? isForeground,
   }) =>
       BridgeFundingController(
         quoteProvider: quotes,
@@ -58,12 +63,15 @@ void main() {
         receiptStore: store,
         rpc: rpc,
         solanaRpc: solanaRpc,
+        lifiStatus: lifiStatus,
         baseBalance: baseBalance,
         internalBaseAddress: internalBaseAddress ?? () => destination,
         lifiConnectedEnabled: lifiEnabled,
         reownEvmEnabled: reownEnabled,
         solanaMwaEnabled: true,
         reownSolanaFallbackEnabled: true,
+        delay: delay,
+        isForeground: isForeground,
         clock: () => now,
         intentIdFactory: () => '0123456789abcdef0123456789abcdef',
       );
@@ -301,6 +309,11 @@ void main() {
     expect(prepared.minimumOutputUnits, request.amountUnits);
     expect(rpc.allowanceRequests, isEmpty);
     expect(quotes.quotesRequested, 0);
+    baseBalance.onRefresh = () {
+      final settled = store.receiptForIntent(prepared.intentId)!;
+      expect(settled.state, BridgeFundingState.completed);
+      expect(settled.balanceRefreshPending, isTrue);
+    };
 
     await service.confirmConnectedBridge(prepared.intentId);
 
@@ -316,6 +329,36 @@ void main() {
     final completed = store.receiptForIntent(prepared.intentId)!;
     expect(completed.state, BridgeFundingState.completed);
     expect(baseBalance.refreshCalls, 1);
+  });
+
+  test('direct Base settlement remains completed when balance refresh fails',
+      () async {
+    wallet.identity = _identity(
+      chainId: BridgeConstants.baseChainId,
+      address: connectedAddress,
+    );
+    rpc.receipts.add(
+      const EvmReceiptObservation(
+        status: EvmReceiptStatus.succeeded,
+        transactionHash: sourceHash,
+      ),
+    );
+    baseBalance.succeeds = false;
+    final service = controller(lifiEnabled: false);
+
+    await service.prepareConnected(
+      _request(
+        sourceAddress: typedAddress,
+        sourceToken: BridgeConstants.baseUsdc,
+        sourceChain: _baseChain,
+      ),
+    );
+    final intentId = store.activeReceipt!.intentId;
+    await service.confirmConnectedBridge(intentId);
+
+    final completed = store.receiptForIntent(intentId)!;
+    expect(completed.state, BridgeFundingState.completed);
+    expect(completed.balanceRefreshPending, isTrue);
   });
 
   test('non-USDC Base token never enters the direct path', () async {
@@ -697,6 +740,438 @@ void main() {
     expect(solanaRpc.statusRequests, <String>[solanaFixture.signature]);
     expect(store.activeReceipt!.state, BridgeFundingState.sourcePending);
   });
+
+  test('LI.FI observations persist destination settlement before Base refresh',
+      () async {
+    final receipt = _trackingReceipt(now: now);
+    await store.upsert(receipt);
+    lifiStatus.observations
+      ..add(
+        const LifiStatusObservation(
+          state: BridgeFundingState.destinationPending,
+          providerStatus: 'PENDING',
+          providerSubstatus: 'WAIT_DESTINATION_TRANSACTION',
+          destinationTransactionHash: null,
+          actualOutputUnits: null,
+          explorerLinks: <Uri>[],
+        ),
+      )
+      ..add(
+        const LifiStatusObservation(
+          state: BridgeFundingState.completed,
+          providerStatus: 'DONE',
+          providerSubstatus: 'COMPLETED',
+          destinationTransactionHash:
+              '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          actualOutputUnits: '990000',
+          explorerLinks: <Uri>[],
+        ),
+      );
+    baseBalance
+      ..succeeds = false
+      ..onRefresh = () {
+        final persisted = store.receiptForIntent(receipt.intentId)!;
+        expect(persisted.state, BridgeFundingState.completed);
+        expect(persisted.providerStatus, 'DONE');
+        expect(persisted.destinationTransactionHash, isNotNull);
+      };
+    final service = controller();
+
+    await service.refreshStatus(receipt.intentId);
+    expect(store.activeReceipt!.state, BridgeFundingState.destinationPending);
+    await service.refreshStatus(receipt.intentId);
+
+    final completed = store.receiptForIntent(receipt.intentId)!;
+    expect(completed.state, BridgeFundingState.completed);
+    expect(completed.providerSubstatus, 'COMPLETED');
+    expect(completed.actualOutputUnits, '990000');
+    expect(completed.balanceRefreshPending, isTrue);
+    expect(baseBalance.refreshCalls, 1);
+
+    baseBalance.succeeds = true;
+    await service.refreshBaseBalance(receipt.intentId);
+    expect(
+      store.receiptForIntent(receipt.intentId)!.balanceRefreshPending,
+      isFalse,
+    );
+    expect(baseBalance.refreshCalls, 2);
+  });
+
+  test('LI.FI polling is bounded with exact backoff and no wallet replay',
+      () async {
+    final receipt = _trackingReceipt(now: now);
+    await store.upsert(receipt);
+    for (var index = 0; index < 7; index += 1) {
+      lifiStatus.observations.add(
+        const LifiStatusObservation(
+          state: BridgeFundingState.sourcePending,
+          providerStatus: 'PENDING',
+          providerSubstatus: 'WAIT_SOURCE_CONFIRMATIONS',
+          destinationTransactionHash: null,
+          actualOutputUnits: null,
+          explorerLinks: <Uri>[],
+        ),
+      );
+    }
+    final delays = <Duration>[];
+    final service = controller(delay: (value) async => delays.add(value));
+
+    await service.pollSettlement(receipt.intentId, maxObservations: 7);
+
+    expect(delays, const <Duration>[
+      Duration(seconds: 2),
+      Duration(seconds: 4),
+      Duration(seconds: 8),
+      Duration(seconds: 16),
+      Duration(seconds: 30),
+      Duration(seconds: 60),
+    ]);
+    expect(lifiStatus.requests, hasLength(7));
+    expect(wallet.sentPayloads, isEmpty);
+    expect(wallet.solanaSubmissions, isEmpty);
+    expect(solanaRpc.broadcasts, isEmpty);
+  });
+
+  test('LI.FI polling pauses off-foreground and honors bounded Retry-After',
+      () async {
+    final receipt = _trackingReceipt(now: now);
+    await store.upsert(receipt);
+    final paused = controller(isForeground: () => false);
+    await paused.pollSettlement(receipt.intentId);
+    expect(lifiStatus.requests, isEmpty);
+
+    lifiStatus.errors.add(
+      const LifiStatusException(
+        'rate_limited',
+        retryAfter: Duration(seconds: 60),
+      ),
+    );
+    lifiStatus.observations.add(
+      const LifiStatusObservation(
+        state: BridgeFundingState.destinationPending,
+        providerStatus: 'PENDING',
+        providerSubstatus: 'WAIT_DESTINATION_TRANSACTION',
+        destinationTransactionHash: null,
+        actualOutputUnits: null,
+        explorerLinks: <Uri>[],
+      ),
+    );
+    final delays = <Duration>[];
+    final resumed = controller(delay: (value) async => delays.add(value));
+    await resumed.pollSettlement(receipt.intentId, maxObservations: 2);
+
+    expect(delays, const <Duration>[Duration(seconds: 60)]);
+    expect(lifiStatus.requests, hasLength(2));
+  });
+
+  test('LI.FI polling stops immediately after a terminal observation',
+      () async {
+    final receipt = _trackingReceipt(now: now);
+    await store.upsert(receipt);
+    lifiStatus.observations.add(
+      const LifiStatusObservation(
+        state: BridgeFundingState.completed,
+        providerStatus: 'DONE',
+        providerSubstatus: 'COMPLETED',
+        destinationTransactionHash:
+            '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        actualOutputUnits: '990000',
+        explorerLinks: <Uri>[],
+      ),
+    );
+    final delays = <Duration>[];
+
+    await controller(delay: (value) async => delays.add(value))
+        .pollSettlement(receipt.intentId);
+
+    expect(lifiStatus.requests, hasLength(1));
+    expect(delays, isEmpty);
+  });
+
+  test('EVM unknown-return recovery attaches only the reviewed transaction',
+      () async {
+    const target = '0x6666666666666666666666666666666666666666';
+    final reviewed = EvmBridgeExecutionPayload(
+      chainId: BridgeConstants.ethereumChainId,
+      from: connectedAddress,
+      to: target,
+      valueHex: '0x0',
+      dataHex: '0x1234',
+      gasLimitHex: '0x186a0',
+      approvalAddress: null,
+    );
+    final receipt = _receipt(
+      now: now,
+      state: BridgeFundingState.awaitingExternalWallet,
+      reviewedPayloadHash: _testPayloadFingerprint(reviewed),
+      submissionOutcomeUnknown: true,
+    );
+    await store.upsert(receipt);
+    rpc.transactions.add(
+      const EvmTransactionObservation(
+        chainId: BridgeConstants.ethereumChainId,
+        transactionHash: sourceHash,
+        from: connectedAddress,
+        to: target,
+        valueHex: '0x0',
+        dataHex: '0x1234',
+      ),
+    );
+    lifiStatus.observations.add(
+      const LifiStatusObservation(
+        state: BridgeFundingState.sourcePending,
+        providerStatus: 'PENDING',
+        providerSubstatus: 'WAIT_SOURCE_CONFIRMATIONS',
+        destinationTransactionHash: null,
+        actualOutputUnits: null,
+        explorerLinks: <Uri>[],
+      ),
+    );
+    final service = controller();
+
+    await service.recoverEvmTransactionHash(receipt.intentId, sourceHash);
+
+    final recovered = store.activeReceipt!;
+    expect(recovered.state, BridgeFundingState.sourcePending);
+    expect(recovered.sourceTransactionHash, sourceHash);
+    expect(recovered.submissionOutcomeUnknown, isFalse);
+    expect(lifiStatus.requests, hasLength(1));
+    expect(wallet.sentPayloads, isEmpty);
+  });
+
+  test('EVM recovery mismatch remains outcome-unknown and never contacts LI.FI',
+      () async {
+    final receipt = _receipt(
+      now: now,
+      state: BridgeFundingState.awaitingExternalWallet,
+      reviewedPayloadHash:
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      submissionOutcomeUnknown: true,
+    );
+    await store.upsert(receipt);
+    rpc.transactions.add(
+      const EvmTransactionObservation(
+        chainId: BridgeConstants.ethereumChainId,
+        transactionHash: sourceHash,
+        from: connectedAddress,
+        to: '0x6666666666666666666666666666666666666666',
+        valueHex: '0x0',
+        dataHex: '0x1234',
+      ),
+    );
+
+    await expectLater(
+      controller().recoverEvmTransactionHash(receipt.intentId, sourceHash),
+      throwsA(_bridgeCode('recovery_transaction_mismatch')),
+    );
+
+    expect(store.activeReceipt!.sourceTransactionHash, isNull);
+    expect(store.activeReceipt!.submissionOutcomeUnknown, isTrue);
+    expect(lifiStatus.requests, isEmpty);
+    expect(wallet.sentPayloads, isEmpty);
+  });
+
+  test('direct Base recovery requires the exact reviewed USDC transfer',
+      () async {
+    final data = rpc.encodeExactTransfer(destination, BigInt.from(1000000));
+    final payload = EvmBridgeExecutionPayload(
+      chainId: BridgeConstants.baseChainId,
+      from: connectedAddress,
+      to: BridgeConstants.baseUsdc,
+      valueHex: '0x0',
+      dataHex: data,
+      gasLimitHex: '0x186a0',
+      approvalAddress: null,
+    );
+    final receipt = BridgeFundingReceipt(
+      schemaVersion: 2,
+      intentId: 'direct-recovery-intent',
+      method: BridgeFundingMethod.connectedWallet,
+      provider: 'direct_base',
+      state: BridgeFundingState.awaitingExternalWallet,
+      sourceChainId: BridgeConstants.baseChainId,
+      sourceTokenAddress: BridgeConstants.baseUsdc,
+      sourceTokenSymbol: 'USDC',
+      sourceAmountUnits: '1000000',
+      baseDestinationAddress: destination,
+      sourceAddress: connectedAddress,
+      routeTool: 'direct_transfer',
+      minimumOutputUnits: '1000000',
+      reviewedPayloadHash: _testPayloadFingerprint(payload),
+      submissionOutcomeUnknown: true,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await store.upsert(receipt);
+    rpc.transactions.add(
+      EvmTransactionObservation(
+        chainId: BridgeConstants.baseChainId,
+        transactionHash: sourceHash,
+        from: connectedAddress,
+        to: BridgeConstants.baseUsdc,
+        valueHex: '0x0',
+        dataHex: data,
+      ),
+    );
+    rpc.receipts.add(
+      const EvmReceiptObservation(
+        status: EvmReceiptStatus.succeeded,
+        transactionHash: sourceHash,
+      ),
+    );
+
+    await controller().recoverEvmTransactionHash(receipt.intentId, sourceHash);
+
+    expect(store.receiptForIntent(receipt.intentId)!.state,
+        BridgeFundingState.completed);
+    expect(lifiStatus.requests, isEmpty);
+    expect(wallet.sentPayloads, isEmpty);
+  });
+
+  test('Solana pasted-signature recovery verifies frozen bytes without resend',
+      () async {
+    final receipt = _solanaReceipt(
+      now: now,
+      fixture: solanaFixture,
+      state: BridgeFundingState.awaitingExternalWallet,
+      submissionOutcomeUnknown: true,
+    );
+    await store.upsert(receipt);
+    solanaRpc.transactions.add(
+      SolanaFetchedTransaction(
+        signature: solanaFixture.signature,
+        transactionBytes: solanaFixture.signedTransaction,
+        slot: 50,
+        failed: false,
+      ),
+    );
+    lifiStatus.observations.add(
+      const LifiStatusObservation(
+        state: BridgeFundingState.sourcePending,
+        providerStatus: 'PENDING',
+        providerSubstatus: 'WAIT_SOURCE_CONFIRMATIONS',
+        destinationTransactionHash: null,
+        actualOutputUnits: null,
+        explorerLinks: <Uri>[],
+      ),
+    );
+
+    await controller().recoverSolanaSignature(
+      receipt.intentId,
+      solanaFixture.signature,
+    );
+
+    final recovered = store.activeReceipt!;
+    expect(recovered.state, BridgeFundingState.sourcePending);
+    expect(recovered.sourceTransactionHash, solanaFixture.signature);
+    expect(recovered.submissionOutcomeUnknown, isFalse);
+    expect(solanaRpc.broadcasts, isEmpty);
+    expect(wallet.solanaSubmissions, isEmpty);
+    expect(lifiStatus.requests, hasLength(1));
+  });
+
+  test('Solana bounded recovery scan attaches one exact reviewed transaction',
+      () async {
+    final receipt = _solanaReceipt(
+      now: now,
+      fixture: solanaFixture,
+      state: BridgeFundingState.awaitingExternalWallet,
+      submissionOutcomeUnknown: true,
+    );
+    await store.upsert(receipt);
+    solanaRpc.histories.add(
+      SolanaSignatureHistory(
+        entries: <SolanaAddressSignature>[
+          SolanaAddressSignature(
+            signature: solanaFixture.signature,
+            slot: 50,
+            blockTime: now,
+            failed: false,
+          ),
+        ],
+        complete: true,
+        truncated: false,
+      ),
+    );
+    solanaRpc.transactions.add(
+      SolanaFetchedTransaction(
+        signature: solanaFixture.signature,
+        transactionBytes: solanaFixture.signedTransaction,
+        slot: 50,
+        failed: false,
+      ),
+    );
+    lifiStatus.observations.add(
+      const LifiStatusObservation(
+        state: BridgeFundingState.sourcePending,
+        providerStatus: 'PENDING',
+        providerSubstatus: 'WAIT_SOURCE_CONFIRMATIONS',
+        destinationTransactionHash: null,
+        actualOutputUnits: null,
+        explorerLinks: <Uri>[],
+      ),
+    );
+
+    final result = await controller().scanSolanaRecovery(receipt.intentId);
+
+    expect(result, SolanaRecoveryScanResult.matched);
+    expect(store.activeReceipt!.sourceTransactionHash, solanaFixture.signature);
+    expect(solanaRpc.broadcasts, isEmpty);
+  });
+
+  test('Solana unknown outcome expires only with complete no-match evidence',
+      () async {
+    final receipt = _solanaReceipt(
+      now: now,
+      fixture: solanaFixture,
+      state: BridgeFundingState.awaitingExternalWallet,
+      submissionOutcomeUnknown: true,
+    );
+    await store.upsert(receipt);
+    solanaRpc.histories.add(
+      const SolanaSignatureHistory(
+        entries: <SolanaAddressSignature>[],
+        complete: true,
+        truncated: false,
+      ),
+    );
+    solanaRpc.blockhashValidity.add(false);
+
+    final result = await controller().scanSolanaRecovery(receipt.intentId);
+
+    expect(result, SolanaRecoveryScanResult.expired);
+    final expired = store.receiptForIntent(receipt.intentId)!;
+    expect(expired.state, BridgeFundingState.expired);
+    expect(expired.submissionOutcomeUnknown, isFalse);
+    expect(solanaRpc.blockhashRequests, <String>[solanaFixture.blockhash]);
+  });
+
+  test('Solana truncated no-match scan remains active and never checks expiry',
+      () async {
+    final receipt = _solanaReceipt(
+      now: now,
+      fixture: solanaFixture,
+      state: BridgeFundingState.awaitingExternalWallet,
+      submissionOutcomeUnknown: true,
+    );
+    await store.upsert(receipt);
+    solanaRpc.histories.add(
+      const SolanaSignatureHistory(
+        entries: <SolanaAddressSignature>[],
+        complete: false,
+        truncated: true,
+      ),
+    );
+
+    final result = await controller().scanSolanaRecovery(receipt.intentId);
+
+    expect(result, SolanaRecoveryScanResult.inconclusive);
+    expect(
+        store.activeReceipt!.state, BridgeFundingState.awaitingExternalWallet);
+    expect(store.activeReceipt!.submissionOutcomeUnknown, isTrue);
+    expect(solanaRpc.blockhashRequests, isEmpty);
+    expect(solanaRpc.broadcasts, isEmpty);
+  });
 }
 
 Matcher _bridgeCode(String code) => isA<BridgeValidationException>()
@@ -895,6 +1370,7 @@ BridgeFundingReceipt _receipt({
   required DateTime now,
   required BridgeFundingState state,
   required String reviewedPayloadHash,
+  bool submissionOutcomeUnknown = false,
 }) =>
     BridgeFundingReceipt(
       schemaVersion: 2,
@@ -913,6 +1389,7 @@ BridgeFundingReceipt _receipt({
       minimumOutputUnits: '990000',
       walletTransport: ExternalWalletTransport.reownEvm,
       reviewedPayloadHash: reviewedPayloadHash,
+      submissionOutcomeUnknown: submissionOutcomeUnknown,
       createdAt: now,
       updatedAt: now,
     );
@@ -921,6 +1398,8 @@ BridgeFundingReceipt _solanaReceipt({
   required DateTime now,
   required SolanaTransactionFixture fixture,
   required BridgeFundingState state,
+  String? sourceTransactionHash,
+  bool submissionOutcomeUnknown = false,
 }) =>
     BridgeFundingReceipt(
       schemaVersion: 2,
@@ -940,8 +1419,39 @@ BridgeFundingReceipt _solanaReceipt({
       walletTransport: ExternalWalletTransport.solanaMwa,
       reviewedPayloadHash: sha256.convert(fixture.message).toString(),
       sourceBlockhash: fixture.blockhash,
-      sourceTransactionHash: fixture.signature,
+      sourceTransactionHash: sourceTransactionHash ??
+          (state == BridgeFundingState.awaitingExternalWallet
+              ? null
+              : fixture.signature),
       providerStatus: 'submitted',
+      submissionOutcomeUnknown: submissionOutcomeUnknown,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+BridgeFundingReceipt _trackingReceipt({required DateTime now}) =>
+    BridgeFundingReceipt(
+      schemaVersion: 2,
+      intentId: 'lifi-tracking-intent',
+      method: BridgeFundingMethod.connectedWallet,
+      provider: 'lifi',
+      state: BridgeFundingState.sourcePending,
+      sourceChainId: BridgeConstants.ethereumChainId,
+      sourceTokenAddress: '0x4444444444444444444444444444444444444444',
+      sourceTokenSymbol: 'USDC',
+      sourceAmountUnits: '1000000',
+      baseDestinationAddress: '0x3333333333333333333333333333333333333333',
+      sourceAddress: '0x2222222222222222222222222222222222222222',
+      providerQuoteId: 'quote-1',
+      routeTool: 'across',
+      minimumOutputUnits: '990000',
+      sourceTransactionHash:
+          '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      providerStatus: 'PENDING',
+      providerSubstatus: 'WAIT_SOURCE_CONFIRMATIONS',
+      walletTransport: ExternalWalletTransport.reownEvm,
+      reviewedPayloadHash:
+          'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       createdAt: now,
       updatedAt: now,
     );
@@ -1026,6 +1536,9 @@ final class _FakeRpc implements EvmBridgeRpc {
   final List<Map<String, Object?>> allowanceRequests = <Map<String, Object?>>[];
   final List<EvmReceiptObservation> receipts = <EvmReceiptObservation>[];
   final List<String> receiptRequests = <String>[];
+  final List<EvmTransactionObservation?> transactions =
+      <EvmTransactionObservation?>[];
+  final List<String> transactionRequests = <String>[];
   void Function(String hash)? onWaitForReceipt;
 
   @override
@@ -1065,16 +1578,48 @@ final class _FakeRpc implements EvmBridgeRpc {
     onWaitForReceipt?.call(transactionHash);
     return receipts.removeAt(0);
   }
+
+  @override
+  Future<EvmTransactionObservation?> transactionByHash({
+    required int chainId,
+    required String transactionHash,
+  }) async {
+    transactionRequests.add(transactionHash);
+    return transactions.removeAt(0);
+  }
 }
 
 final class _FakeBaseBalance implements BaseBalanceRefreshService {
   int refreshCalls = 0;
   bool succeeds = true;
+  void Function()? onRefresh;
 
   @override
   Future<bool> refresh() async {
     refreshCalls += 1;
+    onRefresh?.call();
     return succeeds;
+  }
+}
+
+final class _FakeLifiStatus implements LifiSettlementStatusProvider {
+  final List<LifiStatusObservation> observations = <LifiStatusObservation>[];
+  final List<LifiStatusException> errors = <LifiStatusException>[];
+  final List<Map<String, Object?>> requests = <Map<String, Object?>>[];
+
+  @override
+  Future<LifiStatusObservation> status({
+    required String sourceTransactionHash,
+    required int sourceChainId,
+    required String routeTool,
+  }) async {
+    requests.add(<String, Object?>{
+      'sourceTransactionHash': sourceTransactionHash,
+      'sourceChainId': sourceChainId,
+      'routeTool': routeTool,
+    });
+    if (errors.isNotEmpty) throw errors.removeAt(0);
+    return observations.removeAt(0);
   }
 }
 
@@ -1088,6 +1633,12 @@ final class _FakeSolanaRpc implements SolanaRpcBroadcaster {
   SolanaRpcException? statusError;
   void Function(Uint8List transaction)? onBroadcast;
   void Function(String signature)? onStatus;
+  final List<SolanaSignatureHistory> histories = <SolanaSignatureHistory>[];
+  final List<SolanaFetchedTransaction?> transactions =
+      <SolanaFetchedTransaction?>[];
+  final List<String> transactionRequests = <String>[];
+  final List<bool> blockhashValidity = <bool>[];
+  final List<String> blockhashRequests = <String>[];
 
   @override
   Future<String> sendTransaction(Uint8List signedTransaction) async {
@@ -1106,6 +1657,26 @@ final class _FakeSolanaRpc implements SolanaRpcBroadcaster {
     final failure = statusError;
     if (failure != null) throw failure;
     return observations.removeAt(0);
+  }
+
+  @override
+  Future<SolanaSignatureHistory> signaturesForAddress(
+    String address, {
+    required DateTime since,
+    int limit = 200,
+  }) async =>
+      histories.removeAt(0);
+
+  @override
+  Future<SolanaFetchedTransaction?> transaction(String signature) async {
+    transactionRequests.add(signature);
+    return transactions.removeAt(0);
+  }
+
+  @override
+  Future<bool> isBlockhashValid(String blockhash) async {
+    blockhashRequests.add(blockhash);
+    return blockhashValidity.removeAt(0);
   }
 }
 

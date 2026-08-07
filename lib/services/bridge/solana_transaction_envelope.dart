@@ -123,6 +123,42 @@ final class SolanaTransactionEnvelope {
     return base58Encode(signatureBytes);
   }
 
+  Future<SolanaVerifiedTransaction> verifyRecovered({
+    required Uint8List transactionBytes,
+    required String expectedSigner,
+    required String expectedMessageSha256,
+  }) async {
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(expectedMessageSha256)) {
+      throw const BridgeValidationException('invalid_reviewed_payload_hash');
+    }
+    final parsed = _parseTransaction(transactionBytes);
+    final signer = base58Decode(
+      expectedSigner,
+      expectedLength: _publicKeyBytes,
+    );
+    if (!_constantTimeEqual(parsed.firstRequiredSigner, signer)) {
+      throw const BridgeValidationException('solana_signer_changed');
+    }
+    if (sha256.convert(parsed.message).toString() != expectedMessageSha256) {
+      throw const BridgeValidationException('solana_message_changed');
+    }
+    final signature = parsed.signatures.first;
+    if (signature.every((byte) => byte == 0)) {
+      throw const BridgeValidationException('solana_signature_missing');
+    }
+    if (!await _verifySignature(
+      message: parsed.message,
+      signer: parsed.firstRequiredSigner,
+      signature: signature,
+    )) {
+      throw const BridgeValidationException('solana_signature_invalid');
+    }
+    return SolanaVerifiedTransaction(
+      transactionBytes: Uint8List.fromList(transactionBytes),
+      signature: base58Encode(signature),
+    );
+  }
+
   String base58Encode(List<int> bytes) {
     if (bytes.isEmpty || bytes.length > _maximumBase58Bytes) {
       throw const BridgeValidationException('invalid_solana_base58');

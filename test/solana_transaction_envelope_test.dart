@@ -121,6 +121,29 @@ void main() {
     );
   });
 
+  test('verifies recovered bytes against the persisted signer and message hash',
+      () async {
+    final fixture = await SolanaTransactionFixture.create(versioned: true);
+
+    final recovered = await envelope.verifyRecovered(
+      transactionBytes: fixture.signedTransaction,
+      expectedSigner: fixture.signer,
+      expectedMessageSha256: sha256.convert(fixture.message).toString(),
+    );
+
+    expect(recovered.signature, fixture.signature);
+    expect(recovered.transactionBytes, fixture.signedTransaction);
+    await expectLater(
+      envelope.verifyRecovered(
+        transactionBytes: fixture.signedTransaction,
+        expectedSigner: fixture.signer,
+        expectedMessageSha256:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ),
+      throwsA(_bridgeCode('solana_message_changed')),
+    );
+  });
+
   test('accepts the 1232-byte boundary and rejects larger transactions',
       () async {
     final fixture = await SolanaTransactionFixture.create(

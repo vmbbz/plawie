@@ -159,6 +159,105 @@ void main() {
     );
     expect(calls, 1);
   });
+
+  test('scans at most 200 address signatures and reports complete history',
+      () async {
+    final since = DateTime.fromMillisecondsSinceEpoch(
+      2000 * 1000,
+      isUtc: true,
+    );
+    final transport = _FakeSolanaRpcTransport()
+      ..responses.add(
+        _response(result: <Object?>[
+          <String, Object?>{
+            'signature': fixture.signature,
+            'slot': 20,
+            'blockTime': 2001,
+            'err': null,
+          },
+          <String, Object?>{
+            'signature': fixture.signature,
+            'slot': 19,
+            'blockTime': 1999,
+            'err': null,
+          },
+        ]),
+      );
+    final service = SolanaRpcBroadcasterService(
+      transport: transport,
+      requestIdFactory: () => 41,
+    );
+
+    final history = await service.signaturesForAddress(
+      fixture.signer,
+      since: since,
+      limit: 200,
+    );
+
+    expect(history.complete, isTrue);
+    expect(history.truncated, isFalse);
+    expect(history.entries, hasLength(1));
+    expect(history.entries.single.signature, fixture.signature);
+    expect(transport.bodies.single['method'], 'getSignaturesForAddress');
+    expect(
+      transport.bodies.single['params'],
+      <Object?>[
+        fixture.signer,
+        <String, Object?>{'limit': 200, 'commitment': 'confirmed'},
+      ],
+    );
+  });
+
+  test('fetches canonical base64 transaction bytes without broadcasting',
+      () async {
+    final transport = _FakeSolanaRpcTransport()
+      ..responses.add(
+        _response(result: <String, Object?>{
+          'slot': 20,
+          'transaction': <Object?>[
+            base64Encode(fixture.signedTransaction),
+            'base64',
+          ],
+          'meta': <String, Object?>{'err': null},
+        }),
+      );
+    final service = SolanaRpcBroadcasterService(
+      transport: transport,
+      requestIdFactory: () => 41,
+    );
+
+    final fetched = await service.transaction(fixture.signature);
+
+    expect(fetched, isNotNull);
+    expect(fetched!.signature, fixture.signature);
+    expect(fetched.transactionBytes, fixture.signedTransaction);
+    expect(transport.bodies.single['method'], 'getTransaction');
+  });
+
+  test('checks blockhash validity through a read-only confirmed request',
+      () async {
+    final transport = _FakeSolanaRpcTransport()
+      ..responses.add(
+        _response(result: <String, Object?>{
+          'context': <String, Object?>{'slot': 20},
+          'value': false,
+        }),
+      );
+    final service = SolanaRpcBroadcasterService(
+      transport: transport,
+      requestIdFactory: () => 41,
+    );
+
+    expect(await service.isBlockhashValid(fixture.blockhash), isFalse);
+    expect(transport.bodies.single['method'], 'isBlockhashValid');
+    expect(
+      transport.bodies.single['params'],
+      <Object?>[
+        fixture.blockhash,
+        <String, Object?>{'commitment': 'confirmed'},
+      ],
+    );
+  });
 }
 
 Matcher _rpcCode(String code) =>

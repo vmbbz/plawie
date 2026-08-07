@@ -27,6 +27,24 @@ final class EvmReceiptObservation {
   final BigInt? blockNumber;
 }
 
+final class EvmTransactionObservation {
+  const EvmTransactionObservation({
+    required this.chainId,
+    required this.transactionHash,
+    required this.from,
+    required this.to,
+    required this.valueHex,
+    required this.dataHex,
+  });
+
+  final int chainId;
+  final String transactionHash;
+  final String from;
+  final String to;
+  final String valueHex;
+  final String dataHex;
+}
+
 final class EvmRpcException implements Exception {
   const EvmRpcException(this.code, {this.retryAfter});
 
@@ -72,6 +90,11 @@ abstract interface class EvmBridgeRpc {
   Future<BigInt> estimateGas(EvmBridgeExecutionPayload payload);
 
   Future<EvmReceiptObservation> waitForReceipt({
+    required int chainId,
+    required String transactionHash,
+  });
+
+  Future<EvmTransactionObservation?> transactionByHash({
     required int chainId,
     required String transactionHash,
   });
@@ -301,6 +324,64 @@ final class EvmBridgeRpcService implements EvmBridgeRpc {
       status: status,
       transactionHash: transactionHash.toLowerCase(),
       blockNumber: blockNumber,
+    );
+  }
+
+  @override
+  Future<EvmTransactionObservation?> transactionByHash({
+    required int chainId,
+    required String transactionHash,
+  }) async {
+    _requireTransactionHash(transactionHash);
+    final rpcChain = _parseRpcQuantity(
+      await _rpc(chainId, 'eth_chainId', const <Object?>[]),
+      'invalid_rpc_chain',
+    );
+    if (rpcChain != BigInt.from(chainId)) {
+      throw const EvmRpcException('rpc_chain_mismatch');
+    }
+    final result = await _rpc(
+      chainId,
+      'eth_getTransactionByHash',
+      <Object?>[transactionHash.toLowerCase()],
+    );
+    if (result == null) return null;
+    if (result is! Map) {
+      throw const EvmRpcException('invalid_transaction');
+    }
+    final transaction = Map<String, Object?>.from(result);
+    final hash = transaction['hash'];
+    if (hash is! String ||
+        hash.toLowerCase() != transactionHash.toLowerCase()) {
+      throw const EvmRpcException('transaction_hash_mismatch');
+    }
+    final from = transaction['from'];
+    final to = transaction['to'];
+    final value = transaction['value'];
+    final input = transaction['input'];
+    if (from is! String ||
+        to is! String ||
+        value is! String ||
+        input is! String) {
+      throw const EvmRpcException('invalid_transaction');
+    }
+    _requireAddress(from);
+    _requireAddress(to);
+    final parsedValue = _parseQuantity(value, 'invalid_transaction_value');
+    _requireData(input);
+    final returnedChain = transaction['chainId'];
+    if (returnedChain != null &&
+        _parseRpcQuantity(returnedChain, 'invalid_transaction_chain') !=
+            BigInt.from(chainId)) {
+      throw const EvmRpcException('transaction_chain_mismatch');
+    }
+    return EvmTransactionObservation(
+      chainId: chainId,
+      transactionHash: hash.toLowerCase(),
+      from: from.toLowerCase(),
+      to: to.toLowerCase(),
+      valueHex: _quantity(parsedValue),
+      dataHex: input.toLowerCase(),
     );
   }
 

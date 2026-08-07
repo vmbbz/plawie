@@ -246,6 +246,80 @@ void main() {
     );
     expect(transport.bodies, hasLength(1));
   });
+
+  test('fetches a source transaction only after confirming the shipped chain',
+      () async {
+    final transport = _FakeRpcTransport()
+      ..responses.add(_response(result: '0x1'))
+      ..responses.add(
+        _response(result: <String, Object?>{
+          'hash': transactionHash,
+          'from': owner,
+          'to': spender,
+          'value': '0x0',
+          'input': '0x1234',
+          'chainId': '0x1',
+        }),
+      );
+    final service = EvmBridgeRpcService(
+      transport: transport,
+      requestIdFactory: () => 17,
+    );
+
+    final transaction = await service.transactionByHash(
+      chainId: 1,
+      transactionHash: transactionHash,
+    );
+
+    expect(transaction, isNotNull);
+    expect(transaction!.chainId, 1);
+    expect(transaction.transactionHash, transactionHash);
+    expect(transaction.from, owner);
+    expect(transaction.to, spender);
+    expect(transaction.valueHex, '0x0');
+    expect(transaction.dataHex, '0x1234');
+    expect(
+      transport.bodies.map((body) => body['method']),
+      <String>['eth_chainId', 'eth_getTransactionByHash'],
+    );
+  });
+
+  test('rejects transaction responses from the wrong chain or hash', () async {
+    for (final responses in <List<EvmRpcRawResponse>>[
+      <EvmRpcRawResponse>[_response(result: '0xa')],
+      <EvmRpcRawResponse>[
+        _response(result: '0x1'),
+        _response(result: <String, Object?>{
+          'hash':
+              '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          'from': owner,
+          'to': spender,
+          'value': '0x0',
+          'input': '0x',
+          'chainId': '0x1',
+        }),
+      ],
+    ]) {
+      final transport = _FakeRpcTransport()..responses.addAll(responses);
+      final service = EvmBridgeRpcService(
+        transport: transport,
+        requestIdFactory: () => 17,
+      );
+      await expectLater(
+        service.transactionByHash(
+          chainId: 1,
+          transactionHash: transactionHash,
+        ),
+        throwsA(
+          isA<EvmRpcException>().having(
+            (error) => error.code,
+            'code',
+            anyOf('rpc_chain_mismatch', 'transaction_hash_mismatch'),
+          ),
+        ),
+      );
+    }
+  });
 }
 
 Matcher _rpcCode(String code) =>
