@@ -74,19 +74,19 @@ USDC provider top-ups to the canonical foreground funding modal.
 - Modify: `lib/screens/base_screen.dart`
 - Test: `test/bridge_funding_panel_test.dart`
 
-- [ ] Add optional initial source-chain preference and completion callback to
+- [x] Add optional initial source-chain preference and completion callback to
   the existing canonical panel; live capabilities remain authoritative.
-- [ ] Show the same panel in a safe-area, scroll-controlled Wallet modal with
+- [x] Show the same panel in a safe-area, scroll-controlled Wallet modal with
   provider label and required Base-USDC amount.
-- [ ] For Robinhood, offer ETH and USDG only from action-time token/connection
+- [x] For Robinhood, offer ETH and USDG only from action-time token/connection
   discovery. Preserve a visible ETH gas reserve and never offer Max ETH as the
   full balance.
-- [ ] Pop success only for a completed receipt after Base delivery; partial,
+- [x] Pop success only for a completed receipt after Base delivery; partial,
   refund, failure, expiry, and unknown outcomes never continue a provider
   payment.
-- [ ] Preserve one-active-intent, no-resubmit, and action-time live capability
+- [x] Preserve one-active-intent, no-resubmit, and action-time live capability
   refresh behavior. Test callback single-fire and Robinhood preselection.
-- [ ] Run bridge/widget regressions; analyze and commit.
+- [x] Run bridge/widget regressions; analyze and commit.
 
 ## Task 4: Orchestrate insufficient-balance top-ups safely
 
@@ -96,14 +96,14 @@ USDC provider top-ups to the canonical foreground funding modal.
 - Test: `test/provider_top_up_funding_coordinator_test.dart`
 - Test: relevant x402 transport/readiness tests
 
-- [ ] Prepare an unsigned challenge and compare exact required units with a
+- [x] Prepare an unsigned challenge and compare exact required units with a
   refreshed Base-USDC balance.
-- [ ] If insufficient, reject the challenge before opening funding. Never carry
+- [x] If insufficient, reject the challenge before opening funding. Never carry
   a challenge, approval, or signature through a bridge.
-- [ ] After completed funding, select Base Mainnet, refresh, require sufficient
+- [x] After completed funding, select Base Mainnet, refresh, require sufficient
   balance, and prepare a fresh challenge.
-- [ ] Keep bridge review and x402 approval/device authentication separate.
-- [ ] Test sufficient, cancelled, failed, still-insufficient, stale-challenge,
+- [x] Keep bridge review and x402 approval/device authentication separate.
+- [x] Test sufficient, cancelled, failed, still-insufficient, stale-challenge,
   and successful fresh-challenge sequences; analyze and commit.
 
 ## Task 5: Documentation and controlled acceptance

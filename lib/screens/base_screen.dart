@@ -11,12 +11,14 @@ import '../services/ai_payment_provider_catalog.dart';
 import '../services/base_service.dart';
 import '../services/base_wallet_recovery_view_model.dart';
 import '../services/bridge/bridge_funding_runtime.dart';
+import '../services/bridge/bridge_models.dart';
 import '../services/dynamic_model_catalog.dart';
 import '../services/native_bridge.dart';
 import '../services/paid_provider_gateway_coordinator.dart';
 import '../services/preferences_service.dart';
 import '../services/provider_balance_service.dart';
 import '../services/provider_model_discovery_service.dart';
+import '../services/provider_top_up_funding_coordinator.dart';
 import '../services/wallet_funded_provider_readiness.dart';
 import '../services/x402_payment_service.dart';
 import '../services/x402_payment_transport_service.dart';
@@ -164,8 +166,6 @@ class _BaseScreenState extends State<BaseScreen> {
       case WalletFundedProviderAction.topUpVenice:
         if (!_baseService.isConnected) {
           _showWalletRequiredDialog();
-        } else if (!_baseService.isBaseMainnet) {
-          await _switchToMainnetForAiPayments();
         } else {
           await _showTopUpPreparation(provider);
         }
@@ -720,13 +720,11 @@ class _BaseScreenState extends State<BaseScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: _baseService.isConnected && mainnetReady
+                      onPressed: _baseService.isConnected
                           ? _aiPaymentBusy
                               ? null
                               : () => _showTopUpPreparation(selected)
-                          : _baseService.isConnected
-                              ? _switchToMainnetForAiPayments
-                              : _showWalletRequiredDialog,
+                          : _showWalletRequiredDialog,
                       icon: _aiPaymentBusy
                           ? const SizedBox(
                               width: 16,
@@ -897,7 +895,9 @@ class _BaseScreenState extends State<BaseScreen> {
   }
 
   Future<void> _switchToMainnetForAiPayments() async {
-    await _baseService.setWalletNetwork(WalletNetwork.baseMainnet);
+    if (!_baseService.isBaseMainnet) {
+      await _baseService.setWalletNetwork(WalletNetwork.baseMainnet);
+    }
     if (mounted) setState(() {});
   }
 
@@ -910,30 +910,33 @@ class _BaseScreenState extends State<BaseScreen> {
       _aiPaymentProgress =
           'Requesting a fresh ${provider.label} payment challenge…';
     });
-    PreparedX402Payment? prepared;
     try {
-      prepared = await _x402Transport.prepareTopUp(provider);
-      if (!mounted) {
-        _x402Transport.reject(prepared);
-        return;
-      }
-      setState(() => _aiPaymentProgress =
-          'Challenge verified. Waiting for your explicit approval.');
-      final approved = await _showX402Approval(prepared);
-      if (!approved) {
-        _x402Transport.reject(prepared);
-        if (mounted) {
-          setState(() => _aiPaymentProgress = 'Payment cancelled.');
-        }
-        return;
-      }
-      if (!mounted) return;
-      setState(() => _aiPaymentProgress =
-          'Unlock the secure wallet to sign this one payment…');
-      final receipt = await _x402Transport.approveAndSubmit(
-        prepared,
-        walletAddress: _baseService.address ?? '',
+      final coordinator = ProviderTopUpFundingCoordinator(
+        prepare: _x402Transport.prepareTopUp,
+        reject: _x402Transport.reject,
+        selectBaseMainnet: _switchToMainnetForAiPayments,
+        refreshBaseUsdcBalance:
+            _baseService.refreshBaseUsdcBalanceUnitsForPayment,
+        requestFunding: _showProviderFundingModal,
+        requestPaymentApproval: _showX402Approval,
+        submitPayment: (payment) => _x402Transport.approveAndSubmit(
+          payment,
+          walletAddress: _baseService.address ?? '',
+        ),
       );
+      final receipt = await coordinator.run(
+        provider,
+        onProgress: (stage) {
+          if (mounted) {
+            setState(() =>
+                _aiPaymentProgress = _providerTopUpProgress(provider, stage));
+          }
+        },
+      );
+      if (receipt == null) {
+        if (mounted) setState(() => _aiPaymentProgress = 'Payment cancelled.');
+        return;
+      }
       _paymentReceipts = await _x402Transport.receiptStore.read();
       if (!mounted) return;
       final settled = receipt.state == X402PaymentState.settled;
@@ -959,6 +962,116 @@ class _BaseScreenState extends State<BaseScreen> {
     } finally {
       if (mounted) setState(() => _aiPaymentBusy = false);
     }
+  }
+
+  String _providerTopUpProgress(
+    AiPaymentProviderOption provider,
+    ProviderTopUpFundingStage stage,
+  ) =>
+      switch (stage) {
+        ProviderTopUpFundingStage.selectingBase =>
+          'Switching the Wallet view to Base Mainnet…',
+        ProviderTopUpFundingStage.requestingChallenge =>
+          'Requesting a fresh ${provider.label} payment challenge…',
+        ProviderTopUpFundingStage.checkingBalance =>
+          'Checking the exact Base USDC balance…',
+        ProviderTopUpFundingStage.fundingRequired =>
+          'More Base USDC is needed. Choose a source and approve the bridge separately.',
+        ProviderTopUpFundingStage.verifyingFunding =>
+          'Base delivery completed. Verifying the refreshed USDC balance…',
+        ProviderTopUpFundingStage.requestingFreshChallenge =>
+          'Funding verified. Requesting a new ${provider.label} challenge…',
+        ProviderTopUpFundingStage.awaitingPaymentApproval =>
+          'Challenge verified. Waiting for your separate payment approval.',
+        ProviderTopUpFundingStage.submittingPayment =>
+          'Unlock the secure wallet to sign this one payment…',
+        ProviderTopUpFundingStage.cancelled => 'Payment cancelled.',
+      };
+
+  Future<bool> _showProviderFundingModal(
+    ProviderFundingRequirement requirement,
+  ) async {
+    final runtime = _bridgeFunding;
+    if (runtime == null || !_baseService.isConnected) return false;
+    if (!_baseService.isBaseMainnet) {
+      await _switchToMainnetForAiPayments();
+    }
+    if (!mounted) return false;
+
+    final completed = await showModalBottomSheet<bool>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF080A0E),
+      builder: (sheetContext) {
+        final media = MediaQuery.of(sheetContext);
+        return Padding(
+          padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+          child: FractionallySizedBox(
+            heightFactor: 0.94,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Fund ${requirement.provider.label} on Base',
+                              style: Theme.of(sheetContext)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'At least ${requirement.requiredBaseUsdcDisplay} USDC is required. Bridge Robinhood ETH or official USDG—or choose another live source—then approve the provider payment separately.',
+                              style: Theme.of(sheetContext)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(height: 1.4),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Cancel funding',
+                        onPressed: () => Navigator.pop(sheetContext, false),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                    child: BridgeFundingPanel(
+                      controller: runtime.controller,
+                      capabilities: runtime.capabilities,
+                      baseDestinationAddress: _baseService.address,
+                      baseWalletAvailable: _baseService.isConnected,
+                      baseMainnetSelected: _baseService.isBaseMainnet,
+                      initialSourceChainId: BridgeConstants.robinhoodChainId,
+                      initialSourceTokenSymbol: 'USDG',
+                      onFundingCompleted: (_) {
+                        if (Navigator.of(sheetContext).canPop()) {
+                          Navigator.pop(sheetContext, true);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    return completed == true;
   }
 
   Future<void> _refreshProviderBalance(

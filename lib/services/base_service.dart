@@ -613,6 +613,43 @@ class BaseService {
     }
   }
 
+  /// Refresh Base Mainnet USDC for a payment decision and fail closed.
+  ///
+  /// General wallet refreshes remain best-effort for display. Payment
+  /// orchestration must never interpret an RPC/token read failure as a fresh
+  /// zero or continue from a previously cached balance.
+  Future<BigInt> refreshBaseUsdcBalanceUnitsForPayment() async {
+    _assertConnected();
+    if (!isBaseMainnet) {
+      throw StateError('Base Mainnet must be selected for AI payments.');
+    }
+    final selected = network;
+    final token = selected.token;
+    if (token == null || token.symbol != 'USDC') {
+      throw StateError('Base Mainnet USDC is not configured.');
+    }
+    final client = _makeClient(selected);
+    try {
+      final units = await _getErc20BalanceUnits(
+        client,
+        token.contract,
+        address!,
+      );
+      if (_selectedNetwork != selected.network) {
+        throw StateError('Wallet network changed during balance refresh.');
+      }
+      _stablecoinBalance = _weiToDecimal(units, token.decimals);
+      _eventController.add(BaseEvent.balanceUpdated(
+        ethBalance: _ethBalance,
+        stablecoinBalance: _stablecoinBalance,
+        stablecoinSymbol: token.symbol,
+      ));
+      return units;
+    } finally {
+      client.dispose();
+    }
+  }
+
   Decimal _weiToDecimal(BigInt wei, int decimals) {
     if (wei == BigInt.zero) return Decimal.zero;
     final divisor = BigInt.from(10).pow(decimals);
@@ -627,22 +664,34 @@ class BaseService {
   Future<Decimal> _getErc20Balance(Web3Client client, String contractAddr,
       String walletAddr, int decimals) async {
     try {
-      final contract = DeployedContract(
-        ContractAbi.fromJson(_erc20BalanceAbi, 'ERC20'),
-        EthereumAddress.fromHex(contractAddr),
-      );
-      final fn = contract.function('balanceOf');
-      final result = await client.call(
-        contract: contract,
-        function: fn,
-        params: [EthereumAddress.fromHex(walletAddr)],
-      );
-      final raw = result.first as BigInt;
+      final raw = await _getErc20BalanceUnits(client, contractAddr, walletAddr);
       return _weiToDecimal(raw, decimals);
     } catch (e) {
       _logger.w('ERC-20 balance failed: $e');
       return Decimal.zero;
     }
+  }
+
+  Future<BigInt> _getErc20BalanceUnits(
+    Web3Client client,
+    String contractAddr,
+    String walletAddr,
+  ) async {
+    final contract = DeployedContract(
+      ContractAbi.fromJson(_erc20BalanceAbi, 'ERC20'),
+      EthereumAddress.fromHex(contractAddr),
+    );
+    final fn = contract.function('balanceOf');
+    final result = await client.call(
+      contract: contract,
+      function: fn,
+      params: [EthereumAddress.fromHex(walletAddr)],
+    );
+    final raw = result.first;
+    if (raw is! BigInt) {
+      throw StateError('ERC-20 balance response was invalid.');
+    }
+    return raw;
   }
 
   /// Send ETH to an address or .base.eth name

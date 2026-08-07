@@ -58,4 +58,26 @@ void main() {
     expect(router, contains("'network': lower.contains('robinhood')"));
     expect(router, contains("'USDG'"));
   });
+
+  test('provider top-up uses the guided Robinhood to Base funding modal', () {
+    final screen = File('lib/screens/base_screen.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    final wallet = File('lib/services/base_service.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+
+    expect(screen, contains('ProviderTopUpFundingCoordinator('));
+    expect(screen,
+        contains('initialSourceChainId: BridgeConstants.robinhoodChainId'));
+    expect(screen, contains("initialSourceTokenSymbol: 'USDG'"));
+    expect(screen, contains('Robinhood ETH or official USDG'));
+    expect(screen, contains('onFundingCompleted: (_)'));
+    expect(wallet, contains('refreshBaseUsdcBalanceUnitsForPayment'));
+    expect(
+      wallet,
+      contains(
+          'Refresh Base Mainnet USDC for a payment decision and fail closed.'),
+    );
+  });
 }
