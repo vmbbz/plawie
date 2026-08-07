@@ -30,6 +30,33 @@ This design supersedes the bridge-execution section of
 existing `2026-08-05-external-wallet-bridge-execution.md` implementation plan
 to be replaced after this specification is approved.
 
+## Verified AI-provider settlement boundary
+
+The provider payment rails were rechecked against official documentation and
+live, unsigned `402 Payment Required` challenges on 2026-08-07:
+
+| Provider surface | Live accepted settlement | Robinhood Chain |
+|---|---|---|
+| Venice `POST /api/v1/x402/top-up` | Base USDC and Solana USDC | Not offered |
+| BlockRun `blockrun.ai` | Base USDC per request | Not offered |
+| BlockRun `sol.blockrun.ai` | Solana USDC per request | Not offered |
+
+Therefore, `Base-canonical` describes Plawie's selected app payment rail, not
+every rail each provider supports. Plawie continues settling Venice and
+BlockRun through its Android-owned Base wallet so wallet authentication,
+visible approval, receipts, balances, and provider consumption retain one
+security owner. A user funding from Robinhood Chain must first bridge into that
+Base wallet; Plawie must never construct a Robinhood payment merely because the
+wallet or provider is EVM-compatible.
+
+Direct provider payment from an external Solana wallet is a separate future
+feature. It would need a provider-payment-specific Solana challenge parser,
+human approval, signature/broadcast policy, provider identity binding, and
+receipt model. The bridge MWA path in this design cannot silently double as
+that payment rail. If a future live challenge offers Robinhood Chain, it also
+remains disabled until its chain, asset, signer, settlement, recovery, and
+release policy receive an explicit implementation review.
+
 ## Problem Being Corrected
 
 The shipped Base page currently requests a LI.FI quote, displays planning data,
@@ -548,3 +575,6 @@ models, or the native Gateway.
 - [Relay deposit addresses](https://docs.relay.link/features/deposit-addresses)
 - [Relay supported tokens and routes](https://docs.relay.link/references/api/api_resources/supported-routes)
 - [Relay deposit-address protocol](https://docs.relay.link/references/protocol/components/deposit-addresses)
+- [Venice x402 wallet authentication and top-up](https://docs.venice.ai/guides/integrations/x402-venice-api)
+- [BlockRun x402 gateway networks](https://blockrun.ai/docs/x402/endpoints)
+- [BlockRun x402 payment flow](https://blockrun.ai/docs/x402/payment-flow)

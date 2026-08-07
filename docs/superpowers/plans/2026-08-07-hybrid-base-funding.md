@@ -15,6 +15,14 @@ retaining an honest unmonitored Jumper fallback.
 
 **Approved wallet amendment:** `docs/superpowers/specs/2026-08-07-protocol-wallet-interoperability-design.md` takes precedence over wallet-brand and Solana submission language in the original design.
 
+**Verified provider-payment boundary (2026-08-07):** Venice and BlockRun both
+offer Base and Solana payment surfaces, but neither live unsigned 402 challenge
+offers Robinhood Chain. Plawie's selected provider-payment rail remains its
+Android-owned Base wallet. Robinhood funding therefore uses the reviewed bridge
+into Base USDC before any provider top-up or per-request payment. Direct Solana
+provider payment is explicitly outside this bridge plan and cannot reuse its
+signing authority.
+
 ---
 
 ## Delivery boundaries

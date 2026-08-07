@@ -21,6 +21,28 @@ The loopback proxy preserves the Gateway-owned conversation, tools, skills, and
 streaming response. Dynamic provider metadata is descriptive only and cannot
 change Plawie's context or tool-policy limits.
 
+## Provider networks versus Plawie's selected rail
+
+Verified on 2026-08-07 using official documentation and live unsigned 402
+challenges:
+
+- Venice top-up currently advertises both Base USDC and Solana USDC.
+- BlockRun's default `blockrun.ai` gateway advertises Base USDC, while its
+  separate `sol.blockrun.ai` gateway advertises Solana USDC.
+- Neither provider advertises Robinhood Chain as a payment network.
+
+Plawie's production payment rail remains the Android-owned Base Mainnet wallet.
+This is a deliberate product and security boundary, not a claim that Venice or
+BlockRun supports only Base. Ethereum, Robinhood Chain, or Solana funds may
+reach the Plawie wallet through the separately reviewed funding flow; provider
+top-up or per-request payment begins only after Base USDC is present.
+
+The app must parse each fresh provider challenge and continue accepting only
+the exact Base network and native Base USDC contract. Provider support for
+Solana does not authorize the bridge signer to make a provider payment. A
+future direct-Solana payment mode requires its own approval, identity, receipt,
+and recovery design.
+
 ## First setup
 
 BYOK providers retain the API-key field and secure one-time setup handoff.
@@ -31,7 +53,7 @@ Base page above the Dashboard so Back returns to the app.
 
 Setup explains the following before installation:
 
-- wallet payments use Base Mainnet and native Base USDC;
+- Plawie's selected wallet-payment rail uses Base Mainnet and native Base USDC;
 - the wallet must be backed up or exported before it is funded;
 - some bridge or direct wallet-transfer actions may require Base ETH for gas;
 - Venice uses a separately approved prepaid provider top-up;
