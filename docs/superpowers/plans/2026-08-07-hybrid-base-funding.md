@@ -1176,7 +1176,7 @@ is reserved for Task 12 after announcing it and checking that the user is idle.
 - Test: `test/evm_bridge_rpc_service_test.dart`
 - Test: `test/bridge_funding_controller_test.dart`
 
-- [ ] **Step 1: Write failing RPC, approval, and direct-transfer tests**
+- [x] **Step 1: Write failing RPC, approval, and direct-transfer tests**
 
 Cover native-token routes, sufficient allowance, insufficient allowance, exact
 approval encoding, exact Base USDC `transfer(address,uint256)` encoding, maximum
@@ -1200,7 +1200,7 @@ expect(
 );
 ```
 
-- [ ] **Step 2: Implement shipped RPC policy and read methods**
+- [x] **Step 2: Implement shipped RPC policy and read methods**
 
 Use only:
 
@@ -1219,7 +1219,7 @@ bounded hex responses. JSON-RPC IDs are random non-secret integers; redirects
 are rejected; response bodies are capped at 64 KiB. `waitForReceipt` performs
 bounded reads only and never resubmits.
 
-- [ ] **Step 3: Write failing connected-flow orchestration tests**
+- [x] **Step 3: Write failing connected-flow orchestration tests**
 
 With fake quote, wallet, store, and RPC services, prove:
 
@@ -1240,7 +1240,7 @@ With fake quote, wallet, store, and RPC services, prove:
     Reown EVM gate and Base RPC are available;
 13. a different Base token or non-Base source never enters the direct path.
 
-- [ ] **Step 4: Implement foreground controller EVM flow**
+- [x] **Step 4: Implement foreground controller EVM flow**
 
 Expose explicit preparation and confirmation methods:
 
@@ -1267,7 +1267,7 @@ starts read-only receipt/status polling. If the app resumes with
 never resend automatically. A direct transfer completes only after a successful
 Base receipt and Base-balance reconciliation; it never calls LI.FI status.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```powershell
 flutter test test/evm_bridge_rpc_service_test.dart test/bridge_funding_controller_test.dart

@@ -1,6 +1,6 @@
 # External Wallet Bridging
 
-Status: protocol-routed session foundation; execution and UI gates disabled
+Status: reviewed EVM execution foundation; settlement and UI gates disabled
 
 Date reviewed: 2026-08-07
 
@@ -139,7 +139,33 @@ The release build must provide non-empty `REOWN_PROJECT_ID` and an HTTPS
 `ENABLE_REOWN_SOLANA_FALLBACK`. A missing define or disabled gate produces an
 unavailable capability instead of a partially working connector.
 
-Task 6 owns exact EVM RPC/approval execution. Later controller and UI tasks own
-fresh-quote review, settlement monitoring, retry/recovery, and the explicit
-human approval surface. The session layer must not be presented as a completed
-bridge until those tasks and Task 11's release evidence are complete.
+## Task 6 reviewed EVM execution
+
+Task 6 adds the foreground EVM controller and bounded JSON-RPC client. It still
+does not expose an execution button or enable a wallet/bridge gate by default.
+
+- Only the shipped Ethereum, Base, and Robinhood Chain mainnet RPC URLs are
+  accepted. RPC redirects are rejected, response bodies are capped at 64 KiB,
+  IDs are random non-secret integers, and receipt reads never resubmit.
+- ERC-20 allowances use a strict 32-byte `eth_call`. An insufficient allowance
+  creates a separate human review for the exact amount; unlimited approval is
+  rejected. A confirmed approval is followed by a fresh validated LI.FI quote
+  and a new bridge review.
+- Every wallet request is preceded by a durable
+  `awaitingExternalWallet` receipt containing the canonical SHA-256 payload
+  fingerprint. The returned 32-byte source hash is persisted before any RPC
+  receipt read. Known user rejection returns to review; ambiguous transport or
+  malformed post-request outcomes stay active and blocked from automatic
+  resend.
+- Base USDC sent from Base Mainnet uses provider `direct_base` and route tool
+  `direct_transfer`. It skips LI.FI and allowance calls, estimates bounded gas,
+  transfers the exact amount to the current internal Base address, and reaches
+  `completed` only after a successful Base receipt and balance refresh.
+- Process restoration is read-only. An `awaitingExternalWallet` receipt without
+  a trustworthy hash becomes outcome-unknown and never invokes a wallet method.
+  Task 8 owns evidence-bound hash recovery and LI.FI settlement monitoring.
+
+Tasks 7 through 10 still own verified Solana submission, full settlement and
+recovery, Relay deposits, and the explicit human-approval UI. The EVM execution
+foundation must not be presented as a completed bridge until those tasks and
+Task 11's release evidence are complete.
