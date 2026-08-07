@@ -37,6 +37,9 @@ class PreferencesService {
       'dynamic_model_catalog_snapshot_v1';
   static const _keyAiPaymentProvider = 'ai_payment_provider';
   static const _keyX402PaymentReceipts = 'x402_payment_receipts_v1';
+  static const _keyBridgeCapabilitySnapshot = 'bridge_capability_snapshot_v1';
+  static const _keyActiveBridgeReceipt = 'active_bridge_receipt_v1';
+  static const _keyBridgeReceipts = 'bridge_receipts_v1';
 
   SharedPreferences? _prefs;
 
@@ -209,6 +212,22 @@ class PreferencesService {
 
   Future<void> setX402PaymentReceipts(List<String> receipts) =>
       _p.setStringList(_keyX402PaymentReceipts, receipts);
+
+  String? get bridgeCapabilitySnapshotJson =>
+      _p.getString(_keyBridgeCapabilitySnapshot);
+  Future<bool> setBridgeCapabilitySnapshotJson(String? value) => value == null
+      ? _p.remove(_keyBridgeCapabilitySnapshot)
+      : _p.setString(_keyBridgeCapabilitySnapshot, value);
+
+  String? get activeBridgeReceiptJson => _p.getString(_keyActiveBridgeReceipt);
+  Future<bool> setActiveBridgeReceiptJson(String? value) => value == null
+      ? _p.remove(_keyActiveBridgeReceipt)
+      : _p.setString(_keyActiveBridgeReceipt, value);
+
+  List<String> get bridgeReceipts =>
+      _p.getStringList(_keyBridgeReceipts) ?? const <String>[];
+  Future<bool> setBridgeReceipts(List<String> value) =>
+      _p.setStringList(_keyBridgeReceipts, value);
 
   /// User-chosen agent name
   String get agentName => _p.getString('agent_name') ?? 'Plawie';
