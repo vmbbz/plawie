@@ -43,10 +43,15 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/build/
 build_trash/
 .tmp/
 *.apk
 *.aab
+
+# Dependency-pack private signing keys must live in a release secret manager
+# or an external encrypted key directory, never anywhere in this repository.
+**/signing-private.pem
 
 # MLC-LLM Models (Huge binaries, usually excluded)
 # assets/mlc_models/
