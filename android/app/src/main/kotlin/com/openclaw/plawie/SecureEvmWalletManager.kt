@@ -52,7 +52,7 @@ import org.web3j.crypto.TransactionEncoder
 import org.web3j.utils.Numeric
 
 /**
- * Device-authenticated EVM signer for the app-owned Base wallet.
+ * Device-authenticated EVM signer for the app-owned multi-network wallet.
  *
  * Android Keystore does not expose secp256k1 keys, so the EVM key is wrapped
  * with a non-exportable AES-256-GCM Keystore key. Every unwrap is tied to a
@@ -353,7 +353,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
         val envelope = requireEnvelope(result) ?: return
         withDecryptedKey(
             envelope = envelope,
-            title = "Remove Base wallet",
+            title = "Remove Plawie wallet",
             description = "Authenticate to permanently remove this wallet from the device",
             result = result,
         ) {
@@ -881,7 +881,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
                 cipher.init(Cipher.ENCRYPT_MODE, key)
                 requestAuthenticatedCipher(
                     cipher = cipher,
-                    title = "Remove damaged Base wallet",
+                    title = "Remove damaged Plawie wallet",
                     description = "Authenticate to permanently remove the unusable wallet record",
                     onSuccess = { authenticatedCipher ->
                         try {
@@ -904,7 +904,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
 
         try {
             AlertDialog.Builder(activity)
-                .setTitle("Remove damaged Base wallet?")
+                .setTitle("Remove damaged Plawie wallet?")
                 .setMessage(
                     "This permanently removes the unusable encrypted wallet record from this " +
                         "device. It does not recover funds. Continue only if you have the private " +
@@ -1034,7 +1034,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
                     null,
                 )
             } else {
-                result.error("WALLET_NOT_FOUND", "No secure Base wallet is available.", null)
+                result.error("WALLET_NOT_FOUND", "No secure Plawie wallet is available.", null)
             }
         }
         return envelope
@@ -1087,7 +1087,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
             .setNegativeButton("Close", null)
             .setPositiveButton("Copy and close") { _, _ ->
                 val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Base private key", privateKey))
+                clipboard.setPrimaryClip(ClipData.newPlainText("Plawie wallet private key", privateKey))
                 Handler(Looper.getMainLooper()).postDelayed({
                     try {
                         val current = clipboard.primaryClip?.getItemAt(0)?.coerceToText(activity)?.toString()

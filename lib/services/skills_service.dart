@@ -1296,10 +1296,11 @@ class SkillsService {
         'connected': false,
         'status': 'WALLET_NOT_CONNECTED',
         'message':
-            'Base wallet is not connected. Create or import a wallet before using Base Chain actions.',
+            'The Plawie wallet is not connected. Create or import it before using wallet actions.',
         'network': svc.networkName,
         'address': '',
         'eth': '0',
+        'stablecoin': const <String, String>{'symbol': '', 'balance': '0'},
         'usdc': '0',
         'transactions': const <Map<String, dynamic>>[],
       });
@@ -1311,14 +1312,20 @@ class SkillsService {
         case 'get_balance':
           await svc.refreshBalance();
           return SkillResult.success({
+            'network': svc.networkName,
+            'chainId': svc.chainId,
             'eth': svc.ethBalance.toString(),
-            'usdc': svc.usdcBalance.toString()
+            'stablecoin': {
+              'symbol': svc.stablecoinSymbol,
+              'balance': svc.stablecoinBalance.toString(),
+            },
+            'usdc': svc.usdcBalance.toString(),
           });
         case 'send_eth':
           final approval = ctx['baseTransferApproval'];
           if (approval is! BaseTransferApproval) {
             return SkillResult.error(
-                'HUMAN_APPROVAL_REQUIRED: confirm the exact transfer in the visible Base wallet UI.');
+                'HUMAN_APPROVAL_REQUIRED: confirm the exact transfer in the visible Wallet UI.');
           }
           final tx = await svc.sendEth(
             p['to'].toString(),
@@ -1330,9 +1337,21 @@ class SkillsService {
           final approval = ctx['baseTransferApproval'];
           if (approval is! BaseTransferApproval) {
             return SkillResult.error(
-                'HUMAN_APPROVAL_REQUIRED: confirm the exact transfer in the visible Base wallet UI.');
+                'HUMAN_APPROVAL_REQUIRED: confirm the exact transfer in the visible Wallet UI.');
           }
           final tx = await svc.sendUsdc(
+            p['to'].toString(),
+            Decimal.parse(p['amount'].toString()),
+            approval: approval,
+          );
+          return SkillResult.success({'txHash': tx});
+        case 'send_usdg':
+          final approval = ctx['baseTransferApproval'];
+          if (approval is! BaseTransferApproval) {
+            return SkillResult.error(
+                'HUMAN_APPROVAL_REQUIRED: confirm the exact transfer in the visible Wallet UI.');
+          }
+          final tx = await svc.sendUsdg(
             p['to'].toString(),
             Decimal.parse(p['amount'].toString()),
             approval: approval,
@@ -1345,7 +1364,18 @@ class SkillsService {
           final txs = await svc.fetchHistory(limit: p['limit'] ?? 10);
           return SkillResult.success({'transactions': txs});
         case 'switch_network':
-          await svc.setNetwork(sepolia: p['network'] == 'sepolia');
+          final requested = p['network']?.toString().trim().toLowerCase();
+          final network = switch (requested) {
+            'mainnet' || 'base' || 'base_mainnet' => WalletNetwork.baseMainnet,
+            'sepolia' || 'base_sepolia' => WalletNetwork.baseSepolia,
+            'robinhood' ||
+            'robinhood_mainnet' =>
+              WalletNetwork.robinhoodMainnet,
+            _ => throw const FormatException(
+                'Choose mainnet, sepolia, or robinhood.',
+              ),
+          };
+          await svc.setWalletNetwork(network);
           return SkillResult.success({'network': svc.networkName});
         default:
           return SkillResult.error('Unknown action: $action');
@@ -2349,7 +2379,7 @@ class SkillsService {
         return _methodToolDefinition(
           skill,
           description:
-              'Use the local Base wallet for address, balances, history, network selection, and explicit transfers.',
+              'Use the secured local EVM wallet for Base and Robinhood address, balances, history, network selection, and explicit transfers.',
           methods: const [
             'get_address',
             'get_balance',
@@ -2358,6 +2388,7 @@ class SkillsService {
             'switch_network',
             'send_eth',
             'send_usdc',
+            'send_usdg',
           ],
           extraProperties: const {
             'to': {
@@ -2374,7 +2405,7 @@ class SkillsService {
             },
             'network': {
               'type': 'string',
-              'enum': ['mainnet', 'sepolia'],
+              'enum': ['mainnet', 'sepolia', 'robinhood'],
             },
             'limit': {
               'type': 'integer',

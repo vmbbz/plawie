@@ -39,6 +39,8 @@ abstract final class BridgeConstants {
   static const int robinhoodChainId = 4663;
   static const int solanaChainId = 1151111081099710;
   static const String baseUsdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+  static const String robinhoodUsdg =
+      '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168';
 }
 
 abstract final class BridgeFeatureConfig {

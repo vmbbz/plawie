@@ -31,18 +31,18 @@ USDC provider top-ups to the canonical foreground funding modal.
 - Test: `test/base_transfer_approval_test.dart`
 - Test: `test/robinhood_secure_signer_contract_test.dart`
 
-- [ ] Define `WalletNetwork` values for Base Mainnet, Robinhood Mainnet, and
+- [x] Define `WalletNetwork` values for Base Mainnet, Robinhood Mainnet, and
   Base Sepolia with exact chain/RPC/explorer/asset policy.
-- [ ] Migrate the old Sepolia boolean preference into a versioned selected
+- [x] Migrate the old Sepolia boolean preference into a versioned selected
   network while preserving `useSepolia` and `setNetwork` compatibility.
-- [ ] Require `ROBINHOOD_RPC_URL` for production internal sends; allow only the
+- [x] Require `ROBINHOOD_RPC_URL` for production internal sends; allow only the
   official public fallback in debug/internal builds.
-- [ ] Bind ordinary transfer approvals to the selected chain; distinguish Base
+- [x] Bind ordinary transfer approvals to the selected chain; distinguish Base
   USDC from Robinhood USDG before any signer call.
-- [ ] Permit Android chain 4663 only for native ETH with empty calldata or the
+- [x] Permit Android chain 4663 only for native ETH with empty calldata or the
   official USDG contract's exact transfer call. Show exact network and asset in
   authentication UI and keep x402 Base-only.
-- [ ] Test policy, migration compatibility, chain-bound approval, and Android
+- [x] Test policy, migration compatibility, chain-bound approval, and Android
   source contract; run focused analysis and commit.
 
 ## Task 2: Convert the Base page into the multi-network Wallet UI
@@ -55,17 +55,17 @@ USDC provider top-ups to the canonical foreground funding modal.
 - Test: `test/wallet_hub_ui_contract_test.dart`
 - Test: existing Base wallet/recovery/readiness tests
 
-- [ ] Rename dashboard/page/settings labels to Wallet while preserving class,
+- [x] Rename dashboard/page/settings labels to Wallet while preserving class,
   route, and file names.
-- [ ] Replace the boolean menu with the three-network chooser and show the same
+- [x] Replace the boolean menu with the three-network chooser and show the same
   address across networks.
-- [ ] Show selected-network ETH and the exact supported stable asset: USDC on
+- [x] Show selected-network ETH and the exact supported stable asset: USDC on
   Base or USDG on Robinhood. Never present them as interchangeable balances.
-- [ ] Restrict basename resolution to Base, use Robinhood Blockscout history,
+- [x] Restrict basename resolution to Base, use Robinhood Blockscout history,
   and surface missing production RPC honestly.
-- [ ] Make AI payments and inbound Base destination controls require exact Base
+- [x] Make AI payments and inbound Base destination controls require exact Base
   Mainnet, not merely `!useSepolia`.
-- [ ] Run UI/source-contract and wallet regressions; analyze and commit.
+- [x] Run UI/source-contract and wallet regressions; analyze and commit.
 
 ## Task 3: Add a resumable funding modal contract
 

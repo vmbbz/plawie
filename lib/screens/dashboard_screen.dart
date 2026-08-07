@@ -161,8 +161,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 : null,
                           ),
                           _BlobDashCard(
-                            title: 'Base',
-                            subtitle: 'ETH & USDC',
+                            title: 'Wallet',
+                            subtitle: 'Base · Robinhood',
                             icon: Icons.account_balance_wallet_rounded,
                             iconColor: const Color(0xFF0052FF),
                             widthFactor: 0.48,

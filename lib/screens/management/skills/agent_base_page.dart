@@ -11,9 +11,9 @@ import '../../../services/base_wallet_recovery_view_model.dart';
 import '../../../app.dart';
 import '../../base_screen.dart';
 
-/// Base Chain skill page — device-native wallet powered by BaseService.
+/// Wallet skill page — device-native EVM identity powered by BaseService.
 /// Always available (no gateway install needed).
-/// Shows ETH + USDC balance, AgentKit status, and full skill documentation.
+/// Shows exact per-network assets, AgentKit status, and skill documentation.
 class AgentBasePage extends StatefulWidget {
   const AgentBasePage({super.key});
 
@@ -113,7 +113,7 @@ class _AgentBasePageState extends State<AgentBasePage>
       backgroundColor: Colors.transparent,
       flexibleSpace: FlexibleSpaceBar(
         title: Text(
-          'Base Wallet',
+          'Wallet / Base Chain',
           style: GoogleFonts.outfit(
             fontWeight: FontWeight.bold,
             color: Theme.of(context).textTheme.titleLarge?.color,
@@ -171,7 +171,7 @@ class _AgentBasePageState extends State<AgentBasePage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Base Chain Wallet',
+                      'Plawie EVM Wallet',
                       style: GoogleFonts.outfit(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
@@ -210,13 +210,14 @@ class _AgentBasePageState extends State<AgentBasePage>
                   color: Colors.white),
             ),
             const SizedBox(height: 4),
-            Text(
-              '${_baseService.usdcBalance.toStringAsFixed(2)} USDC',
-              style: TextStyle(
-                  fontSize: 15,
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontWeight: FontWeight.w500),
-            ),
+            if (_baseService.stablecoinSymbol != null)
+              Text(
+                '${_baseService.stablecoinBalance.toStringAsFixed(2)} ${_baseService.stablecoinSymbol}',
+                style: TextStyle(
+                    fontSize: 15,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontWeight: FontWeight.w500),
+              ),
             const SizedBox(height: 8),
             GestureDetector(
               onTap: () => Clipboard.setData(
@@ -370,23 +371,39 @@ class _AgentBasePageState extends State<AgentBasePage>
     }
     return Column(
       children: [
-        _actionRow(context, Icons.account_balance_wallet, 'Check Balance',
-            'Returns ETH + USDC balance', () => _runAction('get_balance')),
+        _actionRow(
+            context,
+            Icons.account_balance_wallet,
+            'Check Balance',
+            'Returns exact assets on the selected network',
+            () => _runAction('get_balance')),
         _actionRow(
             context,
             Icons.send,
             'Send ETH',
-            'Transfer ETH to address or .base.eth',
+            _baseService.network.supportsBasenames
+                ? 'Transfer ETH to address or .base.eth'
+                : 'Transfer ETH to an explicit 0x address',
             () => _promptSend(context, 'eth')),
-        _actionRow(context, Icons.attach_money, 'Send USDC',
-            'Transfer USDC stablecoin', () => _promptSend(context, 'usdc')),
-        _actionRow(context, Icons.person_search, 'Resolve Basename',
-            'Look up a .base.eth address', () => _promptResolve(context)),
+        if (_baseService.stablecoinSymbol != null)
+          _actionRow(
+            context,
+            Icons.attach_money,
+            'Send ${_baseService.stablecoinSymbol}',
+            'Transfer official ${_baseService.stablecoinSymbol} on ${_baseService.networkName}',
+            () => _promptSend(
+              context,
+              _baseService.stablecoinSymbol!.toLowerCase(),
+            ),
+          ),
+        if (_baseService.network.supportsBasenames)
+          _actionRow(context, Icons.person_search, 'Resolve Basename',
+              'Look up a .base.eth address', () => _promptResolve(context)),
         _actionRow(
             context,
             Icons.history,
             'View History',
-            'Last 10 transactions from Basescan',
+            'Last 10 transactions on ${_baseService.networkName}',
             () => _runAction('get_history')),
         const SizedBox(height: 16),
         OutlinedButton.icon(
@@ -503,8 +520,11 @@ class _AgentBasePageState extends State<AgentBasePage>
           children: [
             TextField(
               controller: toCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'To (0x address or .base.eth)'),
+              decoration: InputDecoration(
+                labelText: _baseService.network.supportsBasenames
+                    ? 'To (0x address or .base.eth)'
+                    : 'To (0x address)',
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -533,7 +553,11 @@ class _AgentBasePageState extends State<AgentBasePage>
               if (!approved || !mounted) return;
               setState(() => _loading = true);
               try {
-                final action = token == 'eth' ? 'send_eth' : 'send_usdc';
+                final action = switch (token) {
+                  'eth' => 'send_eth',
+                  'usdg' => 'send_usdg',
+                  _ => 'send_usdc',
+                };
                 final approval = _baseService.issueVisibleTransferApproval(
                   action: action,
                   destination: to,
@@ -550,8 +574,7 @@ class _AgentBasePageState extends State<AgentBasePage>
                 );
                 if (!context.mounted) return;
                 if (result.success) {
-                  _showResult(context,
-                      token == 'eth' ? 'send_eth' : 'send_usdc', result.data);
+                  _showResult(context, action, result.data);
                 } else {
                   setState(() => _error = result.error);
                 }

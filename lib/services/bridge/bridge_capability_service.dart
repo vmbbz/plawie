@@ -245,11 +245,14 @@ final class BridgeCapabilityService implements BridgeCapabilitySource {
     for (final id in _lifiSourceChainIds) {
       if (!liveIds.contains(id)) continue;
       final chain = _trustedChains[id]!;
-      final candidates = <String>{chain.nativeTokenSymbol, 'USDC'};
+      final candidates = _lifiTokenCandidates(chain);
       final supported = <BridgeToken>[];
-      for (final symbol in candidates) {
-        final token =
-            await _resolveLifiToken(id, symbol, expectedSymbol: symbol);
+      for (final candidate in candidates) {
+        final token = await _resolveLifiToken(
+          id,
+          candidate.token,
+          expectedSymbol: candidate.expectedSymbol,
+        );
         if (token == null) continue;
         if (await _hasLifiConnection(chain, token, baseUsdc)) {
           supported.add(token);
@@ -463,6 +466,31 @@ const _lifiSourceChainIds = <int>{
   BridgeConstants.robinhoodChainId,
 };
 const _relaySourceChainIds = _lifiSourceChainIds;
+
+Iterable<_LifiTokenCandidate> _lifiTokenCandidates(BridgeChain chain) sync* {
+  yield _LifiTokenCandidate(
+    token: chain.nativeTokenSymbol,
+    expectedSymbol: chain.nativeTokenSymbol,
+  );
+  if (chain.id == BridgeConstants.robinhoodChainId) {
+    yield const _LifiTokenCandidate(
+      token: BridgeConstants.robinhoodUsdg,
+      expectedSymbol: 'USDG',
+    );
+  } else {
+    yield const _LifiTokenCandidate(token: 'USDC', expectedSymbol: 'USDC');
+  }
+}
+
+final class _LifiTokenCandidate {
+  const _LifiTokenCandidate({
+    required this.token,
+    required this.expectedSymbol,
+  });
+
+  final String token;
+  final String expectedSymbol;
+}
 
 Map<int, List<BridgeToken>> _freezeTokenMap(
   Map<int, List<BridgeToken>> source,

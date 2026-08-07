@@ -164,7 +164,7 @@ class _BaseScreenState extends State<BaseScreen> {
       case WalletFundedProviderAction.topUpVenice:
         if (!_baseService.isConnected) {
           _showWalletRequiredDialog();
-        } else if (_baseService.useSepolia) {
+        } else if (!_baseService.isBaseMainnet) {
           await _switchToMainnetForAiPayments();
         } else {
           await _showTopUpPreparation(provider);
@@ -188,6 +188,21 @@ class _BaseScreenState extends State<BaseScreen> {
       }
     } catch (e) {
       setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _selectWalletNetwork(WalletNetwork selected) async {
+    if (_isLoading || selected == _baseService.selectedNetwork) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      await _baseService.setWalletNetwork(selected);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -227,6 +242,9 @@ class _BaseScreenState extends State<BaseScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final selectedNetwork = _baseService.network;
+    final stablecoin = selectedNetwork.token;
+    final canSend = _baseService.ordinaryTransactionsAvailable && !_isLoading;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -254,7 +272,7 @@ class _BaseScreenState extends State<BaseScreen> {
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      'BASE',
+                      'WALLET',
                       style: GoogleFonts.outfit(
                         fontWeight: FontWeight.w900,
                         fontSize: 14,
@@ -274,57 +292,41 @@ class _BaseScreenState extends State<BaseScreen> {
                   ),
                 ),
                 actions: [
-                  // Network toggle
-                  PopupMenuButton<bool>(
+                  PopupMenuButton<WalletNetwork>(
                     icon: Icon(
-                      Icons.public,
-                      color: _baseService.useSepolia
-                          ? Colors.orange
-                          : Colors.blue.shade400,
+                      _networkIcon(selectedNetwork),
+                      color: _networkColor(selectedNetwork),
                     ),
                     tooltip: 'Network: ${_baseService.networkName}',
-                    onSelected: (useSepolia) async {
-                      await _baseService.setNetwork(sepolia: useSepolia);
-                      setState(() {});
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: true,
-                        child: Row(
-                          children: [
-                            Icon(Icons.science,
-                                color: _baseService.useSepolia
-                                    ? Colors.orange
-                                    : Colors.grey,
-                                size: 20),
-                            const SizedBox(width: 8),
-                            const Text('Base Sepolia (Testnet)'),
-                            if (_baseService.useSepolia) ...[
-                              const Spacer(),
-                              const Icon(Icons.check, size: 18),
-                            ]
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: false,
-                        child: Row(
-                          children: [
-                            Icon(Icons.public,
-                                color: !_baseService.useSepolia
-                                    ? Colors.blue
-                                    : Colors.grey,
-                                size: 20),
-                            const SizedBox(width: 8),
-                            const Text('Base Mainnet'),
-                            if (!_baseService.useSepolia) ...[
-                              const Spacer(),
-                              const Icon(Icons.check, size: 18),
-                            ]
-                          ],
-                        ),
-                      ),
-                    ],
+                    onSelected: _selectWalletNetwork,
+                    itemBuilder: (context) => WalletNetworkPolicy.values
+                        .map(
+                          (definition) => PopupMenuItem<WalletNetwork>(
+                            value: definition.network,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _networkIcon(definition),
+                                  color: definition.network ==
+                                          _baseService.selectedNetwork
+                                      ? _networkColor(definition)
+                                      : Colors.grey,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(definition.isTestnet
+                                      ? '${definition.name} (Testnet)'
+                                      : definition.name),
+                                ),
+                                if (definition.network ==
+                                    _baseService.selectedNetwork)
+                                  const Icon(Icons.check, size: 18),
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
                   ),
                   IconButton(
                     icon: const Icon(Icons.refresh),
@@ -366,19 +368,29 @@ class _BaseScreenState extends State<BaseScreen> {
                               if (_baseService.isConnected) ...[
                                 StatusCard(
                                   title: 'Send ETH',
-                                  subtitle:
-                                      'Transfer ETH to an address or .base.eth name',
+                                  subtitle: canSend
+                                      ? selectedNetwork.supportsBasenames
+                                          ? 'Transfer ETH to an address or .base.eth name'
+                                          : 'Transfer ETH to an explicit 0x address'
+                                      : _baseService
+                                          .ordinaryTransactionUnavailableReason,
                                   icon: Icons.send,
                                   trailing: const Icon(Icons.chevron_right),
-                                  onTap: _showSendEthDialog,
+                                  onTap: canSend ? _showSendEthDialog : null,
                                 ),
-                                StatusCard(
-                                  title: 'Send USDC',
-                                  subtitle: 'Transfer USDC stablecoin',
-                                  icon: Icons.attach_money,
-                                  trailing: const Icon(Icons.chevron_right),
-                                  onTap: _showSendUsdcDialog,
-                                ),
+                                if (stablecoin != null)
+                                  StatusCard(
+                                    title: 'Send ${stablecoin.symbol}',
+                                    subtitle: canSend
+                                        ? 'Transfer official ${stablecoin.symbol} on ${selectedNetwork.name}'
+                                        : _baseService
+                                            .ordinaryTransactionUnavailableReason,
+                                    icon: Icons.attach_money,
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: canSend
+                                        ? _showSendStablecoinDialog
+                                        : null,
+                                  ),
                                 StatusCard(
                                   title: 'Receive',
                                   subtitle: 'Show your wallet address / QR',
@@ -444,11 +456,25 @@ class _BaseScreenState extends State<BaseScreen> {
       capabilities: runtime.capabilities,
       baseDestinationAddress: _baseService.address,
       baseWalletAvailable: _baseService.isConnected,
-      useSepolia: _baseService.useSepolia,
+      baseMainnetSelected: _baseService.isBaseMainnet,
     );
   }
 
   // ── Section helpers ────────────────────────────────────────────────────────
+
+  IconData _networkIcon(WalletNetworkDefinition definition) =>
+      switch (definition.network) {
+        WalletNetwork.baseMainnet => Icons.public,
+        WalletNetwork.robinhoodMainnet => Icons.swap_horiz_rounded,
+        WalletNetwork.baseSepolia => Icons.science,
+      };
+
+  Color _networkColor(WalletNetworkDefinition definition) =>
+      switch (definition.network) {
+        WalletNetwork.baseMainnet => const Color(0xFF0052FF),
+        WalletNetwork.robinhoodMainnet => const Color(0xFF00C805),
+        WalletNetwork.baseSepolia => Colors.orange,
+      };
 
   Widget _sectionLabel(ThemeData theme, String label) => Padding(
         padding: const EdgeInsets.only(left: 4, bottom: 8),
@@ -468,7 +494,7 @@ class _BaseScreenState extends State<BaseScreen> {
     final selected =
         AiPaymentProviderCatalog.byId(_selectedAiPaymentProvider) ??
             AiPaymentProviderCatalog.providers.first;
-    final mainnetReady = !_baseService.useSepolia;
+    final mainnetReady = _baseService.isBaseMainnet;
     final readiness = _readinessFor(selected);
 
     return GlassCard(
@@ -527,15 +553,17 @@ class _BaseScreenState extends State<BaseScreen> {
                     const Icon(Icons.warning_amber_rounded,
                         color: Colors.orange, size: 20),
                     const SizedBox(width: 10),
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'x402 payments use Base Mainnet, not Sepolia.',
-                        style: TextStyle(fontSize: 12),
+                        'x402 payments settle on Base Mainnet. The wallet is currently showing ${_baseService.networkName}.',
+                        style: const TextStyle(fontSize: 12),
                       ),
                     ),
                     TextButton(
                       onPressed: () async {
-                        await _baseService.setNetwork(sepolia: false);
+                        await _baseService.setWalletNetwork(
+                          WalletNetwork.baseMainnet,
+                        );
                         if (mounted) setState(() {});
                       },
                       child: const Text('Switch'),
@@ -789,7 +817,7 @@ class _BaseScreenState extends State<BaseScreen> {
     return WalletFundedProviderReadinessService.evaluate(
       provider: provider,
       walletStatus: _baseService.walletStatus,
-      isBaseMainnet: !_baseService.useSepolia,
+      isBaseMainnet: _baseService.isBaseMainnet,
       transportState: _paidTransportState,
       balance: _providerBalance,
       now: DateTime.now().toUtc(),
@@ -869,7 +897,7 @@ class _BaseScreenState extends State<BaseScreen> {
   }
 
   Future<void> _switchToMainnetForAiPayments() async {
-    await _baseService.setNetwork(sepolia: false);
+    await _baseService.setWalletNetwork(WalletNetwork.baseMainnet);
     if (mounted) setState(() {});
   }
 
@@ -1124,7 +1152,7 @@ class _BaseScreenState extends State<BaseScreen> {
       cards.add(
         StatusCard(
           title: 'Create Wallet',
-          subtitle: 'Generate and protect a new Base EVM keypair',
+          subtitle: 'Generate one EVM identity for Base and Robinhood Chain',
           icon: Icons.add_circle_outline,
           trailing: chevron,
           onTap: _showCreateWalletDialog,
@@ -1203,6 +1231,8 @@ class _BaseScreenState extends State<BaseScreen> {
 
   Widget _buildWalletHeader(ThemeData theme) {
     final addr = _baseService.address;
+    final selectedNetwork = _baseService.network;
+    final stablecoin = selectedNetwork.token;
     final recovery = BaseWalletRecoveryViewModel.fromStatus(
       _baseService.walletStatus,
     );
@@ -1216,7 +1246,7 @@ class _BaseScreenState extends State<BaseScreen> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF0052FF), // Base blue
+            _networkColor(selectedNetwork),
             Colors.purple.shade600,
           ],
           begin: Alignment.topLeft,
@@ -1247,7 +1277,7 @@ class _BaseScreenState extends State<BaseScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Base Wallet',
+                      'Plawie Wallet',
                       style: GoogleFonts.inter(
                         fontSize: 24,
                         fontWeight: FontWeight.w700,
@@ -1260,6 +1290,14 @@ class _BaseScreenState extends State<BaseScreen> {
                       style: GoogleFonts.robotoMono(
                         fontSize: 13,
                         color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Same secured address across supported EVM networks',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: Colors.white.withValues(alpha: 0.72),
                       ),
                     ),
                   ],
@@ -1308,14 +1346,15 @@ class _BaseScreenState extends State<BaseScreen> {
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              '${_baseService.usdcBalance.toStringAsFixed(2)} USDC',
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.white.withValues(alpha: 0.85),
+            if (stablecoin != null)
+              Text(
+                '${_baseService.stablecoinBalance.toStringAsFixed(2)} ${stablecoin.symbol}',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white.withValues(alpha: 0.85),
+                ),
               ),
-            ),
             if (_isLoading)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -1337,54 +1376,63 @@ class _BaseScreenState extends State<BaseScreen> {
   // ── Network banner ─────────────────────────────────────────────────────────
 
   Widget _buildNetworkBanner(ThemeData theme) {
-    final isSepolia = _baseService.useSepolia;
+    final selected = _baseService.network;
+    final accent = _networkColor(selected);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: isSepolia
-            ? Colors.orange.withValues(alpha: 0.1)
-            : const Color(0xFF0052FF).withValues(alpha: 0.08),
+        color: accent.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isSepolia
-              ? Colors.orange.withValues(alpha: 0.4)
-              : const Color(0xFF0052FF).withValues(alpha: 0.3),
+          color: accent.withValues(alpha: 0.4),
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            isSepolia ? Icons.science : Icons.public,
-            size: 16,
-            color: isSepolia ? Colors.orange : const Color(0xFF0052FF),
+          Row(
+            children: [
+              Icon(_networkIcon(selected), size: 16, color: accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _baseService.networkName,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: accent,
+                  ),
+                ),
+              ),
+              Text(
+                'Chain ID ${_baseService.chainId}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (selected.isTestnet) ...[
+                const SizedBox(width: 8),
+                Text(
+                  'TESTNET',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: accent.withValues(alpha: 0.8),
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(width: 8),
-          Text(
-            _baseService.networkName,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: isSepolia ? Colors.orange : const Color(0xFF0052FF),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '· Chain ID ${_baseService.chainId}',
-            style: TextStyle(
-              fontSize: 11,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          if (isSepolia) ...[
-            const Spacer(),
+          if (!_baseService.ordinaryTransactionsAvailable) ...[
+            const SizedBox(height: 7),
             Text(
-              'TESTNET',
+              _baseService.ordinaryTransactionUnavailableReason,
               style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: Colors.orange.withValues(alpha: 0.8),
-                letterSpacing: 1.0,
+                fontSize: 11,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -1491,6 +1539,8 @@ class _BaseScreenState extends State<BaseScreen> {
   // ── AI Skills info panel ───────────────────────────────────────────────────
 
   Widget _buildSkillsInfo(ThemeData theme) {
+    final token = _baseService.network.token;
+    final supportsBasenames = _baseService.network.supportsBasenames;
     return GlassCard(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1510,13 +1560,29 @@ class _BaseScreenState extends State<BaseScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            _skillRow(Icons.account_balance_wallet, 'get_balance',
-                'Check ETH + USDC balance'),
-            _skillRow(Icons.send, 'send_eth',
-                'Send ETH to 0x address or .base.eth name'),
-            _skillRow(Icons.attach_money, 'send_usdc', 'Send USDC stablecoin'),
-            _skillRow(Icons.person_search, 'resolve_basename',
-                'Resolve .base.eth → 0x address'),
+            _skillRow(
+              Icons.account_balance_wallet,
+              'get_balance',
+              token == null
+                  ? 'Check ETH balance'
+                  : 'Check ETH + ${token.symbol} balance',
+            ),
+            _skillRow(
+              Icons.send,
+              'send_eth',
+              supportsBasenames
+                  ? 'Send ETH to 0x address or .base.eth name'
+                  : 'Send ETH to an explicit 0x address',
+            ),
+            if (token != null)
+              _skillRow(
+                Icons.attach_money,
+                'send_${token.symbol.toLowerCase()}',
+                'Send official ${token.symbol} on ${_baseService.networkName}',
+              ),
+            if (supportsBasenames)
+              _skillRow(Icons.person_search, 'resolve_basename',
+                  'Resolve .base.eth → 0x address'),
             _skillRow(
                 Icons.history, 'get_history', 'Fetch recent transactions'),
             const Divider(height: 20),
@@ -1653,10 +1719,11 @@ class _BaseScreenState extends State<BaseScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Create Base Wallet'),
+        title: const Text('Create Plawie Wallet'),
         content: const Text(
           'Generate a new EVM keypair protected by Android Keystore and your '
-          'device lock. Signed app updates preserve it, but clearing app data '
+          'device lock. The same address works on Base and Robinhood Chain. '
+          'Signed app updates preserve it, but clearing app data '
           'or uninstalling removes it. Export a private-key backup before funding.',
         ),
         actions: [
@@ -1781,8 +1848,10 @@ class _BaseScreenState extends State<BaseScreen> {
           children: [
             TextField(
               controller: toCtrl,
-              decoration: const InputDecoration(
-                labelText: 'To (0x address or .base.eth)',
+              decoration: InputDecoration(
+                labelText: _baseService.network.supportsBasenames
+                    ? 'To (0x address or .base.eth)'
+                    : 'To (0x address)',
               ),
             ),
             const SizedBox(height: 12),
@@ -1835,26 +1904,31 @@ class _BaseScreenState extends State<BaseScreen> {
     );
   }
 
-  void _showSendUsdcDialog() {
+  void _showSendStablecoinDialog() {
+    final token = _baseService.network.token;
+    if (token == null) return;
+    final symbol = token.symbol;
     final toCtrl = TextEditingController();
     final amtCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Send USDC'),
+        title: Text('Send $symbol'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: toCtrl,
-              decoration: const InputDecoration(
-                labelText: 'To (0x address or .base.eth)',
+              decoration: InputDecoration(
+                labelText: _baseService.network.supportsBasenames
+                    ? 'To (0x address or .base.eth)'
+                    : 'To (0x address)',
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: amtCtrl,
-              decoration: const InputDecoration(labelText: 'Amount (USDC)'),
+              decoration: InputDecoration(labelText: 'Amount ($symbol)'),
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
             ),
@@ -1870,7 +1944,7 @@ class _BaseScreenState extends State<BaseScreen> {
               Navigator.pop(ctx);
               if (to.isEmpty || amt == null || amt <= Decimal.zero) return;
               final approved = await _confirmTransfer(
-                token: 'USDC',
+                token: symbol,
                 destination: to,
                 amount: amt,
               );
@@ -1878,14 +1952,18 @@ class _BaseScreenState extends State<BaseScreen> {
               setState(() => _isLoading = true);
               try {
                 final approval = _baseService.issueVisibleTransferApproval(
-                  action: 'send_usdc',
+                  action: symbol == 'USDG' ? 'send_usdg' : 'send_usdc',
                   destination: to,
                   amount: amt,
                 );
-                await _baseService.sendUsdc(to, amt, approval: approval);
+                if (symbol == 'USDG') {
+                  await _baseService.sendUsdg(to, amt, approval: approval);
+                } else {
+                  await _baseService.sendUsdc(to, amt, approval: approval);
+                }
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('USDC sent!')),
+                    SnackBar(content: Text('$symbol sent!')),
                   );
                 }
               } catch (e) {
@@ -1910,8 +1988,15 @@ class _BaseScreenState extends State<BaseScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Your Base wallet address:',
-                style: TextStyle(fontSize: 12)),
+            Text(
+              'Your Plawie wallet address on ${_baseService.networkName}:',
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'This is the same EVM address on Base and Robinhood Chain. Always verify the network before sending funds.',
+              style: TextStyle(fontSize: 11),
+            ),
             const SizedBox(height: 12),
             SelectableText(
               addr,
@@ -1969,7 +2054,7 @@ class _BaseScreenState extends State<BaseScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Remove Base Wallet'),
+        title: const Text('Remove Plawie Wallet'),
         content: const Text(
           'This permanently removes the encrypted wallet and Android Keystore '
           'protection key from this device. Make sure you have exported a backup first.',

@@ -20,7 +20,7 @@ final class BridgeFundingPanel extends StatefulWidget {
     required this.capabilities,
     required this.baseDestinationAddress,
     required this.baseWalletAvailable,
-    required this.useSepolia,
+    required this.baseMainnetSelected,
     this.launchExternal = _launchExternal,
     this.copyText = _copyText,
     this.clock = DateTime.now,
@@ -30,7 +30,7 @@ final class BridgeFundingPanel extends StatefulWidget {
   final BridgeCapabilitySource capabilities;
   final String? baseDestinationAddress;
   final bool baseWalletAvailable;
-  final bool useSepolia;
+  final bool baseMainnetSelected;
   final Future<bool> Function(Uri uri) launchExternal;
   final Future<void> Function(String text) copyText;
   final DateTime Function() clock;
@@ -59,7 +59,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
   bool get _entryAvailable =>
       widget.baseWalletAvailable &&
       widget.baseDestinationAddress != null &&
-      !widget.useSepolia;
+      widget.baseMainnetSelected;
 
   BridgeFundingReceipt? get _activeReceipt => widget.controller.activeReceipt;
 
@@ -82,7 +82,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.baseDestinationAddress != widget.baseDestinationAddress ||
         oldWidget.baseWalletAvailable != widget.baseWalletAvailable ||
-        oldWidget.useSepolia != widget.useSepolia) {
+        oldWidget.baseMainnetSelected != widget.baseMainnetSelected) {
       _snapshot = null;
       _sourceChain = null;
       _sourceToken = null;
@@ -213,7 +213,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
                 icon: Icons.account_balance_wallet_outlined,
                 text: 'Create or restore the internal Base wallet first.',
               )
-            else if (widget.useSepolia)
+            else if (!widget.baseMainnetSelected)
               const _Notice(
                 icon: Icons.warning_amber_rounded,
                 text: 'Switch to Base Mainnet to use external funding.',

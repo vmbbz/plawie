@@ -27,7 +27,8 @@ void main() {
     });
   });
 
-  testWidgets('blocks absent wallet and Base Sepolia before capability calls',
+  testWidgets(
+      'blocks absent wallet and non-Base network before capability calls',
       (tester) async {
     final capabilities = _FakeCapabilities(_snapshot());
 
@@ -46,7 +47,7 @@ void main() {
       tester,
       controller: _FakeController(),
       capabilities: capabilities,
-      useSepolia: true,
+      baseMainnetSelected: false,
     );
     expect(find.text('Switch to Base Mainnet to use external funding.'),
         findsOneWidget);
@@ -337,7 +338,7 @@ Future<void> _pumpPanel(
   required BridgeCapabilitySource capabilities,
   String? baseAddress = _baseAddress,
   bool baseWalletAvailable = true,
-  bool useSepolia = false,
+  bool baseMainnetSelected = true,
   bool settle = true,
   Size size = const Size(430, 900),
   TextScaler textScaler = TextScaler.noScaling,
@@ -354,7 +355,7 @@ Future<void> _pumpPanel(
               capabilities: capabilities,
               baseDestinationAddress: baseAddress,
               baseWalletAvailable: baseWalletAvailable,
-              useSepolia: useSepolia,
+              baseMainnetSelected: baseMainnetSelected,
               launchExternal: (_) async => true,
               copyText: (_) async {},
             ),

@@ -304,7 +304,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: const Text('Current Provider'),
                         subtitle: Text(_currentWalletProviderId != null &&
                                 _prefs.configuredModel == null
-                            ? '${AiPaymentProviderCatalog.byId(_currentWalletProviderId)!.label} · finish setup in Base'
+                            ? '${AiPaymentProviderCatalog.byId(_currentWalletProviderId)!.label} · finish setup in Wallet'
                             : _getProviderLabel(_prefs.configuredModel ??
                                 'google/gemini-3.1-pro-preview')),
                         leading: Icon(_currentWalletProviderId == null
@@ -336,7 +336,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onTap: () => _showChangeModelDialog(context),
                       ),
                       ListTile(
-                        title: const Text('AI Payments & Base Wallet'),
+                        title: const Text('AI Payments & Wallet'),
                         subtitle: const Text(
                             'Base Mainnet USDC · provider top-ups · x402 receipts'),
                         leading: const Icon(Icons.payments_outlined),

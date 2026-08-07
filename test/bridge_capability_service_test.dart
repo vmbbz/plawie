@@ -60,6 +60,16 @@ void main() {
       isTrue,
     );
     expect(
+      snapshot
+          .connectedTokensFor(BridgeConstants.robinhoodChainId)
+          .map((token) => token.symbol),
+      containsAll(<String>['ETH', 'USDG']),
+    );
+    final robinhoodUsdg = snapshot
+        .connectedTokensFor(BridgeConstants.robinhoodChainId)
+        .singleWhere((token) => token.symbol == 'USDG');
+    expect(robinhoodUsdg.address, BridgeConstants.robinhoodUsdg);
+    expect(
       snapshot.relayChains
           .any((chain) => chain.id == BridgeConstants.robinhoodChainId),
       isFalse,
@@ -194,6 +204,10 @@ final class _FixtureTransport implements BridgeHttpTransport {
       }
       if (chain == BridgeConstants.robinhoodChainId && token == 'ETH') {
         return _token(chain, _zeroAddress, 'ETH', 18);
+      }
+      if (chain == BridgeConstants.robinhoodChainId &&
+          token.toLowerCase() == BridgeConstants.robinhoodUsdg.toLowerCase()) {
+        return _token(chain, BridgeConstants.robinhoodUsdg, 'USDG', 6);
       }
       return const BridgeHttpResponse(
         statusCode: 404,

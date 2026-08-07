@@ -2197,6 +2197,10 @@ class AppNativeChatToolRouter {
       'base chain',
       'base wallet',
       'base balance',
+      'robinhood chain',
+      'robinhood wallet',
+      'robinhood balance',
+      'usdg balance',
       'usdc balance',
       'eth balance',
       'wallet address',
@@ -2205,7 +2209,9 @@ class AppNativeChatToolRouter {
           ? 'get_history'
           : lower.contains('address')
               ? 'get_address'
-              : lower.contains('sepolia') || lower.contains('mainnet')
+              : lower.contains('sepolia') ||
+                      lower.contains('mainnet') ||
+                      lower.contains('robinhood')
                   ? 'switch_network'
                   : 'get_balance';
       return _AppNativeToolPlan(
@@ -2214,7 +2220,11 @@ class AppNativeChatToolRouter {
         input: {
           'action': action,
           if (action == 'switch_network')
-            'network': lower.contains('sepolia') ? 'sepolia' : 'mainnet',
+            'network': lower.contains('robinhood')
+                ? 'robinhood'
+                : lower.contains('sepolia')
+                    ? 'sepolia'
+                    : 'mainnet',
         },
       );
     }
@@ -2231,7 +2241,7 @@ class AppNativeChatToolRouter {
 
   List<String> _cryptoTokens(String lower) {
     final tokens = <String>[];
-    for (final token in const ['BTC', 'ETH', 'SOL', 'USDC', 'BASE']) {
+    for (final token in const ['BTC', 'ETH', 'SOL', 'USDC', 'USDG', 'BASE']) {
       if (lower.contains(token.toLowerCase())) tokens.add(token);
     }
     return tokens.isEmpty ? const ['ETH', 'BTC', 'SOL', 'USDC'] : tokens;

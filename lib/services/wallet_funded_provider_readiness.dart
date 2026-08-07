@@ -197,9 +197,9 @@ class WalletFundedProviderReadinessService {
       return result(
         state: WalletFundedProviderState.walletRequired,
         canSelect: false,
-        title: 'Base wallet required',
+        title: 'Plawie wallet required',
         detail:
-            'Create or import the app-owned Base wallet before using this provider.',
+            'Create or import the app-owned wallet before using this provider.',
         action: WalletFundedProviderAction.openBase,
         actionLabel: 'Create or import wallet',
       );
@@ -211,7 +211,7 @@ class WalletFundedProviderReadinessService {
         canSelect: false,
         title: 'Wallet needs attention',
         detail:
-            'Open Base to complete migration, recovery, or the active wallet operation.',
+            'Open Wallet to complete migration, recovery, or the active wallet operation.',
         action: WalletFundedProviderAction.openBase,
         actionLabel: 'Manage wallet',
       );
