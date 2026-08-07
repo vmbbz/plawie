@@ -181,6 +181,22 @@ Runtime support is protocol- and capability-based:
 - LI.FI/Relay chain and exact-token capability data is refreshed before wallet
   discovery or deposit instruction creation. Cached data is display-only.
 
+Robinhood Chain is chain ID `4663`. Its eligible source assets are native ETH
+and the official USDG contract
+`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`, but either appears only when the
+action-time LI.FI/Relay intersection confirms a route to native Base USDC.
+USDG is a source asset, not Base USDC and not a provider-payment asset. The UI
+preselects USDG for a stable-to-stable route when available, keeps ETH visible,
+and warns that both ETH bridges and USDG sends must retain source-chain ETH for
+gas. No full-balance ETH shortcut is provided.
+
+When a provider top-up needs funding, the same canonical panel opens in a
+safe-area, scroll-controlled modal. Only a bridge intent created in that
+foreground session can return success, and only from a persisted `completed`
+receipt after Base delivery. The first insufficient provider challenge is
+destroyed before the modal opens; a new challenge and a separate x402 approval
+are required after Base USDC is freshly verified.
+
 ### Connected EVM flow
 
 The connected account and chain are authoritative. Plawie requests a fresh
@@ -230,7 +246,10 @@ not claim to submit, resume, or monitor it.
 ### Release configuration and rollback
 
 Release builds require non-empty `REOWN_PROJECT_ID` and HTTPS
-`PLAWIE_DAPP_URL`. Enable independently only after the matching acceptance:
+`PLAWIE_DAPP_URL`. Internal Robinhood transactions additionally require an
+HTTPS `ROBINHOOD_RPC_URL`; debug builds may use the official rate-limited public
+RPC for non-production checks. Enable independently only after the matching
+acceptance:
 
 - `ENABLE_LIFI_CONNECTED_BRIDGE`;
 - `ENABLE_RELAY_DEPOSIT_BRIDGE`;

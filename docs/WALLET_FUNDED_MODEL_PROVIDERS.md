@@ -46,12 +46,15 @@ The guided top-up sequence preserves two separate approvals:
 
 ```text
 Choose provider top-up
+  -> obtain an unsigned provider challenge and refresh Base USDC exactly
   -> Base USDC is insufficient
-  -> open Wallet funding modal with the provider/top-up return intent
-  -> connect the user's source wallet and switch it to Robinhood/Ethereum/etc.
+  -> reject and destroy that challenge
+  -> open the foreground Wallet funding modal
+  -> prefer Robinhood when live; choose ETH or official USDG (or another live source)
   -> review and approve the exact source-chain bridge
   -> track settlement into the same Plawie Base address
-  -> return to the original provider top-up review
+  -> switch the Wallet view to Base and freshly verify native Base USDC
+  -> obtain and validate a new provider challenge
   -> separately approve the Base x402 payment and authenticate on Android
 ```
 
@@ -71,7 +74,7 @@ BYOK providers retain the API-key field and secure one-time setup handoff.
 Venice and BlockRun show no API-key field. Selecting either records only the
 provider ID; it does not create a wallet, choose a model, fund, top up, sign, or
 spend. After the Gateway installation completes, the primary action opens the
-Base page above the Dashboard so Back returns to the app.
+Wallet page above the Dashboard so Back returns to the app.
 
 Setup explains the following before installation:
 
@@ -86,17 +89,17 @@ Setup explains the following before installation:
 ## One readiness contract
 
 `WalletFundedProviderReadinessService` is the read-only source used by Chat,
-Settings, and Base. Opening a model picker reads wallet status, selected Base
+Settings, and Wallet. Opening a model picker reads wallet status, selected Base
 network, cached provider balance, catalog freshness, and authenticated proxy
 health. Inspection never opens authentication, signs, or spends.
 
 | Observation | Selection state | Primary action |
 |---|---|---|
 | No live provider model | Blocked | Refresh models |
-| Wallet absent or needs recovery | Blocked | Open Base |
+| Wallet absent or needs recovery | Blocked | Open Wallet |
 | Device authentication unavailable | Blocked | Manage wallet |
 | Keystore is not hardware-backed | Blocked | Review wallet security |
-| Base page is on Sepolia | Blocked | Switch to Mainnet |
+| Wallet is on Robinhood or Base Sepolia | Blocked | Switch to Base Mainnet |
 | Running proxy fails authenticated health | Blocked | Restart Gateway |
 | Venice balance missing or older than 15 minutes | Blocked | Check balance |
 | Venice balance depleted | Blocked | Top up Venice |
@@ -113,7 +116,7 @@ the shipped offline explanation entry is non-live and is always disabled.
 Venice inference consumes a wallet-linked prepaid provider balance. A visible
 Chat Send opens one bounded foreground turn lease; it does not approve an
 on-chain transaction per inference call. Venice top-up remains a separate exact
-x402 approval on the Base page. Balance observations are refreshed after a
+x402 approval on the Wallet page. Balance observations are refreshed after a
 successful terminal response or settlement and are never invented locally.
 
 BlockRun may return a valid x402 challenge for an individual request. The
