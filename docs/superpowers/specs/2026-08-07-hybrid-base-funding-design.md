@@ -258,6 +258,25 @@ abstract interface class BridgeFundingStrategy {
 surfaces. Executable quote parsing moves behind the connected-wallet strategy
 so raw transaction material cannot leak into agent-visible models.
 
+`BridgeFundingRuntime` is the Base page's owned composition root. It creates one
+shared bounded bridge HTTP client, receipt store, capability source, controller,
+wallet transport router, and (only when release configuration is valid) one
+shared Reown AppKit modal/callback dispatcher. The Base page disposes that
+runtime as one lifecycle unit. The canonical panel receives only the controller,
+capability source, current internal Base address, and network state; it never
+constructs provider or wallet transports inside widget rebuilds.
+
+Capability snapshots are display hints, not execution authority. Immediately
+before wallet discovery or Relay instruction creation, the panel refreshes the
+live provider intersection and verifies that the selected source chain and
+exact token remain available. Failure or route drift stops before connection,
+instruction creation, signing, or submission.
+
+Hiding a Relay instruction archives it from the active-input flow but preserves
+its receipt and bounded status tracking. After local expiry, the UI redacts the
+full deposit address and removes QR/copy actions so a historical receipt cannot
+be mistaken for a reusable payment instruction.
+
 ### External wallet sessions
 
 `ExternalWalletSessionService` wraps Reown AppKit and Phantom-compatible link

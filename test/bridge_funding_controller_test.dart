@@ -111,6 +111,32 @@ void main() {
     expect(wallet.sentPayloads, isEmpty);
   });
 
+  test('explicit wallet transport replaces a different unsent live session',
+      () async {
+    wallet.identity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signTransaction'},
+      transport: ExternalWalletTransport.reownSolanaPhantom,
+    );
+    wallet.connectIdentity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signTransaction'},
+    );
+    quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));
+
+    await controller().prepareConnected(
+      _solanaRequest(solanaFixture),
+      transport: ExternalWalletTransport.solanaMwa,
+    );
+
+    expect(wallet.disconnectCalls, 1);
+    expect(wallet.connectTransports, <ExternalWalletTransport?>[
+      ExternalWalletTransport.solanaMwa,
+    ]);
+    expect(store.activeReceipt!.walletTransport,
+        ExternalWalletTransport.solanaMwa);
+  });
+
   test('insufficient allowance gets its own exact review and requote',
       () async {
     quotes.quotes
@@ -1785,6 +1811,10 @@ final class _FakeWallet implements ExternalWalletSessionService {
 
   @override
   ExternalWalletIdentity? identity;
+  ExternalWalletIdentity? connectIdentity;
+  int disconnectCalls = 0;
+  final List<ExternalWalletTransport?> connectTransports =
+      <ExternalWalletTransport?>[];
   final List<EvmBridgeExecutionPayload> sentPayloads =
       <EvmBridgeExecutionPayload>[];
   ExternalWalletException? sendError;
@@ -1800,11 +1830,17 @@ final class _FakeWallet implements ExternalWalletSessionService {
   Future<ExternalWalletIdentity> connect(
     BridgeChain chain, {
     ExternalWalletTransport? transport,
-  }) async =>
-      identity!;
+  }) async {
+    connectTransports.add(transport);
+    identity = connectIdentity ?? identity;
+    return identity!;
+  }
 
   @override
-  Future<void> disconnect() async {}
+  Future<void> disconnect() async {
+    disconnectCalls += 1;
+    identity = null;
+  }
 
   @override
   Future<List<ExternalWalletOption>> discover(BridgeChain chain) async =>

@@ -4,7 +4,15 @@ import '../preferences_service.dart';
 import 'bridge_http_client.dart';
 import 'bridge_models.dart';
 
-final class BridgeCapabilityService {
+abstract interface class BridgeCapabilitySource {
+  BridgeCapabilitySnapshot? get cachedSnapshot;
+
+  Future<BridgeCapabilitySnapshot> refresh({
+    required bool internalBaseWalletAvailable,
+  });
+}
+
+final class BridgeCapabilityService implements BridgeCapabilitySource {
   BridgeCapabilityService({
     required BridgeHttpTransport transport,
     required PreferencesService preferences,
@@ -31,6 +39,7 @@ final class BridgeCapabilityService {
   String? _lifiEtag;
   String? _relayEtag;
 
+  @override
   BridgeCapabilitySnapshot? get cachedSnapshot {
     final raw = _preferences.bridgeCapabilitySnapshotJson;
     if (raw == null) return null;
@@ -46,6 +55,7 @@ final class BridgeCapabilityService {
     }
   }
 
+  @override
   Future<BridgeCapabilitySnapshot> refresh({
     required bool internalBaseWalletAvailable,
   }) async {

@@ -1590,13 +1590,16 @@ git commit -m "feat: add strict Relay deposit funding"
 
 **Files:**
 - Create: `lib/services/bridge/external_jumper_fallback.dart`
+- Create: `lib/services/bridge/bridge_funding_runtime.dart`
 - Create: `lib/widgets/bridge_funding_panel.dart`
 - Create: `lib/widgets/bridge_review_sheet.dart`
 - Create: `lib/widgets/relay_deposit_sheet.dart`
 - Modify: `lib/screens/base_screen.dart`
+- Modify: `lib/services/bridge/bridge_capability_service.dart`
+- Modify: `lib/services/bridge/bridge_funding_controller.dart`
 - Test: `test/bridge_funding_panel_test.dart`
 
-- [ ] **Step 1: Write failing widget tests for entry and capability states**
+- [x] **Step 1: Write failing widget tests for entry and capability states**
 
 Test absent internal wallet, Base Sepolia, capability loading/error/cache,
 connected method default, Relay method visibility, each independently disabled
@@ -1604,7 +1607,7 @@ wallet transport, Base Account's honest unavailable state, Robinhood disabled
 reason, long chain/token/wallet names, 320-pixel width, and text scaling at 200
 percent.
 
-- [ ] **Step 2: Write failing connected-flow widget tests**
+- [x] **Step 2: Write failing connected-flow widget tests**
 
 Test source/token/amount selection; Reown's searchable dynamic EVM wallet modal;
 installed hint and QR/copy fallback; Solana's `Choose compatible wallet` MWA
@@ -1618,11 +1621,11 @@ evidence-bound EVM hash or Solana signature/history reconciliation path; it has
 no submit-again, cancel, archive, or generic status action that cannot work
 without an identifier.
 
-- [ ] **Step 3: Write failing Relay widget tests**
+- [x] **Step 3: Write failing Relay widget tests**
 
 Test self-custody ownership checkbox, explicit CEX disablement, personal refund input, persisted-before-reveal behavior, exact chain/token/amount/address display, QR semantics, copy action, expiry, hide/archive, old-address warning, provider refund, and no local `I sent it` transition.
 
-- [ ] **Step 4: Implement the state-driven widgets**
+- [x] **Step 4: Implement the state-driven widgets**
 
 `BridgeFundingPanel` takes injected controller and Base destination for tests. In
 production, `BaseScreen` supplies the current `BaseService.address`,
@@ -1642,7 +1645,19 @@ and still receives exact Plawie review plus wallet confirmation.
 
 Inputs freeze after review or address reveal. Every method change discards only in-memory quote/review data and never deletes a persisted receipt.
 
-- [ ] **Step 5: Implement truthful Jumper prefill**
+Before wallet discovery or Relay instruction creation, the panel must refresh
+live provider capabilities and revalidate the selected chain and exact token.
+Cached capability data may render choices but can never authorize execution.
+Selecting a different explicit wallet transport disconnects only the unsent
+session and reconnects through the chosen transport; it never changes or
+replays a submitted receipt.
+
+An archived Relay instruction remains visible in receipt history with bounded
+status refresh and instruction controls. Once its local display lifetime has
+expired, the full deposit address, QR code, and copy action are hidden to
+prevent reuse while the shortened receipt remains available for tracking.
+
+- [x] **Step 5: Implement truthful Jumper prefill**
 
 `ExternalJumperFallback.build()` creates only:
 
@@ -1659,16 +1674,16 @@ Uri.https('jumper.exchange', '/', <String, String>{
 
 Before opening, show: `Jumper will create a new route. Plawie will not submit or monitor it. Verify the Base destination before approving.` Opening the URL never changes a bridge receipt to submitted or completed.
 
-- [ ] **Step 6: Remove the obsolete inline quote dialogs**
+- [x] **Step 6: Remove the obsolete inline quote dialogs**
 
 In `BaseScreen`, replace `_buildBridgePanel`, `_showBridgeQuoteDialog`, and `_showBridgeQuoteResult` with the new panel. Keep `_bridgeQuotes` only if another read-only surface still uses it; otherwise dispose it with the old dialog code. Do not alter x402 panels, wallet creation/recovery, send/receive, provider balances, or Gateway controls.
 
-- [ ] **Step 7: Run widget tests and commit**
+- [x] **Step 7: Run widget tests and commit**
 
 ```powershell
 flutter test test/bridge_funding_panel_test.dart test/bridge_quote_service_test.dart
 dart analyze lib/widgets/bridge_funding_panel.dart lib/widgets/bridge_review_sheet.dart lib/widgets/relay_deposit_sheet.dart lib/screens/base_screen.dart
-git add lib/services/bridge/external_jumper_fallback.dart lib/widgets/bridge_funding_panel.dart lib/widgets/bridge_review_sheet.dart lib/widgets/relay_deposit_sheet.dart lib/screens/base_screen.dart test/bridge_funding_panel_test.dart
+git add lib/services/bridge/bridge_funding_runtime.dart lib/services/bridge/external_jumper_fallback.dart lib/services/bridge/bridge_capability_service.dart lib/services/bridge/bridge_funding_controller.dart lib/widgets/bridge_funding_panel.dart lib/widgets/bridge_review_sheet.dart lib/widgets/relay_deposit_sheet.dart lib/screens/base_screen.dart test/bridge_funding_panel_test.dart docs/superpowers/plans/2026-08-07-hybrid-base-funding.md docs/superpowers/specs/2026-08-07-hybrid-base-funding-design.md
 git commit -m "feat: add canonical Base funding panel"
 ```
 

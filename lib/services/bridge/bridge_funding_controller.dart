@@ -19,6 +19,49 @@ enum BridgeReviewKind { allowance, bridge }
 
 enum SolanaRecoveryScanResult { matched, inconclusive, ambiguous, expired }
 
+abstract interface class BridgeFundingUiController {
+  BridgeFundingReceipt? get activeReceipt;
+
+  List<BridgeFundingReceipt> get receipts;
+
+  BridgeReviewKind? pendingReviewKind(String intentId);
+
+  Future<List<ExternalWalletOption>> discoverWallets(BridgeChain chain);
+
+  Future<void> prepareConnected(
+    BridgeFundingRequest request, {
+    ExternalWalletTransport? transport,
+  });
+
+  Future<RelayDepositInstruction> prepareRelayDeposit(
+    BridgeFundingRequest request, {
+    bool oldAddressWarningAcknowledged = false,
+  });
+
+  Future<void> confirmEvmAllowance(String intentId);
+
+  Future<void> confirmConnectedBridge(String intentId);
+
+  Future<void> cancelBeforeSubmission(String intentId);
+
+  Future<void> refreshStatus(String intentId);
+
+  Future<void> pollSettlement(String intentId, {int maxObservations = 7});
+
+  Future<void> refreshBaseBalance(String intentId);
+
+  Future<void> archiveRelayInstructions(String intentId);
+
+  Future<void> recoverEvmTransactionHash(
+    String intentId,
+    String transactionHash,
+  );
+
+  Future<void> recoverSolanaSignature(String intentId, String signature);
+
+  Future<SolanaRecoveryScanResult> scanSolanaRecovery(String intentId);
+}
+
 abstract interface class BridgeExecutableQuoteProvider {
   Future<BridgeExecutableQuote> executableQuote(
     BridgeFundingRequest request, {
@@ -47,7 +90,7 @@ abstract interface class BaseBalanceRefreshService {
   Future<bool> refresh();
 }
 
-final class BridgeFundingController {
+final class BridgeFundingController implements BridgeFundingUiController {
   BridgeFundingController({
     required BridgeExecutableQuoteProvider quoteProvider,
     required ExternalWalletSessionService wallet,
@@ -64,6 +107,7 @@ final class BridgeFundingController {
     bool solanaMwaEnabled = BridgeFeatureConfig.solanaMwaWalletsEnabled,
     bool reownSolanaFallbackEnabled =
         BridgeFeatureConfig.reownSolanaFallbackEnabled,
+    bool baseAccountMwpEnabled = BridgeFeatureConfig.baseAccountMwpEnabled,
     LifiTransactionValidator transactionValidator =
         const LifiTransactionValidator(),
     SolanaTransactionEnvelope solanaEnvelope =
@@ -86,6 +130,7 @@ final class BridgeFundingController {
         _reownEvmEnabled = reownEvmEnabled,
         _solanaMwaEnabled = solanaMwaEnabled,
         _reownSolanaFallbackEnabled = reownSolanaFallbackEnabled,
+        _baseAccountMwpEnabled = baseAccountMwpEnabled,
         _transactionValidator = transactionValidator,
         _solanaEnvelope = solanaEnvelope,
         _clock = clock ?? DateTime.now,
@@ -107,6 +152,7 @@ final class BridgeFundingController {
   final bool _reownEvmEnabled;
   final bool _solanaMwaEnabled;
   final bool _reownSolanaFallbackEnabled;
+  final bool _baseAccountMwpEnabled;
   final LifiTransactionValidator _transactionValidator;
   final SolanaTransactionEnvelope _solanaEnvelope;
   final DateTime Function() _clock;
@@ -118,6 +164,13 @@ final class BridgeFundingController {
   _PreparedSolanaIntent? _preparedSolana;
   String? _confirmationInFlight;
 
+  @override
+  BridgeFundingReceipt? get activeReceipt => _store.activeReceipt;
+
+  @override
+  List<BridgeFundingReceipt> get receipts => _store.receipts;
+
+  @override
   BridgeReviewKind? pendingReviewKind(String intentId) {
     if (_preparedSolana?.intentId == intentId) {
       return BridgeReviewKind.bridge;
@@ -126,7 +179,15 @@ final class BridgeFundingController {
     return prepared?.intentId == intentId ? prepared?.reviewKind : null;
   }
 
-  Future<void> prepareConnected(BridgeFundingRequest request) async {
+  @override
+  Future<List<ExternalWalletOption>> discoverWallets(BridgeChain chain) =>
+      _wallet.discover(chain);
+
+  @override
+  Future<void> prepareConnected(
+    BridgeFundingRequest request, {
+    ExternalWalletTransport? transport,
+  }) async {
     _validatePreparationRequest(request);
     if (_store.activeReceipt != null) {
       throw const BridgeValidationException('active_bridge_receipt_exists');
@@ -155,7 +216,10 @@ final class BridgeFundingController {
       );
       await _store.upsert(receipt);
 
-      final identity = await _connectedIdentity(request.sourceChain);
+      final identity = await _connectedIdentity(
+        request.sourceChain,
+        transport: transport,
+      );
       receipt = _copyReceipt(
         receipt,
         state: BridgeFundingState.quoting,
@@ -206,6 +270,7 @@ final class BridgeFundingController {
     }
   }
 
+  @override
   Future<RelayDepositInstruction> prepareRelayDeposit(
     BridgeFundingRequest request, {
     bool oldAddressWarningAcknowledged = false,
@@ -297,6 +362,7 @@ final class BridgeFundingController {
     }
   }
 
+  @override
   Future<void> confirmEvmAllowance(String intentId) =>
       _runConfirmation(intentId, () async {
         final prepared = _requirePrepared(
@@ -330,6 +396,7 @@ final class BridgeFundingController {
         await _refreshAllowance(intentId);
       });
 
+  @override
   Future<void> confirmConnectedBridge(String intentId) =>
       _runConfirmation(intentId, () async {
         if (_preparedSolana?.intentId == intentId) {
@@ -374,6 +441,7 @@ final class BridgeFundingController {
         await _refreshSubmitted(intentId);
       });
 
+  @override
   Future<void> cancelBeforeSubmission(String intentId) async {
     final receipt = _requireReceipt(intentId);
     if (receipt.sourceTransactionHash != null ||
@@ -397,6 +465,7 @@ final class BridgeFundingController {
     await _wallet.disconnect();
   }
 
+  @override
   Future<void> refreshStatus(String intentId) async {
     final receipt = _requireReceipt(intentId);
     if (receipt.provider == 'relay' &&
@@ -448,6 +517,7 @@ final class BridgeFundingController {
     await _refreshSubmitted(intentId);
   }
 
+  @override
   Future<void> pollSettlement(
     String intentId, {
     int maxObservations = 7,
@@ -479,6 +549,7 @@ final class BridgeFundingController {
     }
   }
 
+  @override
   Future<void> refreshBaseBalance(String intentId) async {
     final receipt = _requireReceipt(intentId);
     if ((receipt.state != BridgeFundingState.completed &&
@@ -499,6 +570,7 @@ final class BridgeFundingController {
     );
   }
 
+  @override
   Future<void> archiveRelayInstructions(String intentId) async {
     final receipt = _requireReceipt(intentId);
     if (receipt.provider != 'relay' ||
@@ -512,6 +584,7 @@ final class BridgeFundingController {
     );
   }
 
+  @override
   Future<void> recoverEvmTransactionHash(
     String intentId,
     String transactionHash,
@@ -585,6 +658,7 @@ final class BridgeFundingController {
     }
   }
 
+  @override
   Future<void> recoverSolanaSignature(
     String intentId,
     String signature,
@@ -605,6 +679,7 @@ final class BridgeFundingController {
     await _attachRecoveredSolana(receipt, signature);
   }
 
+  @override
   Future<SolanaRecoveryScanResult> scanSolanaRecovery(
     String intentId,
   ) async {
@@ -1538,23 +1613,36 @@ final class BridgeFundingController {
     );
   }
 
-  Future<ExternalWalletIdentity> _connectedIdentity(BridgeChain chain) async {
-    final existing = _wallet.identity;
-    final identity = existing ??
+  Future<ExternalWalletIdentity> _connectedIdentity(
+    BridgeChain chain, {
+    ExternalWalletTransport? transport,
+  }) async {
+    final selected = transport ??
         (chain.type == BridgeChainType.evm
-            ? await _wallet.connect(
-                chain,
-                transport: ExternalWalletTransport.reownEvm,
-              )
-            : await _wallet.connect(chain));
+            ? ExternalWalletTransport.reownEvm
+            : null);
+    var existing = _wallet.identity;
+    if (existing != null &&
+        selected != null &&
+        existing.transport != selected) {
+      await _wallet.disconnect();
+      existing = null;
+    }
+    final identity = existing ??
+        await _wallet.connect(
+          chain,
+          transport: selected,
+        );
+    final selectionMatches = selected == null || identity.transport == selected;
     final valid = switch (chain.type) {
-      BridgeChainType.evm =>
-        identity.transport == ExternalWalletTransport.reownEvm &&
-            identity.chainType == BridgeChainType.evm &&
-            identity.chainId == chain.id &&
-            _validEvmAddress(identity.publicAddress) &&
-            identity.approvedMethods.contains('eth_sendTransaction'),
-      BridgeChainType.svm => identity.chainType == BridgeChainType.svm &&
+      BridgeChainType.evm => selectionMatches &&
+          _evmTransportEnabled(identity.transport) &&
+          identity.chainType == BridgeChainType.evm &&
+          identity.chainId == chain.id &&
+          _validEvmAddress(identity.publicAddress) &&
+          identity.approvedMethods.contains('eth_sendTransaction'),
+      BridgeChainType.svm => selectionMatches &&
+          identity.chainType == BridgeChainType.svm &&
           identity.chainId == BridgeConstants.solanaChainId &&
           _validSolanaPublicKey(identity.publicAddress) &&
           _solanaTransportEnabled(identity.transport) &&
@@ -1713,7 +1801,7 @@ final class BridgeFundingController {
       _positiveAmount(request.amountUnits);
       return;
     }
-    if (!_reownEvmEnabled) {
+    if (!_reownEvmEnabled && !_baseAccountMwpEnabled) {
       throw const BridgeValidationException('evm_connected_bridge_disabled');
     }
     if (request.sourceToken.chainId != request.sourceChain.id ||
@@ -1739,6 +1827,13 @@ final class BridgeFundingController {
         ExternalWalletTransport.reownSolanaPhantom ||
         ExternalWalletTransport.reownSolanaSolflare =>
           _reownSolanaFallbackEnabled,
+        _ => false,
+      };
+
+  bool _evmTransportEnabled(ExternalWalletTransport transport) =>
+      switch (transport) {
+        ExternalWalletTransport.reownEvm => _reownEvmEnabled,
+        ExternalWalletTransport.baseAccountMwp => _baseAccountMwpEnabled,
         _ => false,
       };
 
