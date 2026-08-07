@@ -157,6 +157,14 @@ wallet-reported label, namespace, chain, public address, and approved methods.
 Receipts may record the transport ID for diagnostics but never session topics,
 authorization tokens, callback envelopes, or shared secrets.
 
+Every adapter normalizes a sign-only response to raw transaction bytes before
+returning it; transport-specific base58/base64 text never crosses into the
+controller or verifier. Before any wallet request, the receipt persists a
+non-secret SHA-256 digest: the canonical EVM chain/sender/target/value/calldata
+tuple (excluding wallet-estimated gas), or the exact serialized Solana message
+bytes. A Solana receipt also persists its recent blockhash for bounded expiry
+recovery; neither value is exposed to agents or logs.
+
 ### EVM through Reown
 
 Reown's Explorer-backed catalog remains dynamic. Plawie requests only the
@@ -207,8 +215,14 @@ status request, and polls settlement without broadcasting from Plawie.
 If wallet return or transport status is ambiguous and no trustworthy signature
 is available, the operation becomes `submissionOutcomeUnknown`. Plawie does not
 automatically retry, resubmit, or claim that the transaction was not sent. The
-user may only refresh status or start a newly reviewed operation after the
-pending operation is safely reconciled or expired.
+receipt remains active and cannot be cancelled or archived. Recovery must first
+obtain evidence: an exact EVM transaction fetched by a user-supplied wallet
+history hash, or a Solana transaction fetched by a supplied signature or bounded
+account-history scan whose message digest and first signer match the review.
+Status polling is not offered without a trustworthy identifier. A new reviewed
+operation is allowed only after reconciliation, or for Solana after the source
+blockhash is invalid and a complete bounded history scan proves no exact match;
+the ten-minute callback-operation expiry alone is never settlement evidence.
 
 ### Reown Solana fallback
 
@@ -345,6 +359,9 @@ unmonitored Jumper. It never instructs the user to import a seed or private key.
   validates and persists the returned signature, never invokes the Plawie
   broadcaster, and converts ambiguous completion into
   `submissionOutcomeUnknown` without automatic resubmission.
+- Outcome-unknown receipts reject cancel/archive/new submission; EVM recovery
+  validates fetched transaction fields and calldata, while Solana recovery
+  validates fetched signed bytes against the persisted reviewed-message digest.
 - Phantom and Solflare fallback callbacks reject replay, expiry, wrong state,
   wrong account, wrong chain, and changed transaction bytes.
 - One active pending operation prevents either Solana submission path from being

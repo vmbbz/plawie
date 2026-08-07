@@ -2,13 +2,18 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace Plawie's quote-only bridge handoff with resumable Base Mainnet funding through reviewed LI.FI connected-wallet execution or a strict Relay self-custody deposit address, while retaining an honest unmonitored Jumper fallback.
+**Goal:** Replace Plawie's quote-only bridge handoff with resumable Base Mainnet
+funding through reviewed protocol-compatible external wallets, LI.FI execution,
+direct Base USDC transfer, or a strict Relay self-custody deposit address, while
+retaining an honest unmonitored Jumper fallback.
 
-**Architecture:** A provider-neutral bridge domain owns capabilities, validation, redacted receipts, and a one-active-intent state machine. LI.FI and Relay remain independent strategies behind that domain; only the foreground Base UI may connect, review, reveal, sign, submit, or broadcast, while agents receive read-only estimates and redacted status. Existing Base Keystore signing, x402 payments, native Gateway ownership, setup, and skills are not refactored by this work.
+**Architecture:** A provider-neutral bridge domain owns capabilities, validation, redacted receipts, and a one-active-intent state machine. LI.FI and Relay remain independent strategies behind that domain. External-wallet routing is protocol- and capability-based: Reown handles compatible EVM wallets, native Solana MWA is primary for Solana, and bounded Reown Solana links are fallback only. Only the foreground Base UI may connect, review, reveal, sign, submit, or broadcast, while agents receive read-only estimates and redacted status. Existing Base Keystore signing, x402 payments, native Gateway ownership, setup, and skills are not refactored by this work.
 
-**Tech Stack:** Flutter/Dart, `http`, `shared_preferences`, `web3dart`, Reown AppKit Flutter, Android Kotlin platform channels, Phantom Solana deep-link support through Reown, LI.FI REST, Relay REST, Flutter unit/widget tests, and Android device acceptance.
+**Tech Stack:** Flutter/Dart, `http`, `shared_preferences`, `web3dart`, Reown AppKit Flutter 1.7.6, Android Kotlin platform channels, Solana Mobile Wallet Adapter clientlib-ktx 2.1.0, bounded Phantom/Solflare links through Reown, LI.FI REST, Relay REST, Flutter unit/widget tests, and Android device acceptance.
 
 **Approved design:** `docs/superpowers/specs/2026-08-07-hybrid-base-funding-design.md`
+
+**Approved wallet amendment:** `docs/superpowers/specs/2026-08-07-protocol-wallet-interoperability-design.md` takes precedence over wallet-brand and Solana submission language in the original design.
 
 ---
 
@@ -16,7 +21,8 @@
 
 - Work in `.worktrees/wallet-reliability` on `codex/hybrid-bridge-funding-design`.
 - Preserve `BridgeQuoteService` as the public estimate-only API until the new panel passes device acceptance.
-- Keep connected LI.FI execution and Relay deposit funding behind separate release gates.
+- Keep connected LI.FI execution, Relay deposit funding, Reown EVM, native MWA,
+  Reown Solana fallback, and Base Account behind independent release gates.
 - Never send bridge calldata to `BaseService`, `NativeBridge.signSecureEvmTransaction`, the OpenClaw Gateway, or an agent command.
 - Never commit an APK, Reown project ID, API key, wallet callback, signed transaction, generated report, or device log.
 - Automated tests never spend funds. Mainnet submission requires the user's visible approval at the exact device acceptance step.
@@ -38,7 +44,10 @@
 - `lib/services/bridge/lifi_bridge_service.dart` — LI.FI estimate/executable quote parsing.
 - `lib/services/bridge/lifi_transaction_validator.dart` — pure EVM/Solana executable request validation.
 - `lib/services/bridge/external_wallet_session_service.dart` — provider-neutral external-wallet interface and session identity.
-- `lib/services/bridge/reown_external_wallet_adapter.dart` — Reown EVM and Phantom-compatible session adapter.
+- `lib/services/bridge/external_wallet_transport_router.dart` — chain/capability router; never dispatches by wallet brand.
+- `lib/services/bridge/reown_evm_wallet_adapter.dart` — dynamic Reown EVM wallet/session adapter.
+- `lib/services/bridge/solana_mwa_wallet_adapter.dart` — Dart adapter for native MWA capability negotiation.
+- `lib/services/bridge/reown_solana_fallback_adapter.dart` — bounded Phantom/Solflare sign-only fallback.
 - `lib/services/bridge/evm_bridge_rpc_service.dart` — allowance reads, exact approval encoding, and receipt polling.
 - `lib/services/bridge/solana_transaction_envelope.dart` — bounded base58 codec and signed-message verification.
 - `lib/services/bridge/solana_rpc_broadcaster.dart` — one-call Solana Mainnet broadcast and signature check.
@@ -50,6 +59,7 @@
 - `lib/widgets/bridge_review_sheet.dart` — exact connected-wallet review UI.
 - `lib/widgets/relay_deposit_sheet.dart` — copy/QR deposit instruction and warning UI.
 - `android/app/src/main/kotlin/com/openclaw/plawie/WalletLinkBridge.kt` — initial/new Android wallet callback delivery to Dart.
+- `android/app/src/main/kotlin/com/openclaw/plawie/SolanaMwaBridge.kt` — native MWA authorization and capability-negotiated transaction submission.
 - `test/bridge_models_test.dart`
 - `test/bridge_state_machine_test.dart`
 - `test/bridge_receipt_store_test.dart`
@@ -57,7 +67,9 @@
 - `test/bridge_capability_service_test.dart`
 - `test/lifi_transaction_validator_test.dart`
 - `test/wallet_link_native_contract_test.dart`
+- `test/solana_mwa_native_contract_test.dart`
 - `test/external_wallet_session_service_test.dart`
+- `test/external_wallet_transport_router_test.dart`
 - `test/evm_bridge_rpc_service_test.dart`
 - `test/solana_transaction_envelope_test.dart`
 - `test/solana_rpc_broadcaster_test.dart`
@@ -65,12 +77,12 @@
 - `test/relay_deposit_service_test.dart`
 - `test/bridge_funding_controller_test.dart`
 - `test/bridge_funding_panel_test.dart`
-- `docs/EXTERNAL_WALLET_BRIDGING.md`
 
 ### Modify
 
 - `pubspec.yaml` and `pubspec.lock` — resolved Reown AppKit and QR dependencies.
-- `android/app/src/main/AndroidManifest.xml:39` — wallet package queries, callback intent filter, and Flutter deep-link ownership.
+- `android/app/build.gradle.kts` — exact official Solana MWA Android dependency.
+- `android/app/src/main/AndroidManifest.xml:39` — generic wallet visibility, bounded installed hints, callback intent filter, and Flutter deep-link ownership.
 - `android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt:146` and `:1170` — attach and forward wallet callbacks.
 - `lib/services/preferences_service.dart:39` — bridge catalog, active receipt, and receipt-list keys.
 - `lib/services/bridge_quote_service.dart:1` — delegate estimate parsing without exposing executable payloads.
@@ -86,6 +98,7 @@
 - `test/node_pairing_command_snapshot_test.dart`
 - `docs/WALLET_FUNDED_MODEL_PROVIDERS.md` — document external funding before provider payment.
 - `docs/DYNAMIC_PROVIDER_MODEL_AND_X402_IMPLEMENTATION_PLAN.md` — record feature gates and settlement boundaries.
+- `docs/EXTERNAL_WALLET_BRIDGING.md` — extend the established dependency/license record with the production transport contract.
 - `docs/superpowers/plans/2026-08-05-external-wallet-bridge-execution.md` — already marked superseded by this planning round.
 
 ## Task 1: Establish a clean baseline and resolve SDK dependencies
@@ -95,7 +108,7 @@
 - Modify: `pubspec.lock`
 - Test: existing bridge/payment test files
 
-- [ ] **Step 1: Verify branch and working-tree scope**
+- [x] **Step 1: Verify branch and working-tree scope**
 
 Run:
 
@@ -107,7 +120,7 @@ git log -3 --oneline
 
 Expected: branch is `codex/hybrid-bridge-funding-design`; the plan commits are present; no source changes or generated files are present.
 
-- [ ] **Step 2: Inspect Flutter tooling without terminating processes**
+- [x] **Step 2: Inspect Flutter tooling without terminating processes**
 
 Run:
 
@@ -119,7 +132,7 @@ flutter doctor -v
 
 Expected: `flutter doctor -v` completes. If it stalls, identify the owning terminal/process before asking to stop it; do not repeatedly restart the app or Gateway.
 
-- [ ] **Step 3: Run the pre-change focused baseline**
+- [x] **Step 3: Run the pre-change focused baseline**
 
 Run:
 
@@ -129,7 +142,7 @@ flutter test test/bridge_quote_service_test.dart test/bridge_app_native_adapter_
 
 Expected: all existing bridge/agent tests pass. Any pre-existing failure is recorded before source edits and fixed only if it blocks this feature.
 
-- [ ] **Step 4: Resolve current compatible packages**
+- [x] **Step 4: Resolve current compatible packages**
 
 Run:
 
@@ -141,7 +154,7 @@ flutter pub deps | Select-String 'reown_appkit|qr_flutter'
 
 Expected: Pub resolves current versions compatible with this repository's Flutter/Dart SDK and writes exact versions to `pubspec.lock`. Do not copy the stale versions from the superseded 2026-08-05 plan.
 
-- [ ] **Step 5: Record the resolved Reown release obligations**
+- [x] **Step 5: Record the resolved Reown release obligations**
 
 Run:
 
@@ -157,7 +170,7 @@ Reown project limits, and attribution requirements. Record the production
 decision in `docs/EXTERNAL_WALLET_BRIDGING.md`; do not enable connected mode in a
 release whose use is outside the accepted terms.
 
-- [ ] **Step 6: Prove dependency resolution did not break the app**
+- [x] **Step 6: Prove dependency resolution did not break the app**
 
 Run:
 
@@ -168,12 +181,16 @@ flutter analyze lib/services/bridge_quote_service.dart lib/screens/base_screen.d
 
 Expected: focused tests pass and analysis introduces no dependency errors.
 
-- [ ] **Step 7: Commit dependency resolution**
+- [x] **Step 7: Commit dependency resolution**
 
 ```powershell
 git add pubspec.yaml pubspec.lock
 git commit -m "build: add external wallet bridge dependencies"
 ```
+
+Completed in `1d86a68`, with documentation corrections in `426e4cb` and
+`4217b2e`. The pre-change 12-test baseline and post-change focused tests passed;
+bounded analysis was clean.
 
 ## Task 2: Add typed bridge models, legal transitions, and durable receipts
 
@@ -198,7 +215,15 @@ expect(jsonEncode(receipt.toAgentJson()), isNot(contains(fullSourceAddress)));
 expect(jsonEncode(receipt.toJson()), isNot(contains('transactionRequest')));
 expect(jsonEncode(receipt.toJson()), isNot(contains('signedTransaction')));
 expect(BridgeFundingReceipt.fromJson(receipt.toJson()), receipt);
+expect(receipt.toJson()['walletTransport'], 'reownEvm');
+expect(receipt.toAgentJson(), isNot(contains('walletTransport')));
+expect(receipt.toAgentJson(), isNot(contains('reviewedPayloadHash')));
+expect(receipt.toAgentJson(), isNot(contains('sourceBlockhash')));
 ```
+
+Also assert every release gate defaults to false, every transport enum has a
+stable serialized name, and a schema-v1 receipt without `walletTransport`
+continues to decode as `null`.
 
 Run:
 
@@ -215,6 +240,13 @@ Implement these exact top-level contracts in `bridge_models.dart`:
 ```dart
 enum BridgeChainType { evm, svm }
 enum BridgeFundingMethod { connectedWallet, relayDeposit, externalJumper }
+enum ExternalWalletTransport {
+  reownEvm,
+  solanaMwa,
+  reownSolanaPhantom,
+  reownSolanaSolflare,
+  baseAccountMwp,
+}
 enum BridgeFundingState {
   draft,
   checkingCapabilities,
@@ -252,6 +284,22 @@ abstract final class BridgeFeatureConfig {
   );
   static const bool relayDepositEnabled = bool.fromEnvironment(
     'ENABLE_RELAY_DEPOSIT_BRIDGE',
+    defaultValue: false,
+  );
+  static const bool reownEvmWalletsEnabled = bool.fromEnvironment(
+    'ENABLE_REOWN_EVM_WALLETS',
+    defaultValue: false,
+  );
+  static const bool solanaMwaWalletsEnabled = bool.fromEnvironment(
+    'ENABLE_SOLANA_MWA_WALLETS',
+    defaultValue: false,
+  );
+  static const bool reownSolanaFallbackEnabled = bool.fromEnvironment(
+    'ENABLE_REOWN_SOLANA_FALLBACK',
+    defaultValue: false,
+  );
+  static const bool baseAccountMwpEnabled = bool.fromEnvironment(
+    'ENABLE_BASE_ACCOUNT_MWP',
     defaultValue: false,
   );
 }
@@ -481,6 +529,9 @@ final class BridgeFundingReceipt {
     this.destinationTransactionHash,
     this.providerStatus,
     this.providerSubstatus,
+    this.walletTransport,
+    this.reviewedPayloadHash,
+    this.sourceBlockhash,
     this.expiresAt,
     this.archivedAt,
     this.depositAddressExposed = false,
@@ -509,6 +560,9 @@ final class BridgeFundingReceipt {
   final String? destinationTransactionHash;
   final String? providerStatus;
   final String? providerSubstatus;
+  final ExternalWalletTransport? walletTransport;
+  final String? reviewedPayloadHash;
+  final String? sourceBlockhash;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? expiresAt;
@@ -519,7 +573,18 @@ final class BridgeFundingReceipt {
 }
 ```
 
-`BridgeFundingReceipt.toJson()` stores these public recovery identifiers locally. `toAgentJson()` shortens every address and excludes provider payloads, transaction payloads, session material, callback state, and signatures.
+`BridgeFundingReceipt.toJson()` stores these public recovery identifiers and the
+non-secret transport enum locally. `toAgentJson()` shortens every address and
+excludes provider payloads, transaction payloads, SDK authorization/session
+material, callback state, operation IDs, signed bytes, and signatures. Tests
+must prove every transport gate defaults false and survives no persistence.
+`reviewedPayloadHash` is a lowercase SHA-256 hex digest, never the payload
+itself. For EVM it hashes a canonical UTF-8 tuple of chain ID, lowercase sender,
+lowercase target, normalized value quantity, and lowercase calldata; gas is
+excluded because a wallet may safely estimate it. For Solana it hashes the exact
+serialized message bytes;
+`sourceBlockhash` is stored only for bounded Solana expiry reconciliation. Both
+are excluded from agent JSON and logs.
 
 - [ ] **Step 3: Define the internal provider strategy boundary**
 
@@ -575,6 +640,25 @@ expect(machine.canMove(BridgeFundingState.draft,
     BridgeFundingState.checkingCapabilities), isTrue);
 expect(machine.canMove(BridgeFundingState.awaitingExternalWallet,
     BridgeFundingState.submitted), isTrue);
+expect(machine.canMove(BridgeFundingState.awaitingExternalWallet,
+    BridgeFundingState.cancelled), isFalse);
+expect(machine.canMove(BridgeFundingState.awaitingExternalWallet,
+    BridgeFundingState.failed), isFalse);
+expect(machine.canMove(BridgeFundingState.awaitingExternalWallet,
+    BridgeFundingState.expired), isFalse);
+expect(
+  machine.canMoveWithEvidence(
+    BridgeFundingState.awaitingExternalWallet,
+    BridgeFundingState.expired,
+    evidence: const SolanaNoSubmissionEvidence(
+      sourceChainId: BridgeConstants.solanaChainId,
+      blockhashInvalid: true,
+      completeHistoryScan: true,
+      exactMatchFound: false,
+    ),
+  ),
+  isTrue,
+);
 expect(machine.canMove(BridgeFundingState.awaitingDeposit,
     BridgeFundingState.depositDetected), isTrue);
 expect(machine.canMove(BridgeFundingState.completed,
@@ -624,10 +708,9 @@ const allowedBridgeTransitions = <BridgeFundingState, Set<BridgeFundingState>>{
     BridgeFundingState.failed,
   },
   BridgeFundingState.awaitingExternalWallet: {
+    BridgeFundingState.awaitingPlawieReview,
     BridgeFundingState.submitted,
     BridgeFundingState.sourcePending,
-    BridgeFundingState.cancelled,
-    BridgeFundingState.failed,
   },
   BridgeFundingState.awaitingDeposit: {
     BridgeFundingState.depositDetected,
@@ -665,14 +748,55 @@ const allowedBridgeTransitions = <BridgeFundingState, Set<BridgeFundingState>>{
 };
 ```
 
-Terminal states return no outgoing transitions. Archival is receipt metadata (`archivedAt`), not a false onchain terminal state.
+Terminal states return no outgoing transitions. From `awaitingExternalWallet`,
+return to review is legal only after a definitive pre-submission wallet
+rejection or sign-only validation failure. The generic transition map does not
+allow `expired`. `canMoveWithEvidence()` accepts that one transition only with a
+`SolanaNoSubmissionEvidence` proving the source is Solana, its recent blockhash
+is invalid, a complete bounded account-history scan succeeded, and no exact
+reviewed-payload match exists. All other evidence combinations reject. A
+ten-minute callback operation expiry alone never changes receipt state.
+Ambiguous EVM or MWA submission remains active in `awaitingExternalWallet` with
+`submissionOutcomeUnknown=true`; it cannot become `cancelled` or `failed`.
+Archival is receipt metadata (`archivedAt`), not a false onchain terminal state.
+
+Keep the evidence contract internal to `bridge_state_machine.dart`:
+
+```dart
+final class SolanaNoSubmissionEvidence {
+  const SolanaNoSubmissionEvidence({
+    required this.sourceChainId,
+    required this.blockhashInvalid,
+    required this.completeHistoryScan,
+    required this.exactMatchFound,
+  });
+  final int sourceChainId;
+  final bool blockhashInvalid;
+  final bool completeHistoryScan;
+  final bool exactMatchFound;
+
+  bool get provesExpiry =>
+      sourceChainId == BridgeConstants.solanaChainId &&
+      blockhashInvalid &&
+      completeHistoryScan &&
+      !exactMatchFound;
+}
+```
+
+`requireMove()` remains context-free and rejects this expiry. Only
+`requireMoveWithEvidence()` may authorize it, and it rejects evidence for every
+other transition so callers cannot use the object as a general bypass.
 
 - [ ] **Step 6: Write failing persistence tests**
 
 Use `SharedPreferences.setMockInitialValues` to prove:
 
 - one active non-archived receipt is enforced;
+- an older receipt without `walletTransport` migrates without inventing a
+  wallet identity;
 - an exposed Relay instruction cannot become `cancelled`;
+- an outcome-unknown external-wallet receipt cannot be cancelled, archived, or
+  replaced merely because its callback token or quote expired;
 - archived non-terminal receipts remain readable and status-trackable;
 - corrupt records are skipped individually;
 - terminal receipts are capped at 50;
@@ -767,6 +891,10 @@ For LI.FI `/v1/chains`, `/v1/connections`, and `/v1/token`, and Relay `/chains`,
 
 ```dart
 expect(snapshot.connectedChains.map((c) => c.id), containsAll(<int>[1, 1151111081099710]));
+expect(snapshot.connectedChains.map((c) => c.id), contains(8453));
+final directBaseToken = snapshot.connectedTokensFor(8453).single;
+expect(directBaseToken.address, BridgeConstants.baseUsdc);
+expect(directBaseToken.symbol, 'USDC');
 expect(snapshot.relayTokensFor(1).map((t) => t.symbol), contains('USDC'));
 expect(snapshot.relayTokensFor(1).every((t) => t.solverDepositable), isTrue);
 expect(snapshot.relayChains.any((c) => c.id == 4663), isFalse);
@@ -780,10 +908,14 @@ Also reject Relay chains that are disabled, lagging, not deposit-enabled, or hav
 
 1. loads the last valid persisted snapshot for immediate read-only display;
 2. refreshes LI.FI and Relay in parallel;
-3. intersects live IDs with shipped trusted IDs `{1, 1151111081099710, 4663}`;
+3. intersects live bridge IDs with shipped trusted IDs
+   `{1, 1151111081099710, 4663}`;
 4. accepts source tokens only from LI.FI-resolved native/USDC data or Relay `solverCurrencies`;
 5. validates Base chain `8453` and native Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`;
-6. persists a versioned snapshot with `refreshedAt` and provider-specific availability reasons.
+6. adds Base `8453` plus only native Base USDC to connected capabilities as
+   provider `direct_base`, independently of LI.FI route availability, when the
+   Reown EVM transport and internal Base destination are available;
+7. persists a versioned snapshot with `refreshedAt` and provider-specific availability reasons.
 
 Use a ten-minute in-memory freshness window and provider ETag/`If-None-Match` when supplied. A failed refresh keeps a non-expired cached display but disables new execution until a live provider quote succeeds.
 
@@ -868,90 +1000,126 @@ git add lib/services/bridge_quote_service.dart lib/services/bridge/lifi_bridge_s
 git commit -m "feat: retain validated LI.FI execution quotes"
 ```
 
-## Task 5: Add Android wallet callbacks and the Reown session adapter
+## Task 5: Add protocol-routed external wallet sessions
 
 **Files:**
-- Create: `android/app/src/main/kotlin/com/openclaw/plawie/WalletLinkBridge.kt`
-- Modify: `android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt`
+- Modify: `android/app/build.gradle.kts`
 - Modify: `android/app/src/main/AndroidManifest.xml`
+- Modify: `android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt`
+- Create: `android/app/src/main/kotlin/com/openclaw/plawie/WalletLinkBridge.kt`
+- Create: `android/app/src/main/kotlin/com/openclaw/plawie/SolanaMwaBridge.kt`
 - Create: `lib/services/bridge/external_wallet_session_service.dart`
-- Create: `lib/services/bridge/reown_external_wallet_adapter.dart`
+- Create: `lib/services/bridge/external_wallet_transport_router.dart`
+- Create: `lib/services/bridge/reown_evm_wallet_adapter.dart`
+- Create: `lib/services/bridge/solana_mwa_wallet_adapter.dart`
+- Create: `lib/services/bridge/reown_solana_fallback_adapter.dart`
 - Test: `test/wallet_link_native_contract_test.dart`
+- Test: `test/solana_mwa_native_contract_test.dart`
 - Test: `test/external_wallet_session_service_test.dart`
+- Test: `test/external_wallet_transport_router_test.dart`
 
-- [ ] **Step 1: Write native callback contract tests**
+- [ ] **Step 1: Write failing Android contract tests**
 
-Read the manifest and Kotlin sources and assert one callback filter, `singleTop`, exact `plawie://wallet-callback`, Flutter built-in deep linking disabled, package queries for `io.metamask` and `app.phantom`, and forwarding from both current intent and `onNewIntent`.
+Read only the real `com/openclaw/plawie` Android sources, Gradle file, and
+manifest. Assert:
 
-Run `flutter test test/wallet_link_native_contract_test.dart` and expect failure.
+- exact dependency
+  `com.solanamobile:mobile-wallet-adapter-clientlib-ktx:2.1.0`;
+- one callback filter, `singleTop`, exact `plawie://wallet-callback`, and Flutter
+  built-in deep-link ownership disabled;
+- current-intent and `onNewIntent` forwarding through one callback owner;
+- one native MWA bridge attached to the Flutter engine;
+- MWA uses the Android chooser and contains no Phantom, Solflare, Jupiter, or
+  other Solana package-name branch;
+- generic HTTPS wallet visibility and any bounded installed hints are ordering
+  aids only, with no package allowlist in execution code.
 
-- [ ] **Step 2: Add the Android callback bridge**
+Run both native contract tests and expect missing files/dependency failures.
 
-Implement `WalletLinkBridge` with these channels:
+- [ ] **Step 2: Add callback ownership and the native MWA bridge**
+
+`WalletLinkBridge` owns:
 
 ```kotlin
 private const val EVENTS = "com.openclaw.plawie/wallet_links"
 private const val METHODS = "com.openclaw.plawie/wallet_links_control"
 ```
 
-It accepts only `ACTION_VIEW` URIs whose scheme is `plawie` and host is `wallet-callback`, retains at most one initial link until Dart consumes `initialLink`, emits later links through one `EventChannel`, and never logs the URI or query parameters. `MainActivity.configureFlutterEngine` attaches it; `onNewIntent` calls `walletLinkBridge?.onIntent(intent)` after `setIntent(intent)`.
+It accepts only `ACTION_VIEW` links with exact scheme `plawie` and host
+`wallet-callback`, retains one initial link until Dart consumes `initialLink`,
+emits later links through one `EventChannel`, and never logs URI/query data.
 
-- [ ] **Step 3: Register wallet visibility and callback ownership**
+Add the MWA dependency and implement `SolanaMwaBridge` on
+`com.openclaw.plawie/solana_mwa`. It exposes `authorize`, `submitTransaction`,
+and `deauthorize`. Authorization is Mainnet-only and returns only public account,
+wallet label, and advertised feature/method names. `submitTransaction` accepts
+one frozen base64 serialized transaction and returns exactly one tagged result:
 
-Add to `AndroidManifest.xml`:
-
-```xml
-<meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
-<intent-filter>
-    <action android:name="android.intent.action.VIEW" />
-    <category android:name="android.intent.category.DEFAULT" />
-    <category android:name="android.intent.category.BROWSABLE" />
-    <data android:scheme="plawie" android:host="wallet-callback" />
-</intent-filter>
+```text
+{mode: signOnly, signedTransactionBytes: <Kotlin ByteArray>}
+{mode: signAndSend, signatureBase58: ...}
 ```
 
-Under `<queries>`, add only:
+If sign-only is advertised, request it. Otherwise invoke MWA 2.0's mandatory
+`signAndSendTransactions` once. SDK authorization state stays in native
+SDK-scoped storage or memory and is never returned to Dart. Cancellation,
+authorization failure, invalid payload, and ambiguous submission use stable
+error codes and never trigger a second request.
 
-```xml
-<package android:name="io.metamask" />
-<package android:name="app.phantom" />
-```
+- [ ] **Step 3: Register protocol discovery and callback ownership**
 
-- [ ] **Step 4: Write failing provider-neutral wallet tests**
+Keep the exact callback filter and add only Android visibility required by the
+SDKs: a generic browsable HTTPS `VIEW` intent plus bounded package hints proven
+necessary by the resolved Reown fallback. Do not add `QUERY_ALL_PACKAGES`; do
+not require any Solana wallet package for MWA discovery. Package visibility may
+improve ordering but cannot determine support.
 
-Use a fake adapter to test missing release configuration, EVM connect, Solana connect, wrong chain/account, unsupported method, rejected connection, duplicate callback, callback after expiry, disconnect, and no session material in exported state.
+- [ ] **Step 4: Write failing provider-neutral session and router tests**
 
-Define the contract under test as:
+Define and test these contracts:
 
 ```dart
-abstract interface class ExternalWalletSessionService {
-  Future<ExternalWalletIdentity> connect(BridgeChain chain);
-  Future<void> disconnect();
-  Future<String> sendEvmTransaction(EvmBridgeExecutionPayload payload);
-  Future<Uint8List> signSolanaTransaction(
-      SolanaBridgeExecutionPayload payload);
-  ExternalWalletIdentity? get identity;
+enum SolanaWalletSubmissionMode { signOnly, signAndSend }
+
+sealed class SolanaWalletSubmissionResult {
+  const SolanaWalletSubmissionResult();
 }
 
-final class ExternalWalletIdentity {
-  const ExternalWalletIdentity({
-    required this.walletName,
-    required this.address,
-    required this.chainId,
-    required this.chainType,
-    required this.approvedMethods,
+final class SignedSolanaTransaction extends SolanaWalletSubmissionResult {
+  const SignedSolanaTransaction(this.signedTransaction);
+  final Uint8List signedTransaction;
+}
+
+final class SubmittedSolanaTransaction extends SolanaWalletSubmissionResult {
+  const SubmittedSolanaTransaction(this.signature);
+  final String signature;
+}
+
+abstract interface class ExternalWalletSessionService {
+  Future<List<ExternalWalletOption>> discover(BridgeChain chain);
+  Future<ExternalWalletIdentity> connect(
+    BridgeChain chain, {
+    ExternalWalletTransport? transport,
   });
-  final String walletName;
-  final String address;
-  final int chainId;
-  final BridgeChainType chainType;
-  final Set<String> approvedMethods;
+  Future<void> disconnect();
+  Future<String> sendEvmTransaction(EvmBridgeExecutionPayload payload);
+  Future<SolanaWalletSubmissionResult> submitSolanaTransaction(
+    SolanaBridgeExecutionPayload payload,
+  );
+  ExternalWalletIdentity? get identity;
 }
 ```
 
-- [ ] **Step 5: Implement Reown initialization and bounded methods**
+`ExternalWalletIdentity` records only transport enum, wallet-reported label,
+case-sensitive public address, chain ID/type, and approved methods/features.
+Test disabled gates, EVM discovery independent of wallet name, MWA-first Solana
+routing, explicit Reown fallback, Base Account's honest unavailable reason,
+wrong chain/account/method, rejection, duplicate callback, expiry, disconnect,
+and zero SDK session material in exported state.
 
-Require non-empty build defines:
+- [ ] **Step 5: Implement adapters and capability routing**
+
+Require non-empty Reown release defines:
 
 ```dart
 const reownProjectId = String.fromEnvironment('REOWN_PROJECT_ID');
@@ -959,29 +1127,45 @@ const plawieDappUrl = String.fromEnvironment('PLAWIE_DAPP_URL');
 const walletRedirect = 'plawie://wallet-callback';
 ```
 
-An empty project ID or dapp URL disables only connected-wallet funding with a visible reason. Initialize one `ReownAppKitModal` with Plawie metadata, Ethereum, Solana, and the shipped Robinhood chain record. Dispatch only validated callback links. Before every request, compare selected chain, session-derived address, and approved methods. EVM uses `eth_sendTransaction`; Phantom-compatible Solana uses `solana_signTransaction`. Do not request `solana_signAndSendTransaction`.
+`ReownEvmWalletAdapter` uses AppKit's dynamic Explorer catalog and requires the
+exact `eip155` chain/account plus `eth_sendTransaction`; wallet display names
+never select code. `SolanaMwaWalletAdapter` translates only the tagged native
+contract above and preserves `signedTransactionBytes` as Dart `Uint8List`.
+`ReownSolanaFallbackAdapter` exposes only the resolved Phantom and Solflare
+sign-only services after their independent gate is enabled; it base58-decodes
+their response once into the same raw-byte result before returning it. No
+controller or verifier accepts transport-specific signed-transaction text.
 
-Wrap each connect/sign/send request in a `PendingWalletOperation` containing a
-128-bit `Random.secure()` identifier, expected method, account, chain, and a
-ten-minute expiry. Only one operation may exist; matching Reown/Phantom response
-delivery consumes it once. Reown may use its own SDK-scoped secure session store,
-but Plawie preferences and receipts never store topics, Phantom session tokens,
-shared secrets, callback envelopes, or operation IDs. Disconnect and process
-death clear Plawie in-memory operation state; receipt recovery does not need it.
+`ExternalWalletTransportRouter` selects Reown EVM for EVM, native MWA first for
+Solana, and a user-selected enabled Reown fallback only after MWA is unavailable.
+It reports Base Account unavailable while its independent gate is false; do not
+create a nonfunctional adapter merely to satisfy the enum.
 
-- [ ] **Step 6: Verify callbacks and commit**
+Wrap connect/sign/send in one in-memory `PendingWalletOperation` containing a
+128-bit `Random.secure()` ID, transport, method, account, chain, reviewed
+fingerprint, and ten-minute expiry. A matching response consumes it once. SDK
+session stores may persist internally, but Plawie preferences, receipts, logs,
+and agents never receive session topics, authorization tokens, shared secrets,
+callback envelopes, or operation IDs.
+
+- [ ] **Step 6: Verify, document the native dependency, and commit**
+
+Record the MWA Apache-2.0 dependency and release attribution decision in
+`docs/EXTERNAL_WALLET_BRIDGING.md`, then run:
 
 ```powershell
-flutter test test/wallet_link_native_contract_test.dart test/external_wallet_session_service_test.dart
+flutter test test/wallet_link_native_contract_test.dart test/solana_mwa_native_contract_test.dart test/external_wallet_session_service_test.dart test/external_wallet_transport_router_test.dart
+dart analyze lib/services/bridge/external_wallet_session_service.dart lib/services/bridge/external_wallet_transport_router.dart lib/services/bridge/reown_evm_wallet_adapter.dart lib/services/bridge/solana_mwa_wallet_adapter.dart lib/services/bridge/reown_solana_fallback_adapter.dart
 flutter build apk --debug
-adb shell am start -W -a android.intent.action.VIEW -d "plawie://wallet-callback?state=unmatched" com.openclaw.plawie
-git add android/app/src/main/AndroidManifest.xml android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt android/app/src/main/kotlin/com/openclaw/plawie/WalletLinkBridge.kt lib/services/bridge/external_wallet_session_service.dart lib/services/bridge/reown_external_wallet_adapter.dart test/wallet_link_native_contract_test.dart test/external_wallet_session_service_test.dart
-git commit -m "feat: add bounded external wallet sessions"
+git diff --check
+git add android/app/build.gradle.kts android/app/src/main/AndroidManifest.xml android/app/src/main/kotlin/com/openclaw/plawie/MainActivity.kt android/app/src/main/kotlin/com/openclaw/plawie/WalletLinkBridge.kt android/app/src/main/kotlin/com/openclaw/plawie/SolanaMwaBridge.kt lib/services/bridge/external_wallet_session_service.dart lib/services/bridge/external_wallet_transport_router.dart lib/services/bridge/reown_evm_wallet_adapter.dart lib/services/bridge/solana_mwa_wallet_adapter.dart lib/services/bridge/reown_solana_fallback_adapter.dart test/wallet_link_native_contract_test.dart test/solana_mwa_native_contract_test.dart test/external_wallet_session_service_test.dart test/external_wallet_transport_router_test.dart docs/EXTERNAL_WALLET_BRIDGING.md
+git commit -m "feat: add protocol-routed external wallet sessions"
 ```
 
-Expected: the app receives the link, rejects it as unmatched, does not alter bridge state, and does not restart or clear app data.
+Do not install, launch, or inject a callback during this task. Device interaction
+is reserved for Task 12 after announcing it and checking that the user is idle.
 
-## Task 6: Execute exact EVM allowance and bridge requests
+## Task 6: Execute exact EVM bridge requests and direct Base USDC transfers
 
 **Files:**
 - Create: `lib/services/bridge/evm_bridge_rpc_service.dart`
@@ -989,9 +1173,12 @@ Expected: the app receives the link, rejects it as unmatched, does not alter bri
 - Test: `test/evm_bridge_rpc_service_test.dart`
 - Test: `test/bridge_funding_controller_test.dart`
 
-- [ ] **Step 1: Write failing RPC and approval tests**
+- [ ] **Step 1: Write failing RPC, approval, and direct-transfer tests**
 
-Cover native-token routes, sufficient allowance, insufficient allowance, exact approval encoding, maximum allowance rejection, wrong RPC host, malformed 32-byte `eth_call`, pending receipt, reverted receipt, rate limit, and timeout.
+Cover native-token routes, sufficient allowance, insufficient allowance, exact
+approval encoding, exact Base USDC `transfer(address,uint256)` encoding, maximum
+allowance rejection, wrong RPC host, malformed 32-byte `eth_call`, bounded gas
+estimation, pending receipt, reverted receipt, rate limit, and timeout.
 
 Assert the approval bytes exactly equal:
 
@@ -1000,6 +1187,12 @@ expect(
   service.encodeExactApproval(spender, BigInt.from(1000000)),
   '0x095ea7b3'
   '000000000000000000000000${spender.substring(2).toLowerCase()}'
+  '00000000000000000000000000000000000000000000000000000000000f4240',
+);
+expect(
+  service.encodeExactTransfer(destination, BigInt.from(1000000)),
+  '0xa9059cbb'
+  '000000000000000000000000${destination.substring(2).toLowerCase()}'
   '00000000000000000000000000000000000000000000000000000000000f4240',
 );
 ```
@@ -1011,11 +1204,17 @@ Use only:
 ```dart
 const evmSourceRpcUrls = <int, String>{
   1: 'https://ethereum-rpc.publicnode.com',
+  8453: 'https://mainnet.base.org',
   4663: 'https://rpc.mainnet.chain.robinhood.com',
 };
 ```
 
-`EvmBridgeRpcService` exposes `allowance`, `encodeExactApproval`, and `waitForReceipt`. JSON-RPC IDs are random non-secret integers; redirects are rejected; response bodies are capped at 64 KiB. `waitForReceipt` performs bounded reads only and never resubmits.
+`EvmBridgeRpcService` exposes `allowance`, `encodeExactApproval`,
+`encodeExactTransfer`, `estimateGas`, and `waitForReceipt`. It accepts only the
+shipped RPC map, exact chain IDs, 20-byte addresses, non-negative values, and
+bounded hex responses. JSON-RPC IDs are random non-secret integers; redirects
+are rejected; response bodies are capped at 64 KiB. `waitForReceipt` performs
+bounded reads only and never resubmits.
 
 - [ ] **Step 3: Write failing connected-flow orchestration tests**
 
@@ -1031,6 +1230,12 @@ With fake quote, wallet, store, and RPC services, prove:
 8. duplicate confirm calls are rejected;
 9. wallet rejection returns to review without marking submitted;
 10. process resume never calls a wallet method.
+11. Base Mainnet native USDC to the internal Base address creates provider
+    `direct_base`, route tool `direct_transfer`, exact minimum output, zero
+    allowance request, and one reviewed token transfer;
+12. Base USDC direct transfer remains available when LI.FI is disabled but the
+    Reown EVM gate and Base RPC are available;
+13. a different Base token or non-Base source never enters the direct path.
 
 - [ ] **Step 4: Implement foreground controller EVM flow**
 
@@ -1044,7 +1249,20 @@ Future<void> cancelBeforeSubmission(String intentId);
 Future<void> refreshStatus(String intentId);
 ```
 
-Preparation may connect and quote but cannot submit. Confirmation checks the in-memory quote fingerprint, connected identity, and intent ID; persists `awaitingExternalWallet`; invokes the wallet once; validates the returned 32-byte EVM hash; persists `submitted`; then starts read-only status polling. If the app resumes with `awaitingExternalWallet` and no hash, show recovery guidance and never resend automatically.
+Preparation may connect and quote but cannot submit. For Ethereum or Robinhood,
+it uses a validated fresh LI.FI executable quote and exact allowance flow. For
+Base Mainnet native USDC, it skips LI.FI entirely and builds an immutable direct
+ERC-20 transfer to the current internal Base address, with `value=0`, exact
+amount units, bounded estimated gas, provider `direct_base`, and no approval.
+
+Confirmation checks the in-memory fingerprint, connected identity, transport,
+chain, account, and intent ID; persists `awaitingExternalWallet` with the
+canonical exact-transaction `reviewedPayloadHash`; invokes the wallet once;
+validates the returned 32-byte EVM hash; persists `submitted`; then
+starts read-only receipt/status polling. If the app resumes with
+`awaitingExternalWallet` and no hash, show outcome-unknown recovery guidance and
+never resend automatically. A direct transfer completes only after a successful
+Base receipt and Base-balance reconciliation; it never calls LI.FI status.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -1055,7 +1273,7 @@ git add lib/services/bridge/evm_bridge_rpc_service.dart lib/services/bridge/brid
 git commit -m "feat: execute reviewed EVM bridge requests"
 ```
 
-## Task 7: Verify Phantom signatures and broadcast Solana exactly once
+## Task 7: Verify capability-negotiated Solana submission exactly once
 
 **Files:**
 - Create: `lib/services/bridge/solana_transaction_envelope.dart`
@@ -1065,9 +1283,15 @@ git commit -m "feat: execute reviewed EVM bridge requests"
 - Test: `test/solana_rpc_broadcaster_test.dart`
 - Modify: `test/bridge_funding_controller_test.dart`
 
-- [ ] **Step 1: Write failing Solana envelope tests**
+- [ ] **Step 1: Write failing Solana envelope and signature tests**
 
-Use fixed legacy and versioned transaction fixtures. Assert bounded base58 encode/decode, compact-u16 parsing, exact unsigned/signed message equality, first required signer equality, non-zero first signature, derived transaction ID, malformed length rejection, changed-message rejection, wrong signer rejection, and a 1232-byte maximum.
+Use fixed legacy and versioned transaction fixtures. Assert bounded base58
+encode/decode, compact-u16 parsing, exact unsigned/signed message equality, first
+required signer equality, non-zero first signature, derived transaction ID,
+Ed25519 verification of a returned 64-byte sign-and-send signature against the
+reviewed message and first required signer, malformed length rejection,
+changed-message rejection, wrong signer/signature rejection, and a 1232-byte
+maximum.
 
 - [ ] **Step 2: Implement the focused wire parser**
 
@@ -1075,9 +1299,8 @@ Use fixed legacy and versioned transaction fixtures. Assert bounded base58 encod
 
 ```dart
 final unsigned = base64Decode(unsignedBase64);
-final signed = base58Decode(signedBase58);
 final unsignedParts = parseTransaction(unsigned);
-final signedParts = parseTransaction(signed);
+final signedParts = parseTransaction(signedTransactionBytes);
 if (!constantTimeBytesEqual(unsignedParts.message, signedParts.message)) {
   throw const BridgeValidationException('solana_message_changed');
 }
@@ -1090,11 +1313,26 @@ if (signedParts.signatures.first.every((byte) => byte == 0)) {
 }
 ```
 
-Return exact signed bytes and the base58 first signature. Do not interpret instructions or rebuild the LI.FI message.
+`signedTransactionBytes` is the canonical raw `Uint8List` produced by every
+adapter. Return those exact bytes and the base58-encoded first signature. Do not
+decode transport text here, interpret instructions, or rebuild the LI.FI
+message.
 
-- [ ] **Step 3: Write failing one-shot broadcaster tests**
+Add `verifySubmittedSignature()` for MWA sign-and-send. It parses the frozen
+unsigned transaction, requires the expected wallet account to be the first
+required signer, base58-decodes exactly 64 signature bytes, and verifies with
+the existing `cryptography` Ed25519 implementation over the exact serialized
+message. Return only the normalized base58 signature. Never reconstruct or
+mutate the message.
 
-Assert one POST to `https://api.mainnet-beta.solana.com`, method `sendTransaction`, base64 encoding, `skipPreflight: false`, `preflightCommitment: confirmed`, `maxRetries: 0`, returned signature equality, no redirect, and no retry after timeout.
+- [ ] **Step 3: Write failing broadcaster and read-only status tests**
+
+Assert one POST to `https://api.mainnet-beta.solana.com`, method
+`sendTransaction`, base64 encoding, `skipPreflight: false`,
+`preflightCommitment: confirmed`, `maxRetries: 0`, returned signature equality,
+no redirect, and no retry after timeout. Separately assert
+`getSignatureStatuses` is read-only, accepts only a validated signature, handles
+`null`/processed/confirmed/finalized/error, and never invokes `sendTransaction`.
 
 - [ ] **Step 4: Implement one-call Solana broadcasting**
 
@@ -1119,11 +1357,42 @@ Send:
 
 Any timeout becomes `submissionOutcomeUnknown`; status recovery uses the already-derived signature and never broadcasts again.
 
-- [ ] **Step 5: Add Solana orchestration tests and implementation**
+- [ ] **Step 5: Add capability-negotiated orchestration tests**
 
-Prove the controller requests a fresh SVM quote, persists `awaitingExternalWallet`, sends only the reviewed base58 transaction to `solana_signTransaction`, verifies returned bytes, persists the derived source signature before RPC submission, invokes the broadcaster once, and resumes with status polling only.
+Prove both branches start from a fresh validated SVM quote, an exact Plawie
+review, and a persisted `awaitingExternalWallet` receipt containing the exact
+message SHA-256 `reviewedPayloadHash` and parsed `sourceBlockhash`:
 
-- [ ] **Step 6: Run tests and commit**
+1. If MWA advertises sign-only, or an enabled Reown Phantom/Solflare fallback is
+   selected, send only the frozen reviewed transaction for signature; verify the
+   returned signed bytes; persist the derived source signature before RPC;
+   invoke Plawie's broadcaster exactly once; and resume with status polling only.
+2. If MWA does not advertise sign-only, invoke native
+   `signAndSendTransactions` exactly once; verify the returned signature against
+   the frozen reviewed message and signer; persist it before any provider/RPC
+   status call; never invoke Plawie's broadcaster; and resume with status
+   polling only.
+3. If sign-and-send returns an ambiguous timeout/transport failure without a
+   trustworthy signature, leave the persisted receipt active with
+   `submissionOutcomeUnknown=true`, explain that no trustworthy signature was
+   returned, expose only the evidence-bound recovery in Task 8, and make
+   automatic confirm, submit, cancel, archive, and broadcast calls impossible.
+   Treat a malformed or mismatched returned sign-and-send signature the same
+   way because the wallet may already have broadcast. A sign-only validation
+   failure is safe to return to review because Plawie has not broadcast.
+4. A duplicate callback, double tap, process resume, account change, method
+   change, or late response invokes neither branch a second time.
+
+- [ ] **Step 6: Implement the two bounded submission branches**
+
+`confirmConnectedBridge()` consumes the tagged
+`SolanaWalletSubmissionResult`. `SignedSolanaTransaction` enters the verified
+one-shot Plawie broadcaster path. `SubmittedSolanaTransaction` enters local
+signature verification and read-only status polling directly. The receipt is
+written before every irreversible boundary. Never fall from a failed
+sign-and-send request into sign-only, and never retry either mode automatically.
+
+- [ ] **Step 7: Run tests and commit**
 
 ```powershell
 flutter test test/solana_transaction_envelope_test.dart test/solana_rpc_broadcaster_test.dart test/bridge_funding_controller_test.dart
@@ -1136,7 +1405,13 @@ git commit -m "feat: add verified Solana bridge submission"
 **Files:**
 - Create: `lib/services/bridge/lifi_status_service.dart`
 - Modify: `lib/services/bridge/bridge_funding_controller.dart`
+- Modify: `lib/services/bridge/evm_bridge_rpc_service.dart`
+- Modify: `lib/services/bridge/solana_transaction_envelope.dart`
+- Modify: `lib/services/bridge/solana_rpc_broadcaster.dart`
 - Test: `test/lifi_status_service_test.dart`
+- Modify: `test/evm_bridge_rpc_service_test.dart`
+- Modify: `test/solana_transaction_envelope_test.dart`
+- Modify: `test/solana_rpc_broadcaster_test.dart`
 - Modify: `test/bridge_funding_controller_test.dart`
 
 - [ ] **Step 1: Write failing LI.FI status tests**
@@ -1161,15 +1436,45 @@ Use an injected delay function and assert delays `2s, 4s, 8s, 16s, 30s, 60s`, `R
 
 On `completed`, persist the receipt first, then call `BaseService.refreshBalance()`. If refresh reports an error, leave `state == completed`, set `balanceRefreshPending = true`, and expose a separate refresh action.
 
-- [ ] **Step 5: Add unknown EVM return recovery**
+- [ ] **Step 5: Add evidence-bound unknown-return recovery**
 
-For a persisted `awaitingExternalWallet` receipt without a hash, display `submissionOutcomeUnknown`. Permit the user to paste a source transaction hash from wallet history; validate EVM/Solana hash shape and provider status chain/address fields before attaching it. Never offer `Submit again` on that receipt.
+Every final review persists `reviewedPayloadHash` before invoking a wallet. A
+persisted `awaitingExternalWallet` receipt with no source hash/signature and
+`submissionOutcomeUnknown=true` never offers `Submit again`, cancel, archive, or
+automatic expiry.
+
+For LI.FI EVM, let the user paste the 32-byte hash from wallet history. Fetch the
+source transaction with `eth_getTransactionByHash` from the shipped chain RPC and
+require exact chain, source account, target, value, normalized calldata digest,
+and reviewed payload hash before attaching it; then require LI.FI status to agree
+with source/destination chains and source hash.
+
+For provider `direct_base`, use the same RPC fetch but require Base chain, exact
+source account, `to == BridgeConstants.baseUsdc`, `value == 0`, and calldata
+equal to `encodeExactTransfer(baseDestinationAddress, sourceAmountUnits)` before
+attaching the hash. Completion then uses only successful Base receipt plus Base
+balance reconciliation; LI.FI is never called.
+
+For unknown Solana MWA sign-and-send, `Refresh` performs no signature-status call
+without a signature. The user may paste a base58 transaction signature from
+wallet history, or trigger a bounded `getSignaturesForAddress` scan of at most
+200 entries since `createdAt`. Fetch candidate transactions with
+`getTransaction` using base64 encoding; accept only an exact reviewed message
+hash and first required signer match, then attach the verified signature and
+resume read-only status/LI.FI polling. Persist the source recent blockhash before
+the wallet call. The receipt may become `expired` only after
+`isBlockhashValid == false` and a complete, non-truncated, error-free bounded
+history scan finds no exact reviewed transaction. Any RPC error, truncation, or
+ambiguous candidate leaves the receipt active and blocked. The controller must
+pass the successful scan result through
+`BridgeStateMachine.requireMoveWithEvidence()`; it may not write `expired`
+directly.
 
 - [ ] **Step 6: Run tests and commit**
 
 ```powershell
-flutter test test/lifi_status_service_test.dart test/bridge_funding_controller_test.dart
-git add lib/services/bridge/lifi_status_service.dart lib/services/bridge/bridge_funding_controller.dart test/lifi_status_service_test.dart test/bridge_funding_controller_test.dart
+flutter test test/lifi_status_service_test.dart test/evm_bridge_rpc_service_test.dart test/solana_transaction_envelope_test.dart test/solana_rpc_broadcaster_test.dart test/bridge_funding_controller_test.dart
+git add lib/services/bridge/lifi_status_service.dart lib/services/bridge/evm_bridge_rpc_service.dart lib/services/bridge/solana_transaction_envelope.dart lib/services/bridge/solana_rpc_broadcaster.dart lib/services/bridge/bridge_funding_controller.dart test/lifi_status_service_test.dart test/evm_bridge_rpc_service_test.dart test/solana_transaction_envelope_test.dart test/solana_rpc_broadcaster_test.dart test/bridge_funding_controller_test.dart
 git commit -m "feat: recover and track LI.FI bridge settlement"
 ```
 
@@ -1245,11 +1550,25 @@ git commit -m "feat: add strict Relay deposit funding"
 
 - [ ] **Step 1: Write failing widget tests for entry and capability states**
 
-Test absent internal wallet, Base Sepolia, capability loading/error/cache, connected method default, Relay method visibility, missing Reown configuration, Robinhood disabled reason, long chain/token names, 320-pixel width, and text scaling at 200 percent.
+Test absent internal wallet, Base Sepolia, capability loading/error/cache,
+connected method default, Relay method visibility, each independently disabled
+wallet transport, Base Account's honest unavailable state, Robinhood disabled
+reason, long chain/token/wallet names, 320-pixel width, and text scaling at 200
+percent.
 
 - [ ] **Step 2: Write failing connected-flow widget tests**
 
-Test source/token/amount selection, Connect Wallet, session-derived address display, exact estimate, separate exact ERC-20 approval review, fresh final review, wallet rejection, source hash, pending/resume, terminal receipt, unknown-return recovery, and no duplicate submit button while busy.
+Test source/token/amount selection; Reown's searchable dynamic EVM wallet modal;
+installed hint and QR/copy fallback; Solana's `Choose compatible wallet` MWA
+chooser; explicit Phantom/Solflare fallback only after MWA unavailability;
+session-derived address; exact estimate; direct Base USDC transfer label and
+review; separate exact LI.FI ERC-20 approval review; fresh final review; wallet
+rejection; unsupported chain/method/account-change errors; source signature/hash;
+pending/resume; terminal receipt; sign-and-send unknown-return recovery; and no
+duplicate submit button while busy. Outcome-unknown UI offers only an
+evidence-bound EVM hash or Solana signature/history reconciliation path; it has
+no submit-again, cancel, archive, or generic status action that cannot work
+without an identifier.
 
 - [ ] **Step 3: Write failing Relay widget tests**
 
@@ -1257,7 +1576,21 @@ Test self-custody ownership checkbox, explicit CEX disablement, personal refund 
 
 - [ ] **Step 4: Implement the state-driven widgets**
 
-`BridgeFundingPanel` takes injected controller and Base destination for tests. In production, `BaseScreen` supplies the current `BaseService.address`, `useSepolia`, and `refreshBalance`. Use `ChoiceChip` for method selection, constrained bottom sheets for reviews, `SelectableText` for full addresses, and `QrImageView(data: instruction.depositAddress)` labelled `Address only — send the exact token and amount shown above`.
+`BridgeFundingPanel` takes injected controller and Base destination for tests. In
+production, `BaseScreen` supplies the current `BaseService.address`,
+`useSepolia`, and `refreshBalance`. Ask for source chain/token/amount before
+wallet selection. EVM opens Reown's live searchable catalog; it does not render
+a static brand list. Solana opens the native MWA chooser, then offers only
+enabled compatible fallback transports if MWA is unavailable. Capability errors
+name the missing transport/chain/method and offer another wallet or funding
+method without claiming installation alone makes it compatible.
+
+Use `ChoiceChip` for method selection, constrained bottom sheets for reviews,
+`SelectableText` for full addresses, and
+`QrImageView(data: instruction.depositAddress)` labelled
+`Address only — send the exact token and amount shown above`. A Base Mainnet
+native-USDC source is labelled `Direct transfer on Base — no bridge provider`
+and still receives exact Plawie review plus wallet confirmation.
 
 Inputs freeze after review or address reveal. Every method change discards only in-memory quote/review data and never deletes a persisted receipt.
 
@@ -1302,7 +1635,7 @@ git commit -m "feat: add canonical Base funding panel"
 - Modify: `test/ai_payments_capability_test.dart`
 - Modify: `test/bridge_app_native_adapter_test.dart`
 - Modify: `test/node_pairing_command_snapshot_test.dart`
-- Create: `docs/EXTERNAL_WALLET_BRIDGING.md`
+- Modify: `docs/EXTERNAL_WALLET_BRIDGING.md`
 - Modify: `docs/WALLET_FUNDED_MODEL_PROVIDERS.md`
 - Modify: `docs/DYNAMIC_PROVIDER_MODEL_AND_X402_IMPLEMENTATION_PLAN.md`
 
@@ -1334,14 +1667,25 @@ Advertise only the four read commands. Update the agent prompt to say that quote
 `docs/EXTERNAL_WALLET_BRIDGING.md` documents:
 
 - non-custodial boundaries and internal Base destination;
+- protocol/capability routing rather than a wallet-brand allowlist;
+- Reown dynamic EVM discovery, native MWA primary, and bounded Reown Solana
+  fallback behavior;
 - exact EVM allowance and double-review flow;
-- Phantom sign-only and one-call Solana broadcast;
+- direct Base USDC transfer without LI.FI or an allowance;
+- MWA sign-only verification plus one-call Plawie broadcast when supported;
+- mandatory MWA sign-and-send review, returned-signature verification,
+  persistence, status polling, and unknown-outcome no-resubmit behavior;
 - Relay self-custody-only rule and CEX exclusion;
 - strict deposit amount/token/refund warnings;
 - receipt/status recovery and no automatic resend;
 - `REOWN_PROJECT_ID` and `PLAWIE_DAPP_URL` release defines;
 - resolved Reown license, usage limits, and attribution decision;
-- independent `ENABLE_LIFI_CONNECTED_BRIDGE` and `ENABLE_RELAY_DEPOSIT_BRIDGE` release gates;
+- independent `ENABLE_LIFI_CONNECTED_BRIDGE`, `ENABLE_RELAY_DEPOSIT_BRIDGE`,
+  `ENABLE_REOWN_EVM_WALLETS`, `ENABLE_SOLANA_MWA_WALLETS`,
+  `ENABLE_REOWN_SOLANA_FALLBACK`, and default-off `ENABLE_BASE_ACCOUNT_MWP`
+  release gates;
+- current wallet compatibility is negotiated at runtime; named wallets are
+  device acceptance fixtures, not permanent support claims;
 - honest Jumper fallback;
 - controlled Mainnet acceptance and incident rollback.
 
@@ -1352,9 +1696,9 @@ is recorded as feature-gated until controlled Mainnet acceptance, without
 claiming a provider credit purchase is complete merely because Base USDC
 arrived.
 
-Confirm the old 2026-08-05 connected-only plan remains marked superseded; do not
-blend its deprecated `solana_signAndSendTransaction` instructions into this
-plan.
+Confirm the old 2026-08-05 connected-only plan remains marked superseded. Its
+wallet-specific deep-link execution and deprecated RPC method names do not
+override the approved MWA 2.0 capability-negotiated contract.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -1373,7 +1717,7 @@ git commit -m "docs: finalize external wallet funding contract"
 - [ ] **Step 1: Run all bridge-focused tests**
 
 ```powershell
-flutter test test/bridge_models_test.dart test/bridge_state_machine_test.dart test/bridge_receipt_store_test.dart test/bridge_http_client_test.dart test/bridge_capability_service_test.dart test/bridge_quote_service_test.dart test/lifi_transaction_validator_test.dart test/wallet_link_native_contract_test.dart test/external_wallet_session_service_test.dart test/evm_bridge_rpc_service_test.dart test/solana_transaction_envelope_test.dart test/solana_rpc_broadcaster_test.dart test/lifi_status_service_test.dart test/relay_deposit_service_test.dart test/bridge_funding_controller_test.dart test/bridge_funding_panel_test.dart test/bridge_app_native_adapter_test.dart test/ai_payments_capability_test.dart test/node_pairing_command_snapshot_test.dart
+flutter test test/bridge_models_test.dart test/bridge_state_machine_test.dart test/bridge_receipt_store_test.dart test/bridge_http_client_test.dart test/bridge_capability_service_test.dart test/bridge_quote_service_test.dart test/lifi_transaction_validator_test.dart test/wallet_link_native_contract_test.dart test/solana_mwa_native_contract_test.dart test/external_wallet_session_service_test.dart test/external_wallet_transport_router_test.dart test/evm_bridge_rpc_service_test.dart test/solana_transaction_envelope_test.dart test/solana_rpc_broadcaster_test.dart test/lifi_status_service_test.dart test/relay_deposit_service_test.dart test/bridge_funding_controller_test.dart test/bridge_funding_panel_test.dart test/bridge_app_native_adapter_test.dart test/ai_payments_capability_test.dart test/node_pairing_command_snapshot_test.dart
 ```
 
 Expected: all focused tests pass.
@@ -1391,7 +1735,7 @@ Expected: internal Base wallet, x402, provider, and native Gateway contracts rem
 ```powershell
 flutter analyze
 git diff --check
-flutter build apk --debug --dart-define=REOWN_PROJECT_ID=$env:REOWN_PROJECT_ID --dart-define=PLAWIE_DAPP_URL=$env:PLAWIE_DAPP_URL --dart-define=ENABLE_LIFI_CONNECTED_BRIDGE=true --dart-define=ENABLE_RELAY_DEPOSIT_BRIDGE=true
+flutter build apk --debug --dart-define=REOWN_PROJECT_ID=$env:REOWN_PROJECT_ID --dart-define=PLAWIE_DAPP_URL=$env:PLAWIE_DAPP_URL --dart-define=ENABLE_LIFI_CONNECTED_BRIDGE=true --dart-define=ENABLE_RELAY_DEPOSIT_BRIDGE=true --dart-define=ENABLE_REOWN_EVM_WALLETS=true --dart-define=ENABLE_SOLANA_MWA_WALLETS=true --dart-define=ENABLE_REOWN_SOLANA_FALLBACK=true --dart-define=ENABLE_BASE_ACCOUNT_MWP=false
 git status --short
 ```
 
@@ -1411,18 +1755,39 @@ Expected: the same internal Base address remains after update; native Gateway re
 
 On device:
 
-1. confirm missing Reown configuration disables only connected mode;
+1. confirm missing Reown configuration disables Reown transports without
+   disabling native MWA, Relay, Jumper, or the internal Base wallet;
 2. load live Ethereum/Solana capabilities and verify Robinhood's live gate;
-3. connect and reject MetaMask once;
-4. connect and reject Phantom once;
-5. generate a Relay instruction only after explicit self-custody confirmation, verify every field, then archive it without sending;
-6. force-stop/reopen and prove no wallet request or broadcast repeats;
-7. confirm Jumper says it creates a new unmonitored route;
-8. inspect filtered logs for duplicate callbacks, full addresses, calldata, signed bytes, session topics, secrets, or private keys.
+3. use Reown search to connect then reject at least two compatible EVM wallets
+   from different vendors; prove an unlisted compatible wallet remains
+   discoverable through search or WalletConnect QR/copy;
+4. launch the MWA chooser without a package-specific selection, cancel once,
+   then verify the chosen wallet's advertised sign-only/sign-and-send mode;
+5. when installed and available, verify Phantom and Solflare are capability-
+   detected through MWA; exercise one enabled Reown fallback cancellation and
+   prove it remains sign-only;
+6. verify Base Account remains honestly unavailable while its gate is false,
+   while another Base-capable EVM wallet can select direct Base USDC transfer;
+7. generate a Relay instruction only after explicit self-custody confirmation,
+   verify every field, then archive it without sending;
+8. force-stop/reopen and prove no wallet request, submission, or broadcast
+   repeats;
+9. confirm Jumper says it creates a new unmonitored route;
+10. inspect filtered logs for duplicate callbacks, full addresses, calldata,
+    signed bytes/signatures, authorization/session material, secrets, or private
+    keys.
 
 - [ ] **Step 6: Perform controlled Mainnet proof only with fresh user approval**
 
-The user chooses method, source wallet, token, and deliberately small amount in the UI. Stream filtered wallet/bridge logs while the user approves. For each enabled method, capture only redacted evidence of source hash/deposit detection, provider terminal status, destination hash, and Base balance refresh. Never automate confirmation or spend from the internal Base wallet.
+The user chooses method, source wallet, token, and deliberately small amount in
+the UI. Stream filtered wallet/bridge logs while the user approves. For a Solana
+proof, record the advertised MWA mode before approval: sign-only must show one
+Plawie broadcast; sign-and-send must show zero Plawie broadcasts and one
+persisted returned signature. For direct Base USDC, prove LI.FI and allowance
+calls are absent. For each enabled method, capture only redacted evidence of
+source signature/hash or deposit detection, provider/chain terminal status,
+destination hash, and Base balance refresh. Never automate confirmation or
+spend from the internal Base wallet.
 
 - [ ] **Step 7: Commit only evidence-driven source corrections**
 
@@ -1443,7 +1808,18 @@ If device acceptance required source corrections, rerun the affected focused and
       rejected without creating a Plawie recovery wallet.
 - [ ] Every external transaction receives a Plawie exact review and the wallet's own approval.
 - [ ] ERC-20 allowances are exact, never unlimited.
-- [ ] Phantom signs only the reviewed message; Plawie broadcasts returned bytes at most once.
+- [ ] Wallet display names never select execution code; compatibility is based
+      on negotiated namespace, chain, account, method, and transport gates.
+- [ ] Reown exposes compatible EVM wallets through dynamic search/QR without a
+      hardcoded support allowlist.
+- [ ] Native MWA invokes the Android-compatible wallet chooser without a Solana
+      wallet package allowlist.
+- [ ] MWA sign-only verifies reviewed bytes and Plawie broadcasts at most once;
+      MWA sign-and-send verifies/persists its returned signature and triggers
+      zero Plawie broadcasts or automatic resubmissions.
+- [ ] Reown Phantom/Solflare links remain fallback-only and sign-only.
+- [ ] Base USDC already on Base uses one reviewed direct transfer, not LI.FI and
+      not an allowance.
 - [ ] A revealed Relay address is persisted first, cannot be cancelled, and is never represented as reusable.
 - [ ] Resume/status paths cannot connect, sign, submit, create an address, or rebroadcast.
 - [ ] Only one active non-terminal intent exists; archived exposed addresses
@@ -1469,6 +1845,8 @@ If device acceptance required source corrections, rerun the affected focused and
 - [LI.FI token approvals](https://docs.li.fi/agents/workflows/approvals)
 - [Reown AppKit Flutter installation](https://docs.reown.com/appkit/flutter/core/installation)
 - [Reown AppKit Flutter actions](https://docs.reown.com/appkit/flutter/core/actions)
+- [Solana Mobile native MWA client](https://docs.solanamobile.com/android-native/using_mobile_wallet_adapter)
+- [MWA 2.0 wallet migration](https://docs.solanamobile.com/mwa/migration/wallets/walletlib)
 - [Phantom connect](https://docs.phantom.com/phantom-deeplinks/provider-methods/connect)
 - [Phantom sign transaction](https://docs.phantom.com/phantom-deeplinks/provider-methods/signtransaction)
 - [Relay strict deposit addresses](https://docs.relay.link/features/deposit-addresses)
