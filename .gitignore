@@ -32,6 +32,8 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/test-results/
+/.netlify/
 
 # Symbolication related
 app.*.symbols

@@ -87,7 +87,8 @@ fallback note states that PRoot is an explicit rollback path, not the default.
 - Install and manage mobile-compatible skills.
 - See Gateway health, activity, and repair status.
 - Choose a local model or connect a supported provider.
-- Keep large optional runtimes out of the initial Play download.
+- Keep optional runtimes modular and deliver executable modules through the
+  approved mechanism for each release channel.
 - Review wallet payment details before authenticated signing.
 
 Claims must be backed by the current app or marked **In development**.
@@ -95,9 +96,12 @@ Claims must be backed by the current app or marked **In development**.
 ### 6. Setup story
 
 A visual, resumable setup timeline explains that a fresh install downloads the
-official upstream Gateway and only the required dependency packs. It highlights
-progress, receipts, retry/resume behavior, and why the Play artifact stays lean.
-It must not imply that a large network download is part of the Play APK.
+official upstream Gateway and resolves only the required optional runtimes. It
+highlights progress, receipts, and retry/resume behavior. Public wording stays
+delivery-channel neutral: Google Play builds must obtain executable modules
+through Play Feature Delivery, while signed GitHub packs are reserved for
+sideload builds. It must not imply that off-store native executable downloads
+are permitted in a Play-distributed build.
 
 ### 7. Safety and transparency
 
@@ -225,6 +229,13 @@ The site should also become the source for:
 - a press folder containing approved marks and screenshots, not raw debug or
   error captures.
 
+The Play launch is blocked until executable dependency delivery is separated by
+release channel. Native `.so`, dex, and JAR payloads for the Play build belong
+in Play Feature Delivery modules. Play Asset Delivery can carry data assets but
+must not be presented as an executable-code delivery workaround. Runtime-loaded
+OpenClaw JavaScript needs a dedicated policy acceptance review because the
+VM/interpreter exception does not waive the rest of Google Play policy.
+
 Product Hunt media must show the interface clearly and avoid rapid cuts or
 strobing effects. Google Play artwork must be exported from clean release UI,
 without debug logs, keys, localhost tokens, private conversations, or incomplete
@@ -243,4 +254,3 @@ feature claims.
 - Privacy, terms, and support routes return useful content, not placeholders.
 - Lighthouse/axe-equivalent checks pass without critical accessibility issues.
 - A local smoke test and a Netlify deploy preview both pass before DNS cutover.
-
