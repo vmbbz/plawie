@@ -5,8 +5,10 @@ import 'package:clawa/services/base_service.dart';
 void main() {
   test('wallet network policy keeps exact chain and asset identities', () {
     expect(WalletNetworkPolicy.baseMainnet.chainId, 8453);
+    expect(WalletNetworkPolicy.baseMainnet.nativeSymbol, 'ETH');
     expect(WalletNetworkPolicy.baseMainnet.token?.symbol, 'USDC');
     expect(WalletNetworkPolicy.robinhoodMainnet.chainId, 4663);
+    expect(WalletNetworkPolicy.robinhoodMainnet.nativeSymbol, 'ETH');
     expect(WalletNetworkPolicy.robinhoodMainnet.token?.symbol, 'USDG');
     expect(
       WalletNetworkPolicy.robinhoodMainnet.token?.contract.toLowerCase(),

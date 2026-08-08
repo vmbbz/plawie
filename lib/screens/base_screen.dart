@@ -1413,6 +1413,28 @@ class _BaseScreenState extends State<BaseScreen> {
                         color: Colors.white.withValues(alpha: 0.72),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.22),
+                        ),
+                      ),
+                      child: Text(
+                        'Viewing ${selectedNetwork.name}',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1493,10 +1515,10 @@ class _BaseScreenState extends State<BaseScreen> {
     final accent = _networkColor(selected);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: accent.withValues(alpha: 0.4),
         ),
@@ -1506,27 +1528,80 @@ class _BaseScreenState extends State<BaseScreen> {
         children: [
           Row(
             children: [
-              Icon(_networkIcon(selected), size: 16, color: accent),
+              Icon(Icons.hub_outlined, size: 18, color: accent),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  _baseService.networkName,
+                  'WALLET NETWORK',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: accent,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+              Text('Chain ID ${_baseService.chainId}',
+                  style: theme.textTheme.labelSmall),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Choose which network this secured Plawie account displays and sends on. This does not replace its private key or address.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final definition in WalletNetworkPolicy.values)
+                ChoiceChip(
+                  key: ValueKey<String>(
+                    'wallet-network-${definition.storageValue}',
+                  ),
+                  avatar: Icon(
+                    _networkIcon(definition),
+                    size: 17,
+                    color: definition.network == _baseService.selectedNetwork
+                        ? _networkColor(definition)
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  label: Text(
+                    switch (definition.network) {
+                      WalletNetwork.baseMainnet => 'Base',
+                      WalletNetwork.robinhoodMainnet => 'Robinhood',
+                      WalletNetwork.baseSepolia => 'Base testnet',
+                    },
+                  ),
+                  selected: definition.network == _baseService.selectedNetwork,
+                  onSelected: _isLoading ||
+                          definition.network == _baseService.selectedNetwork
+                      ? null
+                      : (_) => _selectWalletNetwork(definition.network),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(_networkIcon(selected), size: 16, color: accent),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  '${selected.name} · ${selected.nativeSymbol}'
+                  '${selected.token == null ? '' : ' + ${selected.token!.symbol}'}',
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                     color: accent,
                   ),
                 ),
               ),
-              Text(
-                'Chain ID ${_baseService.chainId}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (selected.isTestnet) ...[
-                const SizedBox(width: 8),
+              if (selected.isTestnet)
                 Text(
                   'TESTNET',
                   style: TextStyle(
@@ -1536,9 +1611,17 @@ class _BaseScreenState extends State<BaseScreen> {
                     letterSpacing: 1.0,
                   ),
                 ),
-              ],
             ],
           ),
+          if (selected.network == WalletNetwork.robinhoodMainnet) ...[
+            const SizedBox(height: 7),
+            Text(
+              'Robinhood uses the same Plawie address. ETH pays gas and the supported stablecoin is official USDG.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
           if (!_baseService.ordinaryTransactionsAvailable) ...[
             const SizedBox(height: 7),
             Text(

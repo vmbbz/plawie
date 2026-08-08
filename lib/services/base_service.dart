@@ -33,6 +33,7 @@ class WalletNetworkDefinition {
     required this.storageValue,
     required this.name,
     required this.chainId,
+    required this.nativeSymbol,
     required this.readRpcUrl,
     required this.explorerApiUrl,
     required this.isTestnet,
@@ -45,6 +46,7 @@ class WalletNetworkDefinition {
   final String storageValue;
   final String name;
   final int chainId;
+  final String nativeSymbol;
   final String readRpcUrl;
   final String explorerApiUrl;
   final bool isTestnet;
@@ -77,6 +79,7 @@ abstract final class WalletNetworkPolicy {
     storageValue: 'base_mainnet',
     name: 'Base Mainnet',
     chainId: 8453,
+    nativeSymbol: 'ETH',
     readRpcUrl: 'https://mainnet.base.org',
     explorerApiUrl: 'https://api.basescan.org',
     isTestnet: false,
@@ -96,6 +99,7 @@ abstract final class WalletNetworkPolicy {
     storageValue: 'robinhood_mainnet',
     name: 'Robinhood Chain',
     chainId: 4663,
+    nativeSymbol: 'ETH',
     readRpcUrl: robinhoodPublicRpc,
     explorerApiUrl: 'https://robinhoodchain.blockscout.com',
     isTestnet: false,
@@ -114,6 +118,7 @@ abstract final class WalletNetworkPolicy {
     storageValue: 'base_sepolia',
     name: 'Base Sepolia',
     chainId: 84532,
+    nativeSymbol: 'ETH',
     readRpcUrl: 'https://sepolia.base.org',
     explorerApiUrl: 'https://api-sepolia.basescan.org',
     isTestnet: true,

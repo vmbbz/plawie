@@ -113,7 +113,7 @@ class _AgentBasePageState extends State<AgentBasePage>
       backgroundColor: Colors.transparent,
       flexibleSpace: FlexibleSpaceBar(
         title: Text(
-          'Wallet / Base Chain',
+          'Wallet Networks',
           style: GoogleFonts.outfit(
             fontWeight: FontWeight.bold,
             color: Theme.of(context).textTheme.titleLarge?.color,
@@ -178,7 +178,7 @@ class _AgentBasePageState extends State<AgentBasePage>
                           fontSize: 16),
                     ),
                     Text(
-                      _baseService.networkName,
+                      'Viewing ${_baseService.networkName}',
                       style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.75),
                           fontSize: 12),
@@ -200,6 +200,20 @@ class _AgentBasePageState extends State<AgentBasePage>
                 ),
             ],
           ),
+          if (connected) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.45),
+                ),
+              ),
+              icon: const Icon(Icons.hub_outlined, size: 18),
+              label: const Text('Switch Base / Robinhood network'),
+              onPressed: _openWalletManager,
+            ),
+          ],
           const SizedBox(height: 16),
           if (connected) ...[
             Text(

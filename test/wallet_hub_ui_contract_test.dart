@@ -12,6 +12,14 @@ void main() {
     expect(source, contains("'WALLET'"));
     expect(source, contains('PopupMenuButton<WalletNetwork>'));
     expect(source, contains('WalletNetworkPolicy.values'));
+    expect(source, contains("'wallet-network-\${definition.storageValue}'"));
+    expect(source, contains("WalletNetwork.robinhoodMainnet => 'Robinhood'"));
+    expect(
+      source,
+      contains(
+        'This does not replace its private key or address.',
+      ),
+    );
     expect(source, contains('_baseService.isBaseMainnet'));
     expect(source, contains('baseMainnetSelected: _baseService.isBaseMainnet'));
     expect(source, isNot(contains('PopupMenuButton<bool>')));
@@ -29,6 +37,8 @@ void main() {
     expect(source, contains('_baseService.stablecoinBalance'));
     expect(
         source, contains('Same secured address across supported EVM networks'));
+    expect(source, contains('Viewing \${selectedNetwork.name}'));
+    expect(source, contains('official USDG'));
   });
 
   test('dashboard and settings use the Wallet-facing product name', () {
@@ -43,6 +53,16 @@ void main() {
     expect(dashboard, contains("subtitle: 'Base · Robinhood'"));
     expect(settings, contains("Text('AI Payments & Wallet')"));
     expect(settings, contains('finish setup in Wallet'));
+  });
+
+  test('wallet skill page points users to the visible network controls', () {
+    final source = File('lib/screens/management/skills/agent_base_page.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+
+    expect(source, contains("'Wallet Networks'"));
+    expect(source, contains("'Switch Base / Robinhood network'"));
+    expect(source, contains('Viewing \${_baseService.networkName}'));
   });
 
   test('wallet skill contract exposes Robinhood and USDG explicitly', () {
