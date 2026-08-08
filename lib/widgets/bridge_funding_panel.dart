@@ -232,7 +232,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Move funds into this app-owned Base wallet with visible human approval. Plawie never imports the source wallet key.',
+              'Choose a source wallet network below. The destination stays this app-owned Base wallet, and Plawie never imports the source wallet key.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 height: 1.4,
@@ -432,7 +432,9 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
           key: const Key('bridge-source-chain'),
           initialValue: _sourceChain,
           isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Source chain'),
+          decoration: const InputDecoration(
+            labelText: 'Source wallet network',
+          ),
           items: [
             for (final chain in chains)
               DropdownMenuItem(

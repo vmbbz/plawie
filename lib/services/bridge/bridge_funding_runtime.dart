@@ -69,7 +69,6 @@ final class BridgeFundingRuntime {
           ],
           redirect: Redirect(
             native: walletRedirect,
-            universal: dappUri.toString(),
           ),
         ),
       );

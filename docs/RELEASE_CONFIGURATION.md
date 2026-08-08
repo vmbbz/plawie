@@ -9,7 +9,7 @@ receipts must not be committed, printed in CI logs, or packaged as assets.
 | Define | Required when | Failure behavior |
 | --- | --- | --- |
 | `REOWN_PROJECT_ID` | Reown EVM or Solana fallback is enabled | Connected wallet capability is unavailable |
-| `PLAWIE_DAPP_URL` | Reown is enabled; must be HTTPS | Connected wallet capability is unavailable |
+| `PLAWIE_DAPP_URL` | Reown is enabled; public HTTPS metadata origin registered in Reown | Connected wallet capability is unavailable |
 | `ROBINHOOD_RPC_URL` | Production internal Robinhood sends; must be HTTPS | Sends are disabled; rate-limited public reads remain |
 | `ENABLE_LIFI_CONNECTED_BRIDGE` | Connected LI.FI execution is approved | Connected execution stays disabled |
 | `ENABLE_RELAY_DEPOSIT_BRIDGE` | Relay strict-deposit execution is approved | One-time address stays disabled |
@@ -21,6 +21,26 @@ receipts must not be committed, printed in CI logs, or packaged as assets.
 All gates default to `false`. LI.FI public quote/capability requests do not
 require an embedded API key. Any future partner credential belongs behind a
 controlled backend.
+
+### Create the Reown project
+
+1. Sign in at `https://dashboard.reown.com` and create a Plawie project using
+   the AppKit product.
+2. Copy its Project ID into the release environment as `REOWN_PROJECT_ID`.
+3. Under **Project Domains**, add the exact origin used by
+   `PLAWIE_DAPP_URL`. For example, if Plawie controls `https://plawie.app`, use
+   that exact HTTPS origin for both. A controlled GitHub Pages origin is also
+   acceptable for testing; a GitHub repository URL is not an app origin.
+4. Under **Mobile Application IDs**, add Android package
+   `com.openclaw.plawie`.
+
+The current Android return callback is already owned by the app as
+`plawie://wallet-callback`; do not put that custom-scheme value in
+`PLAWIE_DAPP_URL`. Plawie currently uses Reown relay mode and passes only this
+native callback. A future Reown Link Mode rollout would require a separately
+verified HTTPS universal link, Android App Links intent filter, and hosted
+`/.well-known/assetlinks.json`; the app must not claim that configuration
+before those pieces exist.
 
 ## Production command shape
 

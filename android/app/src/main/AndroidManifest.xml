@@ -136,6 +136,16 @@
 
     <queries>
         <package android:name="com.termux" />
+        <!-- Reown still owns the dynamic wallet catalog and routing. These
+             documented package IDs only let Android report common installed
+             wallets accurately; they are not an execution allowlist. -->
+        <package android:name="io.metamask" />
+        <package android:name="com.wallet.crypto.trustapp" />
+        <package android:name="io.gnosis.safe" />
+        <package android:name="me.rainbow" />
+        <package android:name="org.toshi" />
+        <package android:name="app.phantom" />
+        <package android:name="com.solflare.mobile" />
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

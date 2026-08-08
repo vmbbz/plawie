@@ -25,6 +25,25 @@ void main() {
     );
     expect(manifest, contains('android:scheme="https"'));
     expect(manifest, isNot(contains('QUERY_ALL_PACKAGES')));
+    for (final packageName in <String>[
+      'io.metamask',
+      'com.wallet.crypto.trustapp',
+      'org.toshi',
+      'app.phantom',
+      'com.solflare.mobile',
+    ]) {
+      expect(manifest, contains('android:name="$packageName"'));
+    }
+  });
+
+  test('Reown uses the native callback until universal links are verified', () {
+    final runtime = read(
+      'lib/services/bridge/bridge_funding_runtime.dart',
+    );
+
+    expect(runtime, contains('native: walletRedirect'));
+    expect(runtime, isNot(contains('universal: dappUri.toString()')));
+    expect(runtime, isNot(contains('linkMode: true')));
   });
 
   test(

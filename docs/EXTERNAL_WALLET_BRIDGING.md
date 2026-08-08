@@ -136,6 +136,12 @@ The release build must provide non-empty `REOWN_PROJECT_ID` and an HTTPS
 `ENABLE_REOWN_SOLANA_FALLBACK`. A missing define or disabled gate produces an
 unavailable capability instead of a partially working connector.
 
+`PLAWIE_DAPP_URL` is Reown pairing metadata and must match a Project Domains
+entry in the Reown dashboard. It is not the Android callback. Android returns
+through the manifest-owned `plawie://wallet-callback` custom scheme. Link Mode
+and an HTTPS universal callback remain disabled until Plawie controls a domain,
+hosts Android Digital Asset Links, and separately reviews that transport.
+
 ## Task 6 reviewed EVM execution
 
 Task 6 adds the foreground EVM controller and bounded JSON-RPC client. It still
