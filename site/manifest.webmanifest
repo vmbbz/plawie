@@ -9,10 +9,10 @@
   "theme_color": "#020706",
   "icons": [
     {
-      "src": "/assets/brand/plawie-mark.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/assets/brand/plawie-app-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

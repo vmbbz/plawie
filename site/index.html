@@ -8,7 +8,8 @@
     <meta name="description" content="Plawie brings an OpenClaw-powered AI companion, skills, local Gateway controls, and human-approved wallet actions to Android.">
     <meta name="robots" content="index,follow,max-image-preview:large">
     <link rel="canonical" href="https://plawie.app/">
-    <link rel="icon" href="/assets/brand/plawie-mark.svg" type="image/svg+xml">
+    <link rel="icon" href="/assets/brand/plawie-app-icon.png" type="image/png" sizes="192x192">
+    <link rel="apple-touch-icon" href="/assets/brand/plawie-app-icon.png">
     <link rel="manifest" href="/manifest.webmanifest">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Plawie">
@@ -58,7 +59,7 @@
     <header class="site-header" data-header>
       <div class="header-inner shell">
         <a class="brand" href="#top" aria-label="Plawie home">
-          <img src="/assets/brand/plawie-mark.svg" width="40" height="40" alt="">
+          <img src="/assets/brand/plawie-app-icon.png" width="40" height="40" alt="">
           <span>PLAWIE</span>
         </a>
         <nav class="desktop-nav" aria-label="Primary navigation">
@@ -99,6 +100,34 @@
           <p class="launch-note"><span>Google Play launch in preparation</span> · Follow the public release train</p>
         </div>
 
+        <div class="hero-brand-stage reveal" data-delay="1" aria-hidden="true">
+          <div class="companion-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="companion-emblem">
+            <span class="companion-scan" aria-hidden="true"></span>
+            <img src="/assets/brand/plawie-app-icon.png" width="192" height="192" alt="">
+          </div>
+          <div class="companion-state"><i></i><span><small>PLAWIE · ANDROID</small><strong>Companion online</strong></span><em>01</em></div>
+          <div class="hero-chip hero-chip-a"><span></span> Local Gateway</div>
+          <div class="hero-chip hero-chip-b"><span></span> Skills visible</div>
+          <p>One native control surface.<br>Intelligence on your terms.</p>
+        </div>
+
+        <div class="hero-proof reveal" data-delay="2">
+          <div><span>01</span><strong>Native-first</strong><small>Android owns the primary runtime</small></div>
+          <div><span>02</span><strong>Official Gateway</strong><small>Fresh upstream release at setup</small></div>
+          <div><span>03</span><strong>Modular installs</strong><small>Verified packs with receipts</small></div>
+          <div><span>04</span><strong>Human approved</strong><small>Review before wallet signing</small></div>
+        </div>
+      </section>
+
+      <section class="product-section section shell" id="product" aria-labelledby="product-title">
+        <div class="section-heading reveal">
+          <p class="eyebrow">The product, not a mockup</p>
+          <h2 id="product-title">Touch the control surface.</h2>
+          <p>Switch the preview to see how Plawie exposes intelligence, capability, health, and payment boundaries instead of hiding them.</p>
+        </div>
+        <div class="product-showcase">
+          <div class="product-device-slot" data-product-device aria-live="off">
         <div class="hero-stage reveal" data-delay="1">
           <div class="orbit-label orbit-label-a"><span></span> Gateway local</div>
           <div class="orbit-label orbit-label-b"><span></span> Tools visible</div>
@@ -108,14 +137,14 @@
             <div class="phone-screen">
               <div class="phone-status" aria-hidden="true"><span>09:41</span><span>◉ 5G ▮▮▮</span></div>
               <div class="app-header">
-                <div class="app-identity"><img src="/assets/brand/plawie-mark.svg" width="26" height="26" alt=""><div><strong>Plawie</strong><small data-demo-subtitle>OPENROUTER · NATIVE HUB</small></div></div>
+                <div class="app-identity"><img src="/assets/brand/plawie-app-icon.png" width="26" height="26" alt=""><div><strong>Plawie</strong><small data-demo-subtitle>OPENROUTER · NATIVE HUB</small></div></div>
                 <span class="app-live"><i></i> LIVE</span>
               </div>
 
               <div class="demo-panel is-active" id="demo-chat" role="tabpanel" aria-labelledby="tab-chat" data-demo-panel="chat">
                 <div class="avatar-field" aria-hidden="true">
                   <div class="avatar-rings"><i></i><i></i><i></i></div>
-                  <svg class="avatar-silhouette" viewBox="0 0 180 220"><path d="M90 20c-30 0-51 22-51 56 0 23 9 43 24 54-4 12-14 20-31 26-16 6-25 17-27 40h170c-2-23-11-34-27-40-17-6-27-14-31-26 15-11 24-31 24-54 0-34-21-56-51-56Z"/><path class="avatar-cut" d="M46 60c11-24 27-35 48-35 23 0 39 14 45 38-16-5-30-16-39-31-11 15-30 25-54 28Z"/></svg>
+                  <img class="avatar-app-icon" src="/assets/brand/plawie-app-icon.png" width="192" height="192" alt="">
                 </div>
                 <div class="chat-stack">
                   <div class="bubble bubble-user">Give me a focused start to the day.</div>
@@ -179,28 +208,18 @@
             </div>
           </section>
         </div>
-
-        <div class="hero-proof reveal" data-delay="2">
-          <div><span>01</span><strong>Native-first</strong><small>Android owns the primary runtime</small></div>
-          <div><span>02</span><strong>Official Gateway</strong><small>Fresh upstream release at setup</small></div>
-          <div><span>03</span><strong>Modular installs</strong><small>Verified packs with receipts</small></div>
-          <div><span>04</span><strong>Human approved</strong><small>Review before wallet signing</small></div>
+          </div>
+          <div class="product-control-rail reveal">
+            <div class="control-rail-heading"><small>LIVE PRODUCT PREVIEW</small><strong>Four surfaces.<br>One operating rhythm.</strong><p>Use the controls here or tap the navigation inside the phone. Each state is a faithful, non-connected illustration of the Android experience.</p></div>
+            <div class="demo-selector" role="tablist" aria-label="Plawie product previews">
+              <button type="button" id="tab-chat" role="tab" aria-selected="true" aria-controls="demo-chat" tabindex="0" class="demo-tab is-active" data-demo-target="chat"><span>01</span><strong>Chat</strong><small>Companion + tool plans</small></button>
+              <button type="button" id="tab-skills" role="tab" aria-selected="false" aria-controls="demo-skills" tabindex="-1" class="demo-tab" data-demo-target="skills"><span>02</span><strong>Skills</strong><small>Readiness + receipts</small></button>
+              <button type="button" id="tab-gateway" role="tab" aria-selected="false" aria-controls="demo-gateway" tabindex="-1" class="demo-tab" data-demo-target="gateway"><span>03</span><strong>Gateway</strong><small>Health + native ownership</small></button>
+              <button type="button" id="tab-wallet" role="tab" aria-selected="false" aria-controls="demo-wallet" tabindex="-1" class="demo-tab" data-demo-target="wallet"><span>04</span><strong>Wallet</strong><small>Bridge + human approval</small></button>
+            </div>
+            <p class="demo-disclaimer">Interactive product illustration. It is not connected to your device, account, or wallet.</p>
+          </div>
         </div>
-      </section>
-
-      <section class="product-section section shell" id="product" aria-labelledby="product-title">
-        <div class="section-heading reveal">
-          <p class="eyebrow">The product, not a mockup</p>
-          <h2 id="product-title">Touch the control surface.</h2>
-          <p>Switch the preview to see how Plawie exposes intelligence, capability, health, and payment boundaries instead of hiding them.</p>
-        </div>
-        <div class="demo-selector reveal" role="tablist" aria-label="Plawie product previews">
-          <button type="button" id="tab-chat" role="tab" aria-selected="true" aria-controls="demo-chat" tabindex="0" class="demo-tab is-active" data-demo-target="chat"><span>01</span><strong>Chat</strong><small>Companion + tool plans</small></button>
-          <button type="button" id="tab-skills" role="tab" aria-selected="false" aria-controls="demo-skills" tabindex="-1" class="demo-tab" data-demo-target="skills"><span>02</span><strong>Skills</strong><small>Readiness + receipts</small></button>
-          <button type="button" id="tab-gateway" role="tab" aria-selected="false" aria-controls="demo-gateway" tabindex="-1" class="demo-tab" data-demo-target="gateway"><span>03</span><strong>Gateway</strong><small>Health + native ownership</small></button>
-          <button type="button" id="tab-wallet" role="tab" aria-selected="false" aria-controls="demo-wallet" tabindex="-1" class="demo-tab" data-demo-target="wallet"><span>04</span><strong>Wallet</strong><small>Bridge + human approval</small></button>
-        </div>
-        <p class="demo-disclaimer">Interactive product illustration. It is not connected to your device, account, or wallet.</p>
       </section>
 
       <section class="architecture-section section" id="architecture" aria-labelledby="architecture-title">
@@ -269,7 +288,7 @@
 
       <section class="launch-section section shell" aria-labelledby="launch-title">
         <div class="launch-card reveal">
-          <div class="launch-orb" aria-hidden="true"><img src="/assets/brand/plawie-mark.svg" width="88" height="88" alt=""></div>
+          <div class="launch-orb" aria-hidden="true"><img src="/assets/brand/plawie-app-icon.png" width="88" height="88" alt=""></div>
           <p class="eyebrow">The pocket agent is waking up</p>
           <h2 id="launch-title">Be there when<br>Plawie lands.</h2>
           <p>Google Play and Product Hunt launch preparation is underway. Follow the public release train today; the store button arrives only when the listing is real.</p>
@@ -293,7 +312,7 @@
 
     <footer class="site-footer">
       <div class="shell footer-grid">
-        <div><a class="brand footer-brand" href="#top"><img src="/assets/brand/plawie-mark.svg" width="40" height="40" alt=""><span>PLAWIE</span></a><p>OpenClaw in your pocket.</p></div>
+        <div><a class="brand footer-brand" href="#top"><img src="/assets/brand/plawie-app-icon.png" width="40" height="40" alt=""><span>PLAWIE</span></a><p>OpenClaw in your pocket.</p></div>
         <div><strong>Explore</strong><a href="#product">Product</a><a href="#architecture">Architecture</a><a href="#skills">Skills</a><a href="#faq">FAQ</a></div>
         <div><strong>Project</strong><a href="https://github.com/vmbbz/plawie" rel="noreferrer">GitHub</a><a href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">Releases</a><a href="https://github.com/vmbbz/plawie/issues" rel="noreferrer">Issue tracker</a></div>
         <div><strong>Trust</strong><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/support/">Support</a></div>

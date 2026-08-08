@@ -22,12 +22,14 @@ status signal. It borrows the app's black surfaces, precise outlines, mono
 telemetry, soft glass, and `#00FFA3` accent while improving hierarchy and
 legibility for the web.
 
-The hero is not a static phone screenshot. It is a lightweight, semantic
-HTML/CSS product simulation inside a dimensional phone frame. Visitors can
-switch between Chat, Skills, Gateway, and Wallet states and trigger one safe
-scripted interaction. The surrounding page reacts subtly to the active state.
-This creates the feeling of using Plawie without shipping the Flutter runtime,
-requiring an account, or exposing private application data.
+The hero uses the production Android launcher artwork as a branded companion
+signal rather than duplicating the interactive phone. The complete semantic
+HTML/CSS phone simulation lives with its controls in the Product section, so a
+visitor never operates a device that has already scrolled out of view. Visitors
+can switch between Chat, Skills, Gateway, and Wallet states and trigger one safe
+scripted interaction. This creates the feeling of using Plawie without shipping
+the Flutter runtime, requiring an account, or exposing private application
+data.
 
 Motion is purposeful and optional:
 
@@ -58,8 +60,10 @@ Motion is purposeful and optional:
 - Secondary CTA: explore the live product demo.
 - Trust strip: native-first, official Gateway, modular downloads, human-approved
   wallet actions. Each item opens or links to a plain-language explanation.
-- Interactive phone demo is visible above the fold on desktop and immediately
-  after the copy on mobile.
+- Hero artwork uses the same launcher identity as the Android app.
+- The interactive phone begins in the immediately following Product section,
+  where its state controls and non-connected-preview disclosure remain beside
+  it on desktop and directly above it on mobile.
 
 ### 3. Product demo: four real mental models
 
