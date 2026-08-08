@@ -269,6 +269,7 @@ class ProcessManager(
     // Used during bootstrap for apt, npm, chmod, etc.
     // ================================================================
     fun runInProotSync(command: String, timeoutSeconds: Long = 900): String {
+        ensureProotRootfsReady()
         val cmd = buildInstallCommand(command)
         val env = prootEnv()
 
@@ -326,11 +327,23 @@ class ProcessManager(
         return output.toString()
     }
 
+    private fun ensureProotRootfsReady() {
+        val bashReady = File(rootfsDir, "bin/bash").isFile ||
+            File(rootfsDir, "usr/bin/bash").isFile
+        if (!bashReady) {
+            throw IllegalStateException(
+                "Optional PRoot rollback is not installed. " +
+                    "Open Terminal and choose Open rollback setup first."
+            )
+        }
+    }
+
     // ================================================================
     // Start a long-lived gateway process (gateway mode).
     // Uses full proot-distro command_login() style configuration.
     // ================================================================
     fun startProotProcess(command: String): Process {
+        ensureProotRootfsReady()
         val cmd = buildGatewayCommand(command)
         val env = prootEnv()
 

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/native_bridge.dart';
+import 'setup_wizard_screen.dart';
 import '../widgets/glass_card.dart';
 import '../app.dart';
 
@@ -19,6 +21,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
   final FocusNode _historyFocusNode = FocusNode();
   final List<OutputLine> _output = [];
   bool _isRunning = false;
+  bool? _rollbackReady;
+  String? _rollbackStatusError;
   final List<String> _history = [];
   int _historyIndex = -1;
 
@@ -26,10 +30,43 @@ class _TerminalScreenState extends State<TerminalScreen> {
   void initState() {
     super.initState();
     _addOutput(
-      'Plawie rollback terminal ready.\n'
-      'PRoot fallback starts only when you run a command.\n',
+      'Plawie rollback terminal.\n'
+      'Checking the optional PRoot environment...\n',
       isSystem: true,
     );
+    unawaited(_refreshRollbackStatus());
+  }
+
+  Future<void> _refreshRollbackStatus() async {
+    try {
+      final status = await NativeBridge.getBootstrapStatus();
+      if (!mounted) return;
+      final ready = status['binBashExists'] == true;
+      setState(() {
+        _rollbackReady = ready;
+        _rollbackStatusError = null;
+      });
+      _addOutput(
+        ready
+            ? 'PRoot rollback is installed. It starts only when you run a command.\n'
+            : 'PRoot rollback is not installed. Native Gateway remains active; open rollback setup only if you want this shell.\n',
+        isSystem: true,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _rollbackReady = false;
+        _rollbackStatusError = error.toString();
+      });
+      _addOutput('Could not verify rollback status: $error', isError: true);
+    }
+  }
+
+  Future<void> _openRollbackSetup() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const SetupWizardScreen()),
+    );
+    if (mounted) await _refreshRollbackStatus();
   }
 
   @override
@@ -80,6 +117,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   Future<void> _runCommand() async {
+    if (_rollbackReady != true) {
+      await _openRollbackSetup();
+      return;
+    }
     final cmd = _inputController.text.trim();
     if (cmd.isEmpty || _isRunning) return;
 
@@ -122,6 +163,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: Column(
                     children: [
+                      if (_rollbackReady != true) _buildRollbackReadinessCard(),
                       Expanded(
                         child: GlassCard(
                           blurStrength: 30,
@@ -180,12 +222,18 @@ class _TerminalScreenState extends State<TerminalScreen> {
                                 },
                                 child: TextField(
                                   controller: _inputController,
+                                  enabled:
+                                      _rollbackReady == true && !_isRunning,
                                   style: GoogleFonts.jetBrainsMono(
                                     color: Colors.white,
                                     fontSize: 13,
                                   ),
                                   decoration: InputDecoration(
-                                    hintText: 'Enter command...',
+                                    hintText: _rollbackReady == null
+                                        ? 'Checking rollback shell...'
+                                        : _rollbackReady == true
+                                            ? 'Enter command...'
+                                            : 'Rollback shell not installed',
                                     hintStyle: GoogleFonts.jetBrainsMono(
                                       color:
                                           Colors.white.withValues(alpha: 0.3),
@@ -240,7 +288,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
                                         .withValues(alpha: 0.3)),
                               ),
                               child: IconButton(
-                                onPressed: _isRunning ? null : _runCommand,
+                                onPressed: _rollbackReady == true && !_isRunning
+                                    ? _runCommand
+                                    : null,
                                 icon: Icon(Icons.send_rounded,
                                     color: AppColors.statusGreen),
                               ),
@@ -253,6 +303,78 @@ class _TerminalScreenState extends State<TerminalScreen> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRollbackReadinessCard() {
+    final checking = _rollbackReady == null;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (checking)
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            const Icon(Icons.shield_outlined, color: Colors.amber),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  checking
+                      ? 'Checking rollback shell'
+                      : 'Optional rollback shell not installed',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  checking
+                      ? 'Verifying the local fallback without starting it.'
+                      : _rollbackStatusError ??
+                          'Plawie remains native-first. Install the separate Ubuntu PRoot environment only if you want this manual fallback terminal.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.68),
+                    height: 1.3,
+                  ),
+                ),
+                if (!checking) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: _openRollbackSetup,
+                        icon: const Icon(Icons.download_outlined, size: 18),
+                        label: const Text('Open rollback setup'),
+                      ),
+                      TextButton(
+                        onPressed: _refreshRollbackStatus,
+                        child: const Text('Check again'),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
           ),
         ],
       ),
