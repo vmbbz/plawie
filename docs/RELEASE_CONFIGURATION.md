@@ -1,15 +1,16 @@
 # Release Configuration
 
-This file records build inputs, not secret values. Project identifiers, RPC
-credentials, wallet material, signatures, API keys, callback captures, and
-receipts must not be committed, printed in CI logs, or packaged as assets.
+This file records build inputs. The Reown project ID and dapp origin are public
+client metadata already present in every configured APK; RPC credentials,
+wallet material, signatures, API keys, callback captures, and receipts remain
+secrets and must not be committed, printed in CI logs, or packaged as assets.
 
 ## Wallet and bridge inputs
 
 | Define | Required when | Failure behavior |
 | --- | --- | --- |
-| `REOWN_PROJECT_ID` | Reown EVM or Solana fallback is enabled | Connected wallet capability is unavailable |
-| `PLAWIE_DAPP_URL` | Reown is enabled; public HTTPS metadata origin registered in Reown | Connected wallet capability is unavailable |
+| `REOWN_PROJECT_ID` | Optional rotation override; public default is configured | Connected wallet capability is unavailable only if both are invalid |
+| `PLAWIE_DAPP_URL` | Optional rotation override; public default is `https://plawie.app` | Connected wallet capability is unavailable only if both are invalid |
 | `ROBINHOOD_RPC_URL` | Production internal Robinhood sends; must be HTTPS | Sends are disabled; rate-limited public reads remain |
 | `ENABLE_LIFI_CONNECTED_BRIDGE` | Connected LI.FI execution is approved | Connected execution stays disabled |
 | `ENABLE_RELAY_DEPOSIT_BRIDGE` | Relay strict-deposit execution is approved | One-time address stays disabled |
@@ -26,13 +27,25 @@ controlled backend.
 
 1. Sign in at `https://dashboard.reown.com` and create a Plawie project using
    the AppKit product.
-2. Copy its Project ID into the release environment as `REOWN_PROJECT_ID`.
+2. The reviewed project ID is stored as public APK metadata. A release may
+   override it with `REOWN_PROJECT_ID` during a controlled project rotation.
 3. Under **Project Domains**, add the exact origin used by
    `PLAWIE_DAPP_URL`. For example, if Plawie controls `https://plawie.app`, use
    that exact HTTPS origin for both. A controlled GitHub Pages origin is also
    acceptable for testing; a GitHub repository URL is not an app origin.
 4. Under **Mobile Application IDs**, add Android package
    `com.openclaw.plawie`.
+
+Plawie's reviewed public client configuration is:
+
+- Project ID: `b20414538d1c91f0697cc92149003107`
+- Metadata origin: `https://plawie.app`
+- Android application ID: `com.openclaw.plawie`
+- Native callback: `plawie://wallet-callback`
+
+Before production publication, `plawie.app` must resolve publicly, serve HTTPS,
+and be present in the Reown Project Domains allowlist. The app cannot configure
+DNS or the authenticated Reown dashboard from an APK build.
 
 The current Android return callback is already owned by the app as
 `plawie://wallet-callback`; do not put that custom-scheme value in
@@ -49,13 +62,9 @@ them. Compose these defines with the native-Gateway release variant required by
 that release train.
 
 ```powershell
-if ([string]::IsNullOrWhiteSpace($env:REOWN_PROJECT_ID)) { throw 'REOWN_PROJECT_ID is required' }
-if ([string]::IsNullOrWhiteSpace($env:PLAWIE_DAPP_URL)) { throw 'PLAWIE_DAPP_URL is required' }
 if ([string]::IsNullOrWhiteSpace($env:ROBINHOOD_RPC_URL)) { throw 'ROBINHOOD_RPC_URL is required' }
 
 flutter build appbundle --release `
-  --dart-define=REOWN_PROJECT_ID=$env:REOWN_PROJECT_ID `
-  --dart-define=PLAWIE_DAPP_URL=$env:PLAWIE_DAPP_URL `
   --dart-define=ROBINHOOD_RPC_URL=$env:ROBINHOOD_RPC_URL `
   --dart-define=ENABLE_LIFI_CONNECTED_BRIDGE=true `
   --dart-define=ENABLE_RELAY_DEPOSIT_BRIDGE=true `

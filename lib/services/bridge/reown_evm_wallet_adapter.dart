@@ -6,8 +6,17 @@ import 'package:reown_appkit/reown_appkit.dart';
 import 'bridge_models.dart';
 import 'external_wallet_session_service.dart';
 
-const reownProjectId = String.fromEnvironment('REOWN_PROJECT_ID');
-const plawieDappUrl = String.fromEnvironment('PLAWIE_DAPP_URL');
+// Reown project metadata is public client configuration and is shipped in the
+// APK. Release defines remain supported so a project/domain rotation does not
+// require changing transport code.
+const reownProjectId = String.fromEnvironment(
+  'REOWN_PROJECT_ID',
+  defaultValue: 'b20414538d1c91f0697cc92149003107',
+);
+const plawieDappUrl = String.fromEnvironment(
+  'PLAWIE_DAPP_URL',
+  defaultValue: 'https://plawie.app',
+);
 const walletRedirect = 'plawie://wallet-callback';
 
 bool get reownReleaseConfigured {

@@ -130,11 +130,13 @@ USDC, expose a bridge execution button, or enable any wallet gate by default.
   session topics, authorization tokens, and shared secrets are not persisted,
   logged, exported to receipts, or exposed to agents.
 
-The release build must provide non-empty `REOWN_PROJECT_ID` and an HTTPS
-`PLAWIE_DAPP_URL`, then independently enable only the reviewed feature gates:
+The release build contains the reviewed public Reown project ID and HTTPS
+`PLAWIE_DAPP_URL`, with release defines retained as rotation overrides. It must
+still independently enable only the reviewed feature gates:
 `ENABLE_REOWN_EVM_WALLETS`, `ENABLE_SOLANA_MWA_WALLETS`, and, if approved,
-`ENABLE_REOWN_SOLANA_FALLBACK`. A missing define or disabled gate produces an
-unavailable capability instead of a partially working connector.
+`ENABLE_REOWN_SOLANA_FALLBACK`. An invalid public configuration or disabled
+gate produces an unavailable capability instead of a partially working
+connector.
 
 `PLAWIE_DAPP_URL` is Reown pairing metadata and must match a Project Domains
 entry in the Reown dashboard. It is not the Android callback. Android returns
@@ -251,8 +253,9 @@ not claim to submit, resume, or monitor it.
 
 ### Release configuration and rollback
 
-Release builds require non-empty `REOWN_PROJECT_ID` and HTTPS
-`PLAWIE_DAPP_URL`. Internal Robinhood transactions additionally require an
+Release builds use the reviewed public `REOWN_PROJECT_ID` and HTTPS
+`PLAWIE_DAPP_URL` defaults, optionally overridden during a controlled rotation.
+Internal Robinhood transactions additionally require an
 HTTPS `ROBINHOOD_RPC_URL`; debug builds may use the official rate-limited public
 RPC for non-production checks. Enable independently only after the matching
 acceptance:
