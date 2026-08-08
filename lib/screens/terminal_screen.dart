@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui';
@@ -38,7 +37,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
     _inputController.dispose();
     _scrollController.dispose();
     _historyFocusNode.dispose();
-    unawaited(NativeBridge.destroyShell().catchError((_) {}));
     super.dispose();
   }
 
@@ -92,9 +90,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
     setState(() => _isRunning = true);
 
     try {
-      final result = await NativeBridge.executeInShell(
+      final result = await NativeBridge.runInProot(
         cmd,
-        timeoutMs: 120000,
+        timeout: 120,
       );
       if (!mounted) return;
       _addOutput(
