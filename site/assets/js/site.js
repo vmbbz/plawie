@@ -10,7 +10,7 @@
   const productTabs = [...document.querySelectorAll('[role="tab"][data-demo-target]')];
   const allDemoControls = [...document.querySelectorAll('[data-demo-target]')];
   const panels = [...document.querySelectorAll('[data-demo-panel]')];
-  const heroStage = document.querySelector('.hero-stage');
+  const demoStage = document.querySelector('.hero-stage');
   const demoSubtitle = document.querySelector('[data-demo-subtitle]');
 
   const demoMeta = {
@@ -70,9 +70,9 @@
       }
     });
 
-    if (options.focusPhone && heroStage) {
+    if (options.focusPhone && demoStage) {
       const block = window.innerWidth < 760 ? 'center' : 'center';
-      heroStage.scrollIntoView({ behavior: reduceMotion.matches ? 'auto' : 'smooth', block });
+      demoStage.scrollIntoView({ behavior: reduceMotion.matches ? 'auto' : 'smooth', block });
     }
   };
 
