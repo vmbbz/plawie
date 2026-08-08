@@ -103,6 +103,35 @@ void main() {
     expect(find.textContaining('USDG ·'), findsWidgets);
   });
 
+  testWidgets('shows and safely changes the connected external source wallet',
+      (tester) async {
+    final controller = _FakeController()
+      ..externalWallet = const ExternalWalletIdentity(
+        transport: ExternalWalletTransport.reownEvm,
+        walletLabel: 'Trust Wallet',
+        publicAddress: '0x2222222222222222222222222222222222222222',
+        chainId: BridgeConstants.ethereumChainId,
+        chainType: BridgeChainType.evm,
+        approvedMethods: <String>{'eth_sendTransaction'},
+        approvedFeatures: <String>{},
+      );
+    await _pumpPanel(
+      tester,
+      controller: controller,
+      capabilities: _FakeCapabilities(_snapshot()),
+    );
+
+    expect(find.byKey(const Key('bridge-connected-wallet')), findsOneWidget);
+    expect(find.textContaining('Trust Wallet · Ethereum'), findsOneWidget);
+    expect(find.textContaining('0x22222…22222'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('bridge-change-wallet')));
+    await tester.pumpAndSettle();
+
+    expect(controller.disconnectWalletCalls, 1);
+    expect(find.byKey(const Key('bridge-connected-wallet')), findsNothing);
+  });
+
   testWidgets('uses cached routes read-only when live refresh fails',
       (tester) async {
     final capabilities = _FakeCapabilities.error(
@@ -486,12 +515,17 @@ final class _SequencedCapabilities implements BridgeCapabilitySource {
 
 final class _FakeController implements BridgeFundingUiController {
   BridgeFundingReceipt? currentReceipt;
+  ExternalWalletIdentity? externalWallet;
   List<ExternalWalletOption> walletOptions = const <ExternalWalletOption>[];
   final List<BridgeFundingRequest> connectedRequests = <BridgeFundingRequest>[];
   ExternalWalletTransport? selectedTransport;
   bool relayPersistedBeforeReturn = false;
   bool completeOnConfirm = false;
   int pollCalls = 0;
+  int disconnectWalletCalls = 0;
+
+  @override
+  ExternalWalletIdentity? get connectedExternalWallet => externalWallet;
 
   @override
   BridgeFundingReceipt? get activeReceipt {
@@ -524,6 +558,12 @@ final class _FakeController implements BridgeFundingUiController {
   @override
   Future<List<ExternalWalletOption>> discoverWallets(BridgeChain chain) async =>
       walletOptions;
+
+  @override
+  Future<void> disconnectExternalWallet() async {
+    disconnectWalletCalls += 1;
+    externalWallet = null;
+  }
 
   @override
   Future<void> prepareConnected(

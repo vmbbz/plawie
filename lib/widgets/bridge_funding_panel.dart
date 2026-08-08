@@ -269,6 +269,13 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
                   _buildReceipt(_activeReceipt!)
                 else ...[
                   _methodSelector(),
+                  if (_method == BridgeFundingMethod.connectedWallet &&
+                      widget.controller.connectedExternalWallet != null) ...[
+                    const SizedBox(height: 10),
+                    _connectedWalletCard(
+                      widget.controller.connectedExternalWallet!,
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   _fundingForm(),
                   if (_walletOptions.isNotEmpty) ...[
@@ -343,6 +350,71 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
       ],
     );
   }
+
+  Widget _connectedWalletCard(ExternalWalletIdentity identity) {
+    final chainName =
+        _chainFor(identity.chainId)?.name ?? 'Chain ID ${identity.chainId}';
+    return Container(
+      key: const Key('bridge-connected-wallet'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.35),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.wallet_rounded, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'EXTERNAL SOURCE WALLET',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${identity.walletLabel} · $chainName',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  _shortWalletAddress(identity.publicAddress),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            key: const Key('bridge-change-wallet'),
+            onPressed: _busy ? null : _changeExternalWallet,
+            child: const Text('Change'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changeExternalWallet() => _runBusy(() async {
+        await widget.controller.disconnectExternalWallet();
+        if (!mounted) return;
+        setState(() {
+          _walletOptions = const <ExternalWalletOption>[];
+          _error = null;
+        });
+      });
 
   Widget _fundingForm() {
     final chains = _chainsFor(_method);
@@ -1338,6 +1410,11 @@ String _stateTitle(BridgeFundingState state) => switch (state) {
       BridgeFundingState.cancelled => 'Cancelled before submission',
       _ => 'Funding in progress',
     };
+
+String _shortWalletAddress(String value) {
+  if (value.length <= 14) return value;
+  return '${value.substring(0, 7)}…${value.substring(value.length - 5)}';
+}
 
 String _bridgeError(BridgeValidationException error) => switch (error.code) {
       'active_bridge_receipt_exists' =>

@@ -137,6 +137,52 @@ void main() {
         ExternalWalletTransport.solanaMwa);
   });
 
+  test('changing source chain disconnects a stale wallet session first',
+      () async {
+    wallet.connectIdentity = _solanaIdentity(
+      address: solanaFixture.signer,
+      methods: const <String>{'solana_signTransaction'},
+    );
+    quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));
+
+    await controller().prepareConnected(_solanaRequest(solanaFixture));
+
+    expect(wallet.disconnectCalls, 1);
+    expect(wallet.connectTransports, <ExternalWalletTransport?>[null]);
+    expect(store.activeReceipt!.sourceChainId, BridgeConstants.solanaChainId);
+  });
+
+  test('external wallet can change only when no funding receipt is active',
+      () async {
+    final service = controller();
+
+    await service.disconnectExternalWallet();
+    expect(wallet.disconnectCalls, 1);
+    expect(service.connectedExternalWallet, isNull);
+
+    wallet.identity = _identity(
+      chainId: BridgeConstants.ethereumChainId,
+      address: connectedAddress,
+    );
+    quotes.quotes.add(
+      _quote(
+        now: now,
+        sourceAddress: connectedAddress,
+        sourceToken: sourceToken,
+        approvalAddress: spender,
+      ),
+    );
+    rpc.allowances.add(BigInt.from(1000000));
+    await service.prepareConnected(
+      _request(sourceAddress: typedAddress, sourceToken: sourceToken),
+    );
+
+    await expectLater(
+      service.disconnectExternalWallet(),
+      throwsA(_bridgeCode('active_bridge_receipt_exists')),
+    );
+  });
+
   test('insufficient allowance gets its own exact review and requote',
       () async {
     quotes.quotes

@@ -24,9 +24,13 @@ abstract interface class BridgeFundingUiController {
 
   List<BridgeFundingReceipt> get receipts;
 
+  ExternalWalletIdentity? get connectedExternalWallet;
+
   BridgeReviewKind? pendingReviewKind(String intentId);
 
   Future<List<ExternalWalletOption>> discoverWallets(BridgeChain chain);
+
+  Future<void> disconnectExternalWallet();
 
   Future<void> prepareConnected(
     BridgeFundingRequest request, {
@@ -171,6 +175,9 @@ final class BridgeFundingController implements BridgeFundingUiController {
   List<BridgeFundingReceipt> get receipts => _store.receipts;
 
   @override
+  ExternalWalletIdentity? get connectedExternalWallet => _wallet.identity;
+
+  @override
   BridgeReviewKind? pendingReviewKind(String intentId) {
     if (_preparedSolana?.intentId == intentId) {
       return BridgeReviewKind.bridge;
@@ -182,6 +189,20 @@ final class BridgeFundingController implements BridgeFundingUiController {
   @override
   Future<List<ExternalWalletOption>> discoverWallets(BridgeChain chain) =>
       _wallet.discover(chain);
+
+  @override
+  Future<void> disconnectExternalWallet() async {
+    if (_store.activeReceipt != null ||
+        _prepared != null ||
+        _preparedSolana != null ||
+        _confirmationInFlight != null) {
+      throw const BridgeValidationException(
+        'active_bridge_receipt_exists',
+        'Finish or cancel the active funding transfer before changing wallet.',
+      );
+    }
+    await _wallet.disconnect();
+  }
 
   @override
   Future<void> prepareConnected(
@@ -1622,9 +1643,11 @@ final class BridgeFundingController implements BridgeFundingUiController {
             ? ExternalWalletTransport.reownEvm
             : null);
     var existing = _wallet.identity;
-    if (existing != null &&
-        selected != null &&
-        existing.transport != selected) {
+    final existingDoesNotMatchRequest = existing != null &&
+        ((selected != null && existing.transport != selected) ||
+            existing.chainType != chain.type ||
+            existing.chainId != chain.id);
+    if (existingDoesNotMatchRequest) {
       await _wallet.disconnect();
       existing = null;
     }
