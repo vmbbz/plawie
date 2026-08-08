@@ -52,22 +52,56 @@ class ProcessManager(
     // ONLY proot-specific vars — guest env is set via `env -i` inside
     // the command line, matching proot-distro's approach.
     // ================================================================
-    private fun prootEnv(): Map<String, String> = mapOf(
-        // proot temp directory for its internal use
-        "PROOT_TMP_DIR" to tmpDir,
-        // Loader executables for proot's execve interception
-        "PROOT_LOADER" to "$nativeLibDir/libprootloader.so",
-        "PROOT_LOADER_32" to "$nativeLibDir/libprootloader32.so",
-        // LD_LIBRARY_PATH: proot itself needs libtalloc.so.2
-        // This does NOT leak into the guest (env -i cleans it)
-        "LD_LIBRARY_PATH" to "$libDir:$nativeLibDir",
-        // NOTE: Do NOT set PROOT_NO_SECCOMP. proot-distro does NOT set it.
-        // Seccomp BPF filter provides efficient syscall interception AND
-        // proper fork/clone child process tracking.
-        //
-        // NOTE: Do NOT set PROOT_L2S_DIR. We extract with Java, not
-        // `proot --link2symlink tar`, so no L2S metadata exists.
-    )
+    private fun prootEnv(): Map<String, String> {
+        ensureProotRuntimeLibraries()
+        return mapOf(
+            // proot temp directory for its internal use
+            "PROOT_TMP_DIR" to tmpDir,
+            // Loader executables for proot's execve interception
+            "PROOT_LOADER" to "$nativeLibDir/libprootloader.so",
+            "PROOT_LOADER_32" to "$nativeLibDir/libprootloader32.so",
+            // LD_LIBRARY_PATH: proot itself needs libtalloc.so.2
+            // This does NOT leak into the guest (env -i cleans it)
+            "LD_LIBRARY_PATH" to "$libDir:$nativeLibDir",
+            // NOTE: Do NOT set PROOT_NO_SECCOMP. proot-distro does NOT set it.
+            // Seccomp BPF filter provides efficient syscall interception AND
+            // proper fork/clone child process tracking.
+            //
+            // NOTE: Do NOT set PROOT_L2S_DIR. We extract with Java, not
+            // `proot --link2symlink tar`, so no L2S metadata exists.
+        )
+    }
+
+    /**
+     * Android extracts JNI libraries by their package filename, while the
+     * Termux PRoot binary requests libtalloc.so.2 by SONAME. Native-first setup
+     * does not necessarily initialize the rollback rootfs, so repair the alias
+     * at the actual PRoot execution boundary instead of relying on setup order.
+     */
+    @Synchronized
+    private fun ensureProotRuntimeLibraries() {
+        val source = File(nativeLibDir, "libtalloc.so")
+        if (!source.isFile) {
+            throw IllegalStateException(
+                "PRoot fallback runtime is incomplete: libtalloc.so is missing"
+            )
+        }
+
+        val targetDir = File(libDir)
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            throw IllegalStateException(
+                "PRoot fallback runtime directory could not be created"
+            )
+        }
+
+        val target = File(targetDir, "libtalloc.so.2")
+        if (!target.isFile || target.length() != source.length()) {
+            source.copyTo(target, overwrite = true)
+            target.setReadable(true, true)
+            target.setExecutable(true, true)
+            Log.i("ProcessManager", "Repaired PRoot libtalloc.so.2 runtime alias")
+        }
+    }
 
     // ================================================================
     // Common proot flags shared by both install and gateway modes.

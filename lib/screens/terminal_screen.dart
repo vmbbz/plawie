@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui';
@@ -16,6 +17,7 @@ class TerminalScreen extends StatefulWidget {
 class _TerminalScreenState extends State<TerminalScreen> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _historyFocusNode = FocusNode();
   final List<OutputLine> _output = [];
   bool _isRunning = false;
   final List<String> _history = [];
@@ -24,7 +26,20 @@ class _TerminalScreenState extends State<TerminalScreen> {
   @override
   void initState() {
     super.initState();
-    _addOutput('🚀 Plawie Stable Terminal ready.\nType openclaw commands below.\n', isSystem: true);
+    _addOutput(
+      'Plawie rollback terminal ready.\n'
+      'PRoot fallback starts only when you run a command.\n',
+      isSystem: true,
+    );
+  }
+
+  @override
+  void dispose() {
+    _inputController.dispose();
+    _scrollController.dispose();
+    _historyFocusNode.dispose();
+    unawaited(NativeBridge.destroyShell().catchError((_) {}));
+    super.dispose();
   }
 
   void _addOutput(String text, {bool isError = false, bool isSystem = false}) {
@@ -48,7 +63,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   void _navigateHistory(int offset) {
     if (_history.isEmpty) return;
-    
+
     final newIndex = _historyIndex + offset;
     if (newIndex >= -1 && newIndex < _history.length) {
       setState(() {
@@ -77,9 +92,17 @@ class _TerminalScreenState extends State<TerminalScreen> {
     setState(() => _isRunning = true);
 
     try {
-      final result = await NativeBridge.runInProot(cmd, timeout: 120);
-      _addOutput(result, isError: false);
+      final result = await NativeBridge.executeInShell(
+        cmd,
+        timeoutMs: 120000,
+      );
+      if (!mounted) return;
+      _addOutput(
+        result.trim().isEmpty ? '(command completed)\n' : result,
+        isError: false,
+      );
     } catch (e) {
+      if (!mounted) return;
       _addOutput('ERROR: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isRunning = false);
@@ -120,8 +143,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
                                       color: line.isError
                                           ? Colors.redAccent
                                           : line.isSystem
-                                               ? AppColors.statusGreen.withValues(alpha: 0.8)
-                                               : Colors.white.withValues(alpha: 0.9),
+                                              ? AppColors.statusGreen
+                                                  .withValues(alpha: 0.8)
+                                              : Colors.white
+                                                  .withValues(alpha: 0.9),
                                       fontSize: 12,
                                       height: 1.2,
                                       letterSpacing: -0.2,
@@ -143,12 +168,14 @@ class _TerminalScreenState extends State<TerminalScreen> {
                           children: [
                             Expanded(
                               child: KeyboardListener(
-                                focusNode: FocusNode(),
+                                focusNode: _historyFocusNode,
                                 onKeyEvent: (event) {
                                   if (event is KeyDownEvent) {
-                                    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                                    if (event.logicalKey ==
+                                        LogicalKeyboardKey.arrowUp) {
                                       _navigateHistory(1);
-                                    } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                                    } else if (event.logicalKey ==
+                                        LogicalKeyboardKey.arrowDown) {
                                       _navigateHistory(-1);
                                     }
                                   }
@@ -162,19 +189,24 @@ class _TerminalScreenState extends State<TerminalScreen> {
                                   decoration: InputDecoration(
                                     hintText: 'Enter command...',
                                     hintStyle: GoogleFonts.jetBrainsMono(
-                                      color: Colors.white.withValues(alpha: 0.3),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.3),
                                       fontSize: 13,
                                     ),
                                     filled: true,
-                                    fillColor: Colors.white.withValues(alpha: 0.05),
+                                    fillColor:
+                                        Colors.white.withValues(alpha: 0.05),
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(12),
                                       borderSide: BorderSide(
-                                        color: Colors.white.withValues(alpha: 0.1),
+                                        color:
+                                            Colors.white.withValues(alpha: 0.1),
                                       ),
                                     ),
-                                    prefixIcon: Icon(Icons.chevron_right, color: AppColors.statusGreen),
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    prefixIcon: Icon(Icons.chevron_right,
+                                        color: AppColors.statusGreen),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
                                   ),
                                   onSubmitted: (_) => _runCommand(),
                                 ),
@@ -185,24 +217,34 @@ class _TerminalScreenState extends State<TerminalScreen> {
                               children: [
                                 GestureDetector(
                                   onTap: () => _navigateHistory(1),
-                                  child: Icon(Icons.keyboard_arrow_up, size: 20, color: Colors.white.withValues(alpha: 0.5)),
+                                  child: Icon(Icons.keyboard_arrow_up,
+                                      size: 20,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.5)),
                                 ),
                                 GestureDetector(
                                   onTap: () => _navigateHistory(-1),
-                                  child: Icon(Icons.keyboard_arrow_down, size: 20, color: Colors.white.withValues(alpha: 0.5)),
+                                  child: Icon(Icons.keyboard_arrow_down,
+                                      size: 20,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.5)),
                                 ),
                               ],
                             ),
                             const SizedBox(width: 8),
                             Container(
                               decoration: BoxDecoration(
-                                color: AppColors.statusGreen.withValues(alpha: 0.1),
+                                color: AppColors.statusGreen
+                                    .withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.3)),
+                                border: Border.all(
+                                    color: AppColors.statusGreen
+                                        .withValues(alpha: 0.3)),
                               ),
                               child: IconButton(
                                 onPressed: _isRunning ? null : _runCommand,
-                                icon: Icon(Icons.send_rounded, color: AppColors.statusGreen),
+                                icon: Icon(Icons.send_rounded,
+                                    color: AppColors.statusGreen),
                               ),
                             ),
                           ],
@@ -266,7 +308,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
   void _copyAllOutput() {
     final allText = _output.map((e) => e.text).join('\n');
     Clipboard.setData(ClipboardData(text: allText));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Copied all output')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('✅ Copied all output')));
   }
 
   void _clearOutput() {
