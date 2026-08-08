@@ -107,7 +107,7 @@ class _AgentBasePageState extends State<AgentBasePage>
 
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 100,
+      expandedHeight: AppLayout.standardSliverHeaderHeight,
       floating: false,
       pinned: true,
       backgroundColor: Colors.transparent,

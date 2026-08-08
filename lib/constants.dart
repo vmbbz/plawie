@@ -79,6 +79,15 @@ class AppConstants {
   }
 }
 
+/// Shared page geometry. Standard title-only SliverAppBars intentionally keep
+/// only a small expansion above the Material toolbar so page content starts
+/// promptly and consistently across the app.
+abstract final class AppLayout {
+  static const double standardSliverHeaderHeight = 72;
+  static const double featureSliverHeaderHeight = 84;
+  static const double pageTopInset = 12;
+}
+
 /// Centralized premium metallic color palette for entire app.
 class AppColors {
   AppColors._();

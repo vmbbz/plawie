@@ -102,7 +102,7 @@ class _StatusDashboardState extends State<StatusDashboard> {
 
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 120.0,
+      expandedHeight: AppLayout.featureSliverHeaderHeight,
       floating: false,
       pinned: true,
       backgroundColor: Colors.transparent,

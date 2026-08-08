@@ -221,7 +221,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 100,
+      expandedHeight: AppLayout.standardSliverHeaderHeight,
       floating: false,
       pinned: true,
       elevation: 0,

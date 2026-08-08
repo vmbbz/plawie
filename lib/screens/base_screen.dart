@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:decimal/decimal.dart';
 import 'package:provider/provider.dart';
+import '../constants.dart';
 import '../providers/gateway_provider.dart';
 import '../services/ai_payment_provider_catalog.dart';
 import '../services/base_service.dart';
@@ -279,7 +280,7 @@ class _BaseScreenState extends State<BaseScreen> {
           CustomScrollView(
             slivers: [
               SliverAppBar(
-                expandedHeight: 100,
+                expandedHeight: AppLayout.standardSliverHeaderHeight,
                 floating: false,
                 pinned: true,
                 backgroundColor: Colors.transparent,
@@ -370,8 +371,12 @@ class _BaseScreenState extends State<BaseScreen> {
                         onRefresh: _refreshBalance,
                         child: SingleChildScrollView(
                           physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 24),
+                          padding: const EdgeInsets.fromLTRB(
+                            20,
+                            AppLayout.pageTopInset,
+                            20,
+                            24,
+                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
