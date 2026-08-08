@@ -59,6 +59,9 @@ class WalletNetworkDefinition {
 /// account. The Robinhood release RPC is supplied at build time; the official
 /// public endpoint remains a read/debug fallback only.
 abstract final class WalletNetworkPolicy {
+  static const String defaultNetworkStorageKey = 'wallet_default_network_v1';
+  // Retained for rollback compatibility with builds that persisted the active
+  // network instead of an explicit default network.
   static const String selectedNetworkStorageKey = 'wallet_network_v1';
   static const String legacySepoliaStorageKey = 'base_use_sepolia';
 
@@ -211,6 +214,8 @@ class BaseService {
   // State
   SecureWalletStatus _walletStatus = SecureWalletStatus.absent();
   WalletNetwork _selectedNetwork = WalletNetwork.baseMainnet;
+  WalletNetwork _defaultNetwork = WalletNetwork.baseMainnet;
+  bool _networkPreferenceLoaded = false;
 
   // Cached balances
   Decimal _ethBalance = Decimal.zero;
@@ -228,8 +233,12 @@ class BaseService {
   String get authenticationMode => _walletStatus.authenticationMode;
   String? get address => _walletStatus.address;
   WalletNetwork get selectedNetwork => _selectedNetwork;
+  WalletNetwork get defaultNetwork => _defaultNetwork;
   WalletNetworkDefinition get network =>
       WalletNetworkPolicy.definition(_selectedNetwork);
+  WalletNetworkDefinition get defaultNetworkDefinition =>
+      WalletNetworkPolicy.definition(_defaultNetwork);
+  bool get isSelectedNetworkDefault => _selectedNetwork == _defaultNetwork;
   bool get useSepolia => _selectedNetwork == WalletNetwork.baseSepolia;
   bool get isBaseMainnet => _selectedNetwork == WalletNetwork.baseMainnet;
   bool get isRobinhoodMainnet =>
@@ -325,8 +334,25 @@ class BaseService {
 
   Future<void> setWalletNetwork(WalletNetwork selected) async {
     final definition = WalletNetworkPolicy.definition(selected);
-    // Keep rollback compatibility. Older APKs safely map Robinhood to Base
-    // Mainnet instead of treating an unknown network as Sepolia.
+    _selectedNetwork = selected;
+    _stablecoinBalance = Decimal.zero;
+    _txHistory = const <BaseTx>[];
+    _eventController.add(BaseEvent.networkChanged(definition.name));
+    _logger.i('Active wallet network set to ${definition.name}');
+    if (isConnected) await refreshBalance();
+  }
+
+  /// Make [selected] the network shown whenever the app starts.
+  ///
+  /// Active network changes remain temporary until this explicit action. The
+  /// compatibility keys keep older APKs on a safe known EVM network after a
+  /// rollback; they do not expose wallet secrets.
+  Future<void> setDefaultWalletNetwork(WalletNetwork selected) async {
+    final definition = WalletNetworkPolicy.definition(selected);
+    await _secureStorage.write(
+      key: WalletNetworkPolicy.defaultNetworkStorageKey,
+      value: definition.storageValue,
+    );
     await _secureStorage.write(
       key: WalletNetworkPolicy.legacySepoliaStorageKey,
       value: (selected == WalletNetwork.baseSepolia).toString(),
@@ -335,12 +361,13 @@ class BaseService {
       key: WalletNetworkPolicy.selectedNetworkStorageKey,
       value: definition.storageValue,
     );
-    _selectedNetwork = selected;
-    _stablecoinBalance = Decimal.zero;
-    _txHistory = const <BaseTx>[];
-    _eventController.add(BaseEvent.networkChanged(definition.name));
-    _logger.i('Wallet network set to ${definition.name}');
-    if (isConnected) await refreshBalance();
+    _defaultNetwork = selected;
+    _logger.i('Default wallet network set to ${definition.name}');
+    if (_selectedNetwork != selected) {
+      await setWalletNetwork(selected);
+    } else {
+      _eventController.add(BaseEvent.networkChanged(definition.name));
+    }
   }
 
   /// Initialize — load stored wallet and network preference
@@ -348,20 +375,32 @@ class BaseService {
     try {
       _logger.i('Initializing Base Service...');
 
-      final storedNetwork = await _secureStorage.read(
-        key: WalletNetworkPolicy.selectedNetworkStorageKey,
-      );
-      final legacyNetwork = await _secureStorage.read(
-        key: WalletNetworkPolicy.legacySepoliaStorageKey,
-      );
-      _selectedNetwork = WalletNetworkPolicy.decodePreference(
-        current: storedNetwork,
-        legacySepolia: legacyNetwork,
-      );
-      if (storedNetwork == null) {
+      if (!_networkPreferenceLoaded) {
+        final storedDefault = await _secureStorage.read(
+          key: WalletNetworkPolicy.defaultNetworkStorageKey,
+        );
+        final legacyNetwork = await _secureStorage.read(
+          key: WalletNetworkPolicy.legacySepoliaStorageKey,
+        );
+        _defaultNetwork = WalletNetworkPolicy.decodePreference(
+          current: storedDefault,
+          legacySepolia: legacyNetwork,
+        );
+        _selectedNetwork = _defaultNetwork;
+        _networkPreferenceLoaded = true;
+
+        final resolvedDefault = defaultNetworkDefinition.storageValue;
+        if (storedDefault != resolvedDefault) {
+          await _secureStorage.write(
+            key: WalletNetworkPolicy.defaultNetworkStorageKey,
+            value: resolvedDefault,
+          );
+        }
+        // Keep rollback compatibility. Older APKs safely map Robinhood to Base
+        // Mainnet instead of treating an unknown network as Sepolia.
         await _secureStorage.write(
           key: WalletNetworkPolicy.selectedNetworkStorageKey,
-          value: network.storageValue,
+          value: resolvedDefault,
         );
       }
 

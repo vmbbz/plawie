@@ -208,6 +208,31 @@ class _BaseScreenState extends State<BaseScreen> {
     }
   }
 
+  Future<void> _makeCurrentNetworkDefault() async {
+    if (_isLoading || _baseService.isSelectedNetworkDefault) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      await _baseService.setDefaultWalletNetwork(
+        _baseService.selectedNetwork,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_baseService.defaultNetworkDefinition.name} will open by default',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Future<bool> _confirmTransfer({
     required String token,
     required String destination,
@@ -1345,6 +1370,7 @@ class _BaseScreenState extends State<BaseScreen> {
   Widget _buildWalletHeader(ThemeData theme) {
     final addr = _baseService.address;
     final selectedNetwork = _baseService.network;
+    final accent = _networkColor(selectedNetwork);
     final stablecoin = selectedNetwork.token;
     final recovery = BaseWalletRecoveryViewModel.fromStatus(
       _baseService.walletStatus,
@@ -1355,17 +1381,27 @@ class _BaseScreenState extends State<BaseScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            _networkColor(selectedNetwork),
-            Colors.purple.shade600,
+            Color.lerp(accent, Colors.black, 0.08)!,
+            Color.lerp(accent, Colors.purple.shade700, 0.72)!,
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.16),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: 0.2),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1373,126 +1409,210 @@ class _BaseScreenState extends State<BaseScreen> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.black.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.2),
+                  ),
                 ),
-                child: const Icon(
-                  Icons.account_balance_wallet,
-                  color: Colors.white,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
+                    Icon(
+                      _networkIcon(selectedNetwork),
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 7),
                     Text(
-                      'Plawie Wallet',
+                      selectedNetwork.name,
                       style: GoogleFonts.inter(
-                        fontSize: 24,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      shortAddr,
-                      style: GoogleFonts.robotoMono(
-                        fontSize: 13,
-                        color: Colors.white.withValues(alpha: 0.85),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              if (_baseService.isConnected)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.verified_user_outlined,
+                        size: 14,
+                        color: Colors.white,
                       ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Same secured address across supported EVM networks',
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        color: Colors.white.withValues(alpha: 0.72),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.22),
-                        ),
-                      ),
-                      child: Text(
-                        'Viewing ${selectedNetwork.name}',
+                      const SizedBox(width: 6),
+                      Text(
+                        'Protected',
                         style: GoogleFonts.inter(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              if (_baseService.isConnected)
-                IconButton(
-                  icon: const Icon(Icons.copy, color: Colors.white70, size: 20),
-                  tooltip: 'Copy address',
-                  onPressed: () {
-                    Clipboard.setData(
-                        ClipboardData(text: _baseService.address ?? ''));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Address copied')),
-                    );
-                  },
+                    ],
+                  ),
                 ),
             ],
           ),
           if (_baseService.isConnected) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 28),
+            Text(
+              'NETWORK BALANCE',
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.4,
+                color: Colors.white.withValues(alpha: 0.66),
+              ),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              '${_baseService.ethBalance.toStringAsFixed(6)} ETH',
+              maxLines: 1,
+              overflow: TextOverflow.fade,
+              softWrap: false,
+              style: GoogleFonts.inter(
+                fontSize: 31,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1.1,
+                color: Colors.white,
+              ),
+            ),
+            if (stablecoin != null) ...[
+              const SizedBox(height: 5),
+              Text(
+                '${_baseService.stablecoinBalance.toStringAsFixed(2)} ${stablecoin.symbol}',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withValues(alpha: 0.82),
+                ),
+              ),
+            ],
+            const SizedBox(height: 22),
+          ] else
+            const SizedBox(height: 20),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.14),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.key_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _baseService.isConnected
+                            ? 'SECURED ACCOUNT'
+                            : 'WALLET STATUS',
+                        style: GoogleFonts.inter(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1,
+                          color: Colors.white.withValues(alpha: 0.62),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        shortAddr,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.robotoMono(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_baseService.isConnected)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(
+                      Icons.copy_rounded,
+                      color: Colors.white,
+                      size: 19,
+                    ),
+                    tooltip: 'Copy address',
+                    onPressed: () {
+                      Clipboard.setData(
+                        ClipboardData(text: _baseService.address ?? ''),
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Address copied')),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+          if (_baseService.isConnected) ...[
+            const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(Icons.verified_user_outlined,
-                    size: 15, color: Colors.white70),
+                Icon(
+                  Icons.lock_outline_rounded,
+                  size: 13,
+                  color: Colors.white.withValues(alpha: 0.72),
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    '${_baseService.securityLevel} · auth per payment',
+                    '${_baseService.securityLevel} · approval required to sign',
                     style: GoogleFonts.inter(
-                      fontSize: 11,
+                      fontSize: 10,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white.withValues(alpha: 0.8),
+                      color: Colors.white.withValues(alpha: 0.72),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            Text(
-              '${_baseService.ethBalance.toStringAsFixed(6)} ETH',
-              style: GoogleFonts.inter(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 4),
-            if (stablecoin != null)
-              Text(
-                '${_baseService.stablecoinBalance.toStringAsFixed(2)} ${stablecoin.symbol}',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white.withValues(alpha: 0.85),
-                ),
-              ),
             if (_isLoading)
               Padding(
-                padding: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.only(top: 10),
                 child: SizedBox(
                   height: 2,
                   child: LinearProgressIndicator(
@@ -1584,6 +1704,93 @@ class _BaseScreenState extends State<BaseScreen> {
                       : (_) => _selectWalletNetwork(definition.network),
                 ),
             ],
+          ),
+          const SizedBox(height: 12),
+          AnimatedContainer(
+            key: const ValueKey<String>('wallet-default-network-control'),
+            duration: const Duration(milliseconds: 220),
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: _baseService.isSelectedNetworkDefault
+                  ? accent.withValues(alpha: 0.13)
+                  : theme.colorScheme.surface.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _baseService.isSelectedNetworkDefault
+                    ? accent.withValues(alpha: 0.5)
+                    : theme.colorScheme.outlineVariant,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    _baseService.isSelectedNetworkDefault
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    color: accent,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'DEFAULT NETWORK',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.9,
+                          color: accent,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_baseService.defaultNetworkDefinition.name} opens first',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_baseService.isSelectedNetworkDefault)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'DEFAULT',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: accent,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  )
+                else
+                  TextButton(
+                    key: const ValueKey<String>(
+                      'make-current-wallet-network-default',
+                    ),
+                    onPressed: _isLoading ? null : _makeCurrentNetworkDefault,
+                    child: const Text('Use current'),
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: 10),
           Row(

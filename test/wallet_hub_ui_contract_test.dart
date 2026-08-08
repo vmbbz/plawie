@@ -22,6 +22,10 @@ void main() {
     );
     expect(source, contains('_baseService.isBaseMainnet'));
     expect(source, contains('baseMainnetSelected: _baseService.isBaseMainnet'));
+    expect(source, contains("'wallet-default-network-control'"));
+    expect(source, contains("'make-current-wallet-network-default'"));
+    expect(source, contains('_baseService.setDefaultWalletNetwork('));
+    expect(source, contains("'Use current'"));
     expect(source, isNot(contains('PopupMenuButton<bool>')));
     expect(source, isNot(contains('!_baseService.useSepolia')));
   });
@@ -35,9 +39,11 @@ void main() {
     expect(source, contains("symbol == 'USDG' ? 'send_usdg' : 'send_usdc'"));
     expect(source, contains('await _baseService.sendUsdg'));
     expect(source, contains('_baseService.stablecoinBalance'));
-    expect(
-        source, contains('Same secured address across supported EVM networks'));
-    expect(source, contains('Viewing \${selectedNetwork.name}'));
+    expect(source, contains("'NETWORK BALANCE'"));
+    expect(source, contains("'SECURED ACCOUNT'"));
+    expect(source, contains('selectedNetwork.name'));
+    expect(source, contains('approval required to sign'));
+    expect(source, isNot(contains("'Plawie Wallet'")));
     expect(source, contains('official USDG'));
   });
 
@@ -51,6 +57,7 @@ void main() {
 
     expect(dashboard, contains("title: 'Wallet'"));
     expect(dashboard, contains("subtitle: 'Base · Robinhood'"));
+    expect(dashboard, contains('iconColor: const Color(0xFF0052FF)'));
     expect(settings, contains("Text('AI Payments & Wallet')"));
     expect(settings, contains('finish setup in Wallet'));
   });

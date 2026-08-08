@@ -18,7 +18,7 @@ void main() {
     expect(WalletNetworkPolicy.baseMainnet.supportsX402, isTrue);
   });
 
-  test('legacy Sepolia preference migrates without inventing a network', () {
+  test('Base is the default while legacy Sepolia remains recoverable', () {
     expect(
       WalletNetworkPolicy.decodePreference(
         current: null,
@@ -37,6 +37,13 @@ void main() {
       WalletNetworkPolicy.decodePreference(
         current: 'unknown',
         legacySepolia: 'false',
+      ),
+      WalletNetwork.baseMainnet,
+    );
+    expect(
+      WalletNetworkPolicy.decodePreference(
+        current: null,
+        legacySepolia: null,
       ),
       WalletNetwork.baseMainnet,
     );

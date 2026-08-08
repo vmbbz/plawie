@@ -52,11 +52,13 @@ selected transport returns a live token and connection match.
   auth-per-use Android Keystore envelope.
 - Creating/importing/restoring the wallet creates one EVM identity usable on
   every explicitly supported EVM network; it does not create per-chain keys.
-- A versioned wallet-network preference stores `baseMainnet`,
-  `robinhoodMainnet`, or `baseSepolia` and migrates the historical
-  `base_use_sepolia` preference without changing wallet material.
-- Signed APK updates preserve the envelope and selected network. Clear data or
-  uninstall retains the existing documented destructive behavior.
+- A versioned default-network preference stores `baseMainnet`,
+  `robinhoodMainnet`, or `baseSepolia` independently from the active in-session
+  view. Base Mainnet is the default for new/current migrations unless the legacy
+  `base_use_sepolia` testnet preference is explicit. The user can preview any
+  supported network, then deliberately make that current network the default.
+- Signed APK updates preserve the envelope and explicit default network. Clear
+  data or uninstall retains the existing documented destructive behavior.
 - Existing filenames, channel method names, envelope filenames, and aliases are
   not renamed in this phase because that would create avoidable wallet-migration
   risk.
@@ -89,9 +91,12 @@ on Base networks; Robinhood sends require an explicit `0x` address.
 
 - Dashboard/home and page chrome say `Wallet`; implementation classes keep
   their current names.
+- The dashboard leads with Base and uses the Base blue accent.
 - The network chooser lists Base Mainnet, Robinhood Chain, and Base Sepolia.
-- The header explains that the same address is used across supported EVM
-  networks and displays only balances supported by the selected network.
+- Base Mainnet opens by default. Switching the active view is temporary
+  until the user taps `Use current` in the explicit default-network control.
+- The hero presents the active network, supported balances, secured address,
+  and signing-protection state without duplicating the page title.
 - Robinhood shows ETH and official USDG separately. Its send action says USDG,
   never USDC; any other token is read-only or absent rather than implicitly
   trusted.
