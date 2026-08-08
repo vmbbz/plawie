@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#020706">
+    <meta name="color-scheme" content="dark">
+    <meta name="description" content="Plawie brings an OpenClaw-powered AI companion, skills, local Gateway controls, and human-approved wallet actions to Android.">
+    <meta name="robots" content="index,follow,max-image-preview:large">
+    <link rel="canonical" href="https://plawie.app/">
+    <link rel="icon" href="/assets/brand/plawie-mark.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Plawie">
+    <meta property="og:title" content="Plawie — OpenClaw in your pocket">
+    <meta property="og:description" content="A native-first Android companion with a local mobile Gateway, skills, voice, model choice, and human-approved wallet actions.">
+    <meta property="og:url" content="https://plawie.app/">
+    <meta property="og:image" content="https://plawie.app/assets/social/plawie-og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Plawie — OpenClaw in your pocket">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Plawie — OpenClaw in your pocket">
+    <meta name="twitter:description" content="Meet a native-first OpenClaw companion built for Android.">
+    <meta name="twitter:image" content="https://plawie.app/assets/social/plawie-og.png">
+    <title>Plawie — OpenClaw in your pocket</title>
+    <link rel="stylesheet" href="/assets/css/site.css">
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Plawie","applicationCategory":"UtilitiesApplication","operatingSystem":"Android","description":"A native-first Android companion powered by a local mobile OpenClaw Gateway, with skills, voice, model choice, and human-approved wallet actions.","url":"https://plawie.app/","downloadUrl":"https://github.com/vmbbz/plawie/releases"}
+    </script>
+  </head>
+  <body data-demo="chat">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M5 18l-2 3v-5a8 8 0 1 1 3 3"/></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+      <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2-7 4 14 2-7h6"/></symbol>
+      <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 6h14a2 2 0 0 1 2 2v11H4a2 2 0 0 1-2-2V6a3 3 0 0 1 3-3h12"/><path d="M15 11h7v5h-7a2.5 2.5 0 0 1 0-5Z"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3 8 8 10 5-2 8-5 8-10V6l-8-3Z"/><path d="m8 12 3 3 5-6"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 20h16"/></symbol>
+      <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+      <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19"/></symbol>
+    </svg>
+
+    <div class="site-atmosphere" aria-hidden="true">
+      <div class="signal signal-a"></div>
+      <div class="signal signal-b"></div>
+      <div class="noise"></div>
+    </div>
+
+    <header class="site-header" data-header>
+      <div class="header-inner shell">
+        <a class="brand" href="#top" aria-label="Plawie home">
+          <img src="/assets/brand/plawie-mark.svg" width="40" height="40" alt="">
+          <span>PLAWIE</span>
+        </a>
+        <nav class="desktop-nav" aria-label="Primary navigation">
+          <a href="#product">Product</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#skills">Skills</a>
+          <a href="#safety">Safety</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <div class="header-actions">
+          <a class="button button-small button-ghost desktop-cta" href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">Release status</a>
+          <button class="menu-button" type="button" aria-expanded="false" aria-controls="mobile-nav" data-menu-button>
+            <span class="sr-only">Open menu</span>
+            <svg><use href="#i-menu"/></svg>
+          </button>
+        </div>
+      </div>
+      <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation" data-mobile-nav hidden>
+        <a href="#product">Product</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#skills">Skills</a>
+        <a href="#safety">Safety</a>
+        <a href="#faq">FAQ</a>
+        <a href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">Release status</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero shell" id="top" aria-labelledby="hero-title">
+        <div class="hero-copy reveal">
+          <p class="eyebrow"><span class="live-dot"></span> Native-first · Android</p>
+          <h1 id="hero-title">OpenClaw<br><span>in your pocket.</span></h1>
+          <p class="hero-lede">A living AI companion with a local mobile Gateway, useful skills, voice, and the freedom to choose local or cloud intelligence.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#product">Try the product preview <svg><use href="#i-arrow"/></svg></a>
+            <a class="button button-ghost" href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">See latest release</a>
+          </div>
+          <p class="launch-note"><span>Google Play launch in preparation</span> · Follow the public release train</p>
+        </div>
+
+        <div class="hero-stage reveal" data-delay="1">
+          <div class="orbit-label orbit-label-a"><span></span> Gateway local</div>
+          <div class="orbit-label orbit-label-b"><span></span> Tools visible</div>
+          <div class="phone-aura" aria-hidden="true"></div>
+          <section class="phone-shell" aria-label="Interactive preview of the Plawie Android app">
+            <div class="phone-hardware"><span></span><i></i></div>
+            <div class="phone-screen">
+              <div class="phone-status" aria-hidden="true"><span>09:41</span><span>◉ 5G ▮▮▮</span></div>
+              <div class="app-header">
+                <div class="app-identity"><img src="/assets/brand/plawie-mark.svg" width="26" height="26" alt=""><div><strong>Plawie</strong><small data-demo-subtitle>OPENROUTER · NATIVE HUB</small></div></div>
+                <span class="app-live"><i></i> LIVE</span>
+              </div>
+
+              <div class="demo-panel is-active" id="demo-chat" role="tabpanel" aria-labelledby="tab-chat" data-demo-panel="chat">
+                <div class="avatar-field" aria-hidden="true">
+                  <div class="avatar-rings"><i></i><i></i><i></i></div>
+                  <svg class="avatar-silhouette" viewBox="0 0 180 220"><path d="M90 20c-30 0-51 22-51 56 0 23 9 43 24 54-4 12-14 20-31 26-16 6-25 17-27 40h170c-2-23-11-34-27-40-17-6-27-14-31-26 15-11 24-31 24-54 0-34-21-56-51-56Z"/><path class="avatar-cut" d="M46 60c11-24 27-35 48-35 23 0 39 14 45 38-16-5-30-16-39-31-11 15-30 25-54 28Z"/></svg>
+                </div>
+                <div class="chat-stack">
+                  <div class="bubble bubble-user">Give me a focused start to the day.</div>
+                  <div class="bubble bubble-agent"><span class="typing-line">I can check your calendar, weather, and task inbox.</span></div>
+                  <div class="tool-proposal" data-tool-proposal>
+                    <div><span class="tool-icon"><svg><use href="#i-grid"/></svg></span><span><small>PROPOSED TOOL PLAN</small><strong data-tool-copy>3 read-only steps ready</strong></span></div>
+                    <button type="button" data-tool-approve>Run preview</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="demo-panel" id="demo-skills" role="tabpanel" aria-labelledby="tab-skills" data-demo-panel="skills" hidden>
+                <div class="screen-heading"><div><small>AGENT CAPABILITIES</small><strong>Skills that explain themselves.</strong></div><span>12 READY</span></div>
+                <div class="skill-list">
+                  <article class="mini-skill"><span class="skill-glyph mint">◎</span><div><strong>gifgrep</strong><small>Search + local sheets</small></div><span class="status ready">READY</span></article>
+                  <article class="mini-skill"><span class="skill-glyph blue">⌁</span><div><strong>stocks</strong><small>Market snapshots</small></div><span class="status ready">READY</span></article>
+                  <article class="mini-skill"><span class="skill-glyph amber">⌘</span><div><strong>blogwatcher</strong><small>Optional native pack</small></div><span class="status install">DOWNLOAD</span></article>
+                  <article class="mini-skill receipt"><svg><use href="#i-check"/></svg><div><strong>Dependency receipt saved</strong><small>Verified · no repeat download</small></div></article>
+                </div>
+              </div>
+
+              <div class="demo-panel" id="demo-gateway" role="tabpanel" aria-labelledby="tab-gateway" data-demo-panel="gateway" hidden>
+                <div class="gateway-hero">
+                  <div><small>NATIVE MOBILE GATEWAY</small><strong><span></span> Healthy</strong></div>
+                  <button type="button" data-gateway-toggle>Pause preview</button>
+                </div>
+                <div class="gateway-metrics">
+                  <div><small>OWNER</small><strong>Android</strong></div>
+                  <div><small>ENDPOINT</small><strong>127.0.0.1</strong></div>
+                  <div><small>PATH</small><strong>Native</strong></div>
+                </div>
+                <div class="log-window" role="log" aria-live="polite" aria-label="Illustrative Gateway activity">
+                  <div class="log-title"><span></span><span></span><span></span><small>LIVE ACTIVITY · PREVIEW</small></div>
+                  <ol data-log-list>
+                    <li><time>09:41:02</time><span class="log-ok">✓</span> gateway health confirmed</li>
+                    <li><time>09:41:03</time><span class="log-info">→</span> paired Android node</li>
+                    <li><time>09:41:04</time><span class="log-ok">✓</span> capability snapshot ready</li>
+                    <li><time>09:41:05</time><span class="log-info">↻</span> waiting for your message</li>
+                  </ol>
+                </div>
+                <p class="fallback-note">PRoot remains an explicit rollback option—not the primary runtime.</p>
+              </div>
+
+              <div class="demo-panel" id="demo-wallet" role="tabpanel" aria-labelledby="tab-wallet" data-demo-panel="wallet" hidden>
+                <div class="wallet-network"><span><i></i> BASE</span><button type="button" data-network-toggle>Switch network</button></div>
+                <div class="wallet-balance"><small>PLAWIE WALLET · DEMO</small><strong>$38.42</strong><span>USDC available</span></div>
+                <div class="bridge-path"><div><span>SOL</span><small>External wallet</small></div><i><svg><use href="#i-arrow"/></svg></i><div><span>USDC</span><small>Base · internal</small></div></div>
+                <div class="payment-card">
+                  <div><span class="tool-icon"><svg><use href="#i-shield"/></svg></span><span><small>HUMAN APPROVAL REQUIRED</small><strong>Model credit top-up · $5.00</strong></span></div>
+                  <button type="button" data-payment-review>Review payment</button>
+                  <p data-payment-state>Nothing signs or sends automatically.</p>
+                </div>
+              </div>
+
+              <nav class="phone-nav" aria-label="Choose app preview">
+                <button type="button" class="is-active" data-demo-target="chat" aria-label="Chat preview"><svg><use href="#i-chat"/></svg><span>Chat</span></button>
+                <button type="button" data-demo-target="skills" aria-label="Skills preview"><svg><use href="#i-grid"/></svg><span>Skills</span></button>
+                <button type="button" data-demo-target="gateway" aria-label="Gateway preview"><svg><use href="#i-pulse"/></svg><span>Gateway</span></button>
+                <button type="button" data-demo-target="wallet" aria-label="Wallet preview"><svg><use href="#i-wallet"/></svg><span>Wallet</span></button>
+              </nav>
+            </div>
+          </section>
+        </div>
+
+        <div class="hero-proof reveal" data-delay="2">
+          <div><span>01</span><strong>Native-first</strong><small>Android owns the primary runtime</small></div>
+          <div><span>02</span><strong>Official Gateway</strong><small>Fresh upstream release at setup</small></div>
+          <div><span>03</span><strong>Modular installs</strong><small>Verified packs with receipts</small></div>
+          <div><span>04</span><strong>Human approved</strong><small>Review before wallet signing</small></div>
+        </div>
+      </section>
+
+      <section class="product-section section shell" id="product" aria-labelledby="product-title">
+        <div class="section-heading reveal">
+          <p class="eyebrow">The product, not a mockup</p>
+          <h2 id="product-title">Touch the control surface.</h2>
+          <p>Switch the preview to see how Plawie exposes intelligence, capability, health, and payment boundaries instead of hiding them.</p>
+        </div>
+        <div class="demo-selector reveal" role="tablist" aria-label="Plawie product previews">
+          <button type="button" id="tab-chat" role="tab" aria-selected="true" aria-controls="demo-chat" tabindex="0" class="demo-tab is-active" data-demo-target="chat"><span>01</span><strong>Chat</strong><small>Companion + tool plans</small></button>
+          <button type="button" id="tab-skills" role="tab" aria-selected="false" aria-controls="demo-skills" tabindex="-1" class="demo-tab" data-demo-target="skills"><span>02</span><strong>Skills</strong><small>Readiness + receipts</small></button>
+          <button type="button" id="tab-gateway" role="tab" aria-selected="false" aria-controls="demo-gateway" tabindex="-1" class="demo-tab" data-demo-target="gateway"><span>03</span><strong>Gateway</strong><small>Health + native ownership</small></button>
+          <button type="button" id="tab-wallet" role="tab" aria-selected="false" aria-controls="demo-wallet" tabindex="-1" class="demo-tab" data-demo-target="wallet"><span>04</span><strong>Wallet</strong><small>Bridge + human approval</small></button>
+        </div>
+        <p class="demo-disclaimer">Interactive product illustration. It is not connected to your device, account, or wallet.</p>
+      </section>
+
+      <section class="architecture-section section" id="architecture" aria-labelledby="architecture-title">
+        <div class="shell">
+          <div class="section-heading centered reveal">
+            <p class="eyebrow">Local control · connected intelligence</p>
+            <h2 id="architecture-title">A mobile nervous system<br>you can actually inspect.</h2>
+            <p>The app keeps runtime ownership and model transport separate. That makes local control possible without pretending every model lives on your phone.</p>
+          </div>
+          <div class="architecture-map reveal">
+            <article class="architecture-node primary"><span>01</span><svg><use href="#i-chat"/></svg><small>YOU TOUCH</small><strong>Android experience</strong><p>Chat, setup, permissions, status, and approvals.</p></article>
+            <div class="architecture-link"><i></i><small>LOCAL</small></div>
+            <article class="architecture-node"><span>02</span><svg><use href="#i-pulse"/></svg><small>ANDROID OWNS</small><strong>Native mobile Gateway</strong><p>Lifecycle, pairing, health, and tool routing.</p></article>
+            <div class="architecture-link"><i></i><small>ALLOWLISTED</small></div>
+            <article class="architecture-node"><span>03</span><svg><use href="#i-grid"/></svg><small>AGENT USES</small><strong>Skills + device tools</strong><p>Visible readiness, configuration, and dependencies.</p></article>
+            <div class="architecture-branch">
+              <div><i></i><article><small>PRIVATE PATH</small><strong>Local model</strong><span>On-device when your hardware fits</span></article></div>
+              <div><i></i><article><small>CONNECTED PATH</small><strong>Chosen cloud model</strong><span>Your provider and key</span></article></div>
+            </div>
+          </div>
+          <div class="truth-callout reveal"><svg><use href="#i-shield"/></svg><p><strong>Native first means native first.</strong> PRoot is preserved only as an explicit user-demand rollback path—not the default architecture.</p><a href="#faq">How setup works <svg><use href="#i-arrow"/></svg></a></div>
+        </div>
+      </section>
+
+      <section class="capabilities section shell" id="skills" aria-labelledby="capabilities-title">
+        <div class="section-heading reveal">
+          <p class="eyebrow">One companion · real capabilities</p>
+          <h2 id="capabilities-title">Less “AI magic.”<br>More useful machinery.</h2>
+        </div>
+        <div class="bento-grid">
+          <article class="bento bento-voice reveal"><div class="bento-icon"><svg><use href="#i-mic"/></svg></div><div><small>VOICE</small><h3>Talk like it lives there.</h3><p>Voice input, model-aware replies, on-device speech options, and a visual companion that makes interaction feel present.</p></div><div class="voice-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+          <article class="bento bento-skills reveal" data-delay="1"><div class="bento-icon"><svg><use href="#i-grid"/></svg></div><div><small>SKILLS</small><h3>Readiness you can see.</h3><p>Know whether a skill is ready, needs configuration, or requires an optional native pack before you ask the agent to use it.</p></div><ul class="skill-ticker"><li>gifgrep</li><li>canvas</li><li>stocks</li><li>camera</li><li>voice</li><li>files</li><li>memory</li></ul></article>
+          <article class="bento bento-models reveal"><div class="bento-icon"><svg><use href="#i-code"/></svg></div><div><small>MODEL CHOICE</small><h3>Local when it fits. Cloud when you choose.</h3><p>Keep the Gateway and tools consistent while selecting the intelligence path that matches your device, task, privacy needs, and budget.</p></div><div class="model-switch" aria-hidden="true"><span class="active">LOCAL</span><i></i><span>CLOUD</span></div></article>
+          <article class="bento bento-wallet reveal" data-delay="1"><div class="bento-icon"><svg><use href="#i-wallet"/></svg></div><div><small>HUMAN APPROVAL</small><h3>Your agent can propose.<br>You authorize.</h3><p>Wallet actions expose the amount, network, recipient, reason, and expiry before device-authenticated signing.</p></div><div class="approval-stamp"><svg><use href="#i-lock"/></svg><span>NO SILENT SPEND</span></div></article>
+          <article class="bento bento-observe reveal"><div class="bento-icon"><svg><use href="#i-pulse"/></svg></div><div><small>OBSERVABILITY</small><h3>See the heartbeat.</h3><p>Gateway state, logs, setup progress, dependency receipts, and repair paths live in the app—not in a hidden server dashboard.</p></div><div class="mini-telemetry"><span><i></i> gateway.health</span><span><i></i> node.paired</span><span><i></i> skills.ready</span></div></article>
+        </div>
+      </section>
+
+      <section class="setup-section section" aria-labelledby="setup-title">
+        <div class="shell setup-layout">
+          <div class="setup-copy reveal">
+            <p class="eyebrow">Fresh install · built to resume</p>
+            <h2 id="setup-title">A lean APK.<br>A transparent setup.</h2>
+            <p>Plawie keeps the fast-moving Gateway and optional runtimes modular. Setup verifies each component, shows progress, and records receipts so successful work is not downloaded twice.</p>
+            <a class="text-link" href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">Inspect public releases <svg><use href="#i-arrow"/></svg></a>
+          </div>
+          <ol class="setup-timeline reveal">
+            <li class="is-done"><span><svg><use href="#i-download"/></svg></span><div><small>STEP 01</small><strong>Official Gateway</strong><p>Download the current upstream OpenClaw release with visible progress.</p></div><i>VERIFIED</i></li>
+            <li class="is-done"><span><svg><use href="#i-pulse"/></svg></span><div><small>STEP 02</small><strong>Native runtime check</strong><p>Pair Android, validate health, and keep rollback isolated.</p></div><i>HEALTHY</i></li>
+            <li><span><svg><use href="#i-grid"/></svg></span><div><small>STEP 03</small><strong>Optional mobile runtimes</strong><p>Resolve only what the skill needs through the approved install channel.</p></div><i>RECEIPTED</i></li>
+            <li><span><svg><use href="#i-check"/></svg></span><div><small>STEP 04</small><strong>Ready to talk</strong><p>Resume successful work instead of downloading it all again.</p></div><i>COMPLETE</i></li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="safety-section section shell" id="safety" aria-labelledby="safety-title">
+        <div class="safety-card reveal">
+          <div class="safety-copy"><p class="eyebrow">Designed around boundaries</p><h2 id="safety-title">Power should come<br>with a control surface.</h2><p>Plawie makes consequential choices visible: where a model request goes, whether a skill is ready, and what a wallet action will do.</p></div>
+          <div class="safety-rules">
+            <article><span>01</span><div><strong>You choose the intelligence path.</strong><p>Local model or a provider you configure. Cloud requests follow that selection.</p></div></article>
+            <article><span>02</span><div><strong>Capabilities declare their state.</strong><p>Ready, configure, download, or blocked—with a repair path where one exists.</p></div></article>
+            <article><span>03</span><div><strong>Payments stop for a human.</strong><p>No wallet proposal proceeds without explicit review and authenticated approval.</p></div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="launch-section section shell" aria-labelledby="launch-title">
+        <div class="launch-card reveal">
+          <div class="launch-orb" aria-hidden="true"><img src="/assets/brand/plawie-mark.svg" width="88" height="88" alt=""></div>
+          <p class="eyebrow">The pocket agent is waking up</p>
+          <h2 id="launch-title">Be there when<br>Plawie lands.</h2>
+          <p>Google Play and Product Hunt launch preparation is underway. Follow the public release train today; the store button arrives only when the listing is real.</p>
+          <div class="hero-actions centered-actions"><a class="button button-primary" href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">Follow releases <svg><use href="#i-arrow"/></svg></a><a class="button button-ghost" href="https://github.com/vmbbz/plawie" rel="noreferrer">View on GitHub</a></div>
+        </div>
+      </section>
+
+      <section class="faq-section section shell" id="faq" aria-labelledby="faq-title">
+        <div class="section-heading reveal"><p class="eyebrow">Straight answers</p><h2 id="faq-title">Before you install.</h2></div>
+        <div class="faq-list reveal">
+          <details><summary>Is Plawie native or PRoot?<span></span></summary><p>Native-first. Android owns the primary mobile Gateway lifecycle and device bridges. PRoot is preserved only as an explicit user-demand rollback path.</p></details>
+          <details><summary>Does everything stay on my phone?<span></span></summary><p>No blanket claim like that would be honest. The Gateway and app controls run locally, and local models can stay on-device. If you select a cloud provider, the data needed for that request is sent to that provider under its terms.</p></details>
+          <details><summary>Why does first setup download components?<span></span></summary><p>OpenClaw moves quickly. Plawie downloads the current official Gateway during fresh setup instead of bundling a stale copy, then resolves optional mobile runtimes through the install channel. Successful components leave receipts so setup can resume without wasting data.</p></details>
+          <details><summary>Can I use a local model?<span></span></summary><p>Yes, on supported Android hardware and for models that fit the device. You can also select supported cloud providers for larger or different workloads.</p></details>
+          <details><summary>Will every desktop OpenClaw skill run on Android?<span></span></summary><p>No. Mobile-compatible skills can run through native tools or verified Android dependency packs. The Skills page shows readiness, required configuration, and genuine platform blockers instead of pretending all desktop binaries are available.</p></details>
+          <details><summary>Can Plawie spend from my wallet by itself?<span></span></summary><p>No. Wallet actions are designed to stop at a visible approval containing the amount, network, recipient, reason, and expiry, followed by device authentication before signing.</p></details>
+          <details><summary>When is the Google Play release?<span></span></summary><p>The Play listing is being prepared alongside final release and policy acceptance. Until a real store URL exists, GitHub Releases remains the public sideload channel. The Play build will use Play-approved delivery for executable modules.</p></details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-grid">
+        <div><a class="brand footer-brand" href="#top"><img src="/assets/brand/plawie-mark.svg" width="40" height="40" alt=""><span>PLAWIE</span></a><p>OpenClaw in your pocket.</p></div>
+        <div><strong>Explore</strong><a href="#product">Product</a><a href="#architecture">Architecture</a><a href="#skills">Skills</a><a href="#faq">FAQ</a></div>
+        <div><strong>Project</strong><a href="https://github.com/vmbbz/plawie" rel="noreferrer">GitHub</a><a href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">Releases</a><a href="https://github.com/vmbbz/plawie/issues" rel="noreferrer">Issue tracker</a></div>
+        <div><strong>Trust</strong><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/support/">Support</a></div>
+      </div>
+      <div class="shell footer-bottom"><span>© <span data-year>2026</span> Plawie</span><span>Native-first · Built for Android</span></div>
+    </footer>
+
+    <dialog class="payment-dialog" data-payment-dialog aria-labelledby="payment-dialog-title">
+      <form method="dialog">
+        <div class="dialog-top"><div><small>PLAWIE WALLET · PRODUCT PREVIEW</small><h2 id="payment-dialog-title">Review payment</h2></div><button type="submit" value="cancel" aria-label="Close payment preview"><svg><use href="#i-close"/></svg></button></div>
+        <div class="dialog-amount"><small>MODEL CREDIT TOP-UP</small><strong>$5.00 <span>USDC</span></strong></div>
+        <dl><div><dt>Network</dt><dd>Base Mainnet</dd></div><div><dt>Recipient</dt><dd>Provider settlement contract</dd></div><div><dt>Reason</dt><dd>Add prepaid model credits</dd></div><div><dt>Expiry</dt><dd>Fresh quote required after 5 min</dd></div></dl>
+        <div class="dialog-warning"><svg><use href="#i-lock"/></svg><p><strong>Real payments require device authentication.</strong>This website preview cannot connect, sign, or send anything.</p></div>
+        <div class="dialog-actions"><button type="submit" class="button button-ghost" value="cancel">Cancel</button><button type="submit" class="button button-primary" value="approve" data-payment-confirm>Approve preview</button></div>
+      </form>
+    </dialog>
+
+    <script src="/assets/js/site.js" defer></script>
+  </body>
+</html>

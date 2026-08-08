@@ -24,11 +24,19 @@ bridges, dependency receipts, and user interface. PRoot is not the normal
 runtime and is available only as an explicit user-demand rollback path.
 
 Fresh setup downloads the current official OpenClaw Gateway from its upstream
-release source instead of baking a quickly stale Gateway into the APK. Larger
-native skill runtimes are downloaded as signed, versioned dependency packs and
-recorded so successful packs are not fetched again unnecessarily. This keeps
-the Play delivery artifact smaller while preserving explicit setup progress and
-repair behavior.
+release source instead of baking a quickly stale Gateway into the APK. Setup
+records successful component receipts so repair can resume without fetching the
+same payload unnecessarily.
+
+Executable runtime delivery now has an explicit channel boundary. GitHub builds
+may continue using signed, versioned dependency packs. A Google Play build must
+not download native executables such as `.so`, dex, or JAR files from GitHub;
+those components must be packaged through Google Play, with on-demand native
+code placed in Play Feature Delivery modules. Play Asset Delivery is reserved
+for data/assets, not used as a loophole for executable updates. The downloaded
+OpenClaw JavaScript Gateway may fit Play's VM/interpreter exception, but its
+runtime-loaded capabilities still require a focused Play policy review before
+submission.
 
 The application can use cloud providers selected by the user and supports a
 separate local-model path. Public copy must therefore never claim that all data
@@ -104,6 +112,8 @@ A fixed origin-server IP is not a prerequisite for this Netlify-managed flow.
    submission prevention.
 7. Resume crypto-funded provider model discovery and chat-consumption tests.
 8. Run the complete Android release, Play policy, and store-listing checklist.
+9. Split the Android release pipeline into a Play flavor with Play-delivered
+   executable modules and a sideload flavor that may use signed GitHub packs.
 
 ## Public-claim guardrails
 
@@ -111,7 +121,8 @@ The launch site may say:
 
 - native-first Android OpenClaw companion;
 - official Gateway downloaded during fresh setup;
-- modular, receipted dependency packs keep the APK lean;
+- modular, receipted setup avoids unnecessary repeat downloads;
+- optional runtime delivery follows the rules of the selected install channel;
 - local and user-selected cloud model paths;
 - skills and device integrations are managed from the phone;
 - wallet actions require explicit human approval.
@@ -124,3 +135,6 @@ The launch site must not say:
 - a roadmap transport or feature gate is already available;
 - the wallet is custodial, insured, audited, or risk-free.
 
+The launch site must also not claim that GitHub-hosted executable dependency
+packs make a Google Play build compliant. The relevant policy and proposed
+release-channel split are recorded in `docs/PLAWIE_LAUNCH_SITE_RUNBOOK.md`.
