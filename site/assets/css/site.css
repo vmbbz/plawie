@@ -118,9 +118,10 @@ body[data-demo="wallet"] .signal-a { transform: translate(-11vw, 13vh); backgrou
 .hero > .hero-stage { display: none; }
 
 .vrm-host { isolation: isolate; }
-.vrm-canvas { position: absolute; z-index: 3; inset: 0; width: 100%; height: 100%; opacity: 0; filter: drop-shadow(0 24px 34px rgba(0,0,0,.52)) drop-shadow(0 0 22px rgba(0,255,163,.12)); pointer-events: none; transition: opacity .8s ease; }
+.vrm-canvas { position: absolute; z-index: 3; inset: 0; width: 100%; height: 100%; opacity: 0; filter: drop-shadow(0 24px 34px rgba(0,0,0,.52)) drop-shadow(0 0 22px rgba(0,255,163,.12)); pointer-events: none; transition: opacity .8s ease, filter .45s ease; }
 .vrm-poster { transition: opacity .5s ease, filter .5s ease, transform .6s ease; }
 .vrm-host.is-vrm-ready.is-vrm-active > .vrm-canvas { opacity: 1; }
+.vrm-host.is-vrm-gesturing.is-vrm-active > .vrm-canvas { filter: drop-shadow(0 26px 38px rgba(0,0,0,.54)) drop-shadow(0 0 29px rgba(0,255,163,.2)); }
 .vrm-host.is-vrm-ready.is-vrm-active > .vrm-poster { opacity: 0; filter: blur(8px); }
 .vrm-load-state { position: absolute; z-index: 7; top: 20px; left: 50%; min-height: 27px; padding: 6px 9px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid rgba(107,255,208,.16); border-radius: 30px; background: rgba(2,10,7,.7); color: var(--text-3); font-family: var(--mono); font-size: .46rem; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; backdrop-filter: blur(12px); transform: translateX(-50%); }
 .vrm-load-state > i { width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); box-shadow: 0 0 8px currentColor; }

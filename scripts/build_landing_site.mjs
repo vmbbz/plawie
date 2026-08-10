@@ -19,6 +19,16 @@ const binaryAssets = [
   [join('lib', 'three.module.js'), join('lib', 'three.module.js')],
 ];
 
+const limbAssets = [
+  'Light_Wave_Left_01.vrma',
+  'Light_Wave_Right_01.vrma',
+].map((fileName) => [
+  join('animations', 'limbs', fileName),
+  join('animations', 'limbs', fileName),
+]);
+
+binaryAssets.push(...limbAssets);
+
 const moduleAssets = [
   [join('lib', 'GLTFLoader.js'), join('lib', 'GLTFLoader.js'), './three.module.js'],
   [join('lib', 'three-vrm.module.js'), join('lib', 'three-vrm.module.js'), './three.module.js'],
@@ -64,6 +74,14 @@ const manifest = {
   bytes: model.byteLength,
   sha256: createHash('sha256').update(model).digest('hex'),
   animation: 'animations/idle_loop.vrma',
+  limbAnimations: await Promise.all(limbAssets.map(async ([, outputRelative]) => {
+    const animation = await readFile(join(outputRoot, outputRelative));
+    return {
+      asset: outputRelative.replaceAll('\\', '/'),
+      bytes: animation.byteLength,
+      sha256: createHash('sha256').update(animation).digest('hex'),
+    };
+  })),
   version: 'gemini-v1',
 };
 await writeFile(

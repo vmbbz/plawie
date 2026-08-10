@@ -72,6 +72,17 @@ The web scene deliberately reuses only the Android renderer's visual contract:
 - device-sensitive pixel-ratio and frame-rate caps;
 - resize-aware camera framing tailored to the hero and compact Chat viewport.
 
+The idle loop may occasionally cross-fade into a curated limb-only animation
+while the avatar is visible. The public-site pool is intentionally limited to
+light left/right waves under `assets/vrm/animations/limbs/`.
+Sitting, bowing, fearful, exaggerated, full-body, greeting, and general gesture
+assets are not part of the landing runtime. Limb clips are fetched lazily only
+when selected, never preloaded with the model, and the same clip is not selected
+twice in succession. The gesture countdown advances only during visible render
+time; leaving both avatar hosts pauses both the model and its next gesture.
+Every gesture uses a bounded cross-fade back to `idle_loop.vrma`, and an optional
+clip failure leaves the base companion running instead of failing the scene.
+
 App-only WebView bridges, tool commands, TTS visemes, gesture queues, drag
 orbit, wallet state, and agent messaging are excluded from the public site.
 The canvas is decorative and has no pointer or accessibility role.
