@@ -137,7 +137,7 @@ html[data-motion="reduced"] .motion-control > i { background: var(--text-3); box
 .vrm-host-hero > .vrm-canvas,
 .vrm-host-hero.is-vrm-gesturing.is-vrm-active > .vrm-canvas { filter: drop-shadow(0 24px 34px rgba(0,0,0,.52)); }
 .vrm-host.is-vrm-ready.is-vrm-active > .vrm-poster { opacity: 0; filter: blur(8px); }
-.vrm-load-state { position: absolute; z-index: 7; top: 20px; left: 50%; min-height: 27px; padding: 6px 9px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid rgba(107,255,208,.16); border-radius: 30px; background: rgba(2,10,7,.7); color: var(--text-3); font-family: var(--mono); font-size: .46rem; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; backdrop-filter: blur(12px); transform: translateX(-50%); }
+.vrm-load-state { position: absolute; z-index: 7; top: -10px; left: 50%; min-height: 27px; padding: 6px 9px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid rgba(107,255,208,.16); border-radius: 30px; background: rgba(2,10,7,.7); color: var(--text-3); font-family: var(--mono); font-size: .46rem; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; backdrop-filter: blur(12px); transform: translateX(-50%); }
 .vrm-load-state > i { width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); box-shadow: 0 0 8px currentColor; }
 .vrm-host.is-vrm-loading .vrm-load-state { color: var(--mint-soft); }
 .vrm-host.is-vrm-loading .vrm-load-state > i { background: var(--mint); animation: status-pulse 1.2s ease-in-out infinite; }
