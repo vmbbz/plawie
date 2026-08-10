@@ -7,8 +7,41 @@
 
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
-  const motionAllowed = () => !reduceMotion.matches;
-  root.dataset.motion = motionAllowed() ? 'full' : 'reduced';
+  const motionStorageKey = 'plawie-motion-preference';
+  const motionPreferenceControls = [...document.querySelectorAll('[data-motion-select]')];
+  const validMotionPreferences = new Set(['system', 'full', 'reduced']);
+  const readMotionPreference = () => {
+    try {
+      const stored = window.localStorage.getItem(motionStorageKey);
+      return validMotionPreferences.has(stored) ? stored : 'system';
+    } catch (_) {
+      return 'system';
+    }
+  };
+  let motionPreference = readMotionPreference();
+  const motionAllowed = () => motionPreference === 'full'
+    || (motionPreference === 'system' && !reduceMotion.matches);
+  const syncMotionState = () => {
+    root.dataset.motionPreference = motionPreference;
+    root.dataset.motion = motionAllowed() ? 'full' : 'reduced';
+    motionPreferenceControls.forEach((control) => { control.value = motionPreference; });
+  };
+  syncMotionState();
+
+  motionPreferenceControls.forEach((control) => {
+    control.addEventListener('change', () => {
+      const nextPreference = control.value;
+      if (!validMotionPreferences.has(nextPreference) || nextPreference === motionPreference) return;
+      try {
+        window.localStorage.setItem(motionStorageKey, nextPreference);
+      } catch (_) {
+        // The current page can still honor the choice when storage is unavailable.
+      }
+      motionPreference = nextPreference;
+      syncMotionState();
+      window.location.reload();
+    });
+  });
   const header = document.querySelector('[data-header]');
   const menuButton = document.querySelector('[data-menu-button]');
   const mobileNav = document.querySelector('[data-mobile-nav]');
@@ -79,7 +112,7 @@
 
     if (options.focusPhone && demoStage) {
       const block = window.innerWidth < 760 ? 'center' : 'center';
-      demoStage.scrollIntoView({ behavior: reduceMotion.matches ? 'auto' : 'smooth', block });
+      demoStage.scrollIntoView({ behavior: motionAllowed() ? 'smooth' : 'auto', block });
     }
   };
 
@@ -129,18 +162,16 @@
     gatewayButton.textContent = gatewayRunning ? 'Pause preview' : 'Resume preview';
   });
 
-  if (!reduceMotion.matches) {
-    window.setInterval(() => {
-      if (reduceMotion.matches || !gatewayRunning || document.body.dataset.demo !== 'gateway' || !logList) return;
-      const [symbol, message, style] = logMessages[logSequence % logMessages.length];
-      const row = document.createElement('li');
-      const now = new Date();
-      row.innerHTML = `<time>${now.toLocaleTimeString([], { hour12: false })}</time><span class="${style}">${symbol}</span> ${message}`;
-      logList.append(row);
-      while (logList.children.length > 7) logList.firstElementChild?.remove();
-      logSequence += 1;
-    }, 3200);
-  }
+  window.setInterval(() => {
+    if (!motionAllowed() || !gatewayRunning || document.body.dataset.demo !== 'gateway' || !logList) return;
+    const [symbol, message, style] = logMessages[logSequence % logMessages.length];
+    const row = document.createElement('li');
+    const now = new Date();
+    row.innerHTML = `<time>${now.toLocaleTimeString([], { hour12: false })}</time><span class="${style}">${symbol}</span> ${message}`;
+    logList.append(row);
+    while (logList.children.length > 7) logList.firstElementChild?.remove();
+    logSequence += 1;
+  }, 3200);
 
   const networkButton = document.querySelector('[data-network-toggle]');
   const networkLabel = document.querySelector('.wallet-network > span');
@@ -198,7 +229,7 @@
     });
   });
 
-  if ('IntersectionObserver' in window && !reduceMotion.matches) {
+  if ('IntersectionObserver' in window && motionAllowed()) {
     const observer = new IntersectionObserver((entries, revealObserver) => {
       entries.forEach((entry) => {
         if (!entry.isIntersecting) return;
@@ -320,8 +351,9 @@
   }
 
   reduceMotion.addEventListener?.('change', () => {
-    root.dataset.motion = motionAllowed() ? 'full' : 'reduced';
-    if (reduceMotion.matches) revealItems.forEach((item) => item.classList.add('is-visible'));
+    if (motionPreference !== 'system') return;
+    syncMotionState();
+    if (!motionAllowed()) revealItems.forEach((item) => item.classList.add('is-visible'));
     scheduleScrollState();
   });
 

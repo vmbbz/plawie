@@ -69,6 +69,12 @@ body[data-demo="wallet"] .signal-a { transform: translate(-11vw, 13vh); backgrou
 .desktop-nav a.is-active { color: var(--text); }
 .desktop-nav a.is-active::after { transform: scaleX(1); }
 .header-actions { display: flex; align-items: center; gap: 10px; }
+.motion-control { min-height: 42px; display: inline-flex; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid var(--line); border-radius: 12px; background: rgba(5, 16, 13, .72); color: var(--text-2); font-size: .73rem; font-weight: 720; transition: border-color .2s, background .2s; }
+.motion-control:hover, .motion-control:focus-within { border-color: var(--line-bright); background: rgba(10, 26, 21, .86); }
+.motion-control > i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--mint); box-shadow: 0 0 12px rgba(0,255,163,.72); }
+html[data-motion="reduced"] .motion-control > i { background: var(--text-3); box-shadow: none; }
+.motion-control > span { color: var(--text-3); font-family: var(--mono); font-size: .58rem; letter-spacing: .1em; text-transform: uppercase; }
+.motion-control select { width: 67px; padding: 0 2px; border: 0; outline: 0; background: transparent; color: var(--text); font-size: .72rem; font-weight: 760; cursor: pointer; color-scheme: dark; }
 .menu-button { display: none; width: 44px; height: 44px; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-glass); }
 .menu-button svg { width: 21px; }
 .mobile-nav { position: fixed; inset: 68px 12px auto; display: grid; padding: 12px; border: 1px solid var(--line-bright); border-radius: 20px; background: rgba(5, 16, 13, .97); box-shadow: 0 26px 80px #000; }
@@ -584,6 +590,8 @@ html[data-motion="full"] .launch-orb { animation: launch-float 5.6s ease-in-out 
   :root { --shell: min(100% - 26px, 680px); --radius-lg: 29px; }
   .section { padding-block: 88px; }
   .desktop-cta { display: none; }
+  .motion-control { padding-inline: 9px; }
+  .motion-control > span { display: none; }
   .hero { padding-top: 125px; padding-bottom: 270px; }
   .hero-copy { text-align: left; }
   .hero h1 { font-size: clamp(3.7rem, 19vw, 5.8rem); line-height: .88; }
@@ -677,15 +685,32 @@ html[data-motion="full"] .launch-orb { animation: launch-float 5.6s ease-in-out 
   .dialog-actions { grid-template-columns: 1fr; }
 }
 
+html[data-motion="reduced"] { scroll-behavior: auto; }
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+html.js[data-motion="reduced"] .reveal,
+html.js[data-motion="reduced"] .reveal[data-reveal-profile],
+html.js[data-motion="reduced"] .reveal[data-reveal-group] [data-motion-item] { opacity: 1; transform: none; }
+html[data-motion="reduced"] .has-pointer-light::after,
+html[data-motion="reduced"] .section::after { display: none; }
+html[data-motion="reduced"] .site-atmosphere::before { transform: none; }
+html[data-motion="reduced"] .phone-shell,
+html[data-motion="reduced"] .product-device-slot .phone-shell { transform: none; }
+
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
-  .js .reveal,
-  .js .reveal[data-reveal-profile],
-  .js .reveal[data-reveal-group] [data-motion-item] { opacity: 1; transform: none; }
-  .has-pointer-light::after, .section::after { display: none; }
-  .site-atmosphere::before { transform: none; }
-  .phone-shell, .product-device-slot .phone-shell { transform: none; }
+  html:not([data-motion="full"]) { scroll-behavior: auto; }
+  html:not([data-motion="full"]) *,
+  html:not([data-motion="full"]) *::before,
+  html:not([data-motion="full"]) *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  html.js:not([data-motion="full"]) .reveal,
+  html.js:not([data-motion="full"]) .reveal[data-reveal-profile],
+  html.js:not([data-motion="full"]) .reveal[data-reveal-group] [data-motion-item] { opacity: 1; transform: none; }
+  html:not([data-motion="full"]) .has-pointer-light::after,
+  html:not([data-motion="full"]) .section::after { display: none; }
+  html:not([data-motion="full"]) .site-atmosphere::before { transform: none; }
+  html:not([data-motion="full"]) .phone-shell,
+  html:not([data-motion="full"]) .product-device-slot .phone-shell { transform: none; }
 }
 
 /* Policy and support pages */

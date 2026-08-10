@@ -48,7 +48,10 @@ Motion is purposeful and optional:
 - continuous decorative loops pause when their owning section is offscreen;
 - no scroll-jacking, autoplay audio, strobing, or animation required to read
   the story;
-- `prefers-reduced-motion` removes non-essential motion.
+- `prefers-reduced-motion` removes non-essential motion by default. A visible
+  three-state control lets visitors retain the system choice or explicitly
+  choose full or reduced motion. The explicit preference persists locally and
+  a full-motion opt-in also permits the progressive Gemini renderer to load.
 
 The baseline implementation uses `IntersectionObserver` and a single
 `requestAnimationFrame`-coalesced scroll state update. Native CSS view timelines

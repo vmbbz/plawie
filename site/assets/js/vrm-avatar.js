@@ -7,9 +7,20 @@ const hosts = [...document.querySelectorAll('[data-vrm-host]')];
 
 if (hosts.length) {
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const readMotionPreference = () => {
+    try {
+      const stored = window.localStorage.getItem('plawie-motion-preference');
+      return ['system', 'full', 'reduced'].includes(stored) ? stored : 'system';
+    } catch (_) {
+      return 'system';
+    }
+  };
+  const motionPreference = readMotionPreference();
+  const motionReduced = motionPreference === 'reduced'
+    || (motionPreference === 'system' && reduceMotion.matches);
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   const constrainedDevice = Boolean(
-    reduceMotion.matches
+    motionReduced
       || connection?.saveData
       || (navigator.deviceMemory && navigator.deviceMemory < 4),
   );
@@ -493,7 +504,7 @@ if (hosts.length) {
 
   if (constrainedDevice) {
     setHostState('is-vrm-unavailable', true);
-    setStatus(reduceMotion.matches ? 'Motion reduced' : 'Data-saver visual');
+    setStatus(motionReduced ? 'Motion reduced' : 'Data-saver visual');
   } else {
     window.addEventListener('load', updateActiveHost, { once: true });
   }
