@@ -605,7 +605,7 @@ html[data-motion="full"] .launch-orb { animation: launch-float 5.6s ease-in-out 
   .motion-control > span { display: none; }
   .hero { padding-top: 125px; padding-bottom: 270px; }
   .hero-copy { text-align: left; }
-  .hero h1 { font-size: clamp(3.7rem, 19vw, 5.8rem); line-height: .88; }
+  .hero h1 { font-size: clamp(3.7rem, 19vw, 5.8rem); line-height: .96; }
   .hero-lede { margin-top: 27px; font-size: 1rem; }
   .hero-actions { display: grid; grid-template-columns: 1fr; }
   .hero-actions .button { width: 100%; }
