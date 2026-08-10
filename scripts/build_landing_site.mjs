@@ -128,6 +128,22 @@ for (const unsafeSource of ["'unsafe-inline'", "'unsafe-eval'"]) {
   }
 }
 
+const indexHtml = await readFile(join(repositoryRoot, 'site', 'index.html'), 'utf8');
+const jsonLdMatch = indexHtml.match(
+  /<script type="application\/ld\+json">([\s\S]*?)<\/script>/,
+);
+if (!jsonLdMatch) {
+  throw new Error('Landing-site build requires one inline JSON-LD block');
+}
+const jsonLdSource = `'sha256-${createHash('sha256')
+  .update(jsonLdMatch[1])
+  .digest('base64')}'`;
+if (!scriptSources.includes(jsonLdSource)) {
+  throw new Error(
+    `Landing-site CSP script-src must include the current JSON-LD hash ${jsonLdSource}`,
+  );
+}
+
 console.log(
   `Prepared ${manifest.version}: ${manifest.bytes} bytes, sha256 ${manifest.sha256}`,
 );

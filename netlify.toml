@@ -11,13 +11,3 @@
   to = "https://plawie.app/:splat"
   status = 301
   force = true
-
-[[redirects]]
-  from = "/latest"
-  to = "https://github.com/vmbbz/plawie/releases/latest"
-  status = 302
-
-[[redirects]]
-  from = "/github"
-  to = "https://github.com/vmbbz/plawie"
-  status = 302
