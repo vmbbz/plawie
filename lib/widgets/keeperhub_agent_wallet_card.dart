@@ -138,6 +138,46 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
         operation: () => _controller.discardPrepared(intentId),
       );
 
+  Future<void> _revoke() async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AlertDialog(
+            icon: Icon(
+              Icons.link_off,
+              color: Theme.of(dialogContext).colorScheme.error,
+            ),
+            title: const Text('Revoke Plawie access?'),
+            content: const Text(
+              'This permanently revokes Plawie’s remote KeeperHub organization credential after fresh device authentication. It does not delete the KeeperHub account or managed wallet. Existing redacted receipts remain on this device.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Keep connected'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                ),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Authenticate & revoke'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    await _run(
+      initialProgress: 'Authorizing remote credential revocation…',
+      operation: () => _controller.revoke(
+        onProgress: (progress) {
+          if (mounted) setState(() => _progress = progress.message);
+        },
+      ),
+    );
+  }
+
   Future<void> _run({
     required String initialProgress,
     required Future<KeeperHubWalletSnapshot> Function() operation,
@@ -221,50 +261,69 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
     );
   }
 
-  Widget _header(ThemeData theme, KeeperHubConnectionRecord? connection) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.statusGreen.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.hub_outlined,
-              color: AppColors.statusGreen,
-            ),
+  Widget _header(ThemeData theme, KeeperHubConnectionRecord? connection) {
+    final (statusLabel, statusColor) = switch (connection?.phase) {
+      KeeperHubConnectionPhase.ready => ('CONNECTED', AppColors.statusGreen),
+      KeeperHubConnectionPhase.provisioning => (
+          'SETTING UP',
+          AppColors.statusAmber
+        ),
+      KeeperHubConnectionPhase.credentialInvalid => (
+          'RECONNECT',
+          theme.colorScheme.error
+        ),
+      KeeperHubConnectionPhase.revocationUnknown => (
+          'REVOKE ?',
+          theme.colorScheme.error
+        ),
+      null => ('OPTIONAL', AppColors.statusAmber),
+    };
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: AppColors.statusGreen.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(14),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Agent Execution Wallet',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+          child: const Icon(
+            Icons.hub_outlined,
+            color: AppColors.statusGreen,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Agent Execution Wallet',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  'Reliable agent execution with human approval',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'Reliable agent execution with human approval',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          _chip(
-            connection?.isReady == true ? 'CONNECTED' : 'OPTIONAL',
-            connection?.isReady == true
-                ? AppColors.statusGreen
-                : AppColors.statusAmber,
-          ),
-        ],
-      );
+        ),
+        IconButton(
+          tooltip: 'Refresh Agent Wallet state',
+          visualDensity: VisualDensity.compact,
+          onPressed: _busy || _loading ? null : _reload,
+          icon: const Icon(Icons.refresh, size: 19),
+        ),
+        _chip(statusLabel, statusColor),
+      ],
+    );
+  }
 
   Widget _disconnected(ThemeData theme) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -317,6 +376,13 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
         ),
         const SizedBox(height: 12),
         _custodyNotice(theme),
+        if (connection.phase == KeeperHubConnectionPhase.revocationUnknown) ...[
+          const SizedBox(height: 10),
+          _warning(
+            theme,
+            'Remote revocation is not yet confirmed. The credential is still secured locally so you can retry without losing control of it.',
+          ),
+        ],
         if (!connection.isReady) ...[
           const SizedBox(height: 14),
           SizedBox(
@@ -324,7 +390,11 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
             child: FilledButton.icon(
               onPressed: _busy ? null : _connect,
               icon: const Icon(Icons.sync),
-              label: const Text('Resume secure setup'),
+              label: Text(
+                connection.phase == KeeperHubConnectionPhase.revocationUnknown
+                    ? 'Re-check connection status'
+                    : 'Resume secure setup',
+              ),
             ),
           ),
         ] else ...[
@@ -354,6 +424,15 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
           const SizedBox(height: 8),
           for (final receipt in terminalReceipts) _receipt(theme, receipt),
         ],
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _busy || active != null ? null : _revoke,
+            icon: const Icon(Icons.link_off, size: 18),
+            label: const Text('Revoke Plawie access'),
+          ),
+        ),
       ],
     );
   }

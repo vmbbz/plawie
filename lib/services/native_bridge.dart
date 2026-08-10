@@ -313,6 +313,23 @@ class NativeBridge {
     return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
   }
 
+  static Future<Map<String, dynamic>> authorizeSecureKeeperHubRevocation({
+    required String keyId,
+    required String keyPrefix,
+  }) async {
+    final result = await _channel.invokeMapMethod<String, dynamic>(
+      'authorizeSecureKeeperHubRevocation',
+      <String, dynamic>{'keyId': keyId, 'keyPrefix': keyPrefix},
+    );
+    if (result == null) {
+      throw PlatformException(
+        code: 'KEEPERHUB_REVOCATION_EMPTY',
+        message: 'Android returned no KeeperHub revocation authorization.',
+      );
+    }
+    return Map<String, dynamic>.from(result);
+  }
+
   /// Shows the private-key backup in an Android-owned authenticated dialog.
   /// The key never crosses the MethodChannel into Dart.
   static Future<void> showSecureEvmWalletBackup() async {

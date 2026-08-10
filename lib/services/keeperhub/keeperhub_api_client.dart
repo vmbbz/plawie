@@ -95,6 +95,24 @@ class KeeperHubApiClient {
         apiKey: apiKey,
       );
 
+  Future<KeeperHubApiResponse> revokeOrganizationKey({
+    required String apiKey,
+    required String keyId,
+  }) {
+    final normalized = keyId.trim();
+    if (!RegExp(r'^[A-Za-z0-9_-]{4,160}$').hasMatch(normalized)) {
+      throw const KeeperHubException(
+        'organization_key_id_invalid',
+        'KeeperHub organization key ID is invalid.',
+      );
+    }
+    return _send(
+      method: 'DELETE',
+      path: '/api/keys/$normalized',
+      apiKey: apiKey,
+    );
+  }
+
   Future<KeeperHubApiResponse> simulateTransfer({
     required String apiKey,
     required Map<String, dynamic> transfer,

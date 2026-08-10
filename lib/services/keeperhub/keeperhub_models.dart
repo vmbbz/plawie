@@ -64,7 +64,6 @@ class KeeperHubConnectionRecord {
         'phase': phase.name,
         'personalWalletAddress': personalWalletAddress,
         'agentWalletAddress': agentWalletAddress,
-        'credentialPrefix': apiKeyPrefix,
         'createdAt': createdAt.toUtc().toIso8601String(),
         'lastVerifiedAt': lastVerifiedAt?.toUtc().toIso8601String(),
         'mayApproveOrExecute': false,
@@ -134,6 +133,9 @@ enum KeeperHubOnboardingStage {
   provisioningAgentWallet,
   verifyingCredential,
   ready,
+  authorizingRevocation,
+  revokingCredential,
+  revoked,
 }
 
 class KeeperHubOnboardingProgress {

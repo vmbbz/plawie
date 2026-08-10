@@ -59,6 +59,56 @@ void main() {
     expect(find.text('0 ETH'), findsOneWidget);
     expect(find.text('Discard'), findsOneWidget);
   });
+
+  testWidgets('requires destructive confirmation before remote revocation',
+      (tester) async {
+    final controller = _FakeController(_ready());
+    await _pump(
+      tester,
+      KeeperHubAgentWalletCard(
+        personalWalletAddress: personal,
+        controller: controller,
+      ),
+    );
+
+    await tester.tap(find.text('Revoke Plawie access'));
+    await tester.pumpAndSettle();
+    expect(find.text('Revoke Plawie access?'), findsOneWidget);
+    expect(find.textContaining('does not delete'), findsOneWidget);
+    expect(controller.revokeCalls, 0);
+
+    await tester.tap(find.text('Authenticate & revoke'));
+    await tester.pumpAndSettle();
+
+    expect(controller.revokeCalls, 1);
+    expect(find.text('Connect Agent Wallet'), findsOneWidget);
+  });
+
+  testWidgets('shows an honest recoverable state for uncertain revocation',
+      (tester) async {
+    final snapshot = _ready();
+    final connection = snapshot.connection!;
+    await _pump(
+      tester,
+      KeeperHubAgentWalletCard(
+        personalWalletAddress: personal,
+        controller: _FakeController(
+          KeeperHubWalletSnapshot(
+            connection: connection.copyWith(
+              phase: KeeperHubConnectionPhase.revocationUnknown,
+            ),
+            activeExecution: snapshot.activeExecution,
+            receipts: snapshot.receipts,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('REVOKE ?'), findsOneWidget);
+    expect(find.textContaining('credential is still secured'), findsOneWidget);
+    expect(find.text('Re-check connection status'), findsOneWidget);
+    expect(find.text('Revoke Plawie access'), findsOneWidget);
+  });
 }
 
 Future<void> _pump(WidgetTester tester, Widget child) async {
@@ -138,6 +188,7 @@ class _FakeController implements KeeperHubWalletController {
   int connectCalls = 0;
   int prepareCalls = 0;
   int reviewCalls = 0;
+  int revokeCalls = 0;
 
   @override
   Future<KeeperHubWalletSnapshot> load() async => snapshot;
@@ -175,6 +226,14 @@ class _FakeController implements KeeperHubWalletController {
 
   @override
   Future<KeeperHubWalletSnapshot> resumeActive() async => snapshot;
+
+  @override
+  Future<KeeperHubWalletSnapshot> revoke({
+    void Function(KeeperHubOnboardingProgress progress)? onProgress,
+  }) async {
+    revokeCalls += 1;
+    return snapshot = _empty();
+  }
 
   @override
   void close() {}

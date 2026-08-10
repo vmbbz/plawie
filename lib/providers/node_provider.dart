@@ -16,6 +16,7 @@ import '../services/capabilities/camera_capability.dart';
 import '../services/capabilities/canvas_capability.dart';
 import '../services/capabilities/clawhub_capability.dart';
 import '../services/capabilities/location_capability.dart';
+import '../services/capabilities/keeperhub_capability.dart';
 import '../services/capabilities/meme_maker_capability.dart';
 import '../services/capabilities/screen_capability.dart';
 import '../services/capabilities/flash_capability.dart';
@@ -50,6 +51,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
   final _deviceCapability = DeviceCapability();
   final _gifgrepCapability = GifgrepCapability();
   final _weatherCapability = WeatherCapability();
+  final _keeperHubCapability = KeeperHubCapability();
 
   NodeState get state => _state;
 
@@ -226,6 +228,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
       (cmd, params) => _aiPaymentsCapability.handle(cmd, params),
     );
     _registerCapabilityAliases(
+      _keeperHubCapability,
+      (cmd, params) => _keeperHubCapability.handle(cmd, params),
+    );
+    _registerCapabilityAliases(
       _avatarCapability,
       (cmd, params) => _avatarCapability.handle(cmd, params),
     );
@@ -338,6 +344,10 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
           'payments.capabilities',
           'payments.status',
           'payments.receipts',
+          'keeperhub.capabilities',
+          'keeperhub.status',
+          'keeperhub.receipts',
+          'keeperhub.prepare',
           'bridge.capabilities',
           'bridge.quote',
           'bridge.status',
@@ -570,6 +580,7 @@ class NodeProvider extends ChangeNotifier with WidgetsBindingObserver {
     _stopWatchdog();
     _subscription?.cancel();
     _nodeService.dispose();
+    _keeperHubCapability.close();
     _cameraCapability.dispose();
     _flashCapability.dispose();
     NativeBridge.stopNodeService();

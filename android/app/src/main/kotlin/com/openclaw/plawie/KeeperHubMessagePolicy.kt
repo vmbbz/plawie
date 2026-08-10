@@ -202,3 +202,45 @@ Expires At: $expiresAtText"""
         )
     }
 }
+
+internal data class KeeperHubRevocationAuthorizationRequest(
+    val keyId: String,
+    val keyPrefix: String,
+    val message: String,
+)
+
+/** Closed local authorization for revoking Plawie's organization credential. */
+internal object KeeperHubRevocationAuthorizationPolicy {
+    private val keyIdPattern = Regex("^[A-Za-z0-9_-]{4,160}$")
+    private val keyPrefixPattern = Regex("^kh_[A-Za-z0-9_-]{5,29}$")
+
+    fun parse(
+        arguments: Map<*, *>?,
+        personalWalletAddress: String,
+    ): KeeperHubRevocationAuthorizationRequest {
+        require(arguments != null) { "KeeperHub revocation request is missing." }
+        require(arguments.keys.all { it == "keyId" || it == "keyPrefix" }) {
+            "KeeperHub revocation request contains unsupported fields."
+        }
+        require(Regex("^0x[0-9a-fA-F]{40}$").matches(personalWalletAddress)) {
+            "The Personal Wallet address is invalid."
+        }
+        val keyId = arguments["keyId"]?.toString()?.trim() ?: ""
+        val keyPrefix = arguments["keyPrefix"]?.toString()?.trim() ?: ""
+        require(keyIdPattern.matches(keyId)) { "KeeperHub key ID is invalid." }
+        require(keyPrefixPattern.matches(keyPrefix)) {
+            "KeeperHub key prefix is invalid."
+        }
+        val message = """Plawie KeeperHub credential revocation
+Version: 1
+Personal Wallet: $personalWalletAddress
+Organization Key ID: $keyId
+Organization Key Prefix: $keyPrefix
+Action: Permanently revoke remote API access"""
+        return KeeperHubRevocationAuthorizationRequest(
+            keyId = keyId,
+            keyPrefix = keyPrefix,
+            message = message,
+        )
+    }
+}

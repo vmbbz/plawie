@@ -1,7 +1,8 @@
 # Google Play, Wallet Acceptance, and KeeperHub Integration Plan
 
-**Status:** Implementation authorized; winning Agent Wallet amendment recorded
-before code changes
+**Status:** KeeperHub hackathon software slice implemented through bounded chat
+proposal controls and remote credential revocation; physical-device acceptance
+and independently verifiable proof remain release gates
 
 **Policy and vendor snapshot:** 2026-08-10
 
@@ -516,11 +517,18 @@ Expose only app-owned capabilities:
 keeperhub.capabilities   read-only
 keeperhub.search         read-only marketplace search
 keeperhub.inspect        read-only listing/schema details
-keeperhub.prepare        creates a non-executable local proposal
+keeperhub.prepare        runs preflight and persists an inert proposal
 keeperhub.simulate       preflight only; never signs or broadcasts
 keeperhub.status         read-only execution status
 keeperhub.receipts       redacted local history
 ```
+
+The implemented hackathon subset registers only `keeperhub.capabilities`,
+`keeperhub.status`, `keeperhub.receipts`, and `keeperhub.prepare` (plus the
+standard underscore aliases). Marketplace search/inspect and a separate generic
+simulation command remain Phase 6 work and are not advertised prematurely.
+`keeperhub.prepare` internally performs only the fixed zero-value proof
+simulation described below.
 
 The agent may propose inputs and explain results. The agent must not approve,
 unlock, sign, submit, retry, release a hold, create a deposit instruction,
@@ -532,11 +540,12 @@ cancel, and release tools. If a per-workflow MCP endpoint is later used, registe
 only an individually reviewed slug/schema and still intercept writes in the
 app-owned coordinator.
 
-For the hackathon proof, chat may prepare a zero-value Base Sepolia self-transfer
-or another strictly typed testnet proposal. The capability publishes the
-proposal to a Plawie-owned approval broker. It cannot directly call the
-KeeperHub write endpoint. Only the foreground approval host can consume the
-one-use proposal and invoke the coordinator.
+For the hackathon proof, chat may prepare only a zero-value Base Sepolia
+self-transfer. The capability asks KeeperHub to simulate the fixed transfer,
+then persists an inert proposal in Plawie's receipt store. It cannot approve,
+authenticate, submit, retry, revoke, or invoke a generic KeeperHub write. Only
+the foreground Wallet approval host can review the proposal and invoke the
+coordinator after fresh device authentication.
 
 ### 4.6 Proposed modules
 
@@ -551,6 +560,8 @@ lib/services/keeperhub/
   keeperhub_approval_broker.dart
   keeperhub_receipt_store.dart
   keeperhub_wallet_controller.dart
+
+lib/services/capabilities/
   keeperhub_capability.dart
 
 lib/widgets/
@@ -906,9 +917,12 @@ narrow and demonstrable rather than a premature platform rewrite.
       execution without a duplicate transaction.
 - [ ] Follow with one tiny non-zero testnet USDC workflow when test funds and the
       exact reviewed contract are available.
-- [ ] Add chat proposal and status/receipt tools, while keeping approval and
+- [x] Add chat proposal and status/receipt tools, while keeping approval and
       execution owned by the foreground Wallet UI.
-- [ ] Implement remote API-key revocation and honest unknown-revocation state.
+- [x] Implement device-authenticated remote API-key revocation through
+      `DELETE /api/keys/{keyId}`. Clear local credentials only after confirmed
+      revocation or an already-unavailable response; otherwise retain the
+      encrypted credential in an honest `revocationUnknown` recovery state.
 - [ ] Treat paid x402 marketplace workflow execution as a stretch goal after the
       core reliability demo passes.
 - [ ] Capture Git source link, demo video, onboarding sequence, simulated failure,

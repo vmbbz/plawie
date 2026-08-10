@@ -16,6 +16,10 @@ typedef KeeperHubKeyChallengeSigner = Future<Map<String, dynamic>> Function({
   required String operation,
 });
 typedef KeeperHubDelay = Future<void> Function(Duration duration);
+typedef KeeperHubRevocationAuthorizer = Future<Map<String, dynamic>> Function({
+  required String keyId,
+  required String keyPrefix,
+});
 
 /// Explicit user-driven onboarding for the separately-custodied Agent Wallet.
 /// Calling [connect] is the only account-creation path; no startup or agent tool
@@ -28,6 +32,7 @@ class KeeperHubHeadlessOnboardingService {
     KeeperHubKeyChallengeSigner? signKeyChallenge,
     DateTime Function()? clock,
     KeeperHubDelay? delay,
+    KeeperHubRevocationAuthorizer? authorizeRevocation,
     Uuid? uuid,
     this.agentWalletPollAttempts = 20,
     this.agentWalletPollInterval = const Duration(milliseconds: 1500),
@@ -38,6 +43,8 @@ class KeeperHubHeadlessOnboardingService {
             signKeyChallenge ?? NativeBridge.signSecureKeeperHubKeyChallenge,
         _clock = clock ?? DateTime.now,
         _delay = delay ?? Future<void>.delayed,
+        _authorizeRevocation = authorizeRevocation ??
+            NativeBridge.authorizeSecureKeeperHubRevocation,
         _uuid = uuid ?? const Uuid();
 
   final KeeperHubApiClient _api;
@@ -46,6 +53,7 @@ class KeeperHubHeadlessOnboardingService {
   final KeeperHubKeyChallengeSigner _signKeyChallenge;
   final DateTime Function() _clock;
   final KeeperHubDelay _delay;
+  final KeeperHubRevocationAuthorizer _authorizeRevocation;
   final Uuid _uuid;
   final int agentWalletPollAttempts;
   final Duration agentWalletPollInterval;
@@ -236,7 +244,84 @@ class KeeperHubHeadlessOnboardingService {
     }
   }
 
+  Future<void> revoke({
+    void Function(KeeperHubOnboardingProgress progress)? onProgress,
+  }) async {
+    final credential = await _authStore.read();
+    if (credential == null) return;
+    final record = credential.record;
+    _progress(
+      onProgress,
+      KeeperHubOnboardingStage.authorizingRevocation,
+      'Waiting for device-authenticated revocation approval…',
+    );
+    final authorization = await _authorizeRevocation(
+      keyId: record.apiKeyId,
+      keyPrefix: record.apiKeyPrefix,
+    );
+    final wallet = requireKeeperHubAddress(
+      authorization['walletAddress'],
+      'revocation-authorizing Personal Wallet',
+    );
+    final digest = authorization['authorizationDigest']?.toString() ?? '';
+    if (wallet.toLowerCase() != record.personalWalletAddress.toLowerCase() ||
+        authorization['keyId'] != record.apiKeyId ||
+        authorization['keyPrefix'] != record.apiKeyPrefix ||
+        !RegExp(r'^0x[0-9a-fA-F]{64}$').hasMatch(digest)) {
+      throw const KeeperHubException(
+        'revocation_authorization_mismatch',
+        'Android authorized different KeeperHub revocation details.',
+      );
+    }
+
+    _progress(
+      onProgress,
+      KeeperHubOnboardingStage.revokingCredential,
+      'Revoking the remote organization credential…',
+    );
+    KeeperHubApiResponse response;
+    try {
+      response = await _api.revokeOrganizationKey(
+        apiKey: credential.apiKey,
+        keyId: record.apiKeyId,
+      );
+    } on KeeperHubException {
+      await _markRevocationUnknown(record);
+      throw const KeeperHubException(
+        'revocation_unknown',
+        'Remote revocation could not be confirmed. The credential remains secured for a safe retry.',
+      );
+    }
+
+    final revoked = response.statusCode == 204 ||
+        (response.isSuccess && response.body['success'] == true);
+    final alreadyUnavailable =
+        response.statusCode == 401 || response.statusCode == 404;
+    if (revoked || alreadyUnavailable) {
+      await _authStore.clear();
+      _progress(
+        onProgress,
+        KeeperHubOnboardingStage.revoked,
+        'Remote Agent Wallet access revoked.',
+      );
+      return;
+    }
+    await _markRevocationUnknown(record);
+    throw const KeeperHubException(
+      'revocation_unknown',
+      'KeeperHub did not confirm remote revocation. The credential remains secured for a safe retry.',
+    );
+  }
+
   void close() => _api.close();
+
+  Future<void> _markRevocationUnknown(
+    KeeperHubConnectionRecord record,
+  ) async {
+    await _authStore.updateRecord(
+      record.copyWith(phase: KeeperHubConnectionPhase.revocationUnknown),
+    );
+  }
 
   Future<void> _openSession(
     String personal,

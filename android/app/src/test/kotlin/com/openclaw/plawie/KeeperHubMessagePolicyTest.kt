@@ -122,4 +122,29 @@ Issued At: 2026-08-10T12:00:00.000Z""",
             }
         }
     }
+
+    @Test
+    fun authorizesOnlyTheStoredKeeperHubCredentialRevocation() {
+        val arguments = mapOf(
+            "keyId" to "key_12345678",
+            "keyPrefix" to "kh_a1B2c",
+        )
+        val request = KeeperHubRevocationAuthorizationPolicy.parse(
+            arguments,
+            wallet,
+        )
+        assertEquals("key_12345678", request.keyId)
+        assertEquals("kh_a1B2c", request.keyPrefix)
+        assertTrue(request.message.contains("Permanently revoke remote API access"))
+
+        listOf(
+            arguments + ("keyId" to "../user"),
+            arguments + ("keyPrefix" to "wfb_a1B2c"),
+            arguments + ("execute" to true),
+        ).forEach { invalid ->
+            assertThrows(IllegalArgumentException::class.java) {
+                KeeperHubRevocationAuthorizationPolicy.parse(invalid, wallet)
+            }
+        }
+    }
 }

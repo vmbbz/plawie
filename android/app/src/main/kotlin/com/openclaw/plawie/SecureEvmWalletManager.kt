@@ -420,6 +420,38 @@ class SecureEvmWalletManager(private val activity: Activity) {
         }
     }
 
+    /** Device-authenticated authorization before remote credential revocation. */
+    fun authorizeKeeperHubRevocation(arguments: Map<*, *>?, result: MethodChannel.Result) {
+        val envelope = requireEnvelope(result) ?: return
+        try {
+            val request = KeeperHubRevocationAuthorizationPolicy.parse(
+                arguments,
+                envelope.address,
+            )
+            withDecryptedKey(
+                envelope = envelope,
+                title = "Revoke Agent Wallet access",
+                description = "Permanently revoke Plawie's KeeperHub credential",
+                result = result,
+            ) { privateKey ->
+                val signed = signAndVerifyPrefixedMessage(
+                    message = request.message,
+                    privateKey = privateKey,
+                    expectedAddress = envelope.address,
+                    purpose = "KeeperHub credential revocation",
+                ).toMutableMap()
+                signed["authorizationDigest"] = Numeric.toHexString(
+                    Hash.sha3(request.message.toByteArray(StandardCharsets.UTF_8)),
+                )
+                signed["keyId"] = request.keyId
+                signed["keyPrefix"] = request.keyPrefix
+                signed
+            }
+        } catch (error: Exception) {
+            result.error("KEEPERHUB_REVOCATION_POLICY_ERROR", safeMessage(error), null)
+        }
+    }
+
     private fun signAndVerifyPrefixedMessage(
         message: String,
         privateKey: ByteArray,

@@ -33,6 +33,10 @@ abstract interface class KeeperHubWalletController {
 
   Future<KeeperHubWalletSnapshot> discardPrepared(String intentId);
 
+  Future<KeeperHubWalletSnapshot> revoke({
+    void Function(KeeperHubOnboardingProgress progress)? onProgress,
+  });
+
   void close();
 }
 
@@ -108,6 +112,20 @@ class DefaultKeeperHubWalletController implements KeeperHubWalletController {
   @override
   Future<KeeperHubWalletSnapshot> discardPrepared(String intentId) async {
     await _coordinator.discardPrepared(intentId);
+    return load();
+  }
+
+  @override
+  Future<KeeperHubWalletSnapshot> revoke({
+    void Function(KeeperHubOnboardingProgress progress)? onProgress,
+  }) async {
+    if (await _coordinator.receiptStore.active() != null) {
+      throw const KeeperHubException(
+        'execution_active',
+        'Finish, reconcile, or discard the active proof before revoking access.',
+      );
+    }
+    await _onboarding.revoke(onProgress: onProgress);
     return load();
   }
 

@@ -312,6 +312,158 @@ void main() {
     expect((await store.read())?.record.agentWalletAddress, agent);
     service.close();
   });
+
+  test('device-authenticates remote revocation before clearing local secret',
+      () async {
+    final backend = _MemorySecrets();
+    final store = KeeperHubAuthStore(secrets: backend);
+    await store.save(
+      apiKey: 'kh_returned-once-secret-value',
+      record: KeeperHubConnectionRecord(
+        personalWalletAddress: personal,
+        apiKeyId: 'key_123',
+        apiKeyPrefix: 'kh_returned-',
+        agentWalletAddress: agent,
+        createdAt: now,
+        phase: KeeperHubConnectionPhase.ready,
+      ),
+    );
+    var authorizations = 0;
+    final api = KeeperHubApiClient(
+      client: MockClient((request) async {
+        expect(request.method, 'DELETE');
+        expect(request.url.path, '/api/keys/key_123');
+        expect(
+          request.headers['authorization'],
+          'Bearer kh_returned-once-secret-value',
+        );
+        return _json(200, <String, dynamic>{'success': true});
+      }),
+    );
+    final service = KeeperHubHeadlessOnboardingService(
+      api: api,
+      authStore: store,
+      authorizeRevocation: ({required keyId, required keyPrefix}) async {
+        authorizations += 1;
+        expect(keyId, 'key_123');
+        expect(keyPrefix, 'kh_returned-');
+        return <String, dynamic>{
+          'walletAddress': personal,
+          'keyId': keyId,
+          'keyPrefix': keyPrefix,
+          'authorizationDigest': '0x${'a' * 64}',
+          'signature': 'discarded-by-service',
+        };
+      },
+    );
+
+    await service.revoke();
+
+    expect(authorizations, 1);
+    expect(await store.read(), isNull);
+    service.close();
+  });
+
+  test('retains secured credential when remote revocation is unknown',
+      () async {
+    final backend = _MemorySecrets();
+    final store = KeeperHubAuthStore(secrets: backend);
+    await store.save(
+      apiKey: 'kh_returned-once-secret-value',
+      record: KeeperHubConnectionRecord(
+        personalWalletAddress: personal,
+        apiKeyId: 'key_123',
+        apiKeyPrefix: 'kh_returned-',
+        agentWalletAddress: agent,
+        createdAt: now,
+        phase: KeeperHubConnectionPhase.ready,
+      ),
+    );
+    final service = KeeperHubHeadlessOnboardingService(
+      api: KeeperHubApiClient(
+        client: MockClient((_) async => _json(
+              503,
+              <String, dynamic>{'code': 'temporarily_unavailable'},
+            )),
+      ),
+      authStore: store,
+      authorizeRevocation: ({required keyId, required keyPrefix}) async =>
+          <String, dynamic>{
+        'walletAddress': personal,
+        'keyId': keyId,
+        'keyPrefix': keyPrefix,
+        'authorizationDigest': '0x${'a' * 64}',
+      },
+    );
+
+    await expectLater(
+      service.revoke(),
+      throwsA(
+        isA<KeeperHubException>().having(
+          (error) => error.code,
+          'code',
+          'revocation_unknown',
+        ),
+      ),
+    );
+
+    final retained = await store.read();
+    expect(retained?.apiKey, 'kh_returned-once-secret-value');
+    expect(
+      retained?.record.phase,
+      KeeperHubConnectionPhase.revocationUnknown,
+    );
+    service.close();
+  });
+
+  test('never calls revocation endpoint for mismatched native authorization',
+      () async {
+    final backend = _MemorySecrets();
+    final store = KeeperHubAuthStore(secrets: backend);
+    await store.save(
+      apiKey: 'kh_returned-once-secret-value',
+      record: KeeperHubConnectionRecord(
+        personalWalletAddress: personal,
+        apiKeyId: 'key_123',
+        apiKeyPrefix: 'kh_returned-',
+        agentWalletAddress: agent,
+        createdAt: now,
+        phase: KeeperHubConnectionPhase.ready,
+      ),
+    );
+    var remoteCalls = 0;
+    final service = KeeperHubHeadlessOnboardingService(
+      api: KeeperHubApiClient(
+        client: MockClient((_) async {
+          remoteCalls += 1;
+          return _json(200, <String, dynamic>{'success': true});
+        }),
+      ),
+      authStore: store,
+      authorizeRevocation: ({required keyId, required keyPrefix}) async =>
+          <String, dynamic>{
+        'walletAddress': agent,
+        'keyId': keyId,
+        'keyPrefix': keyPrefix,
+        'authorizationDigest': '0x${'a' * 64}',
+      },
+    );
+
+    await expectLater(
+      service.revoke(),
+      throwsA(
+        isA<KeeperHubException>().having(
+          (error) => error.code,
+          'code',
+          'revocation_authorization_mismatch',
+        ),
+      ),
+    );
+
+    expect(remoteCalls, 0);
+    expect((await store.read())?.apiKey, 'kh_returned-once-secret-value');
+    service.close();
+  });
 }
 
 http.Response _json(
