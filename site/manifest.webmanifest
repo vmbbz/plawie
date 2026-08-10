@@ -9,8 +9,8 @@
   "theme_color": "#020706",
   "icons": [
     {
-      "src": "/assets/brand/plawie-app-icon.png",
-      "sizes": "192x192",
+      "src": "/assets/brand/favicon.png",
+      "sizes": "1421x1421",
       "type": "image/png",
       "purpose": "any"
     }
