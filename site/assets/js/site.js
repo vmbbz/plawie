@@ -13,9 +13,9 @@
   const readMotionPreference = () => {
     try {
       const stored = window.localStorage.getItem(motionStorageKey);
-      return validMotionPreferences.has(stored) ? stored : 'system';
+      return validMotionPreferences.has(stored) ? stored : 'full';
     } catch (_) {
-      return 'system';
+      return 'full';
     }
   };
   let motionPreference = readMotionPreference();
@@ -317,7 +317,7 @@
   window.addEventListener('resize', scheduleScrollState, { passive: true });
 
   const pointerSurfaces = [...document.querySelectorAll(
-    '.product-device-slot, .architecture-node, .truth-callout, .bento, .setup-timeline li',
+    '.product-device-slot, .architecture-node, .truth-callout, .bento',
   )];
   if (finePointer.matches) {
     pointerSurfaces.forEach((surface) => {
