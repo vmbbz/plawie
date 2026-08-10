@@ -6,6 +6,11 @@ and independently verifiable proof remain release gates
 
 **Policy and vendor snapshot:** 2026-08-10
 
+**Publication draft:**
+[`docs/articles/2026-08-11-plawie-human-governed-keeperhub-agent-wallet.md`](../../articles/2026-08-11-plawie-human-governed-keeperhub-agent-wallet.md)
+describes the implemented architecture, the remaining live-evidence gates, the
+demo sequence, and the media needed for an honest hackathon case study.
+
 **Plawie baseline:** `codex/hybrid-bridge-funding-design` at `e8c58dd`
 
 **Landing-site baseline:** `codex/plawie-landing-site` at `9e69327`
