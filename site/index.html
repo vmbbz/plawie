@@ -27,7 +27,7 @@
     <title>Plawie — OpenClaw in your pocket</title>
     <link rel="stylesheet" href="/assets/css/site.css">
     <script type="application/ld+json">
-      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Plawie","applicationCategory":"UtilitiesApplication","operatingSystem":"Android","description":"A native-first Android companion powered by a local mobile OpenClaw Gateway, with skills, voice, model choice, and human-approved wallet actions.","url":"https://plawie.app/","downloadUrl":"https://github.com/vmbbz/plawie/releases"}
+      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Plawie","applicationCategory":"UtilitiesApplication","operatingSystem":"Android","description":"A native-first Android companion powered by a local mobile OpenClaw Gateway, with skills, voice, model choice, and human-approved wallet actions.","url":"https://plawie.app/","releaseNotes":"Official install links arrive on 12 August 2026."}
     </script>
   </head>
   <body data-demo="chat">
@@ -79,7 +79,7 @@
               <option value="reduced">Reduced</option>
             </select>
           </label>
-          <a class="button button-small button-ghost desktop-cta" href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">Release status</a>
+          <a class="button button-small button-ghost desktop-cta" href="#launch">Launch · 12 August</a>
           <button class="menu-button" type="button" aria-expanded="false" aria-controls="mobile-nav" data-menu-button>
             <span class="sr-only">Open menu</span>
             <svg><use href="#i-menu"/></svg>
@@ -92,7 +92,7 @@
         <a href="#skills">Skills</a>
         <a href="#powers">Powers</a>
         <a href="#faq">FAQ</a>
-        <a href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">Release status</a>
+        <a href="#launch">Launch · 12 August</a>
       </nav>
     </header>
 
@@ -104,9 +104,9 @@
           <p class="hero-lede">A living AI companion with a local mobile Gateway, useful skills, voice, and the freedom to choose local or cloud intelligence.</p>
           <div class="hero-actions">
             <a class="button button-primary" href="#product">Try the product preview <svg><use href="#i-arrow"/></svg></a>
-            <a class="button button-ghost" href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">See latest release</a>
+            <span class="button button-ghost button-pending" aria-disabled="true">Install links · 12 August</span>
           </div>
-          <p class="launch-note"><span>Google Play launch in preparation</span> · Follow the public release train</p>
+          <p class="launch-note"><span>Google Play launch in preparation</span> · Official links arrive 12 August</p>
         </div>
 
         <div class="hero-brand-stage reveal" data-delay="1" aria-hidden="true">
@@ -277,7 +277,7 @@
             <p class="eyebrow">Fresh install · built to resume</p>
             <h2 id="setup-title">A lean APK.<br>A transparent setup.</h2>
             <p>Plawie keeps the fast-moving Gateway and optional runtimes modular. Setup verifies each component, shows progress, and records receipts so successful work is not downloaded twice.</p>
-            <a class="text-link" href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">Inspect public releases <svg><use href="#i-arrow"/></svg></a>
+            <p class="release-date-note"><span class="live-dot"></span> Official install and release links unlock 12 August.</p>
           </div>
           <ol class="setup-timeline reveal">
             <li class="is-done"><span><svg><use href="#i-download"/></svg></span><div><small>STEP 01</small><strong>Official Gateway</strong><p>Download the current upstream OpenClaw release with visible progress.</p></div><i>VERIFIED</i></li>
@@ -300,13 +300,13 @@
         </div>
       </section>
 
-      <section class="launch-section section shell" aria-labelledby="launch-title">
+      <section class="launch-section section shell" id="launch" aria-labelledby="launch-title">
         <div class="launch-card reveal">
           <div class="launch-orb" aria-hidden="true"><img src="/assets/brand/plawie-app-icon.png" width="88" height="88" alt=""></div>
           <p class="eyebrow">The pocket agent is waking up</p>
           <h2 id="launch-title">Be there when<br>Plawie lands.</h2>
-          <p>Google Play and Product Hunt launch preparation is underway. Follow the public release train today; the store button arrives only when the listing is real.</p>
-          <div class="hero-actions centered-actions"><a class="button button-primary" href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">Follow releases <svg><use href="#i-arrow"/></svg></a><a class="button button-ghost" href="https://github.com/vmbbz/plawie" rel="noreferrer">View on GitHub</a></div>
+          <p>Google Play and Product Hunt launch day is 12 August. Official install, release-note, and project links will appear here only when the release gates are complete.</p>
+          <div class="launch-date-lockup" aria-label="Official links arrive 12 August 2026"><span>12</span><div><small>AUGUST 2026</small><strong>Official links unlock here</strong></div></div>
         </div>
       </section>
 
@@ -319,7 +319,7 @@
           <details><summary>Can I use a local model?<span></span></summary><p>Yes, on supported Android hardware and for models that fit the device. You can also select supported cloud providers for larger or different workloads.</p></details>
           <details><summary>Will every desktop OpenClaw skill run on Android?<span></span></summary><p>No. Mobile-compatible skills can run through native tools or verified Android dependency packs. The Skills page shows readiness, required configuration, and genuine platform blockers instead of pretending all desktop binaries are available.</p></details>
           <details><summary>Can Plawie spend from my wallet by itself?<span></span></summary><p>No. Wallet actions are designed to stop at a visible approval containing the amount, network, recipient, reason, and expiry, followed by device authentication before signing.</p></details>
-          <details><summary>When is the Google Play release?<span></span></summary><p>The Play listing is being prepared alongside final release and policy acceptance. Until a real store URL exists, GitHub Releases remains the public sideload channel. The Play build will use Play-approved delivery for executable modules.</p></details>
+          <details><summary>When is the Google Play release?<span></span></summary><p>Launch day is 12 August 2026. Official install links will appear on this site only after the final build, listing, and policy gates are complete.</p></details>
         </div>
       </section>
     </main>
@@ -328,7 +328,7 @@
       <div class="shell footer-grid">
         <div><a class="brand footer-brand" href="#top"><img src="/assets/brand/plawie-app-icon.png" width="40" height="40" alt=""><span>PLAWIE</span></a><p>OpenClaw in your pocket.</p></div>
         <div><strong>Explore</strong><a href="#product">Product</a><a href="#architecture">Architecture</a><a href="#skills">Skills</a><a href="#powers">Powers</a><a href="#faq">FAQ</a></div>
-        <div><strong>Project</strong><a href="https://github.com/vmbbz/plawie" rel="noreferrer">GitHub</a><a href="https://github.com/vmbbz/plawie/releases" rel="noreferrer">Releases</a><a href="https://github.com/vmbbz/plawie/issues" rel="noreferrer">Issue tracker</a></div>
+        <div><strong>Launch</strong><a href="#launch">12 August 2026</a><a href="/support/">Release readiness</a><a href="#faq">Pre-install FAQ</a></div>
         <div><strong>Trust</strong><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/support/">Support</a></div>
       </div>
       <div class="shell footer-bottom"><span>© <span data-year>2026</span> Plawie</span><span>Native-first · Built for Android</span></div>
