@@ -34,12 +34,27 @@ data.
 Motion is purposeful and optional:
 
 - a slow atmospheric grid and mint signal bloom;
-- a short boot-sequence reveal on first view;
+- a short boot-sequence reveal on first view, followed by distinct one-time
+  section choreography as the visitor reads;
+- staggered internal reveals for architecture nodes, setup receipts, safety
+  rules, launch actions, and FAQ rows instead of treating each section as one
+  static block;
+- a one-pixel reading-progress signal and active navigation state that clarify
+  position without changing scroll behavior;
+- fine-pointer light and bounded phone perspective that respond to intent but
+  never block or replace the product controls;
 - state transitions within the product demo;
 - subtle telemetry movement tied to real controls;
+- continuous decorative loops pause when their owning section is offscreen;
 - no scroll-jacking, autoplay audio, strobing, or animation required to read
   the story;
 - `prefers-reduced-motion` removes non-essential motion.
+
+The baseline implementation uses `IntersectionObserver` and a single
+`requestAnimationFrame`-coalesced scroll state update. Native CSS view timelines
+remain an optional future enhancement because browser support is not yet broad
+enough to be the only launch path. Entrance movement is limited to composited
+opacity and transform changes; scroll state does not animate layout properties.
 
 ### Production companion rendering
 
@@ -276,8 +291,10 @@ does not need it for the first launch.
 - `www.plawie.app` permanently redirects to `https://plawie.app`.
 - Security headers include a restrictive CSP, nosniff, referrer policy,
   permissions policy, and clickjacking protection.
-- Fingerprinted assets receive immutable cache headers; HTML receives a short
-  revalidation policy.
+- Versioned VRM assets receive immutable cache headers. The currently
+  non-fingerprinted CSS and JavaScript entry points must revalidate on every
+  visit so a deployment cannot leave returning visitors on an older behavior
+  contract; validators still avoid retransferring unchanged files.
 - Netlify deploy previews are reviewed before the production domain is assigned.
 - HTTPS and canonical redirect checks are required after domain attachment.
 

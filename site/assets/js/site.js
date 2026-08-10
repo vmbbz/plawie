@@ -1,9 +1,14 @@
 (() => {
   'use strict';
 
-  document.documentElement.className = 'js';
+  const root = document.documentElement;
+  root.classList.remove('no-js');
+  root.classList.add('js');
 
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
+  const motionAllowed = () => !reduceMotion.matches;
+  root.dataset.motion = motionAllowed() ? 'full' : 'reduced';
   const header = document.querySelector('[data-header]');
   const menuButton = document.querySelector('[data-menu-button]');
   const mobileNav = document.querySelector('[data-mobile-nav]');
@@ -126,7 +131,7 @@
 
   if (!reduceMotion.matches) {
     window.setInterval(() => {
-      if (!gatewayRunning || document.body.dataset.demo !== 'gateway' || !logList) return;
+      if (reduceMotion.matches || !gatewayRunning || document.body.dataset.demo !== 'gateway' || !logList) return;
       const [symbol, message, style] = logMessages[logSequence % logMessages.length];
       const row = document.createElement('li');
       const now = new Date();
@@ -160,6 +165,39 @@
   });
 
   const revealItems = [...document.querySelectorAll('.reveal')];
+  const revealProfiles = [
+    ['.hero-copy, .setup-copy', 'left'],
+    ['.hero-brand-stage, .hero-stage.reveal, .launch-card', 'scale'],
+    ['.product-control-rail', 'right'],
+    ['.section-heading', 'heading'],
+    ['.bento, .truth-callout, .faq-list', 'lift'],
+  ];
+  revealProfiles.forEach(([selector, profile]) => {
+    document.querySelectorAll(selector).forEach((item) => {
+      if (item.classList.contains('reveal')) item.dataset.revealProfile = profile;
+    });
+  });
+
+  const motionGroups = [
+    ['.hero-proof', ':scope > div'],
+    ['.product-control-rail', '.control-rail-heading, .demo-selector, .demo-disclaimer'],
+    ['.architecture-map', ':scope > .architecture-node, :scope > .architecture-link, :scope > .architecture-branch'],
+    ['.setup-timeline', ':scope > li'],
+    ['.safety-card', '.safety-copy, .safety-rules article'],
+    ['.launch-card', ':scope > *'],
+    ['.faq-list', ':scope > details'],
+  ];
+  motionGroups.forEach(([groupSelector, itemSelector]) => {
+    document.querySelectorAll(groupSelector).forEach((group) => {
+      if (!group.classList.contains('reveal')) return;
+      group.dataset.revealGroup = '';
+      group.querySelectorAll(itemSelector).forEach((item, index) => {
+        item.dataset.motionItem = '';
+        item.style.setProperty('--motion-delay', `${110 + index * 82}ms`);
+      });
+    });
+  });
+
   if ('IntersectionObserver' in window && !reduceMotion.matches) {
     const observer = new IntersectionObserver((entries, revealObserver) => {
       entries.forEach((entry) => {
@@ -167,11 +205,125 @@
         entry.target.classList.add('is-visible');
         revealObserver.unobserve(entry.target);
       });
-    }, { rootMargin: '0px 0px -8% 0px', threshold: .08 });
+    }, { rootMargin: '0px 0px -10% 0px', threshold: .12 });
     revealItems.forEach((item) => observer.observe(item));
   } else {
     revealItems.forEach((item) => item.classList.add('is-visible'));
   }
+
+  const motionSections = [
+    document.querySelector('.hero'),
+    ...document.querySelectorAll('main > .section'),
+  ].filter(Boolean);
+  motionSections.forEach((section) => { section.dataset.motionSection = ''; });
+
+  if ('IntersectionObserver' in window) {
+    const sectionObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        entry.target.classList.toggle('is-in-view', entry.isIntersecting);
+      });
+    }, { rootMargin: '12% 0px 12% 0px', threshold: .01 });
+    motionSections.forEach((section) => sectionObserver.observe(section));
+  } else {
+    motionSections.forEach((section) => section.classList.add('is-in-view'));
+  }
+
+  const navigationLinks = [...document.querySelectorAll(
+    '.desktop-nav a[href^="#"], .mobile-nav a[href^="#"]',
+  )];
+  const navigationSections = navigationLinks
+    .map((link) => document.querySelector(link.getAttribute('href')))
+    .filter((section, index, sections) => section && sections.indexOf(section) === index);
+  let scrollFrame = 0;
+
+  const updateScrollState = () => {
+    scrollFrame = 0;
+    const scrollRange = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+    const pageProgress = Math.min(1, Math.max(0, window.scrollY / scrollRange));
+    const sectionBounds = new Map(motionSections.map((section) => [
+      section,
+      section.getBoundingClientRect(),
+    ]));
+    const sectionSignals = motionSections.map((section) => {
+      const bounds = sectionBounds.get(section);
+      const progress = Math.min(
+        1,
+        Math.max(0, (window.innerHeight - bounds.top) / (window.innerHeight + bounds.height)),
+      );
+      const signal = motionAllowed() ? Math.sin(progress * Math.PI) : 0;
+      return [section, Math.max(0, signal).toFixed(3)];
+    });
+
+    const marker = Math.min(220, window.innerHeight * .3);
+    let activeId = '';
+    navigationSections.forEach((section) => {
+      const bounds = sectionBounds.get(section);
+      if (bounds.top <= marker && bounds.bottom > marker) activeId = section.id;
+    });
+
+    root.style.setProperty('--scroll-progress', pageProgress.toFixed(4));
+    root.style.setProperty(
+      '--atmosphere-shift',
+      `${motionAllowed() ? Math.min(150, window.scrollY * .045).toFixed(2) : 0}px`,
+    );
+    sectionSignals.forEach(([section, signal]) => {
+      section.style.setProperty('--section-signal', signal);
+    });
+    navigationLinks.forEach((link) => {
+      const active = link.getAttribute('href') === `#${activeId}`;
+      link.classList.toggle('is-active', active);
+      if (active) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    });
+  };
+
+  const scheduleScrollState = () => {
+    if (scrollFrame) return;
+    scrollFrame = window.requestAnimationFrame(updateScrollState);
+  };
+  scheduleScrollState();
+  window.addEventListener('scroll', scheduleScrollState, { passive: true });
+  window.addEventListener('resize', scheduleScrollState, { passive: true });
+
+  const pointerSurfaces = [...document.querySelectorAll(
+    '.product-device-slot, .architecture-node, .truth-callout, .bento, .setup-timeline li',
+  )];
+  if (finePointer.matches) {
+    pointerSurfaces.forEach((surface) => {
+      surface.classList.add('has-pointer-light');
+      let pointerFrame = 0;
+      let latestEvent = null;
+      surface.addEventListener('pointermove', (event) => {
+        if (!motionAllowed()) return;
+        latestEvent = event;
+        if (pointerFrame) return;
+        pointerFrame = window.requestAnimationFrame(() => {
+          pointerFrame = 0;
+          const bounds = surface.getBoundingClientRect();
+          const x = ((latestEvent.clientX - bounds.left) / bounds.width) * 100;
+          const y = ((latestEvent.clientY - bounds.top) / bounds.height) * 100;
+          surface.style.setProperty('--pointer-x', `${x.toFixed(2)}%`);
+          surface.style.setProperty('--pointer-y', `${y.toFixed(2)}%`);
+          if (surface.classList.contains('product-device-slot')) {
+            surface.style.setProperty('--phone-tilt-y', `${((x - 50) * .035).toFixed(2)}deg`);
+            surface.style.setProperty('--phone-tilt-x', `${((50 - y) * .025).toFixed(2)}deg`);
+          }
+        });
+      }, { passive: true });
+      surface.addEventListener('pointerleave', () => {
+        surface.style.removeProperty('--pointer-x');
+        surface.style.removeProperty('--pointer-y');
+        surface.style.removeProperty('--phone-tilt-x');
+        surface.style.removeProperty('--phone-tilt-y');
+      }, { passive: true });
+    });
+  }
+
+  reduceMotion.addEventListener?.('change', () => {
+    root.dataset.motion = motionAllowed() ? 'full' : 'reduced';
+    if (reduceMotion.matches) revealItems.forEach((item) => item.classList.add('is-visible'));
+    scheduleScrollState();
+  });
 
   document.querySelectorAll('[data-year]').forEach((node) => {
     node.textContent = String(new Date().getFullYear());
