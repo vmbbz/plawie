@@ -10,9 +10,9 @@ if (hosts.length) {
   const readMotionPreference = () => {
     try {
       const stored = window.localStorage.getItem('plawie-motion-preference');
-      return ['system', 'full', 'reduced'].includes(stored) ? stored : 'system';
+      return ['system', 'full', 'reduced'].includes(stored) ? stored : 'full';
     } catch (_) {
-      return 'system';
+      return 'full';
     }
   };
   const motionPreference = readMotionPreference();
