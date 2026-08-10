@@ -1,6 +1,7 @@
 # Google Play, Wallet Acceptance, and KeeperHub Integration Plan
 
-**Status:** Approved planning baseline; implementation has not started
+**Status:** Implementation authorized; winning Agent Wallet amendment recorded
+before code changes
 
 **Policy and vendor snapshot:** 2026-08-10
 
@@ -352,6 +353,42 @@ Add release gates for:
 
 ## 4. KeeperHub architecture decision
 
+### 4.0 Winning product amendment
+
+The hackathon implementation is not a generic KeeperHub transfer client. Its
+product thesis is:
+
+> Plawie is the human-governed mobile wallet for AI agents: the agent reasons,
+> KeeperHub executes reliably, and the human remains the final authority.
+
+The Wallet page will expose two deliberately separate identities:
+
+| Wallet | Custody and purpose | Authority |
+| --- | --- | --- |
+| **Personal Wallet** | Plawie self-custodial EVM wallet encrypted by Android Keystore | The user; signs only after visible review and device authentication |
+| **Agent Execution Wallet** | KeeperHub-managed organization wallet used for bounded automation and execution | KeeperHub/Turnkey custody, with every Plawie-initiated write additionally gated by Plawie's human approval coordinator |
+
+The Agent Execution Wallet must never be presented as the Personal Wallet, use
+the same balance card without a custody label, or imply that its key can be
+exported/recovered through Plawie's existing wallet backup. Funding, balances,
+receipts, and risk copy remain separate.
+
+The hackathon differentiator is the complete mobile execution lifecycle:
+
+```text
+chat/agent proposes typed intent
+        -> KeeperHub simulates
+        -> Plawie binds the simulation to an immutable request
+        -> visible review + fresh Android authentication
+        -> KeeperHub executes once with persisted idempotency
+        -> Plawie survives interruption and reconciles verified proof
+```
+
+This is crucial to Plawie's architecture: OpenClaw supplies reasoning and skill
+selection, the app supplies wallet ownership and human governance, and
+KeeperHub supplies the execution/reliability layer. Removing any one of the
+three makes the demonstration materially weaker.
+
 ### 4.1 What KeeperHub adds
 
 KeeperHub is useful where Plawie currently has an intent, wallet, bridge, and
@@ -387,7 +424,50 @@ Do not copy these behaviors into Plawie:
 - unbounded workflow creation, integration mutation, or notification side
   effects from chat.
 
-### 4.3 Recommended integration modes
+### 4.3 Headless onboarding and identity binding
+
+KeeperHub documents a supported headless SIWE path. Plawie will use the
+Personal Wallet to establish the user's KeeperHub identity without asking the
+user to copy an API key from a browser:
+
+1. Request a nonce from `POST /api/auth/siwe/nonce` for the exact Personal
+   Wallet address.
+2. Construct the fixed KeeperHub EIP-4361 message for
+   `https://app.keeperhub.com` and chain-id assertion `1`.
+3. Show a Plawie-owned sign-in review and require fresh Android authentication.
+4. Sign only after native code validates the exact domain, URI, statement,
+   wallet, nonce, issued-at window, and purpose. No generic `personal_sign`
+   bridge is exposed to Dart, OpenClaw, or the model.
+5. Verify SIWE and retain the returned session cookies in memory only.
+6. Request an organization API key. The first request returns the
+   `org_api_key_manage` step-up challenge.
+7. Show a second visible key-creation review and require a second bounded,
+   device-authenticated signature over that exact challenge.
+8. Store the returned-once `kh_` credential in Flutter secure storage; store no
+   credential in SharedPreferences, Gateway configuration, logs, receipts,
+   screenshots, analytics, or model context.
+9. Read and display KeeperHub's organization wallet address separately from the
+   Personal Wallet address.
+
+The local record stores only the minimum reconnect/revocation metadata: API key
+identifier, organization wallet address, Personal Wallet address used for SIWE,
+creation time, and last verified KeeperHub request ID. Session cookies are
+ephemeral. A reconnect obtains a fresh nonce rather than replaying a signature.
+
+Disconnect must mean revoke, not merely hide:
+
+- reauthenticate with a fresh SIWE session;
+- request the API-key deletion step-up challenge;
+- visibly approve and sign the exact revocation challenge;
+- revoke the remote key;
+- clear the local secret only after a terminal remote response, or clearly mark
+  `revocationUnknown` and retain recovery instructions.
+
+Because this flow creates a KeeperHub account/organization, the product must
+also expose an accurate route to KeeperHub account deactivation and update
+Plawie's account-deletion/privacy pages before public release.
+
+### 4.4 Recommended integration modes
 
 #### Mode A: Plawie-signed workflow execution — product default
 
@@ -422,12 +502,13 @@ Agent proposes a typed transfer/contract call
         -> verified receipt and transaction link are stored redacted
 ```
 
-Mode B is suitable for a narrow hackathon vertical slice and for users who
-explicitly opt into managed automation. It uses a KeeperHub organization wallet,
-not the Plawie wallet. The UI must show the address, chain, funding source,
-spending cap, custody model, recipient, amount, contract/function, and reason.
+Mode B is the primary hackathon vertical slice and remains an explicit optional
+provider afterward. It uses a KeeperHub organization wallet, not the Plawie
+wallet. The UI must show the address, chain, funding source, spending cap,
+custody model, recipient, amount, contract/function, reason, simulation result,
+idempotency state, and receipt source.
 
-### 4.4 Agent capability boundary
+### 4.5 Agent capability boundary
 
 Expose only app-owned capabilities:
 
@@ -451,41 +532,65 @@ cancel, and release tools. If a per-workflow MCP endpoint is later used, registe
 only an individually reviewed slug/schema and still intercept writes in the
 app-owned coordinator.
 
-### 4.5 Proposed modules
+For the hackathon proof, chat may prepare a zero-value Base Sepolia self-transfer
+or another strictly typed testnet proposal. The capability publishes the
+proposal to a Plawie-owned approval broker. It cannot directly call the
+KeeperHub write endpoint. Only the foreground approval host can consume the
+one-use proposal and invoke the coordinator.
+
+### 4.6 Proposed modules
 
 ```text
 lib/services/keeperhub/
   keeperhub_api_client.dart
   keeperhub_auth_store.dart
+  keeperhub_headless_onboarding_service.dart
   keeperhub_models.dart
   keeperhub_policy.dart
   keeperhub_execution_coordinator.dart
+  keeperhub_approval_broker.dart
+  keeperhub_approval_attestation_service.dart
   keeperhub_receipt_store.dart
   keeperhub_capability.dart
 
 lib/widgets/
+  keeperhub_agent_wallet_card.dart
   keeperhub_execution_review_sheet.dart
+
+android/app/src/main/kotlin/com/openclaw/plawie/
+  KeeperHubMessagePolicy.kt
 
 test/services/keeperhub/
   keeperhub_api_client_test.dart
+  keeperhub_headless_onboarding_service_test.dart
   keeperhub_policy_test.dart
   keeperhub_execution_coordinator_test.dart
+  keeperhub_approval_broker_test.dart
   keeperhub_receipt_store_test.dart
 ```
 
 Responsibilities:
 
 - API client: fixed HTTPS origin, bounded payload/response sizes, timeouts,
-  no redirects, rate-limit handling, request IDs, strict JSON parsing.
+  no redirects, cookie-origin discipline for session calls, rate-limit handling,
+  request IDs, strict JSON parsing, and no secret-bearing exception strings.
 - Auth store: KeeperHub OAuth/API credential in Flutter secure storage; never
   SharedPreferences, Gateway config, model context, logs, receipts, or crash
   reports. Prefer user OAuth when KeeperHub supports the mobile redirect safely.
+- Headless onboarding: fresh SIWE nonce, bounded native signatures, ephemeral
+  cookies, organization-key step-up, organization wallet discovery, reconnect,
+  key rotation, and fail-closed revocation.
 - Policy: live `GET /api/chains`, allowlisted chains/contracts/functions,
   maximum amount, exact decimal handling, recipient validation, no arbitrary
   calldata in the first release.
 - Coordinator: one active intent, simulation binding, one-use visible approval,
   fresh Android authentication, persisted idempotency key before send, no
   automatic retry after unknown outcome.
+- Approval attestation: native code reconstructs and validates a canonical
+  Plawie approval statement, then uses the Personal Wallet after device
+  authentication. Store the approval digest and approver address, never the raw
+  signature. This proves what the local user approved but does not falsely imply
+  that KeeperHub cryptographically requires that signature.
 - Receipt store: execution ID, stable request fingerprint, redacted addresses,
   chain, asset, amount, status, transaction hash/link, request ID, and timestamps;
   no token, signature, raw calldata, prompt, or secret.
@@ -496,7 +601,7 @@ Reuse `X402PaymentApprovalService`, `X402PaymentTransportService`, the paid
 provider approval host, bridge receipt transition rules, and Android's secure
 signer where their invariants match. Do not duplicate approval state machines.
 
-### 4.6 Idempotency and unknown outcomes
+### 4.7 Idempotency and unknown outcomes
 
 - Persist a deterministic work ID and request fingerprint before first submit.
 - Keep the exact simulated body immutable through approval and execution.
@@ -510,7 +615,7 @@ signer where their invariants match. Do not duplicate approval state machines.
 - Treat idempotency conflict as a security/reconciliation failure.
 - Never convert “receipt persistence failed” into a prompt to pay again.
 
-### 4.7 x402 paid workflows
+### 4.8 x402 paid workflows
 
 KeeperHub marketplace writes can return x402 challenges. Plawie's existing Base
 USDC EIP-3009 path already has the correct high-level shape: allowlisted HTTPS
@@ -529,7 +634,7 @@ Integration work:
 7. Disable paid KeeperHub workflows in `play` unless the Play billing/legal gate
    for that country is complete.
 
-### 4.8 Chain scope
+### 4.9 Chain scope
 
 KeeperHub's documented stable networks currently include Base and Base Sepolia,
 but not Robinhood Chain. Always query `GET /api/chains` and treat it as the live
@@ -543,7 +648,35 @@ Initial scope:
   reports support and Plawie's policy/transport is reviewed;
 - retain LI.FI, Relay, Reown, and Solana MWA for existing funding/bridge roles.
 
-### 4.9 Open-source code intake
+### 4.10 Production cryptographic authority
+
+The hackathon path uses a locally enforced Plawie approval plus KeeperHub's
+managed organization wallet, low testnet value, server-side caps, and a secret
+that never reaches the agent. That is appropriate for the testnet vertical
+slice, but the local gate alone is not the final production authority: a stolen
+KeeperHub bearer credential could call the API outside Plawie.
+
+The production target is a multi-owner Safe or equivalent policy-bound account:
+
+- KeeperHub remains the execution/reliability signer;
+- the Plawie Personal Wallet is an additional owner/approver;
+- threshold is greater than one for value-moving actions;
+- KeeperHub workflows route through audited function/argument allowlists;
+- per-token and per-recipient caps are enforced onchain;
+- Plawie presents and signs the exact Safe transaction after human approval.
+
+KeeperHub's current Safe wizard uses a one-owner, threshold-one account. Its
+documentation correctly states that the owner can bypass Zodiac Roles and that
+multi-owner schemas can close that gap. Therefore the app must not market the
+initial managed wallet as cryptographically human-co-signed. Coordinate the
+multi-owner integration with KeeperHub before meaningful Mainnet balances or
+autonomous schedules are allowed.
+
+If multi-owner execution is unavailable, production Agent Wallet mode remains
+optional, minimally funded, visibly custodial, capped, and individually
+human-approved. The Personal Wallet remains the user's vault.
+
+### 4.11 Open-source code intake
 
 KeeperHub's repository is Apache-2.0. Prefer implementing the API contract from
 official docs. If source is adapted rather than merely studied:
@@ -734,20 +867,38 @@ separate payment approval, and receipts are proven on a physical device.
 The current event material indicates a 2026-08-13 deadline, so the slice must be
 narrow and demonstrable rather than a premature platform rewrite.
 
-- [ ] Create a dedicated KeeperHub organization/test wallet; never commit key.
-- [ ] Add fixed-origin REST client, secure auth storage, chain discovery, and
-      error/request-ID parsing.
-- [ ] Add typed Base Sepolia transfer intent only.
-- [ ] Implement simulation, visible review, human approval, device auth,
-      persisted idempotency key, submit, poll, and receipt.
-- [ ] Demonstrate reject/cancel, bad simulation, restart recovery, and one real
-      tiny Base Sepolia KeeperHub-broadcast transaction.
-- [ ] Capture Git source link, demo video, KeeperHub execution ID, and verified
-      transaction link required by the event.
+- [ ] Add fixed-origin REST client, strict errors/request IDs, bounded payloads,
+      and ephemeral cookie handling.
+- [ ] Implement in-app SIWE onboarding from the Personal Wallet, including the
+      organization-key step-up and secure returned-once key storage.
+- [ ] Show Personal Wallet and Agent Execution Wallet as separate cards with
+      explicit custody, chain, address, funding, and risk copy.
+- [ ] Add typed Base Sepolia native transfer intent only; begin with a zero-value
+      self-transfer recommended by KeeperHub to prove the sponsored path safely.
+- [ ] Implement simulation, immutable request binding, visible review, one-use
+      approval, device-authenticated local attestation, persisted idempotency
+      key, single submission, bounded poll, and redacted receipt.
+- [ ] Demonstrate reject/cancel and a deliberately failing simulation before any
+      successful write.
+- [ ] Submit one real zero-value Base Sepolia KeeperHub transaction, interrupt
+      the app/network during polling, reopen, and prove recovery reaches the same
+      execution without a duplicate transaction.
+- [ ] Follow with one tiny non-zero testnet USDC workflow when test funds and the
+      exact reviewed contract are available.
+- [ ] Add chat proposal and status/receipt tools, while keeping approval and
+      execution owned by the foreground Wallet UI.
+- [ ] Implement remote API-key revocation and honest unknown-revocation state.
+- [ ] Treat paid x402 marketplace workflow execution as a stretch goal after the
+      core reliability demo passes.
+- [ ] Capture Git source link, demo video, onboarding sequence, simulated failure,
+      interruption recovery, KeeperHub execution ID, and verified transaction
+      link required by the event.
 
-**Exit:** a judge can see Plawie propose an onchain action, a human authorize it,
-KeeperHub execute it, and both systems reconcile the proof—without autonomous
-spend or exposed credentials.
+**Exit:** a judge can create a real Agent Execution Wallet inside Plawie, ask the
+OpenClaw agent for an action, inspect a real KeeperHub simulation, authorize it
+on the phone, watch KeeperHub execute it, interrupt and resume the app without a
+duplicate, and inspect independently verifiable proof—without autonomous spend,
+manual API-key copying, or exposed credentials.
 
 ### Phase 6 — KeeperHub production integration
 
@@ -774,8 +925,10 @@ and cannot move funds without a fresh Plawie review and human approval.
 - Intended first-release countries.
 - Production upload-key ownership and backup decision.
 - Decision on canonical Play/direct application IDs.
-- KeeperHub organization and either a scoped test API key or approved OAuth
-  client flow. Store it securely; never paste it into source, chat logs, or docs.
+- Permission to create a test KeeperHub account/organization through the
+  documented SIWE flow. No pasted API key is required; the app creates and
+  stores its own organization key after two visible device-authenticated
+  signatures.
 - A dedicated low-value Base Sepolia/KeeperHub test wallet.
 - Production `ROBINHOOD_RPC_URL` if internal Robinhood sends remain in scope.
 - Fresh explicit authorization before any Mainnet bridge, transfer, x402 payment,
@@ -854,6 +1007,11 @@ This program is complete only when:
   <https://docs.keeperhub.com/ai-tools/agentic-wallet>
 - Hackathon quickstart and live chain source:
   <https://docs.keeperhub.com/quickstart>
+- Headless SIWE onboarding, organization wallet discovery, gas sponsorship, and
+  zero-value proof transaction:
+  <https://docs.keeperhub.com/api/headless-onboarding>
+- Safe signer modes, Zodiac policies, owner-bypass limitation, and multi-owner
+  boundary: <https://docs.keeperhub.com/wallet-management/safe>
 - Apache-2.0 source: <https://github.com/KeeperHub/keeperhub>
 - Official company/event material, including the 2026-07-27 to 2026-08-13 build
   window and real-transaction requirement:
