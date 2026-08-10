@@ -33,6 +33,7 @@ import 'diagnostic_service.dart';
 import 'node_service.dart';
 import 'tts_service.dart';
 import 'paid_provider_gateway_coordinator.dart';
+import 'runtime_credential_store.dart';
 
 class _FastCloudRoute {
   final String provider;
@@ -4229,14 +4230,15 @@ HEARTBEAT_OK.
     _lastTokenFetch = null;
   }
 
-  /// Clear the operator device token from SharedPreferences and in-memory cache.
+  /// Clear the operator device token from secure storage and in-memory cache.
   /// Call this from the UI "Clear Cache" action so the next connect does a
   /// fresh identity handshake instead of reusing a potentially stale token.
   Future<void> clearDeviceToken({bool clearProtocol = false}) async {
     clearTokenCache();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(GatewayConnection.prefDeviceToken);
+      await RuntimeCredentialStore.instance.init(prefs);
+      await RuntimeCredentialStore.instance.setOperatorDeviceToken(null);
       if (clearProtocol) {
         await prefs.remove(GatewayConnection.prefWsProtocol);
       }

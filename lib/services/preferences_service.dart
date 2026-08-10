@@ -1,4 +1,9 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'runtime_credential_store.dart';
 
 class PreferencesService {
   static final PreferencesService _instance = PreferencesService._internal();
@@ -10,13 +15,10 @@ class PreferencesService {
   static const _keyFirstRun = 'first_run';
   static const _keyDashboardUrl = 'dashboard_url';
   static const _keyNodeEnabled = 'node_enabled';
-  static const _keyNodeDeviceToken = 'node_device_token';
   static const _keyNodeIdentityDeviceId = 'node_identity_device_id';
   static const _keyNodeGatewayHost = 'node_gateway_host';
   static const _keyNodeGatewayPort = 'node_gateway_port';
   static const _keyNodePublicKey = 'node_ed25519_public';
-  static const _keyNodeGatewayToken = 'node_gateway_token';
-  static const _keyGatewayToken = 'gateway_token';
   static const _keyGatewayRuntimeOwner = 'gateway_runtime_owner';
   static const _keyNativeGatewayDefaultCutoverApplied =
       'native_gateway_default_cutover_applied';
@@ -45,6 +47,16 @@ class PreferencesService {
 
   Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
+    await RuntimeCredentialStore.instance.init(_prefs!);
+  }
+
+  void _persistCredential(Future<void> operation) {
+    unawaited(operation.catchError((Object error, StackTrace stackTrace) {
+      debugPrint(
+        '[PreferencesService] Secure credential persistence failed: '
+        '${error.runtimeType}',
+      );
+    }));
   }
 
   SharedPreferences get _p {
@@ -83,13 +95,12 @@ class PreferencesService {
   set immersiveUiEnabled(bool value) =>
       _p.setBool(_keyImmersiveUiEnabled, value);
 
-  String? get nodeDeviceToken => _p.getString(_keyNodeDeviceToken);
+  String? get nodeDeviceToken =>
+      RuntimeCredentialStore.instance.nodeDeviceToken;
   set nodeDeviceToken(String? value) {
-    if (value != null) {
-      _p.setString(_keyNodeDeviceToken, value);
-    } else {
-      _p.remove(_keyNodeDeviceToken);
-    }
+    _persistCredential(
+      RuntimeCredentialStore.instance.setNodeDeviceToken(value),
+    );
   }
 
   String? get nodeIdentityDeviceId => _p.getString(_keyNodeIdentityDeviceId);
@@ -122,17 +133,18 @@ class PreferencesService {
 
   String? get nodePublicKey => _p.getString(_keyNodePublicKey);
 
-  String? get nodeGatewayToken => _p.getString(_keyNodeGatewayToken);
+  String? get nodeGatewayToken =>
+      RuntimeCredentialStore.instance.nodeGatewayToken;
   set nodeGatewayToken(String? value) {
-    if (value != null && value.isNotEmpty) {
-      _p.setString(_keyNodeGatewayToken, value);
-    } else {
-      _p.remove(_keyNodeGatewayToken);
-    }
+    _persistCredential(
+      RuntimeCredentialStore.instance.setNodeGatewayToken(value),
+    );
   }
 
-  String get gatewayToken => _p.getString(_keyGatewayToken) ?? '';
-  set gatewayToken(String value) => _p.setString(_keyGatewayToken, value);
+  String get gatewayToken => RuntimeCredentialStore.instance.gatewayToken;
+  set gatewayToken(String value) => _persistCredential(
+        RuntimeCredentialStore.instance.setGatewayToken(value),
+      );
 
   static const gatewayRuntimeOwnerProot = 'proot';
   static const gatewayRuntimeOwnerNativeProduction =

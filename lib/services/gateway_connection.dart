@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../constants.dart';
 import 'device_identity.dart';
 import 'openclaw_service.dart';
+import 'runtime_credential_store.dart';
 
 /// Persistent WebSocket connection to the OpenClaw gateway.
 ///
@@ -38,8 +39,6 @@ class GatewayConnection {
   // 50 attempts ≈ 12+ minutes of exponential backoff.
   // 10 was too small for phones that can be dormant for hours.
   static const _maxReconnectAttempts = 50;
-
-  static const _prefDeviceToken = 'openclaw_operator_device_token';
 
   final DeviceIdentity _identity = DeviceIdentity.operator;
   bool _identityLoaded = false;
@@ -78,8 +77,6 @@ class GatewayConnection {
   /// The device ID loaded by the identity module. Non-null after connect() is called.
   String? get deviceId => _identity.deviceId;
 
-  /// Shared-prefs key — exposed so callers can purge the token on pairing recovery.
-  static const prefDeviceToken = _prefDeviceToken;
   static const prefWsProtocol = _prefWsProtocol;
 
   Completer<void>? _handshakeCompleter;
@@ -121,7 +118,8 @@ class GatewayConnection {
       // Including this token in the auth block lets the gateway skip the
       // scope-upgrade audit on reconnect, preventing pairing-required loops.
       final prefs = await SharedPreferences.getInstance();
-      _deviceToken = prefs.getString(_prefDeviceToken);
+      await RuntimeCredentialStore.instance.init(prefs);
+      _deviceToken = RuntimeCredentialStore.instance.operatorDeviceToken;
       final storedProtocol =
           prefs.getInt(_prefWsProtocol) ?? AppConstants.wsProtocolMaxVersion;
       _preferredProtocol = _sanitizeProtocol(storedProtocol);
@@ -336,9 +334,11 @@ class GatewayConnection {
           final newDeviceToken = auth?['deviceToken'] as String?;
           if (newDeviceToken != null && newDeviceToken.isNotEmpty) {
             _deviceToken = newDeviceToken;
-            unawaited(SharedPreferences.getInstance().then(
-              (prefs) => prefs.setString(_prefDeviceToken, newDeviceToken),
-            ));
+            unawaited(
+              RuntimeCredentialStore.instance
+                  .setOperatorDeviceToken(newDeviceToken)
+                  .catchError((Object _) {}),
+            );
           }
         }
 

@@ -52,7 +52,7 @@ void main() {
   test('release RPC validation accepts only uncredentialed HTTPS URLs', () {
     expect(
       WalletNetworkPolicy.isValidReleaseRpc(
-        'https://robinhood-mainnet.example/v2/project',
+        'https://robinhood-mainnet.example',
       ),
       isTrue,
     );
@@ -63,6 +63,18 @@ void main() {
     expect(
       WalletNetworkPolicy.isValidReleaseRpc(
         'https://user:password@rpc.example',
+      ),
+      isFalse,
+    );
+    expect(
+      WalletNetworkPolicy.isValidReleaseRpc(
+        'https://rpc.example/v2/embedded-project-key',
+      ),
+      isFalse,
+    );
+    expect(
+      WalletNetworkPolicy.isValidReleaseRpc(
+        'https://rpc.example?apiKey=embedded-project-key',
       ),
       isFalse,
     );

@@ -1,7 +1,7 @@
 # Release Configuration
 
 This file records build inputs. The Reown project ID and dapp origin are public
-client metadata already present in every configured APK; RPC credentials,
+client metadata already present in every configured APK; private RPC credentials,
 wallet material, signatures, API keys, callback captures, and receipts remain
 secrets and must not be committed, printed in CI logs, or packaged as assets.
 
@@ -11,7 +11,7 @@ secrets and must not be committed, printed in CI logs, or packaged as assets.
 | --- | --- | --- |
 | `REOWN_PROJECT_ID` | Optional rotation override; public default is configured | Connected wallet capability is unavailable only if both are invalid |
 | `PLAWIE_DAPP_URL` | Optional rotation override; public default is `https://plawie.app` | Connected wallet capability is unavailable only if both are invalid |
-| `ROBINHOOD_RPC_URL` | Production internal Robinhood sends; must be HTTPS | Sends are disabled; rate-limited public reads remain |
+| `ROBINHOOD_RPC_URL` | Production internal Robinhood sends; must be a credential-free public HTTPS origin with no path/query/userinfo | Sends are disabled; rate-limited official public reads remain |
 | `ENABLE_LIFI_CONNECTED_BRIDGE` | Connected LI.FI execution is approved | Connected execution stays disabled |
 | `ENABLE_RELAY_DEPOSIT_BRIDGE` | Relay strict-deposit execution is approved | One-time address stays disabled |
 | `ENABLE_REOWN_EVM_WALLETS` | Reown EVM legal/configuration acceptance is complete | EVM wallet connection stays disabled |
@@ -21,7 +21,8 @@ secrets and must not be committed, printed in CI logs, or packaged as assets.
 
 All gates default to `false`. LI.FI public quote/capability requests do not
 require an embedded API key. Any future partner credential belongs behind a
-controlled backend.
+controlled backend. Build-time Dart defines are compiled into the APK and are
+never a safe transport for paid RPC credentials or provider secrets.
 
 ### Create the Reown project
 
@@ -57,22 +58,20 @@ before those pieces exist.
 
 ## Production command shape
 
-The release owner must provide values through the environment and must not echo
-them. Compose these defines with the native-Gateway release variant required by
-that release train.
+The release owner must provide the upload-keystore values through protected CI
+or local environment storage and must not echo them. `ROBINHOOD_RPC_URL`, if
+used, is explicitly public configuration rather than a secret.
 
 ```powershell
 if ([string]::IsNullOrWhiteSpace($env:ROBINHOOD_RPC_URL)) { throw 'ROBINHOOD_RPC_URL is required' }
+if ([string]::IsNullOrWhiteSpace($env:PLAWIE_UPLOAD_STORE_FILE)) { throw 'Upload keystore is required' }
 
-flutter build appbundle --release `
-  --dart-define=ROBINHOOD_RPC_URL=$env:ROBINHOOD_RPC_URL `
-  --dart-define=ENABLE_LIFI_CONNECTED_BRIDGE=true `
-  --dart-define=ENABLE_RELAY_DEPOSIT_BRIDGE=true `
-  --dart-define=ENABLE_REOWN_EVM_WALLETS=true `
-  --dart-define=ENABLE_SOLANA_MWA_WALLETS=true `
-  --dart-define=ENABLE_REOWN_SOLANA_FALLBACK=true `
-  --dart-define=ENABLE_BASE_ACCOUNT_MWP=false
+.\scripts\build_plawie_android.ps1 -Mode release -Bundle
 ```
+
+The build helper fails closed on incomplete release signing and runs the
+compiled-artifact secret audit before returning success. See
+`ANDROID_CREDENTIAL_SECURITY.md` for the storage and threat model.
 
 Production enablement also requires stable Android application ID/signing,
 Reown project restrictions, the shipped legal/attribution bundle described in

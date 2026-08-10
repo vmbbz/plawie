@@ -3,6 +3,8 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'runtime_credential_store.dart';
+
 /// Manages a persistent Ed25519 device identity for OpenClaw Gateway Protocol v3.
 ///
 /// On first launch, generates an Ed25519 key pair and persists it.
@@ -20,7 +22,6 @@ class DeviceIdentity {
   static DeviceIdentity get instance => _operatorInstance;
   DeviceIdentity._internal([this._namespace = '']);
 
-  static const _prefPrivateKey = 'openclaw_device_ed25519_private';
   static const _prefPublicKey = 'openclaw_device_ed25519_public';
   static const _prefDeviceId = 'openclaw_device_id';
 
@@ -39,7 +40,11 @@ class DeviceIdentity {
   /// Load existing identity from SharedPreferences, or generate a new one.
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final existingPrivate = prefs.getString(_key(_prefPrivateKey));
+    final credentialStore = RuntimeCredentialStore.instance;
+    await credentialStore.init(prefs);
+    final isNodeIdentity = _namespace == 'node';
+    final existingPrivate =
+        credentialStore.devicePrivateKey(node: isNodeIdentity);
     final existingPublic = prefs.getString(_key(_prefPublicKey));
     final existingDeviceId = prefs.getString(_key(_prefDeviceId));
 
@@ -65,6 +70,10 @@ class DeviceIdentity {
         return;
       } catch (e) {
         debugPrint('Device Identity Load Error ($_namespace): $e');
+        await credentialStore.setDevicePrivateKey(
+          node: isNodeIdentity,
+          value: null,
+        );
         // Fall through to generate new keys if corrupted
       }
     }
@@ -92,8 +101,12 @@ class DeviceIdentity {
     final privateKeyBase64Url =
         base64Url.encode(privateKeyBytes).replaceAll('=', '');
 
-    // Save to SharedPreferences
-    await prefs.setString(_key(_prefPrivateKey), privateKeyBase64Url);
+    // Private material is encrypted by the Android Keystore-backed runtime
+    // credential store. Public identity fields remain normal preferences.
+    await credentialStore.setDevicePrivateKey(
+      node: isNodeIdentity,
+      value: privateKeyBase64Url,
+    );
     await prefs.setString(_key(_prefPublicKey), _publicKeyBase64Url!);
     await prefs.setString(_key(_prefDeviceId), _deviceId!);
   }

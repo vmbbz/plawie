@@ -24,7 +24,7 @@ instruction and both visible approval surfaces.
 - [ ] Robinhood requires explicit `0x` recipients and never offers Basenames.
 - [ ] Android rejects wrong chain, wrong contract, arbitrary calldata, unlimited
       approval, replayed approval, and every Robinhood x402 payload.
-- [ ] Release `ROBINHOOD_RPC_URL` is HTTPS and responsive without logging its
+- [ ] Release `ROBINHOOD_RPC_URL` is a credential-free public HTTPS origin and responsive without logging its
       value; missing configuration disables only internal Robinhood sends.
 
 ## Funding routes

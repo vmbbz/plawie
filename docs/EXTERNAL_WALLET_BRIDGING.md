@@ -256,7 +256,7 @@ not claim to submit, resume, or monitor it.
 Release builds use the reviewed public `REOWN_PROJECT_ID` and HTTPS
 `PLAWIE_DAPP_URL` defaults, optionally overridden during a controlled rotation.
 Internal Robinhood transactions additionally require an
-HTTPS `ROBINHOOD_RPC_URL`; debug builds may use the official rate-limited public
+credential-free public HTTPS `ROBINHOOD_RPC_URL`; debug builds may use the official rate-limited public
 RPC for non-production checks. Enable independently only after the matching
 acceptance:
 

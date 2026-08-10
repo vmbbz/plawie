@@ -162,7 +162,9 @@ abstract final class WalletNetworkPolicy {
         uri.scheme == 'https' &&
         uri.host.isNotEmpty &&
         uri.userInfo.isEmpty &&
-        !uri.hasFragment;
+        !uri.hasQuery &&
+        !uri.hasFragment &&
+        (uri.path.isEmpty || uri.path == '/');
   }
 
   static bool get hasRobinhoodReleaseRpc =>

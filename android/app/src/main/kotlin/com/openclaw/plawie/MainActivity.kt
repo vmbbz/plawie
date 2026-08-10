@@ -484,7 +484,10 @@ class MainActivity : FlutterFragmentActivity() {
                                 val output = processManager.runInProotSync(command, timeout)
                                 runOnUiThread { result.success(output) }
                             } catch (e: Exception) {
-                                Log.e("MainActivity", "runInProot failed: command=$command", e)
+                                // Commands can contain provider credentials supplied through
+                                // short-lived environment exports. Never place command text in
+                                // Logcat, including on exceptional paths.
+                                Log.e("MainActivity", "runInProot failed", e)
                                 runOnUiThread { result.error("PROOT_ERROR", e.message, null) }
                             }
                         }.start()

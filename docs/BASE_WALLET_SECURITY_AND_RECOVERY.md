@@ -42,7 +42,7 @@ positive native ETH transfer with empty calldata or the exact USDG contract's
 ERC-20 `transfer` call. Arbitrary contract calls and bridge calldata are
 rejected by Android before key unwrap.
 
-Release builds require an HTTPS `ROBINHOOD_RPC_URL` for internal Robinhood
+Release builds require a credential-free public HTTPS `ROBINHOOD_RPC_URL` for internal Robinhood
 sends and production RPC reliability. Debug/internal builds may use
 Robinhood's documented rate-limited public RPC. A release without the define
 can still attempt public reads but disables internal Robinhood sends without
