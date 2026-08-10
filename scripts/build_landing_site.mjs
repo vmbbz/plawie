@@ -89,6 +89,45 @@ await writeFile(
   `${JSON.stringify(manifest, null, 2)}\n`,
 );
 
+const headers = await readFile(join(repositoryRoot, 'site', '_headers'), 'utf8');
+const cspMatch = headers.match(/^\s*Content-Security-Policy:\s*(.+)$/m);
+if (!cspMatch) {
+  throw new Error('Landing-site build requires a Content-Security-Policy header');
+}
+
+const cspDirectives = new Map(
+  cspMatch[1]
+    .split(';')
+    .map((directive) => directive.trim())
+    .filter(Boolean)
+    .map((directive) => {
+      const [name, ...sources] = directive.split(/\s+/);
+      return [name, sources];
+    }),
+);
+const requiredCspSources = new Map([
+  ['connect-src', ["'self'", 'blob:']],
+  ['img-src', ["'self'", 'data:', 'blob:']],
+]);
+
+for (const [directive, requiredSources] of requiredCspSources) {
+  const configuredSources = cspDirectives.get(directive) ?? [];
+  for (const source of requiredSources) {
+    if (!configuredSources.includes(source)) {
+      throw new Error(
+        `Landing-site CSP ${directive} must include ${source} for embedded VRM textures`,
+      );
+    }
+  }
+}
+
+const scriptSources = cspDirectives.get('script-src') ?? [];
+for (const unsafeSource of ["'unsafe-inline'", "'unsafe-eval'"]) {
+  if (scriptSources.includes(unsafeSource)) {
+    throw new Error(`Landing-site CSP must not include ${unsafeSource}`);
+  }
+}
+
 console.log(
   `Prepared ${manifest.version}: ${manifest.bytes} bytes, sha256 ${manifest.sha256}`,
 );

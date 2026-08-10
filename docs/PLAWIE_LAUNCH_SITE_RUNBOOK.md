@@ -56,6 +56,12 @@ Before every deploy:
 The inline JSON-LD block is the only inline script. Its exact SHA-256 hash is
 allowlisted in `site/_headers`. Any edit to that block requires a new hash.
 
+The VRM contains embedded textures that Three.js exposes through temporary
+same-page `blob:` URLs while decoding the model. Keep `blob:` narrowly allowed
+for `connect-src` and `img-src`; it is not required by `script-src`. The Netlify
+build validates these sources and continues to reject `unsafe-inline` and
+`unsafe-eval` script policies.
+
 PowerShell example:
 
 ```powershell
