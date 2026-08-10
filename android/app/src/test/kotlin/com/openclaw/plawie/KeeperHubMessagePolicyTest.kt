@@ -3,6 +3,7 @@ package com.openclaw.plawie
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class KeeperHubMessagePolicyTest {
@@ -85,6 +86,40 @@ Issued At: 2026-08-10T12:00:00.000Z""",
             KeeperHubKeyChallengePolicy.parse(
                 mapOf("challenge" to challenge, "operation" to "execute"),
             )
+        }
+    }
+
+    @Test
+    fun attestsOnlyTheZeroValueBaseSepoliaSelfTransfer() {
+        val arguments = mapOf(
+            "intentId" to "intent_12345678",
+            "chainId" to "84532",
+            "from" to "0x2222222222222222222222222222222222222222",
+            "to" to "0x2222222222222222222222222222222222222222",
+            "amount" to "0",
+            "simulationFingerprint" to "a".repeat(64),
+            "idempotencyKey" to "b".repeat(64),
+            "expiresAt" to "2026-08-10T12:05:00Z",
+        )
+        val request = KeeperHubExecutionAttestationPolicy.parse(
+            arguments,
+            wallet,
+            now,
+        )
+        assertEquals("intent_12345678", request.intentId)
+        assertEquals("a".repeat(64), request.simulationFingerprint)
+        assertEquals("b".repeat(64), request.idempotencyKey)
+        assertTrue(request.message.contains("Amount: 0 ETH"))
+
+        listOf(
+            arguments + ("chainId" to "8453"),
+            arguments + ("amount" to "0.000001"),
+            arguments + ("to" to "0x3333333333333333333333333333333333333333"),
+            arguments + ("contractAddress" to wallet),
+        ).forEach { invalid ->
+            assertThrows(IllegalArgumentException::class.java) {
+                KeeperHubExecutionAttestationPolicy.parse(invalid, wallet, now)
+            }
         }
     }
 }

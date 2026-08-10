@@ -106,3 +106,99 @@ internal object KeeperHubKeyChallengePolicy {
         )
     }
 }
+
+internal data class KeeperHubExecutionAttestationRequest(
+    val intentId: String,
+    val agentWalletAddress: String,
+    val simulationFingerprint: String,
+    val idempotencyKey: String,
+    val expiresAt: String,
+    val message: String,
+)
+
+/**
+ * Closed local attestation for the hackathon proof transaction. It cannot
+ * authorize a Mainnet transfer: only a zero-value Base Sepolia self-transfer
+ * from the separately labelled KeeperHub Agent Wallet is accepted.
+ */
+internal object KeeperHubExecutionAttestationPolicy {
+    const val BASE_SEPOLIA_CHAIN_ID = 84532L
+    private val addressPattern = Regex("^0x[0-9a-fA-F]{40}$")
+    private val digestPattern = Regex("^[0-9a-f]{64}$")
+    private val intentPattern = Regex("^[A-Za-z0-9_-]{8,128}$")
+    private val allowedKeys = setOf(
+        "intentId",
+        "chainId",
+        "from",
+        "to",
+        "amount",
+        "simulationFingerprint",
+        "idempotencyKey",
+        "expiresAt",
+    )
+
+    fun parse(
+        arguments: Map<*, *>?,
+        personalWalletAddress: String,
+        now: Instant = Instant.now(),
+    ): KeeperHubExecutionAttestationRequest {
+        require(arguments != null) { "KeeperHub execution attestation is missing." }
+        require(arguments.keys.all { it in allowedKeys }) {
+            "KeeperHub execution attestation contains unsupported fields."
+        }
+        require(addressPattern.matches(personalWalletAddress)) {
+            "The Personal Wallet address is invalid."
+        }
+        val intentId = arguments["intentId"]?.toString()?.trim() ?: ""
+        require(intentPattern.matches(intentId)) { "KeeperHub intent ID is invalid." }
+        val chainId = arguments["chainId"]?.toString()?.toLongOrNull()
+        require(chainId == BASE_SEPOLIA_CHAIN_ID) {
+            "Only the Base Sepolia proof transaction can be attested."
+        }
+        val from = arguments["from"]?.toString()?.trim() ?: ""
+        val to = arguments["to"]?.toString()?.trim() ?: ""
+        require(addressPattern.matches(from) && addressPattern.matches(to)) {
+            "KeeperHub proof addresses are invalid."
+        }
+        require(from.equals(to, ignoreCase = true)) {
+            "KeeperHub proof must be an Agent Wallet self-transfer."
+        }
+        val amount = arguments["amount"]?.toString()?.trim() ?: ""
+        require(amount == "0") { "KeeperHub proof amount must be exactly zero." }
+        val fingerprint =
+            arguments["simulationFingerprint"]?.toString()?.trim() ?: ""
+        val idempotencyKey = arguments["idempotencyKey"]?.toString()?.trim() ?: ""
+        require(digestPattern.matches(fingerprint)) {
+            "KeeperHub simulation fingerprint is invalid."
+        }
+        require(digestPattern.matches(idempotencyKey)) {
+            "KeeperHub idempotency key is invalid."
+        }
+        val expiresAtText = arguments["expiresAt"]?.toString()?.trim() ?: ""
+        val expiresAt = Instant.parse(expiresAtText)
+        require(expiresAt.isAfter(now)) { "KeeperHub execution approval has expired." }
+        require(Duration.between(now, expiresAt) <= Duration.ofMinutes(5)) {
+            "KeeperHub execution approval exceeds five minutes."
+        }
+
+        val message = """Plawie KeeperHub execution approval
+Version: 1
+Personal Wallet: $personalWalletAddress
+Agent Wallet: $from
+Chain ID: $BASE_SEPOLIA_CHAIN_ID
+Recipient: $to
+Amount: 0 ETH
+Intent ID: $intentId
+Simulation SHA-256: $fingerprint
+Idempotency Key: $idempotencyKey
+Expires At: $expiresAtText"""
+        return KeeperHubExecutionAttestationRequest(
+            intentId = intentId,
+            agentWalletAddress = from,
+            simulationFingerprint = fingerprint,
+            idempotencyKey = idempotencyKey,
+            expiresAt = expiresAtText,
+            message = message,
+        )
+    }
+}

@@ -95,11 +95,54 @@ class KeeperHubApiClient {
         apiKey: apiKey,
       );
 
+  Future<KeeperHubApiResponse> simulateTransfer({
+    required String apiKey,
+    required Map<String, dynamic> transfer,
+  }) =>
+      _send(
+        method: 'POST',
+        path: '/api/execute/transfer',
+        apiKey: apiKey,
+        body: <String, dynamic>{...transfer, 'simulate': true},
+      );
+
+  Future<KeeperHubApiResponse> executeTransfer({
+    required String apiKey,
+    required Map<String, dynamic> transfer,
+    required String idempotencyKey,
+  }) =>
+      _send(
+        method: 'POST',
+        path: '/api/execute/transfer',
+        apiKey: apiKey,
+        idempotencyKey: idempotencyKey,
+        body: transfer,
+      );
+
+  Future<KeeperHubApiResponse> executionStatus({
+    required String apiKey,
+    required String executionId,
+  }) {
+    final normalized = executionId.trim();
+    if (!RegExp(r'^[A-Za-z0-9_-]{8,160}$').hasMatch(normalized)) {
+      throw const KeeperHubException(
+        'execution_id_invalid',
+        'KeeperHub execution ID is invalid.',
+      );
+    }
+    return _send(
+      method: 'GET',
+      path: '/api/execute/$normalized/status',
+      apiKey: apiKey,
+    );
+  }
+
   Future<KeeperHubApiResponse> _send({
     required String method,
     required String path,
     bool session = false,
     String? apiKey,
+    String? idempotencyKey,
     Map<String, dynamic>? body,
   }) async {
     if (!path.startsWith('/api/') || path.contains('://')) {
@@ -138,6 +181,15 @@ class KeeperHubApiClient {
       }
     }
     if (apiKey != null) request.headers['Authorization'] = 'Bearer $apiKey';
+    if (idempotencyKey != null) {
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(idempotencyKey)) {
+        throw const KeeperHubException(
+          'idempotency_key_invalid',
+          'KeeperHub idempotency key is invalid.',
+        );
+      }
+      request.headers['Idempotency-Key'] = idempotencyKey;
+    }
 
     try {
       final streamed = await _client.send(request).timeout(requestTimeout);

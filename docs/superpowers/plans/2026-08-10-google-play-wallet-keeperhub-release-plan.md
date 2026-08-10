@@ -584,8 +584,10 @@ Responsibilities:
   maximum amount, exact decimal handling, recipient validation, no arbitrary
   calldata in the first release.
 - Coordinator: one active intent, simulation binding, one-use visible approval,
-  fresh Android authentication, persisted idempotency key before send, no
-  automatic retry after unknown outcome.
+  fresh Android authentication, and a persisted idempotency key before send.
+  Recovery polls an existing execution ID first; if the first response never
+  supplied an ID, an explicit recovery may replay only the immutable body with
+  the same key. It never rotates the key or starts different work silently.
 - Approval attestation: native code reconstructs and validates a canonical
   Plawie approval statement, then uses the Personal Wallet after device
   authentication. Store the approval digest and approver address, never the raw
@@ -608,8 +610,9 @@ signer where their invariants match. Do not duplicate approval state machines.
 - Use one persisted KeeperHub `Idempotency-Key` for the work, not a new UUID per
   network attempt.
 - A timeout after submission becomes `outcomeUnknown`.
-- On resume, query KeeperHub execution status and chain receipt before any
-  resubmission.
+- On resume, query KeeperHub execution status and chain receipt when an
+  execution ID exists. If submission failed before an ID was returned, allow
+  only an explicit recovery using the exact persisted body and idempotency key.
 - Honor KeeperHub's poll interval hint and stop at a bounded deadline.
 - Treat a replay response as the original outcome, not new execution.
 - Treat idempotency conflict as a security/reconciliation failure.
@@ -877,11 +880,17 @@ narrow and demonstrable rather than a premature platform rewrite.
       physical-device KeeperHub account/organization acceptance run.
 - [ ] Show Personal Wallet and Agent Execution Wallet as separate cards with
       explicit custody, chain, address, funding, and risk copy.
-- [ ] Add typed Base Sepolia native transfer intent only; begin with a zero-value
+- [x] Add typed Base Sepolia native transfer intent only; begin with a zero-value
       self-transfer recommended by KeeperHub to prove the sponsored path safely.
-- [ ] Implement simulation, immutable request binding, visible review, one-use
-      approval, device-authenticated local attestation, persisted idempotency
-      key, single submission, bounded poll, and redacted receipt.
+- [x] Implement the execution reliability core: simulation, immutable request
+      binding, one-use foreground approval broker, device-authenticated local
+      attestation, persisted idempotency key, single submission, bounded poll,
+      restart recovery, and redacted verified receipt.
+- [ ] Wire the approval broker to the visible Wallet review sheet and app
+      foreground lifecycle host.
+- [x] Add automated failure coverage for cancellation, missing foreground UI,
+      tampered receipts, deliberate simulation failure, ambiguous submission,
+      status-only recovery, and mismatched transaction receipts.
 - [ ] Demonstrate reject/cancel and a deliberately failing simulation before any
       successful write.
 - [ ] Submit one real zero-value Base Sepolia KeeperHub transaction, interrupt

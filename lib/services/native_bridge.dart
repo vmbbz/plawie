@@ -302,6 +302,17 @@ class NativeBridge {
     return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
   }
 
+  /// Device-authenticates one policy-bounded KeeperHub testnet execution.
+  static Future<Map<String, dynamic>> attestSecureKeeperHubExecution(
+    Map<String, dynamic> execution,
+  ) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'attestSecureKeeperHubExecution',
+      execution,
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
   /// Shows the private-key backup in an Android-owned authenticated dialog.
   /// The key never crosses the MethodChannel into Dart.
   static Future<void> showSecureEvmWalletBackup() async {

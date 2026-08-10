@@ -387,6 +387,39 @@ class SecureEvmWalletManager(private val activity: Activity) {
         }
     }
 
+    /** Device-authenticated local approval proof for one zero-value testnet run. */
+    fun attestKeeperHubExecution(arguments: Map<*, *>?, result: MethodChannel.Result) {
+        val envelope = requireEnvelope(result) ?: return
+        try {
+            val request = KeeperHubExecutionAttestationPolicy.parse(
+                arguments,
+                envelope.address,
+            )
+            withDecryptedKey(
+                envelope = envelope,
+                title = "Authorize Agent Wallet proof",
+                description = "Approve 0 ETH self-transfer on Base Sepolia",
+                result = result,
+            ) { privateKey ->
+                val signed = signAndVerifyPrefixedMessage(
+                    message = request.message,
+                    privateKey = privateKey,
+                    expectedAddress = envelope.address,
+                    purpose = "KeeperHub execution approval",
+                ).toMutableMap()
+                signed["attestationDigest"] = Numeric.toHexString(
+                    Hash.sha3(request.message.toByteArray(StandardCharsets.UTF_8)),
+                )
+                signed["intentId"] = request.intentId
+                signed["simulationFingerprint"] = request.simulationFingerprint
+                signed["idempotencyKey"] = request.idempotencyKey
+                signed
+            }
+        } catch (error: Exception) {
+            result.error("KEEPERHUB_EXECUTION_POLICY_ERROR", safeMessage(error), null)
+        }
+    }
+
     private fun signAndVerifyPrefixedMessage(
         message: String,
         privateKey: ByteArray,

@@ -275,6 +275,12 @@ class MainActivity : FlutterFragmentActivity() {
                         result,
                     )
                 }
+                "attestSecureKeeperHubExecution" -> {
+                    secureEvmWalletManager.attestKeeperHubExecution(
+                        call.arguments as? Map<*, *>,
+                        result,
+                    )
+                }
                 "setSensitiveUiVisible" -> {
                     val visible = call.arguments as? Boolean
                     if (visible == null) {
