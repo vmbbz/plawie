@@ -26,6 +26,7 @@ import '../services/x402_payment_transport_service.dart';
 import '../widgets/status_card.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/bridge_funding_panel.dart';
+import '../widgets/keeperhub_agent_wallet_card.dart';
 
 class BaseScreen extends StatefulWidget {
   const BaseScreen({
@@ -383,6 +384,11 @@ class _BaseScreenState extends State<BaseScreen> {
                               _buildWalletHeader(theme),
                               const SizedBox(height: 16),
                               _buildWalletStatePanel(theme),
+                              const SizedBox(height: 24),
+                              _sectionLabel(theme, 'AGENT EXECUTION'),
+                              KeeperHubAgentWalletCard(
+                                personalWalletAddress: _baseService.address,
+                              ),
                               const SizedBox(height: 24),
                               _buildNetworkBanner(theme),
                               const SizedBox(height: 16),

@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../services/native_bridge.dart';
 import '../services/paid_provider_approval_broker.dart';
 import '../services/paid_provider_proxy_models.dart';
 import '../services/paid_provider_turn_authorization_service.dart';
+import '../services/sensitive_approval_surface.dart';
 
 typedef PaidProviderSensitiveUiSetter = Future<void> Function(bool visible);
 
@@ -22,6 +22,7 @@ class PaidProviderApprovalHost extends StatefulWidget {
     this.broker,
     this.turnAuthorization,
     this.setSensitiveUiVisible,
+    this.approvalSurface,
     super.key,
   });
 
@@ -30,6 +31,7 @@ class PaidProviderApprovalHost extends StatefulWidget {
   final PaidProviderApprovalBroker? broker;
   final PaidProviderTurnAuthorizationService? turnAuthorization;
   final PaidProviderSensitiveUiSetter? setSensitiveUiVisible;
+  final SensitiveApprovalSurface? approvalSurface;
 
   @override
   State<PaidProviderApprovalHost> createState() =>
@@ -40,7 +42,7 @@ class _PaidProviderApprovalHostState extends State<PaidProviderApprovalHost>
     with WidgetsBindingObserver {
   late final PaidProviderApprovalBroker _broker;
   late final PaidProviderTurnAuthorizationService _turnAuthorization;
-  late final PaidProviderSensitiveUiSetter _setSensitiveUiVisible;
+  late final SensitiveApprovalSurface _approvalSurface;
   StreamSubscription<PendingPaidProviderApproval>? _approvalSubscription;
   Route<dynamic>? _dialogRoute;
   String? _dialogIntentId;
@@ -52,8 +54,12 @@ class _PaidProviderApprovalHostState extends State<PaidProviderApprovalHost>
     _broker = widget.broker ?? PaidProviderApprovalBroker.instance;
     _turnAuthorization = widget.turnAuthorization ??
         PaidProviderTurnAuthorizationService.instance;
-    _setSensitiveUiVisible =
-        widget.setSensitiveUiVisible ?? NativeBridge.setSensitiveUiVisible;
+    _approvalSurface = widget.approvalSurface ??
+        (widget.setSensitiveUiVisible == null
+            ? SensitiveApprovalSurface.instance
+            : SensitiveApprovalSurface(
+                setVisible: widget.setSensitiveUiVisible,
+              ));
     WidgetsBinding.instance.addObserver(this);
     _approvalSubscription = _broker.approvals.listen(_handleApproval);
     _applyLifecycle(WidgetsBinding.instance.lifecycleState);
@@ -93,10 +99,14 @@ class _PaidProviderApprovalHostState extends State<PaidProviderApprovalHost>
     }
 
     _dialogIntentId = approval.intentId;
+    final surfaceOwner = 'paid-provider:${approval.intentId}';
     var sensitiveSurfaceActive = false;
     try {
-      await _setSensitiveUiVisible(true);
-      sensitiveSurfaceActive = true;
+      sensitiveSurfaceActive = await _approvalSurface.acquire(surfaceOwner);
+      if (!sensitiveSurfaceActive) {
+        _cancelSafely(approval.intentId);
+        return;
+      }
       if (!_foreground ||
           !mounted ||
           _broker.activeApproval?.intentId != approval.intentId) {
@@ -139,7 +149,7 @@ class _PaidProviderApprovalHostState extends State<PaidProviderApprovalHost>
       _dialogRoute = null;
       _dialogIntentId = null;
       if (sensitiveSurfaceActive) {
-        await _setSensitiveUiVisible(false).catchError((_) {});
+        await _approvalSurface.release(surfaceOwner).catchError((_) {});
       }
     }
   }
@@ -180,7 +190,11 @@ class _PaidProviderApprovalHostState extends State<PaidProviderApprovalHost>
     _turnAuthorization.markAppBackground();
     unawaited(_approvalSubscription?.cancel());
     if (_dialogIntentId != null) {
-      unawaited(_setSensitiveUiVisible(false).catchError((_) {}));
+      unawaited(
+        _approvalSurface
+            .release('paid-provider:${_dialogIntentId!}')
+            .catchError((_) {}),
+      );
     }
     super.dispose();
   }

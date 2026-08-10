@@ -8,6 +8,7 @@ import 'providers/gateway_provider.dart';
 import 'providers/node_provider.dart';
 import 'screens/splash_screen.dart';
 import 'widgets/paid_provider_approval_dialog.dart';
+import 'widgets/keeperhub_execution_review_dialog.dart';
 
 final GlobalKey<NavigatorState> plawieNavigatorKey =
     GlobalKey<NavigatorState>();
@@ -43,7 +44,10 @@ class PlawieApp extends StatelessWidget {
         },
         builder: (context, child) => PaidProviderApprovalHost(
           navigatorKey: plawieNavigatorKey,
-          child: child ?? const SizedBox.shrink(),
+          child: KeeperHubExecutionApprovalHost(
+            navigatorKey: plawieNavigatorKey,
+            child: child ?? const SizedBox.shrink(),
+          ),
         ),
       ),
     );

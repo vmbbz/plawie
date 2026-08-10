@@ -549,13 +549,16 @@ lib/services/keeperhub/
   keeperhub_policy.dart
   keeperhub_execution_coordinator.dart
   keeperhub_approval_broker.dart
-  keeperhub_approval_attestation_service.dart
   keeperhub_receipt_store.dart
+  keeperhub_wallet_controller.dart
   keeperhub_capability.dart
 
 lib/widgets/
   keeperhub_agent_wallet_card.dart
-  keeperhub_execution_review_sheet.dart
+  keeperhub_execution_review_dialog.dart
+
+lib/services/
+  sensitive_approval_surface.dart
 
 android/app/src/main/kotlin/com/openclaw/plawie/
   KeeperHubMessagePolicy.kt
@@ -876,9 +879,11 @@ narrow and demonstrable rather than a premature platform rewrite.
       service from the Personal Wallet, including organization-key step-up,
       secure-storage preflight, returned-once key storage, and provisioning
       recovery after restart.
-- [ ] Expose onboarding through explicit Wallet UI consent and complete one
-      physical-device KeeperHub account/organization acceptance run.
-- [ ] Show Personal Wallet and Agent Execution Wallet as separate cards with
+- [x] Expose onboarding through explicit Wallet UI consent; creation never runs
+      from startup, setup, chat, or card rendering.
+- [ ] Complete one physical-device KeeperHub account/organization acceptance
+      run.
+- [x] Show Personal Wallet and Agent Execution Wallet as separate cards with
       explicit custody, chain, address, funding, and risk copy.
 - [x] Add typed Base Sepolia native transfer intent only; begin with a zero-value
       self-transfer recommended by KeeperHub to prove the sponsored path safely.
@@ -886,8 +891,11 @@ narrow and demonstrable rather than a premature platform rewrite.
       binding, one-use foreground approval broker, device-authenticated local
       attestation, persisted idempotency key, single submission, bounded poll,
       restart recovery, and redacted verified receipt.
-- [ ] Wire the approval broker to the visible Wallet review sheet and app
+- [x] Wire the approval broker to the visible Wallet review sheet and app
       foreground lifecycle host.
+- [x] Share one exclusive screen-capture-protected approval surface between
+      paid-provider and Agent Wallet reviews so dialogs cannot overlap or clear
+      each other's secure state.
 - [x] Add automated failure coverage for cancellation, missing foreground UI,
       tampered receipts, deliberate simulation failure, ambiguous submission,
       status-only recovery, and mismatched transaction receipts.

@@ -262,6 +262,25 @@ class KeeperHubExecutionCoordinator {
     }
   }
 
+  Future<KeeperHubExecutionRecord> discardPrepared(String intentId) async {
+    var record = await _requireRecord(intentId);
+    if (record.phase != KeeperHubExecutionPhase.proposed &&
+        record.phase != KeeperHubExecutionPhase.awaitingApproval) {
+      throw const KeeperHubException(
+        'execution_cannot_be_discarded',
+        'Only a proof that has not been authorized or submitted can be discarded.',
+      );
+    }
+    record = record.copyWith(
+      phase: KeeperHubExecutionPhase.rejected,
+      errorCode: 'user_discarded',
+      errorMessage: 'The proof was discarded before authorization.',
+      updatedAt: _clock().toUtc(),
+    );
+    await receiptStore.upsert(record);
+    return record;
+  }
+
   Future<KeeperHubExecutionRecord> _submit(
     KeeperHubExecutionRecord record,
   ) async {

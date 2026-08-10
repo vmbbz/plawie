@@ -281,6 +281,39 @@ void main() {
     coordinator.close();
   });
 
+  test('discards a simulated proof before authorization', () async {
+    final authStore = await _readyAuthStore(now, personal, agent);
+    final persistence = _MemoryReceiptPersistence();
+    var executeCalls = 0;
+    final api = KeeperHubApiClient(
+      client: MockClient((request) async {
+        if (jsonDecode(request.body)['simulate'] == true) {
+          return _json(200, _successfulSimulation(agent));
+        }
+        executeCalls += 1;
+        return _json(500, const <String, dynamic>{});
+      }),
+    );
+    final coordinator = KeeperHubExecutionCoordinator(
+      api: api,
+      authStore: authStore,
+      receiptStore: KeeperHubReceiptStore(persistence: persistence),
+      clock: () => now,
+    );
+    final prepared = await coordinator.prepareProof(
+      taskId: 'discard-proof-2026-08-10',
+      reason: 'Discard before authorization.',
+    );
+
+    final discarded = await coordinator.discardPrepared(prepared.intentId);
+
+    expect(discarded.phase, KeeperHubExecutionPhase.rejected);
+    expect(discarded.errorCode, 'user_discarded');
+    expect(await coordinator.receiptStore.active(), isNull);
+    expect(executeCalls, 0);
+    coordinator.close();
+  });
+
   test('does not trust completion whose receipt hash differs from status',
       () async {
     final authStore = await _readyAuthStore(now, personal, agent);

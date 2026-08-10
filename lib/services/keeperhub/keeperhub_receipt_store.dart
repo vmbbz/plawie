@@ -144,6 +144,7 @@ class KeeperHubReceiptStore {
       KeeperHubExecutionPhase.proposed: <KeeperHubExecutionPhase>{
         KeeperHubExecutionPhase.awaitingApproval,
         KeeperHubExecutionPhase.simulationFailed,
+        KeeperHubExecutionPhase.rejected,
       },
       KeeperHubExecutionPhase.awaitingApproval: <KeeperHubExecutionPhase>{
         KeeperHubExecutionPhase.approved,
