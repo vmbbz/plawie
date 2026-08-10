@@ -112,6 +112,7 @@ html[data-motion="reduced"] .motion-control > i { background: var(--text-3); box
 .companion-orbit i:nth-child(1) { inset: 54px; border-style: dashed; }
 .companion-orbit i:nth-child(2) { inset: 112px; border-color: rgba(107,255,208,.23); }
 .companion-orbit i:nth-child(3) { inset: 172px; border-color: rgba(107,255,208,.09); }
+.companion-orbit i:nth-child(3)::after { content: ""; position: absolute; top: 14.645%; right: 14.645%; width: 5px; height: 5px; border-radius: 50%; background: var(--mint-soft); box-shadow: 0 0 7px 2px rgba(0,255,163,.48), 0 0 16px rgba(0,255,163,.82); transform: translate(50%, -50%); }
 .companion-emblem { position: relative; z-index: 3; width: min(352px, calc(100% - 96px)); height: 520px; overflow: visible; background: transparent; }
 .companion-emblem img { position: absolute; z-index: 2; left: 50%; top: 50%; width: 224px; height: 224px; border-radius: 66px; object-fit: cover; box-shadow: 0 26px 58px rgba(0,0,0,.5), 0 0 55px rgba(0,255,163,.16); transform: translate(-50%, -50%); }
 .companion-scan { position: absolute; z-index: 1; inset: -42% -22% auto; height: 44%; background: radial-gradient(ellipse at center, rgba(107,255,208,.16), rgba(0,255,163,.06) 38%, transparent 72%); filter: blur(9px); mix-blend-mode: screen; animation: companion-scan 7.2s ease-in-out infinite; pointer-events: none; }
@@ -121,9 +122,6 @@ html[data-motion="reduced"] .motion-control > i { background: var(--text-3); box
 .companion-state small { color: var(--mint-soft); font-family: var(--mono); font-size: .48rem; letter-spacing: .12em; }
 .companion-state strong { margin-top: 2px; font-size: .79rem; }
 .companion-state em { color: var(--text-3); font-family: var(--mono); font-size: .58rem; font-style: normal; }
-.hero-chip { position: absolute; z-index: 4; display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 30px; background: rgba(4,13,10,.82); color: var(--text-2); font-family: var(--mono); font-size: .58rem; letter-spacing: .08em; text-transform: uppercase; backdrop-filter: blur(12px); }
-.hero-chip span { width: 6px; height: 6px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 10px var(--mint); }
-.hero-chip-b { left: -2px; bottom: 192px; }
 .hero-brand-stage > p { position: absolute; z-index: 4; right: auto; bottom: 7px; left: 50%; width: min(232px, 100%); margin: 0; color: var(--text-3); font-family: var(--mono); font-size: .55rem; line-height: 1.55; letter-spacing: .08em; text-align: center; text-transform: uppercase; transform: translateX(-50%); }
 .hero > .hero-stage { display: none; }
 
@@ -603,7 +601,6 @@ html[data-motion="full"] .launch-orb { animation: launch-float 5.6s ease-in-out 
   .companion-emblem { width: 310px; height: 465px; }
   .companion-emblem img { width: 194px; height: 194px; border-radius: 56px; }
   .companion-state { bottom: 22px; }
-  .hero-chip { display: none; }
   .hero-brand-stage > p { display: none; }
   .product-showcase { margin-top: 44px; grid-template-columns: 1fr; gap: 34px; }
   .product-control-rail { order: -1; }
