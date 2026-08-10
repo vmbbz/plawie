@@ -272,6 +272,36 @@ class NativeBridge {
     return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
   }
 
+  /// Signs only KeeperHub's Android-owned EIP-4361 login assertion.
+  static Future<Map<String, dynamic>> signSecureKeeperHubSiwe({
+    required String nonce,
+    required DateTime issuedAt,
+  }) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'signSecureKeeperHubSiwe',
+      <String, dynamic>{
+        'nonce': nonce,
+        'issuedAt': issuedAt.toUtc().toIso8601String(),
+      },
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
+  /// Signs only KeeperHub's org_api_key_manage step-up challenge.
+  static Future<Map<String, dynamic>> signSecureKeeperHubKeyChallenge({
+    required String challenge,
+    required String operation,
+  }) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'signSecureKeeperHubKeyChallenge',
+      <String, dynamic>{
+        'challenge': challenge,
+        'operation': operation,
+      },
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
   /// Shows the private-key backup in an Android-owned authenticated dialog.
   /// The key never crosses the MethodChannel into Dart.
   static Future<void> showSecureEvmWalletBackup() async {

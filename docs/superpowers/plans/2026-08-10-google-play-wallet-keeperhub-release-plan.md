@@ -867,10 +867,14 @@ separate payment approval, and receipts are proven on a physical device.
 The current event material indicates a 2026-08-13 deadline, so the slice must be
 narrow and demonstrable rather than a premature platform rewrite.
 
-- [ ] Add fixed-origin REST client, strict errors/request IDs, bounded payloads,
+- [x] Add fixed-origin REST client, strict errors/request IDs, bounded payloads,
       and ephemeral cookie handling.
-- [ ] Implement in-app SIWE onboarding from the Personal Wallet, including the
-      organization-key step-up and secure returned-once key storage.
+- [x] Implement bounded native SIWE/key-management signing and the onboarding
+      service from the Personal Wallet, including organization-key step-up,
+      secure-storage preflight, returned-once key storage, and provisioning
+      recovery after restart.
+- [ ] Expose onboarding through explicit Wallet UI consent and complete one
+      physical-device KeeperHub account/organization acceptance run.
 - [ ] Show Personal Wallet and Agent Execution Wallet as separate cards with
       explicit custody, chain, address, funding, and risk copy.
 - [ ] Add typed Base Sepolia native transfer intent only; begin with a zero-value

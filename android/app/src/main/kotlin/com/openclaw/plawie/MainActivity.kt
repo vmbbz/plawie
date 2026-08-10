@@ -263,6 +263,18 @@ class MainActivity : FlutterFragmentActivity() {
                         result,
                     )
                 }
+                "signSecureKeeperHubSiwe" -> {
+                    secureEvmWalletManager.signKeeperHubSiwe(
+                        call.arguments as? Map<*, *>,
+                        result,
+                    )
+                }
+                "signSecureKeeperHubKeyChallenge" -> {
+                    secureEvmWalletManager.signKeeperHubKeyChallenge(
+                        call.arguments as? Map<*, *>,
+                        result,
+                    )
+                }
                 "setSensitiveUiVisible" -> {
                     val visible = call.arguments as? Boolean
                     if (visible == null) {

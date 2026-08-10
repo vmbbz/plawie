@@ -334,6 +334,84 @@ class SecureEvmWalletManager(private val activity: Activity) {
         signVeniceProviderIdentity(compatible, result)
     }
 
+    /**
+     * Signs only KeeperHub's fixed EIP-4361 login assertion. The caller cannot
+     * choose the domain, URI, statement, chain assertion, or wallet address.
+     */
+    fun signKeeperHubSiwe(arguments: Map<*, *>?, result: MethodChannel.Result) {
+        val envelope = requireEnvelope(result) ?: return
+        try {
+            val request = KeeperHubSiwePolicy.parse(arguments, envelope.address)
+            withDecryptedKey(
+                envelope = envelope,
+                title = "Connect Agent Wallet",
+                description = "Sign in to KeeperHub with your Personal Wallet",
+                result = result,
+            ) { privateKey ->
+                signAndVerifyPrefixedMessage(
+                    message = request.message,
+                    privateKey = privateKey,
+                    expectedAddress = envelope.address,
+                    purpose = "KeeperHub sign-in",
+                )
+            }
+        } catch (error: Exception) {
+            result.error("KEEPERHUB_SIWE_POLICY_ERROR", safeMessage(error), null)
+        }
+    }
+
+    /** Signs only the documented org_api_key_manage step-up challenge. */
+    fun signKeeperHubKeyChallenge(arguments: Map<*, *>?, result: MethodChannel.Result) {
+        val envelope = requireEnvelope(result) ?: return
+        try {
+            val request = KeeperHubKeyChallengePolicy.parse(arguments)
+            withDecryptedKey(
+                envelope = envelope,
+                title = if (request.operation == "create") {
+                    "Create Agent Wallet access"
+                } else {
+                    "Revoke Agent Wallet access"
+                },
+                description = request.promptDescription,
+                result = result,
+            ) { privateKey ->
+                signAndVerifyPrefixedMessage(
+                    message = request.challenge,
+                    privateKey = privateKey,
+                    expectedAddress = envelope.address,
+                    purpose = "KeeperHub key authorization",
+                )
+            }
+        } catch (error: Exception) {
+            result.error("KEEPERHUB_KEY_POLICY_ERROR", safeMessage(error), null)
+        }
+    }
+
+    private fun signAndVerifyPrefixedMessage(
+        message: String,
+        privateKey: ByteArray,
+        expectedAddress: String,
+        purpose: String,
+    ): Map<String, String> {
+        val pair = ECKeyPair.create(BigInteger(1, privateKey))
+        val bytes = message.toByteArray(StandardCharsets.UTF_8)
+        val signature = Sign.signPrefixedMessage(bytes, pair)
+        val signatureBytes = ByteArray(65)
+        System.arraycopy(signature.r, 0, signatureBytes, 0, 32)
+        System.arraycopy(signature.s, 0, signatureBytes, 32, 32)
+        signatureBytes[64] = signature.v[0]
+        val recovered = Sign.signedPrefixedMessageToKey(bytes, signature)
+        val recoveredAddress = Keys.toChecksumAddress("0x${Keys.getAddress(recovered)}")
+        require(recoveredAddress.equals(expectedAddress, ignoreCase = true)) {
+            "$purpose signature self-verification failed."
+        }
+        return mapOf(
+            "signature" to Numeric.toHexString(signatureBytes),
+            "walletAddress" to expectedAddress,
+            "message" to message,
+        )
+    }
+
     fun showPrivateKeyBackup(result: MethodChannel.Result) {
         val envelope = requireEnvelope(result) ?: return
         withDecryptedKey(
