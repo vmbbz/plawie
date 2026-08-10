@@ -1,4 +1,8 @@
 const ASSET_ROOT = '/assets/vrm/gemini-v1';
+const LIMB_GESTURES = [
+  'animations/limbs/Light_Wave_Left_01.vrma',
+  'animations/limbs/Light_Wave_Right_01.vrma',
+];
 const hosts = [...document.querySelectorAll('[data-vrm-host]')];
 
 if (hosts.length) {
@@ -17,6 +21,8 @@ if (hosts.length) {
   let camera = null;
   let currentVrm = null;
   let mixer = null;
+  let idleAction = null;
+  let currentAction = null;
   let clock = null;
   let resizeObserver = null;
   let animationFrame = 0;
@@ -27,6 +33,13 @@ if (hosts.length) {
   let targetYaw = Math.PI;
   let currentYaw = Math.PI;
   let metrics = { height: 1.8, width: 0.8, centerX: 0, lookY: 0.9 };
+  let gestureCountdown = Number.POSITIVE_INFINITY;
+  let gestureLoading = false;
+  let activeGestureAction = null;
+  let activeGestureRemaining = 0;
+  let lastGesturePath = '';
+  const gestureActions = new Map();
+  const failedGesturePaths = new Set();
 
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const targetFrameMs = isMobile ? 1000 / 30 : 1000 / 45;
@@ -166,10 +179,30 @@ if (hosts.length) {
     loader.load(url, resolve, onProgress, reject);
   });
 
+  const loadVettedLimbClip = async (loader, url) => {
+    const originalWarn = console.warn;
+    console.warn = (...argumentsList) => {
+      const message = String(argumentsList[0] || '');
+      const ignoredTranslationTrack = message.startsWith(
+        'The loading animation contains a translation track for ',
+      ) && message.endsWith('which is not permitted in the VRMC_vrm_animation spec. ignoring the track');
+      if (!ignoredTranslationTrack) originalWarn.apply(console, argumentsList);
+    };
+    try {
+      // These vetted exports include redundant non-hips translations. The VRM
+      // loader intentionally ignores them; keep that behavior without flooding
+      // production consoles every time a lazy limb clip is selected.
+      return await loadWithProgress(loader, url);
+    } finally {
+      console.warn = originalWarn;
+    }
+  };
+
   const dispose = () => {
     cancelAnimationFrame(animationFrame);
     resizeObserver?.disconnect();
     mixer?.stopAllAction();
+    gestureActions.clear();
     currentVrm?.dispose?.();
     renderer?.dispose();
     renderer?.forceContextLoss?.();
@@ -180,6 +213,7 @@ if (hosts.length) {
     ready = false;
     paused = true;
     setHostState('is-vrm-loading', false);
+    setHostState('is-vrm-gesturing', false);
     setHostState('is-vrm-unavailable', true);
     setStatus('App visual');
     dispose();
@@ -273,7 +307,9 @@ if (hosts.length) {
       currentVrm.scene.add(lookAtProxy);
     }
     const clip = animationModule.createVRMAnimationClip(vrmAnimation, currentVrm);
-    mixer.clipAction(clip).play();
+    idleAction = mixer.clipAction(clip);
+    idleAction.setLoop(THREE.LoopRepeat, Infinity).play();
+    currentAction = idleAction;
     mixer.update(1 / 60);
     recenterVrm(THREE, currentVrm);
     metrics = measureVrm(THREE, currentVrm);
@@ -287,15 +323,124 @@ if (hosts.length) {
     frameCamera();
     renderer.render(scene, camera);
 
+    const randomDelay = (initial = false) => {
+      const minimum = initial ? 8 : 22;
+      const maximum = initial ? 14 : 38;
+      return minimum + Math.random() * (maximum - minimum);
+    };
+
+    const chooseGesturePath = () => {
+      const available = LIMB_GESTURES.filter((path) => (
+        path !== lastGesturePath && !failedGesturePaths.has(path)
+      ));
+      const pool = available.length
+        ? available
+        : LIMB_GESTURES.filter((path) => !failedGesturePaths.has(path));
+      if (!pool.length) return null;
+      return pool[Math.floor(Math.random() * pool.length)];
+    };
+
+    const loadLimbGesture = async (path) => {
+      if (!path.startsWith('animations/limbs/') || !path.endsWith('.vrma')) {
+        throw new Error('Landing gestures must come from animations/limbs/');
+      }
+      if (gestureActions.has(path)) return gestureActions.get(path);
+
+      const gltf = await loadVettedLimbClip(loader, `${ASSET_ROOT}/${path}`);
+      const animation = gltf.userData.vrmAnimations?.[0];
+      const humanBones = gltf.parser?.json?.extensions
+        ?.VRMC_vrm_animation?.humanoid?.humanBones;
+      if (!animation || !humanBones || !Object.keys(humanBones).length) {
+        throw new Error(`Limb animation is missing VRM humanoid tracks: ${path}`);
+      }
+
+      const gestureClip = animationModule.createVRMAnimationClip(animation, currentVrm);
+      if (!gestureClip.tracks.length || !Number.isFinite(gestureClip.duration)) {
+        throw new Error(`Limb animation produced an invalid clip: ${path}`);
+      }
+      const action = mixer.clipAction(gestureClip);
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = false;
+      gestureActions.set(path, action);
+      return action;
+    };
+
+    const returnToIdle = () => {
+      if (!idleAction) return;
+      activeGestureAction?.fadeOut(0.42);
+      idleAction.reset()
+        .setEffectiveWeight(1)
+        .setEffectiveTimeScale(1)
+        .fadeIn(0.42)
+        .play();
+      currentAction = idleAction;
+      activeGestureAction = null;
+      activeGestureRemaining = 0;
+      gestureCountdown = randomDelay();
+      setHostState('is-vrm-gesturing', false);
+    };
+
+    const playOccasionalLimbGesture = async () => {
+      if (gestureLoading || currentAction !== idleAction) return;
+      const path = chooseGesturePath();
+      if (!path) {
+        gestureCountdown = Number.POSITIVE_INFINITY;
+        return;
+      }
+
+      gestureLoading = true;
+      try {
+        const action = await loadLimbGesture(path);
+        if (paused || document.hidden || !activeHost || currentAction !== idleAction) {
+          gestureCountdown = 4;
+          return;
+        }
+
+        idleAction.fadeOut(0.34);
+        action.reset()
+          .setEffectiveWeight(1)
+          .setEffectiveTimeScale(1)
+          .fadeIn(0.34)
+          .play();
+        currentAction = action;
+        activeGestureAction = action;
+        activeGestureRemaining = Math.max(0.35, action.getClip().duration - 0.3);
+        lastGesturePath = path;
+        setHostState('is-vrm-gesturing', true);
+      } catch (error) {
+        failedGesturePaths.add(path);
+        gestureCountdown = randomDelay();
+        console.warn('[Plawie] Optional limb animation unavailable.', error);
+      } finally {
+        gestureLoading = false;
+      }
+    };
+
+    gestureCountdown = randomDelay(true);
+
     const animate = (timestamp) => {
       animationFrame = requestAnimationFrame(animate);
-      const rawDelta = clock.getDelta();
-      if (paused || document.hidden || !currentVrm || !activeHost) return;
-      if (timestamp - lastRenderAt < targetFrameMs) return;
-      lastRenderAt = timestamp;
-      const delta = Math.min(rawDelta, 0.05);
+      if (paused || document.hidden || !currentVrm || !activeHost) {
+        clock.getDelta();
+        lastRenderAt = timestamp;
+        return;
+      }
+      const elapsedSinceRender = timestamp - lastRenderAt;
+      if (elapsedSinceRender < targetFrameMs) return;
+      lastRenderAt = timestamp - (elapsedSinceRender % targetFrameMs);
+      const delta = Math.min(clock.getDelta(), 0.05);
       mixer?.update(delta);
       currentVrm.update(delta);
+      if (activeGestureAction) {
+        activeGestureRemaining -= delta;
+        if (activeGestureRemaining <= 0) returnToIdle();
+      } else if (!gestureLoading && currentAction === idleAction) {
+        gestureCountdown -= delta;
+        if (gestureCountdown <= 0) {
+          gestureCountdown = Number.POSITIVE_INFINITY;
+          void playOccasionalLimbGesture();
+        }
+      }
       currentYaw = THREE.MathUtils.lerp(currentYaw, targetYaw, delta * 2.4);
       currentVrm.scene.rotation.y = currentYaw;
       renderer.render(scene, camera);
