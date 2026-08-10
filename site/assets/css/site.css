@@ -109,7 +109,7 @@ html[data-motion="reduced"] .motion-control > i { background: var(--text-3); box
 
 .hero-brand-stage { --hero-orbit-size: min(520px, calc(100% - 8px)); position: relative; z-index: 2; width: 100%; max-width: 580px; min-height: 700px; justify-self: center; display: grid; place-items: center; isolation: isolate; }
 .companion-orbit, .companion-orbit i { position: absolute; border: 1px solid rgba(107,255,208,.14); border-radius: 50%; }
-.companion-orbit { width: var(--hero-orbit-size); height: auto; aspect-ratio: 1; animation: orbit-spin 80s linear infinite; }
+.companion-orbit { top: 76%; left: 50%; width: var(--hero-orbit-size); height: auto; aspect-ratio: 1; transform: translate(-50%, -50%) perspective(900px) rotateX(68deg) scaleY(.58); transform-origin: center; filter: drop-shadow(0 16px 22px rgba(0,255,163,.12)); animation: orbit-floor-spin 80s linear infinite; }
 .companion-orbit::before, .companion-orbit::after { content: ""; position: absolute; border-radius: 50%; background: var(--mint); box-shadow: 0 0 22px rgba(0,255,163,.9); }
 .companion-orbit::before { width: 7px; height: 7px; left: 55px; top: 84px; }
 .companion-orbit::after { width: 4px; height: 4px; right: 30px; bottom: 150px; }
@@ -118,6 +118,7 @@ html[data-motion="reduced"] .motion-control > i { background: var(--text-3); box
 .companion-orbit i:nth-child(3) { inset: 172px; border-color: rgba(107,255,208,.09); }
 .companion-orbit i:nth-child(3)::after { content: ""; position: absolute; top: 14.645%; right: 14.645%; width: 5px; height: 5px; border-radius: 50%; background: var(--mint-soft); box-shadow: 0 0 7px 2px rgba(0,255,163,.48), 0 0 16px rgba(0,255,163,.82); transform: translate(50%, -50%); }
 .companion-emblem { position: relative; z-index: 3; width: min(352px, calc(100% - 96px)); height: 520px; overflow: visible; background: transparent; }
+.companion-emblem::after { content: ""; position: absolute; z-index: 1; right: 7%; bottom: -1%; left: 7%; height: 21%; border: 1px solid rgba(107,255,208,.18); border-radius: 50%; background: radial-gradient(ellipse, rgba(0,255,163,.2), rgba(0,255,163,.05) 42%, transparent 72%); box-shadow: 0 0 32px rgba(0,255,163,.14); transform: rotateX(68deg); transform-origin: center; filter: blur(.2px); pointer-events: none; }
 .companion-emblem img { position: absolute; z-index: 2; left: 50%; top: 50%; width: 224px; height: 224px; border-radius: 66px; object-fit: cover; box-shadow: 0 26px 58px rgba(0,0,0,.5), 0 0 55px rgba(0,255,163,.16); transform: translate(-50%, -50%); }
 .companion-scan { position: absolute; z-index: 1; inset: -42% -22% auto; height: 44%; background: radial-gradient(ellipse at center, rgba(107,255,208,.16), rgba(0,255,163,.06) 38%, transparent 72%); filter: blur(9px); mix-blend-mode: screen; animation: companion-scan 7.2s ease-in-out infinite; pointer-events: none; }
 .companion-state { position: absolute; z-index: 7; left: 50%; bottom: 64px; width: min(232px, 68%); min-height: 58px; padding: 10px 12px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px; border: 1px solid rgba(107,255,208,.2); border-radius: 16px; background: rgba(3,12,9,.9); box-shadow: 0 18px 50px rgba(0,0,0,.4); backdrop-filter: blur(18px); transform: translateX(-50%); }
@@ -555,6 +556,7 @@ html[data-motion="full"] .launch-card::before { animation: boundary-breathe 10s 
 html[data-motion="full"] .launch-orb { animation: launch-float 5.6s ease-in-out infinite; }
 
 @keyframes orbit-spin { to { transform: rotate(360deg); } }
+@keyframes orbit-floor-spin { to { transform: translate(-50%, -50%) perspective(900px) rotateX(68deg) scaleY(.58) rotateZ(360deg); } }
 @keyframes breathe { 50% { transform: scale(1.035); opacity: .75; } }
 @keyframes aura-breathe { 50% { opacity: .72; transform: scale(1.08); } }
 @keyframes micro-float { 50% { transform: translate3d(0, -8px, 0); } }

@@ -19,10 +19,15 @@ if (hosts.length) {
   const motionReduced = motionPreference === 'reduced'
     || (motionPreference === 'system' && reduceMotion.matches);
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const lowMemoryDevice = Boolean(
+    navigator.deviceMemory && navigator.deviceMemory < 4,
+  );
+  // Full mode is an explicit request to load the live companion. Low-memory
+  // and Save-Data hints still constrain the default/system experience, but
+  // they must not silently override the user's Full selection.
   const constrainedDevice = Boolean(
     motionReduced
-      || connection?.saveData
-      || (navigator.deviceMemory && navigator.deviceMemory < 4),
+      || (motionPreference !== 'full' && (connection?.saveData || lowMemoryDevice)),
   );
 
   const statusNodes = hosts.map((host) => host.querySelector('[data-vrm-status]'));
