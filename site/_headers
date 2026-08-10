@@ -12,12 +12,12 @@
   X-Content-Type-Options: nosniff
 
 /assets/css/*
-  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+  Cache-Control: public, max-age=0, must-revalidate
   Cross-Origin-Resource-Policy: same-origin
   X-Content-Type-Options: nosniff
 
 /assets/js/*
-  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+  Cache-Control: public, max-age=0, must-revalidate
   Cross-Origin-Resource-Policy: same-origin
   X-Content-Type-Options: nosniff
 
