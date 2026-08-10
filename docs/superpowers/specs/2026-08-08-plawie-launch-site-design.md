@@ -117,7 +117,7 @@ Three.js module instance without an inline import map or a weaker CSP.
 ### 1. Navigation
 
 - Compact Plawie mark and wordmark.
-- Product, Architecture, Skills, Safety, and FAQ anchors.
+- Product, Architecture, Skills, Powers, and FAQ anchors.
 - Primary CTA changes from **Join the launch** before Play publication to
   **Get it on Google Play** only when a real store URL exists.
 - Mobile menu is keyboard-operable, closes on Escape, and never traps focus.
@@ -178,14 +178,18 @@ through Play Feature Delivery, while signed GitHub packs are reserved for
 sideload builds. It must not imply that off-store native executable downloads
 are permitted in a Play-distributed build.
 
-### 7. Safety and transparency
+### 7. Powers and user control
 
-Show three enforceable boundaries:
+Show four verified ways the user shapes the product:
 
-- user selects the model/provider path;
-- tools and skills expose readiness/configuration state;
-- wallet signing and payments require explicit approval and device
-  authentication.
+- BYOK cloud providers and private on-device model paths remain distinct;
+- wallet-funded Venice and BlockRun routes use the secured Base wallet while
+  spending still requires visible approval and device authentication;
+- animated companion chat and the OpenClaw Web Dashboard remain available as
+  separate interaction surfaces;
+- available Gateway tools, paired Android commands, and configured integration
+  skills can be opened broadly or narrowed individually, while unconfigured
+  proactive model heartbeats remain disabled.
 
 Link to privacy, terms, support, security architecture, and open-source notices.
 

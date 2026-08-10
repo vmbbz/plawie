@@ -28,6 +28,31 @@
   };
   syncMotionState();
 
+  const restoreHashTarget = () => {
+    if (!window.location.hash) return;
+    let targetId;
+    try {
+      targetId = decodeURIComponent(window.location.hash.slice(1));
+    } catch (_) {
+      return;
+    }
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const previousScrollBehavior = root.style.scrollBehavior;
+    root.style.scrollBehavior = 'auto';
+    target.scrollIntoView({ block: 'start', behavior: 'auto' });
+    root.style.scrollBehavior = previousScrollBehavior;
+  };
+  if (window.location.hash) {
+    window.addEventListener('load', () => {
+      restoreHashTarget();
+      document.fonts?.ready.then(() => {
+        restoreHashTarget();
+        window.setTimeout(restoreHashTarget, 250);
+      });
+    }, { once: true });
+  }
+
   motionPreferenceControls.forEach((control) => {
     control.addEventListener('change', () => {
       const nextPreference = control.value;
@@ -214,7 +239,7 @@
     ['.product-control-rail', '.control-rail-heading, .demo-selector, .demo-disclaimer'],
     ['.architecture-map', ':scope > .architecture-node, :scope > .architecture-link, :scope > .architecture-branch'],
     ['.setup-timeline', ':scope > li'],
-    ['.safety-card', '.safety-copy, .safety-rules article'],
+    ['.powers-card', '.powers-copy, .powers-grid article'],
     ['.launch-card', ':scope > *'],
     ['.faq-list', ':scope > details'],
   ];
