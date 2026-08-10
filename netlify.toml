@@ -1,4 +1,5 @@
 [build]
+  command = "node scripts/build_landing_site.mjs"
   publish = "site"
 
 [dev]

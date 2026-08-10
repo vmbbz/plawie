@@ -102,9 +102,10 @@
 
         <div class="hero-brand-stage reveal" data-delay="1" aria-hidden="true">
           <div class="companion-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
-          <div class="companion-emblem">
+          <div class="companion-emblem vrm-host vrm-host-hero" data-vrm-host="hero">
             <span class="companion-scan" aria-hidden="true"></span>
-            <img src="/assets/brand/plawie-app-icon.png" width="192" height="192" alt="">
+            <img class="vrm-poster" src="/assets/brand/plawie-app-icon.png" width="192" height="192" alt="">
+            <span class="vrm-load-state"><i></i><span data-vrm-status>Gemini visual</span></span>
           </div>
           <div class="companion-state"><i></i><span><small>PLAWIE · ANDROID</small><strong>Companion online</strong></span><em>01</em></div>
           <div class="hero-chip hero-chip-a"><span></span> Local Gateway</div>
@@ -144,7 +145,10 @@
               <div class="demo-panel is-active" id="demo-chat" role="tabpanel" aria-labelledby="tab-chat" data-demo-panel="chat">
                 <div class="avatar-field" aria-hidden="true">
                   <div class="avatar-rings"><i></i><i></i><i></i></div>
-                  <img class="avatar-app-icon" src="/assets/brand/plawie-app-icon.png" width="192" height="192" alt="">
+                  <div class="vrm-host vrm-host-chat" data-vrm-host="chat">
+                    <img class="avatar-app-icon vrm-poster" src="/assets/brand/plawie-app-icon.png" width="192" height="192" alt="">
+                    <span class="vrm-load-state"><i></i><span data-vrm-status>Gemini visual</span></span>
+                  </div>
                 </div>
                 <div class="chat-stack">
                   <div class="bubble bubble-user">Give me a focused start to the day.</div>
@@ -331,5 +335,6 @@
     </dialog>
 
     <script src="/assets/js/site.js" defer></script>
+    <script src="/assets/js/vrm-avatar.js" type="module"></script>
   </body>
 </html>

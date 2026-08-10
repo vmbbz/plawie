@@ -70,6 +70,8 @@
       }
     });
 
+    document.dispatchEvent(new CustomEvent('plawie:demochange', { detail: { name } }));
+
     if (options.focusPhone && demoStage) {
       const block = window.innerWidth < 760 ? 'center' : 'center';
       demoStage.scrollIntoView({ behavior: reduceMotion.matches ? 'auto' : 'smooth', block });

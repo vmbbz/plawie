@@ -41,6 +41,47 @@ Motion is purposeful and optional:
   the story;
 - `prefers-reduced-motion` removes non-essential motion.
 
+### Production companion rendering
+
+The hero and the Chat product preview progressively render the same
+`gemini.vrm` companion used by the Android Chat surface. The website must not
+instantiate or download that model twice. A single transparent WebGL canvas,
+scene, model, and animation mixer move between two declared viewport hosts:
+
+```text
+hero host <-- one shared Gemini renderer --> product Chat host
+```
+
+The host with the greatest meaningful viewport exposure owns the canvas. The
+Chat host is eligible only while the Chat preview is selected. When neither
+host is visible, rendering pauses; when the document is hidden, its clock is
+also reset so returning to the tab does not apply a large animation delta.
+
+The production Android launcher image remains beneath each host as a
+zero-layout-shift poster. It is visible during loading and becomes the final
+experience when WebGL is unavailable, reduced motion is requested, or the
+browser advertises a data-saving or low-memory mode. The model starts only
+after the primary document load and an idle opportunity. Loading progress is
+shown as quiet telemetry and never blocks navigation or product controls.
+
+The web scene deliberately reuses only the Android renderer's visual contract:
+
+- the tracked `gemini.vrm` source and `idle_loop.vrma` animation;
+- the same VRM loader plugins, 1.8-unit height normalization, humanoid-anchor
+  centering, transparent renderer, camera field of view, and lighting family;
+- device-sensitive pixel-ratio and frame-rate caps;
+- resize-aware camera framing tailored to the hero and compact Chat viewport.
+
+App-only WebView bridges, tool commands, TTS visemes, gesture queues, drag
+orbit, wallet state, and agent messaging are excluded from the public site.
+The canvas is decorative and has no pointer or accessibility role.
+
+The model and its already-vendored loader modules are copied into a versioned
+publish directory by the Netlify build script. Generated publish assets are
+ignored by Git to avoid checking in a second copy of the 19 MB model. Bare
+module imports are rewritten only in generated copies so browsers share one
+Three.js module instance without an inline import map or a weaker CSP.
+
 ## Information architecture
 
 ### 1. Navigation
@@ -143,7 +184,8 @@ Answer the first-launch objections directly:
 
 Use a standalone static site under `site/` rather than replacing Flutter's
 existing `web/` shell. The first production version uses semantic HTML, modern
-CSS, and small dependency-free JavaScript modules.
+CSS, small dependency-free interface JavaScript, and an isolated deferred VRM
+module built from the repository's existing app renderer dependencies.
 
 Reasons:
 
@@ -165,11 +207,13 @@ site/
   assets/
     css/site.css
     js/site.js
+    js/vrm-avatar.js
     brand/
     app/
   _headers
   _redirects
 netlify.toml
+scripts/build_landing_site.mjs
 ```
 
 No production secret or client-editable wallet/provider credential is allowed
@@ -206,13 +250,18 @@ does not need it for the first launch.
   CLS <= 0.1.
 - JavaScript enhances controls; the full product story and CTAs remain usable
   without it.
+- Gemini is a progressive enhancement: no model request begins before the
+  initial page load, only one WebGL context is created, and render work pauses
+  away from both companion hosts.
 - Images declare dimensions, use modern formats where appropriate, and load
   below-fold media lazily.
 
 ## Netlify contract
 
 - Publish directory: `site`
-- No build command for the first production version.
+- Build command: `node scripts/build_landing_site.mjs`. It materializes only
+  the versioned Gemini runtime assets already tracked for Android; it does not
+  compile the page or contact a third-party package registry.
 - `www.plawie.app` permanently redirects to `https://plawie.app`.
 - Security headers include a restrictive CSP, nosniff, referrer policy,
   permissions policy, and clickjacking protection.
