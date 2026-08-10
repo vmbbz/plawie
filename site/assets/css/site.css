@@ -284,7 +284,7 @@ html[data-motion="reduced"] .motion-control > i { background: var(--text-3); box
 .product-showcase { margin-top: 64px; display: grid; grid-template-columns: minmax(430px, .96fr) minmax(390px, 1.04fr); align-items: center; gap: clamp(42px, 6vw, 82px); }
 .product-device-slot { position: relative; min-width: 0; min-height: 820px; overflow: clip; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 38px; background: radial-gradient(circle at 50% 38%, rgba(0,255,163,.11), transparent 38%), linear-gradient(145deg, rgba(8,25,19,.72), rgba(2,7,6,.92)); box-shadow: inset 0 1px rgba(255,255,255,.025); }
 .product-device-slot::before { content: "INTERACTIVE · NON-CONNECTED PREVIEW"; position: absolute; z-index: 5; top: 21px; left: 24px; color: var(--text-3); font-family: var(--mono); font-size: .48rem; letter-spacing: .13em; }
-.product-device-slot .hero-stage { width: 100%; min-height: 820px; padding-bottom: 62px; }
+.product-device-slot .hero-stage { width: 100%; min-height: 820px; padding: 44px 0 18px; }
 .product-device-slot .hero-stage::before { width: 520px; height: 520px; }
 .product-device-slot .hero-stage::after { width: 650px; height: 650px; }
 .product-device-slot .phone-shell { transform: perspective(1400px) rotateX(var(--phone-tilt-x, 0deg)) rotateY(var(--phone-tilt-y, 0deg)) translateY(var(--phone-lift, 0)); transition: transform .32s cubic-bezier(.2,.8,.2,1); }
@@ -624,7 +624,7 @@ html[data-motion="full"] .launch-orb { animation: launch-float 5.6s ease-in-out 
   .product-device-slot .hero-stage { min-height: 720px; }
   .hero-stage { min-height: 640px; margin-top: 35px; }
   .product-device-slot .hero-stage { min-height: 720px; margin-top: 0; }
-  .product-device-slot .hero-stage { padding-bottom: 0; }
+  .product-device-slot .hero-stage { padding: 0; }
   .hero-stage::before { width: 410px; height: 410px; }
   .hero-stage::after { width: 520px; height: 520px; }
   .phone-shell { width: min(350px, calc(100vw - 28px)); height: 655px; border-radius: 45px; transform: none; }
