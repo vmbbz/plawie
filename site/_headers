@@ -21,11 +21,6 @@
   Cross-Origin-Resource-Policy: same-origin
   X-Content-Type-Options: nosniff
 
-/assets/social/*
-  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
-  Cross-Origin-Resource-Policy: same-origin
-  X-Content-Type-Options: nosniff
-
 /.well-known/*
   Cache-Control: public, max-age=3600
   Cross-Origin-Resource-Policy: same-origin
@@ -39,3 +34,8 @@
   Referrer-Policy: strict-origin-when-cross-origin
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
+
+/assets/social/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+  Cross-Origin-Resource-Policy: cross-origin
+  X-Content-Type-Options: nosniff
