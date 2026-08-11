@@ -109,7 +109,7 @@ html[data-motion="reduced"] .motion-control > i { background: var(--text-3); box
 
 .hero-brand-stage { --hero-orbit-size: min(520px, calc(100% - 8px)); position: relative; z-index: 2; width: 100%; max-width: 580px; min-height: 700px; justify-self: center; display: grid; place-items: center; isolation: isolate; }
 .companion-orbit, .companion-orbit i { position: absolute; border: 1px solid rgba(107,255,208,.14); border-radius: 50%; }
-.companion-orbit { top: 76%; left: 50%; width: var(--hero-orbit-size); height: auto; aspect-ratio: 1; transform: translate(-50%, -50%) perspective(900px) rotateX(68deg) scaleY(.58); transform-origin: center; filter: drop-shadow(0 16px 22px rgba(0,255,163,.12)); animation: orbit-floor-spin 80s linear infinite; }
+.companion-orbit { top: 76%; left: 50%; width: var(--hero-orbit-size); height: auto; aspect-ratio: 1; transform: translate(-50%, -50%) perspective(900px) rotateX(68deg) scaleY(.58); transform-origin: center; filter: drop-shadow(0 16px 22px rgba(0,255,163,.12)); -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 47%, rgba(0,0,0,.62) 66%, rgba(0,0,0,.2) 86%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0%, #000 47%, rgba(0,0,0,.62) 66%, rgba(0,0,0,.2) 86%, transparent 100%); animation: orbit-floor-spin 80s linear infinite; }
 .companion-orbit::before, .companion-orbit::after { content: ""; position: absolute; border-radius: 50%; background: var(--mint); box-shadow: 0 0 22px rgba(0,255,163,.9); }
 .companion-orbit::before { width: 7px; height: 7px; left: 55px; top: 84px; }
 .companion-orbit::after { width: 4px; height: 4px; right: 30px; bottom: 150px; }
@@ -118,6 +118,7 @@ html[data-motion="reduced"] .motion-control > i { background: var(--text-3); box
 .companion-orbit i:nth-child(3) { inset: 172px; border-color: rgba(107,255,208,.09); }
 .companion-orbit i:nth-child(3)::after { content: ""; position: absolute; top: 14.645%; right: 14.645%; width: 5px; height: 5px; border-radius: 50%; background: var(--mint-soft); box-shadow: 0 0 7px 2px rgba(0,255,163,.48), 0 0 16px rgba(0,255,163,.82); transform: translate(50%, -50%); }
 .companion-emblem { --companion-lift: -46px; position: relative; z-index: 3; width: min(352px, calc(100% - 96px)); height: 520px; overflow: visible; background: transparent; transform: translateY(var(--companion-lift)); }
+.companion-emblem::before { content: ""; position: absolute; z-index: 1; top: -4%; right: 29%; bottom: -18%; left: 29%; background: linear-gradient(to bottom, rgba(107,255,208,.22), rgba(0,255,163,.09) 35%, rgba(0,255,163,.035) 78%, transparent); clip-path: polygon(38% 0, 62% 0, 88% 100%, 12% 100%); filter: blur(7px); mix-blend-mode: screen; opacity: .5; pointer-events: none; }
 .companion-emblem::after { content: ""; position: absolute; z-index: 1; top: -8%; right: 7%; left: 7%; height: 21%; border: 1px solid rgba(107,255,208,.18); border-radius: 50%; background: radial-gradient(ellipse, rgba(0,255,163,.2), rgba(0,255,163,.05) 42%, transparent 72%); box-shadow: 0 0 32px rgba(0,255,163,.14); transform: rotateX(68deg); transform-origin: center; filter: blur(.2px); pointer-events: none; }
 .companion-emblem img { position: absolute; z-index: 2; left: 50%; top: 50%; width: 224px; height: 224px; border-radius: 66px; object-fit: cover; box-shadow: 0 26px 58px rgba(0,0,0,.5), 0 0 55px rgba(0,255,163,.16); transform: translate(-50%, -50%); }
 .companion-scan { position: absolute; z-index: 1; inset: -42% -22% auto; height: 44%; background: radial-gradient(ellipse at center, rgba(107,255,208,.16), rgba(0,255,163,.06) 38%, transparent 72%); filter: blur(9px); mix-blend-mode: screen; animation: companion-scan 7.2s ease-in-out infinite; pointer-events: none; }
@@ -554,6 +555,7 @@ html[data-motion="full"] .model-switch i::after { animation: telemetry-pulse 2.8
 html[data-motion="full"] .powers-card::after { animation: boundary-breathe 9s ease-in-out infinite; }
 html[data-motion="full"] .launch-card::before { animation: boundary-breathe 10s ease-in-out -3s infinite; }
 html[data-motion="full"] .launch-orb { animation: launch-float 5.6s ease-in-out infinite; }
+html[data-motion="full"] .hero-brand-stage .companion-emblem::after { animation: hologram-ring 4.8s ease-in-out infinite; }
 
 @keyframes orbit-spin { to { transform: rotate(360deg); } }
 @keyframes orbit-floor-spin { to { transform: translate(-50%, -50%) perspective(900px) rotateX(68deg) scaleY(.58) rotateZ(360deg); } }
@@ -565,6 +567,7 @@ html[data-motion="full"] .launch-orb { animation: launch-float 5.6s ease-in-out 
 @keyframes telemetry-pulse { 50% { opacity: .42; transform: scale(.72); } }
 @keyframes boundary-breathe { 50% { opacity: .58; transform: scale(1.035) rotate(2deg); } }
 @keyframes launch-float { 0%, 100% { transform: translate3d(0, 0, 0) rotate(-4deg); } 50% { transform: translate3d(0, -9px, 0) rotate(-1deg); } }
+@keyframes hologram-ring { 0%, 100% { opacity: .5; transform: rotateX(68deg) scale(1); } 50% { opacity: .88; transform: rotateX(68deg) scale(1.045); } }
 @keyframes companion-scan { 0%, 12% { opacity: 0; transform: translateY(-24%); } 34%, 70% { opacity: .7; } 90%, 100% { opacity: 0; transform: translateY(440%); } }
 @keyframes voice-wave { 50% { transform: scaleY(.58); opacity: .55; } }
 @keyframes log-in { from { opacity: 0; transform: translateY(4px); } }
