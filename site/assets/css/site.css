@@ -117,8 +117,8 @@ html[data-motion="reduced"] .motion-control > i { background: var(--text-3); box
 .companion-orbit i:nth-child(2) { inset: 112px; border-color: rgba(107,255,208,.23); }
 .companion-orbit i:nth-child(3) { inset: 172px; border-color: rgba(107,255,208,.09); }
 .companion-orbit i:nth-child(3)::after { content: ""; position: absolute; top: 14.645%; right: 14.645%; width: 5px; height: 5px; border-radius: 50%; background: var(--mint-soft); box-shadow: 0 0 7px 2px rgba(0,255,163,.48), 0 0 16px rgba(0,255,163,.82); transform: translate(50%, -50%); }
-.companion-emblem { position: relative; z-index: 3; width: min(352px, calc(100% - 96px)); height: 520px; overflow: visible; background: transparent; }
-.companion-emblem::after { content: ""; position: absolute; z-index: 1; right: 7%; bottom: -1%; left: 7%; height: 21%; border: 1px solid rgba(107,255,208,.18); border-radius: 50%; background: radial-gradient(ellipse, rgba(0,255,163,.2), rgba(0,255,163,.05) 42%, transparent 72%); box-shadow: 0 0 32px rgba(0,255,163,.14); transform: rotateX(68deg); transform-origin: center; filter: blur(.2px); pointer-events: none; }
+.companion-emblem { --companion-lift: -46px; position: relative; z-index: 3; width: min(352px, calc(100% - 96px)); height: 520px; overflow: visible; background: transparent; transform: translateY(var(--companion-lift)); }
+.companion-emblem::after { content: ""; position: absolute; z-index: 1; top: -8%; right: 7%; left: 7%; height: 21%; border: 1px solid rgba(107,255,208,.18); border-radius: 50%; background: radial-gradient(ellipse, rgba(0,255,163,.2), rgba(0,255,163,.05) 42%, transparent 72%); box-shadow: 0 0 32px rgba(0,255,163,.14); transform: rotateX(68deg); transform-origin: center; filter: blur(.2px); pointer-events: none; }
 .companion-emblem img { position: absolute; z-index: 2; left: 50%; top: 50%; width: 224px; height: 224px; border-radius: 66px; object-fit: cover; box-shadow: 0 26px 58px rgba(0,0,0,.5), 0 0 55px rgba(0,255,163,.16); transform: translate(-50%, -50%); }
 .companion-scan { position: absolute; z-index: 1; inset: -42% -22% auto; height: 44%; background: radial-gradient(ellipse at center, rgba(107,255,208,.16), rgba(0,255,163,.06) 38%, transparent 72%); filter: blur(9px); mix-blend-mode: screen; animation: companion-scan 7.2s ease-in-out infinite; pointer-events: none; }
 .companion-state { position: absolute; z-index: 7; left: 50%; bottom: 64px; width: min(232px, 68%); min-height: 58px; padding: 10px 12px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px; border: 1px solid rgba(107,255,208,.2); border-radius: 16px; background: rgba(3,12,9,.9); box-shadow: 0 18px 50px rgba(0,0,0,.4); backdrop-filter: blur(18px); transform: translateX(-50%); }
@@ -145,7 +145,7 @@ html[data-motion="reduced"] .motion-control > i { background: var(--text-3); box
 .vrm-host.is-vrm-ready .vrm-load-state { border-color: rgba(0,255,163,.22); color: var(--mint-soft); }
 .vrm-host.is-vrm-ready .vrm-load-state > i { background: var(--mint); }
 .vrm-host.is-vrm-unavailable .vrm-load-state { opacity: .72; }
-.vrm-host-hero .vrm-load-state { right: auto; left: 50%; transform: translateX(-50%); }
+.vrm-host-hero .vrm-load-state { top: -18px; right: auto; left: 50%; transform: translateX(-50%); }
 .vrm-host-hero.is-vrm-ready.is-vrm-active > .vrm-poster { transform: translate(-50%, -50%) scale(.84); }
 
 .hero-stage { position: relative; z-index: 2; min-height: 720px; display: grid; place-items: center; }
@@ -616,7 +616,7 @@ html[data-motion="full"] .launch-orb { animation: launch-float 5.6s ease-in-out 
   .companion-orbit i:nth-child(1) { inset: 42px; }
   .companion-orbit i:nth-child(2) { inset: 88px; }
   .companion-orbit i:nth-child(3) { inset: 132px; }
-  .companion-emblem { width: 310px; height: 465px; }
+  .companion-emblem { --companion-lift: -32px; width: 310px; height: 465px; }
   .companion-emblem img { width: 194px; height: 194px; border-radius: 56px; }
   .companion-state { bottom: 22px; }
   .hero-brand-stage > p { display: none; }
@@ -671,7 +671,7 @@ html[data-motion="full"] .launch-orb { animation: launch-float 5.6s ease-in-out 
 @media (max-width: 410px) {
   .button { padding-inline: 16px; }
   .hero-brand-stage { --hero-orbit-size: min(340px, calc(100% + 32px)); min-height: 515px; }
-  .companion-emblem { width: 270px; height: 405px; }
+  .companion-emblem { --companion-lift: -24px; width: 270px; height: 405px; }
   .companion-emblem img { width: 170px; height: 170px; border-radius: 49px; }
   .companion-state { width: min(232px, 82%); min-height: 58px; bottom: 18px; }
   .control-rail-heading strong { font-size: 2.35rem; }
