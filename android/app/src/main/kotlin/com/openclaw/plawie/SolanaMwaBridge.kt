@@ -7,6 +7,7 @@ import com.solana.mobilewalletadapter.clientlib.ActivityResultSender
 import com.solana.mobilewalletadapter.clientlib.ConnectionIdentity
 import com.solana.mobilewalletadapter.clientlib.MobileWalletAdapter
 import com.solana.mobilewalletadapter.clientlib.Solana
+import com.solana.mobilewalletadapter.clientlib.TransactionParams
 import com.solana.mobilewalletadapter.clientlib.TransactionResult
 import com.solana.mobilewalletadapter.common.ProtocolContract
 import io.flutter.plugin.common.BinaryMessenger
@@ -24,6 +25,8 @@ internal class SolanaMwaBridge(private val activity: ComponentActivity) {
         const val CHANNEL = "com.openclaw.plawie/solana_mwa"
         const val SOLANA_MAINNET_CHAIN_ID = 1151111081099710L
         const val MAX_TRANSACTION_BYTES = 1232
+        const val REQUIRED_MIN_CONTEXT_SLOT_COMPATIBILITY = 0
+        const val WALLET_SEND_MAX_RETRIES = 3
         val BASE_58 =
             "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray()
     }
@@ -35,7 +38,7 @@ internal class SolanaMwaBridge(private val activity: ComponentActivity) {
     private val sender = ActivityResultSender(activity)
     private val walletAdapter = MobileWalletAdapter(
         ConnectionIdentity(
-            identityUri = Uri.parse("https://github.com/vmbbz/plawie"),
+            identityUri = Uri.parse("https://plawie.app"),
             iconUri = Uri.parse("favicon.ico"),
             identityName = "Plawie",
         )
@@ -138,7 +141,24 @@ internal class SolanaMwaBridge(private val activity: ComponentActivity) {
             // not reliably complete that request after foreground approval.
             // Keep sign-only capability discovery for compatibility reporting,
             // while always using the mandatory submission path here.
-            val signatures = signAndSendTransactions(arrayOf(transaction)).signatures
+            // MWA 2.0 defines these transaction parameters as optional, but a
+            // production wallet observed in compatibility testing rejects an
+            // omitted minContextSlot before rendering its approval UI. Zero is
+            // the protocol-compatible floor and does not impose a stale-slot
+            // requirement. Keep wallet preflight enabled and retries bounded;
+            // Plawie still issues this request only once and reconciles
+            // ambiguous outcomes by receipt.
+            val transactionParams = TransactionParams(
+                REQUIRED_MIN_CONTEXT_SLOT_COMPATIBILITY,
+                "confirmed",
+                false,
+                WALLET_SEND_MAX_RETRIES,
+                true,
+            )
+            val signatures = signAndSendTransactions(
+                arrayOf(transaction),
+                transactionParams,
+            ).signatures
             if (signatures.size != 1 || signatures.single().size != 64) {
                 throw IllegalStateException("ambiguous result")
             }

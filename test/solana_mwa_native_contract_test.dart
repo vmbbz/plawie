@@ -44,7 +44,23 @@ void main() {
     expect(source, contains('getCapabilities()'));
     expect(source, contains('ProtocolContract.FEATURE_ID_SIGN_TRANSACTIONS'));
     expect(source, isNot(contains('signTransactions(arrayOf(transaction))')));
-    expect(source, contains('signAndSendTransactions(arrayOf(transaction))'));
+    expect(source, contains('identityUri = Uri.parse("https://plawie.app")'));
+    expect(source, contains('TransactionParams('));
+    expect(
+      source,
+      contains('REQUIRED_MIN_CONTEXT_SLOT_COMPATIBILITY = 0'),
+    );
+    expect(source, contains('"confirmed"'));
+    expect(source, contains('WALLET_SEND_MAX_RETRIES = 3'));
+    expect(
+      source,
+      contains(
+        'signAndSendTransactions(\n'
+        '                arrayOf(transaction),\n'
+        '                transactionParams,\n'
+        '            )',
+      ),
+    );
     expect(source, contains('"mode" to "signAndSend"'));
     expect(source, contains('"signatureBase58"'));
     expect(source, contains('"authorize"'));
