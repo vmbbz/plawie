@@ -63,4 +63,28 @@ void main() {
       isNot(same(GatewayRuntimeRegistry.prootRollback)),
     );
   });
+
+  test('paid routing compares semantic config instead of JSON key order',
+      () async {
+    final source =
+        await File('lib/services/gateway_service.dart').readAsString();
+    final prepareStart = source.indexOf(
+      'Future<bool> _preparePaidProviderRoutingOnce(',
+    );
+    final prepareEnd = source.indexOf(
+      'bool get _hasGatewayConfigTransition',
+      prepareStart,
+    );
+    final prepare = source.substring(prepareStart, prepareEnd);
+
+    expect(
+      prepare,
+      contains('final before = canonicalGatewayConfigSignature(config);'),
+    );
+    expect(
+      prepare,
+      contains('canonicalGatewayConfigSignature(config) != before'),
+    );
+    expect(prepare, isNot(contains('jsonEncode(config) != before')));
+  });
 }

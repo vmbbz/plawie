@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -34,6 +33,7 @@ import 'node_service.dart';
 import 'tts_service.dart';
 import 'paid_provider_gateway_coordinator.dart';
 import 'runtime_credential_store.dart';
+import 'gateway_config_signature.dart';
 
 class _FastCloudRoute {
   final String provider;
@@ -438,9 +438,9 @@ class GatewayService {
       }
     }
 
-    final before = jsonEncode(config);
+    final before = canonicalGatewayConfigSignature(config);
     _paidProviderGateway.removeGatewayCapabilities(config);
-    if (jsonEncode(config) != before) {
+    if (canonicalGatewayConfigSignature(config) != before) {
       // Persist the scrub while both owners are stopped. Rotating first would
       // leave a recoverable stale capability behind if this write failed.
       await _writeConfig(config);
@@ -475,7 +475,7 @@ class GatewayService {
     final selectedModel =
         configuredModel.isNotEmpty ? configuredModel : primaryModel;
     final paidProvider = _paidProviderGateway.providerForModel(selectedModel);
-    final before = jsonEncode(config);
+    final before = canonicalGatewayConfigSignature(config);
 
     if (paidProvider == null) {
       // Never rewrite a live Gateway merely to remove an inactive capability.
@@ -504,7 +504,7 @@ class GatewayService {
       } else {
         _ensureCatalogProviderDefaults(config);
       }
-      if (jsonEncode(config) != before) {
+      if (canonicalGatewayConfigSignature(config) != before) {
         if (gatewayAlreadyRunning) {
           _beginGatewayConfigTransition(
             'paid-provider proxy capability refresh',
@@ -1382,7 +1382,7 @@ class GatewayService {
       profile.remove('tokenRef');
       profiles[profileId] = profile;
 
-      final content = _canonicalJsonSignature(store);
+      final content = canonicalGatewayConfigSignature(store);
       for (final authFile in authFiles) {
         await Directory(authFile.parent.path).create(recursive: true);
         await _writeStringAtomically(authFile, content);
@@ -2713,7 +2713,7 @@ HEARTBEAT_OK.
     File file,
     Map<String, dynamic> config,
   ) async {
-    final nextSignature = _canonicalJsonSignature(config);
+    final nextSignature = canonicalGatewayConfigSignature(config);
     var writeFile = true;
 
     if (await file.exists()) {
@@ -2723,7 +2723,8 @@ HEARTBEAT_OK.
           final decoded = jsonDecode(existingRaw);
           if (decoded is Map) {
             writeFile =
-                _canonicalJsonSignature(_deepCastMap(decoded)) != nextSignature;
+                canonicalGatewayConfigSignature(_deepCastMap(decoded)) !=
+                    nextSignature;
           }
         }
       } catch (_) {
@@ -2751,25 +2752,6 @@ HEARTBEAT_OK.
         } catch (_) {}
       }
     }
-  }
-
-  String _canonicalJsonSignature(Map<String, dynamic> value) {
-    final normalized = _normalizeForStableCompare(value);
-    return jsonEncode(normalized);
-  }
-
-  dynamic _normalizeForStableCompare(dynamic value) {
-    if (value is Map) {
-      final sorted = SplayTreeMap<String, dynamic>();
-      value.forEach((key, child) {
-        sorted['$key'] = _normalizeForStableCompare(child);
-      });
-      return sorted;
-    }
-    if (value is List) {
-      return value.map(_normalizeForStableCompare).toList();
-    }
-    return value;
   }
 
   Future<void> _writeEnvFile(String key, String value) async {
