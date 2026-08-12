@@ -154,6 +154,11 @@ resetting immediately to a blank funding form. The confirmation shows source
 and received amounts, source and destination chains, route, update time,
 destination address, full transaction identifiers, and trusted explorer links.
 The user explicitly chooses **Add more funds** before a new form replaces it.
+Provider top-up and generic **Add Base USDC** actions use that same funding
+surface, but enter a fresh transfer form with Base Mainnet USDC selected by
+default. The user may then choose another supported source chain. A completed
+direct Base transfer is recorded in the same Wallet transaction history by its
+Base source transaction hash.
 
 Settlement uses the fail-closed Base-USDC balance reader. A bridge receipt does
 not clear `balanceRefreshPending` unless that exact token read succeeds.

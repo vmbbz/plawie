@@ -99,6 +99,8 @@ void main() {
         screen, contains('initialSourceChainId: BridgeConstants.baseChainId'));
     expect(screen, contains("initialSourceTokenSymbol: 'USDC'"));
     expect(screen, contains('Use Base USDC from another wallet'));
+    expect(screen, contains('startNewTransfer: true'));
+    expect(screen, contains('_showBaseFundingModal()'));
     expect(screen, contains('onFundingCompleted: (_)'));
     expect(wallet, contains('refreshBaseUsdcBalanceUnitsForPayment'));
     expect(
@@ -122,5 +124,6 @@ void main() {
     expect(screen, contains("'Top up'"));
     expect(bridge, contains("'Base funding confirmed'"));
     expect(screen, contains("Uri.https('basescan.org', '/tx/\$hash')"));
+    expect(screen, contains('_baseTransactionHash(receipt)'));
   });
 }

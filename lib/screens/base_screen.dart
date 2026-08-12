@@ -151,9 +151,11 @@ class _BaseScreenState extends State<BaseScreen> {
             AiPaymentProviderCatalog.providers.first;
     switch (action) {
       case WalletFundedProviderAction.fundWallet:
-        _baseService.isConnected
-            ? _showReceiveDialog()
-            : _showWalletRequiredDialog();
+        if (_baseService.isConnected) {
+          await _showBaseFundingModal();
+        } else {
+          _showWalletRequiredDialog();
+        }
         break;
       case WalletFundedProviderAction.switchToMainnet:
         if (_baseService.isConnected) {
@@ -837,7 +839,7 @@ class _BaseScreenState extends State<BaseScreen> {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: _baseService.isConnected
-                        ? _showReceiveDialog
+                        ? () => unawaited(_showBaseFundingModal())
                         : _showWalletRequiredDialog,
                     icon: const Icon(Icons.account_balance_wallet_outlined,
                         size: 18),
@@ -1121,7 +1123,12 @@ class _BaseScreenState extends State<BaseScreen> {
 
   Future<bool> _showProviderFundingModal(
     ProviderFundingRequirement requirement,
-  ) async {
+  ) =>
+      _showBaseFundingModal(requirement: requirement);
+
+  Future<bool> _showBaseFundingModal({
+    ProviderFundingRequirement? requirement,
+  }) async {
     final runtime = _bridgeFunding;
     if (runtime == null || !_baseService.isConnected) return false;
     if (!_baseService.isBaseMainnet) {
@@ -1152,7 +1159,9 @@ class _BaseScreenState extends State<BaseScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Fund ${requirement.provider.label} on Base',
+                              requirement == null
+                                  ? 'Add USDC to the Base wallet'
+                                  : 'Fund ${requirement.provider.label} on Base',
                               style: Theme.of(sheetContext)
                                   .textTheme
                                   .titleLarge
@@ -1160,7 +1169,9 @@ class _BaseScreenState extends State<BaseScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'At least ${requirement.requiredBaseUsdcDisplay} USDC is required in the Plawie Base wallet. Use Base USDC from another wallet, or choose any other live source route, then approve the provider payment separately.',
+                              requirement == null
+                                  ? 'Use Base USDC from another wallet, or choose another live source route. Every transfer requires separate review and wallet approval.'
+                                  : 'At least ${requirement.requiredBaseUsdcDisplay} USDC is required in the Plawie Base wallet. Use Base USDC from another wallet, or choose any other live source route, then approve the provider payment separately.',
                               style: Theme.of(sheetContext)
                                   .textTheme
                                   .bodySmall
@@ -1188,6 +1199,7 @@ class _BaseScreenState extends State<BaseScreen> {
                       baseMainnetSelected: _baseService.isBaseMainnet,
                       initialSourceChainId: BridgeConstants.baseChainId,
                       initialSourceTokenSymbol: 'USDC',
+                      startNewTransfer: true,
                       onFundingCompleted: (_) {
                         if (Navigator.of(sheetContext).canPop()) {
                           Navigator.pop(sheetContext, true);
@@ -1991,7 +2003,7 @@ class _BaseScreenState extends State<BaseScreen> {
     final receipts = runtime.controller.receipts
         .where((receipt) =>
             receipt.state == BridgeFundingState.completed &&
-            receipt.destinationTransactionHash != null)
+            _baseTransactionHash(receipt) != null)
         .toList(growable: false)
       ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
     return receipts.take(5).toList(growable: false);
@@ -2001,7 +2013,7 @@ class _BaseScreenState extends State<BaseScreen> {
     ThemeData theme,
     BridgeFundingReceipt receipt,
   ) {
-    final hash = receipt.destinationTransactionHash!;
+    final hash = _baseTransactionHash(receipt)!;
     final source = switch (receipt.sourceChainId) {
       BridgeConstants.ethereumChainId => 'Ethereum',
       BridgeConstants.baseChainId => 'Base wallet',
@@ -2070,6 +2082,14 @@ class _BaseScreenState extends State<BaseScreen> {
         const SnackBar(content: Text('Transaction explorer could not open.')),
       );
     }
+  }
+
+  String? _baseTransactionHash(BridgeFundingReceipt receipt) {
+    final destination = receipt.destinationTransactionHash?.trim();
+    if (destination != null && destination.isNotEmpty) return destination;
+    if (receipt.sourceChainId != BridgeConstants.baseChainId) return null;
+    final source = receipt.sourceTransactionHash?.trim();
+    return source == null || source.isEmpty ? null : source;
   }
 
   String _bridgeReceivedAmount(BridgeFundingReceipt receipt) {

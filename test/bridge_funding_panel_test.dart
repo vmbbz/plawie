@@ -124,6 +124,29 @@ void main() {
     expect(find.textContaining('not a cross-chain bridge'), findsOneWidget);
   });
 
+  testWidgets('explicit funding entry starts a new Base transfer',
+      (tester) async {
+    final controller = _FakeController();
+    controller.currentReceipt = _completedReceipt(_reviewReceipt(_request()));
+
+    await _pumpPanel(
+      tester,
+      controller: controller,
+      capabilities: _FakeCapabilities(_baseSnapshot()),
+      initialSourceChainId: BridgeConstants.baseChainId,
+      initialSourceTokenSymbol: 'USDC',
+      startNewTransfer: true,
+    );
+
+    expect(
+        find.byKey(const Key('bridge-completion-confirmation')), findsNothing);
+    expect(find.byKey(const Key('bridge-primary-action')), findsOneWidget);
+    final chain = tester.widget<DropdownButtonFormField<BridgeChain>>(
+      find.byKey(const Key('bridge-source-chain')),
+    );
+    expect(chain.initialValue?.id, BridgeConstants.baseChainId);
+  });
+
   testWidgets('shows and safely changes the connected external source wallet',
       (tester) async {
     final controller = _FakeController()
@@ -535,6 +558,7 @@ Future<void> _pumpPanel(
   bool baseMainnetSelected = true,
   int? initialSourceChainId,
   String? initialSourceTokenSymbol,
+  bool startNewTransfer = false,
   ValueChanged<BridgeFundingReceipt>? onFundingCompleted,
   Future<bool> Function(Uri uri)? launchExternal,
   bool settle = true,
@@ -556,6 +580,7 @@ Future<void> _pumpPanel(
               baseMainnetSelected: baseMainnetSelected,
               initialSourceChainId: initialSourceChainId,
               initialSourceTokenSymbol: initialSourceTokenSymbol,
+              startNewTransfer: startNewTransfer,
               onFundingCompleted: onFundingCompleted,
               launchExternal: launchExternal ?? (_) async => true,
               copyText: (_) async {},

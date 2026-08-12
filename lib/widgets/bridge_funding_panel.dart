@@ -23,6 +23,7 @@ final class BridgeFundingPanel extends StatefulWidget {
     required this.baseMainnetSelected,
     this.initialSourceChainId,
     this.initialSourceTokenSymbol,
+    this.startNewTransfer = false,
     this.onFundingCompleted,
     this.launchExternal = _launchExternal,
     this.copyText = _copyText,
@@ -36,6 +37,7 @@ final class BridgeFundingPanel extends StatefulWidget {
   final bool baseMainnetSelected;
   final int? initialSourceChainId;
   final String? initialSourceTokenSymbol;
+  final bool startNewTransfer;
   final ValueChanged<BridgeFundingReceipt>? onFundingCompleted;
   final Future<bool> Function(Uri uri) launchExternal;
   final Future<void> Function(String text) copyText;
@@ -82,6 +84,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
   @override
   void initState() {
     super.initState();
+    _startAnotherTransfer = widget.startNewTransfer;
     if (_entryAvailable) unawaited(_loadCapabilities());
   }
 
@@ -92,11 +95,13 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
         oldWidget.baseWalletAvailable != widget.baseWalletAvailable ||
         oldWidget.baseMainnetSelected != widget.baseMainnetSelected ||
         oldWidget.initialSourceChainId != widget.initialSourceChainId ||
-        oldWidget.initialSourceTokenSymbol != widget.initialSourceTokenSymbol) {
+        oldWidget.initialSourceTokenSymbol != widget.initialSourceTokenSymbol ||
+        oldWidget.startNewTransfer != widget.startNewTransfer) {
       _snapshot = null;
       _sourceChain = null;
       _sourceToken = null;
       _resumeStarted = false;
+      _startAnotherTransfer = widget.startNewTransfer;
       if (_entryAvailable) unawaited(_loadCapabilities());
     }
   }
@@ -221,7 +226,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Fund Base from another chain',
+                    'Fund the Plawie Base wallet',
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -232,7 +237,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Choose a source wallet network below. The destination stays this app-owned Base wallet, and Plawie never imports the source wallet key.',
+              'Transfer Base USDC directly or choose another live source network to bridge from. The destination stays this app-owned Base wallet, and Plawie never imports the source wallet key.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 height: 1.4,
