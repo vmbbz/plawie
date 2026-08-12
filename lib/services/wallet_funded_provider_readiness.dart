@@ -1,5 +1,6 @@
 import 'ai_payment_provider_catalog.dart';
 import 'base_service.dart';
+import 'package:decimal/decimal.dart';
 import 'dynamic_model_catalog.dart';
 import 'native_bridge.dart';
 import 'paid_provider_gateway_coordinator.dart';
@@ -42,11 +43,13 @@ class WalletFundedProviderEnvironment {
     required this.walletStatus,
     required this.isBaseMainnet,
     required this.transportState,
+    this.baseUsdcBalance,
   });
 
   final SecureWalletStatus walletStatus;
   final bool isBaseMainnet;
   final PaidProviderTransportState transportState;
+  final Decimal? baseUsdcBalance;
 }
 
 class WalletFundedProviderReadiness {
@@ -77,7 +80,8 @@ class WalletFundedProviderReadiness {
   bool get needsAttention =>
       !canSelectModels ||
       state == WalletFundedProviderState.balanceLow ||
-      state == WalletFundedProviderState.paymentPerRequest;
+      (state == WalletFundedProviderState.paymentPerRequest &&
+          primaryAction != WalletFundedProviderAction.none);
 }
 
 typedef WalletFundedEnvironmentReader = Future<WalletFundedProviderEnvironment>
@@ -127,6 +131,7 @@ class WalletFundedProviderReadinessService {
           transportState: environment.transportState,
           balance: balanceReader(provider.id),
           now: now,
+          baseUsdcBalance: environment.baseUsdcBalance,
         ),
     };
   }
@@ -144,6 +149,7 @@ class WalletFundedProviderReadinessService {
           : health
               ? PaidProviderTransportState.healthy
               : PaidProviderTransportState.unhealthy,
+      baseUsdcBalance: base.isBaseMainnet ? base.usdcBalance : null,
     );
   }
 
@@ -154,6 +160,7 @@ class WalletFundedProviderReadinessService {
     required PaidProviderTransportState transportState,
     required ProviderBalanceSnapshot? balance,
     required DateTime now,
+    Decimal? baseUsdcBalance,
   }) {
     final option = AiPaymentProviderCatalog.byId(provider.id);
     if (option == null) {
@@ -281,14 +288,18 @@ class WalletFundedProviderReadinessService {
     }
 
     if (option.fundingMode == AiPaymentFundingMode.perRequest) {
+      final funded = baseUsdcBalance != null && baseUsdcBalance > Decimal.zero;
       return result(
         state: WalletFundedProviderState.paymentPerRequest,
         canSelect: true,
-        title: 'Payment per request',
-        detail:
-            'No prepaid balance exists. A valid paid request shows its exact Base USDC approval separately.',
-        action: WalletFundedProviderAction.fundWallet,
-        actionLabel: 'Fund wallet',
+        title: funded ? 'Ready for pay-per-request' : 'Payment per request',
+        detail: funded
+            ? '$baseUsdcBalance USDC is available in the Base payment wallet. Each valid paid request still requires its own exact approval.'
+            : 'No prepaid provider balance exists. Add Base USDC, then each valid paid request shows its own exact approval.',
+        action: funded
+            ? WalletFundedProviderAction.none
+            : WalletFundedProviderAction.fundWallet,
+        actionLabel: 'Add Base USDC',
       );
     }
 

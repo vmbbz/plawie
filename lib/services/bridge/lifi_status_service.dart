@@ -62,13 +62,20 @@ final class LifiStatusService implements LifiSettlementStatusProvider {
     required String routeTool,
   }) async {
     _requireSourceHash(sourceTransactionHash, sourceChainId);
-    if (!RegExp(r'^[A-Za-z0-9._-]{1,64}$').hasMatch(routeTool)) {
+    final normalizedTool = routeTool.trim();
+    if (normalizedTool.isEmpty ||
+        normalizedTool.length > 128 ||
+        RegExp(r'[\x00-\x1F\x7F]').hasMatch(normalizedTool)) {
       throw const LifiStatusException('invalid_bridge_tool');
     }
     if (!_supportedSourceChain(sourceChainId)) {
       throw const LifiStatusException('unsupported_source_chain');
     }
 
+    final boundedTool =
+        RegExp(r'^[A-Za-z0-9._-]{1,64}$').hasMatch(normalizedTool)
+            ? normalizedTool
+            : null;
     late BridgeHttpResponse response;
     try {
       response = await _transport.getJson(
@@ -77,11 +84,26 @@ final class LifiStatusService implements LifiSettlementStatusProvider {
             'txHash': sourceTransactionHash,
             'fromChain': sourceChainId.toString(),
             'toChain': BridgeConstants.baseChainId.toString(),
-            'bridge': routeTool,
+            if (boundedTool != null) 'bridge': boundedTool,
           },
         ),
         maxBytes: 256 * 1024,
       );
+      // Older receipts stored LI.FI's display label instead of its canonical
+      // tool key. Retry the same evidence-bound lookup once without the
+      // optional bridge hint when LI.FI explicitly rejects that label.
+      if (boundedTool != null && _unknownBridgeTool(response)) {
+        response = await _transport.getJson(
+          _endpoint.replace(
+            queryParameters: <String, String>{
+              'txHash': sourceTransactionHash,
+              'fromChain': sourceChainId.toString(),
+              'toChain': BridgeConstants.baseChainId.toString(),
+            },
+          ),
+          maxBytes: 256 * 1024,
+        );
+      }
     } on BridgeHttpException catch (error) {
       if (error.code == 'timeout') {
         return const LifiStatusObservation(
@@ -298,4 +320,10 @@ bool _sameHash(String left, String right) =>
 Duration _retryAfter(String? raw) {
   final seconds = int.tryParse(raw ?? '') ?? 2;
   return Duration(seconds: seconds.clamp(1, 60));
+}
+
+bool _unknownBridgeTool(BridgeHttpResponse response) {
+  if (response.statusCode != 400 || response.json is! Map) return false;
+  final json = Map<String, Object?>.from(response.json as Map);
+  return json['code'] == 1011;
 }

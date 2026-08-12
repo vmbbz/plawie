@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:decimal/decimal.dart';
 
 import 'package:clawa/services/dynamic_model_catalog.dart';
 import 'package:clawa/services/model_provider_catalog.dart';
@@ -148,8 +149,28 @@ void main() {
     expect(result.canSelectModels, isTrue);
     expect(result.title, 'Payment per request');
     expect(result.primaryAction, WalletFundedProviderAction.fundWallet);
+    expect(result.primaryActionLabel, 'Add Base USDC');
     expect('${result.title} ${result.detail}'.toLowerCase(),
         isNot(contains('funded')));
+  });
+
+  test('funded Base wallet makes BlockRun ready without a fake top-up', () {
+    final result = WalletFundedProviderReadinessService.evaluate(
+      provider: _provider('blockrun'),
+      walletStatus: _healthyWallet(),
+      isBaseMainnet: true,
+      transportState: PaidProviderTransportState.healthy,
+      balance: null,
+      baseUsdcBalance: Decimal.parse('2.9925'),
+      now: now,
+    );
+
+    expect(result.state, WalletFundedProviderState.paymentPerRequest);
+    expect(result.canSelectModels, isTrue);
+    expect(result.title, 'Ready for pay-per-request');
+    expect(result.detail, contains('2.9925 USDC'));
+    expect(result.primaryAction, WalletFundedProviderAction.none);
+    expect(result.needsAttention, isFalse);
   });
 
   test('unhealthy running transport is a visible selection blocker', () {

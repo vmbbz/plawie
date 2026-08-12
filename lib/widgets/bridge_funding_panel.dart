@@ -60,8 +60,8 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
   bool _busy = false;
   bool _resumeStarted = false;
   bool _selfCustodyConfirmed = false;
+  bool _startAnotherTransfer = false;
   String? _error;
-  final Set<String> _sessionIntentIds = <String>{};
   final Set<String> _completionCallbacksDelivered = <String>{};
 
   bool get _entryAvailable =>
@@ -267,6 +267,10 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
                   ),
                 if (_activeReceipt != null)
                   _buildReceipt(_activeReceipt!)
+                else if (_latestReceipt?.state ==
+                        BridgeFundingState.completed &&
+                    !_startAnotherTransfer)
+                  _buildCompletedReceipt(_latestReceipt!)
                 else ...[
                   _methodSelector(),
                   if (_method == BridgeFundingMethod.connectedWallet &&
@@ -287,7 +291,10 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
                   const SizedBox(height: 8),
                   _jumperAction(),
                 ],
-                if (_activeReceipt == null && _latestReceipt != null) ...[
+                if (_activeReceipt == null &&
+                    _latestReceipt != null &&
+                    (_latestReceipt!.state != BridgeFundingState.completed ||
+                        _startAnotherTransfer)) ...[
                   const SizedBox(height: 12),
                   _buildRecentReceipt(_latestReceipt!),
                 ],
@@ -494,6 +501,14 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
             suffixText: _sourceToken?.symbol,
           ),
         ),
+        if (_sourceChain?.id == BridgeConstants.baseChainId) ...[
+          const SizedBox(height: 8),
+          const _Notice(
+            icon: Icons.swap_horiz_rounded,
+            text:
+                'Base is the destination network too. This sends USDC directly from another Base wallet into Plawie; it is not a cross-chain bridge. Keep a little Base ETH in the source wallet for gas.',
+          ),
+        ],
         if (_sourceChain?.id == BridgeConstants.robinhoodChainId) ...[
           const SizedBox(height: 8),
           const _Notice(
@@ -649,7 +664,6 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
           transport: transport,
         );
       }
-      _trackCurrentIntent();
       if (!mounted) return;
       await _runReviewFlow(request);
     });
@@ -783,7 +797,6 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
           oldAddressWarningAcknowledged: true,
         );
       }
-      _trackCurrentIntent();
       if (!mounted) return;
       final action = await RelayDepositSheet.show(
         context,
@@ -975,6 +988,77 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
     );
   }
 
+  Widget _buildCompletedReceipt(BridgeFundingReceipt receipt) {
+    final output = _receivedAmount(receipt);
+    return Container(
+      key: const Key('bridge-completion-confirmation'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.greenAccent.withValues(alpha: .07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Colors.greenAccent.withValues(alpha: .42),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.check_circle_rounded,
+                  color: Colors.greenAccent, size: 22),
+              SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'Base funding confirmed',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$output USDC arrived in the Plawie wallet on Base Mainnet.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 5),
+          Text(
+            '${_sourceAmount(receipt)} ${receipt.sourceTokenSymbol} from '
+            '${_sourceChainLabel(receipt.sourceChainId)} · '
+            '${receipt.providerSubstatus ?? receipt.providerStatus ?? 'Completed'}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          if (receipt.balanceRefreshPending) ...[
+            const SizedBox(height: 8),
+            const _Notice(
+              icon: Icons.sync_problem_rounded,
+              text:
+                  'Delivery is confirmed, but the displayed Base balance still needs a successful refresh.',
+            ),
+          ],
+          const SizedBox(height: 10),
+          _receiptActions(receipt, includeBridgeMore: true),
+          const SizedBox(height: 4),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              key: const Key('bridge-completion-details'),
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: 4),
+              title: const Text(
+                'Transaction details',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+              children: [_receiptDetails(receipt)],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _unknownOutcome(BridgeFundingReceipt receipt) => Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -1028,11 +1112,11 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
         title: const Text('Latest funding receipt'),
         subtitle: Text(_stateTitle(receipt.state)),
         children: [
+          _receiptDetails(receipt),
+          const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              '${receipt.sourceTokenSymbol} · ${receipt.providerStatus ?? receipt.provider}',
-            ),
+            child: _receiptActions(receipt),
           ),
           if (receipt.method == BridgeFundingMethod.relayDeposit ||
               _statusCanRefresh(receipt))
@@ -1059,6 +1143,117 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
               ),
             ),
         ],
+      );
+
+  Widget _receiptDetails(BridgeFundingReceipt receipt) {
+    final sourceHash = receipt.sourceTransactionHash;
+    final destinationHash = receipt.destinationTransactionHash;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Sent: ${_sourceAmount(receipt)} ${receipt.sourceTokenSymbol} · '
+            '${_sourceChainLabel(receipt.sourceChainId)}',
+          ),
+          if (receipt.actualOutputUnits != null ||
+              receipt.minimumOutputUnits != null)
+            Text('Received: ${_receivedAmount(receipt)} USDC · Base Mainnet'),
+          Text('Route: ${receipt.routeTool ?? receipt.provider}'),
+          Text('Updated: ${_receiptTimestamp(receipt.updatedAt)}'),
+          if (sourceHash != null) ...[
+            const SizedBox(height: 5),
+            SelectableText('Source transaction: $sourceHash'),
+          ],
+          if (destinationHash != null) ...[
+            const SizedBox(height: 5),
+            SelectableText('Base transaction: $destinationHash'),
+          ],
+          const SizedBox(height: 5),
+          SelectableText('Destination: ${receipt.baseDestinationAddress}'),
+        ],
+      ),
+    );
+  }
+
+  Widget _receiptActions(
+    BridgeFundingReceipt receipt, {
+    bool includeBridgeMore = false,
+  }) {
+    final sourceUri = _sourceExplorerUri(receipt);
+    final baseUri = _baseExplorerUri(receipt);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (baseUri != null)
+          OutlinedButton.icon(
+            key: const Key('bridge-open-base-transaction'),
+            onPressed: _busy ? null : () => _openExplorer(baseUri),
+            icon: const Icon(Icons.open_in_new_rounded, size: 16),
+            label: const Text('Base transaction'),
+          ),
+        if (sourceUri != null && sourceUri != baseUri)
+          OutlinedButton.icon(
+            key: const Key('bridge-open-source-transaction'),
+            onPressed: _busy ? null : () => _openExplorer(sourceUri),
+            icon: const Icon(Icons.open_in_new_rounded, size: 16),
+            label: const Text('Source transaction'),
+          ),
+        if (includeBridgeMore)
+          TextButton.icon(
+            key: const Key('bridge-start-another-transfer'),
+            onPressed: _busy
+                ? null
+                : () => setState(() => _startAnotherTransfer = true),
+            icon: const Icon(Icons.add_rounded, size: 17),
+            label: const Text('Add more funds'),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _openExplorer(Uri uri) async {
+    final opened = await widget.launchExternal(uri);
+    if (!opened && mounted) {
+      setState(() => _error = 'The transaction explorer could not be opened.');
+    }
+  }
+
+  Uri? _sourceExplorerUri(BridgeFundingReceipt receipt) {
+    final hash = receipt.sourceTransactionHash;
+    if (hash == null) return null;
+    if (receipt.sourceChainId == BridgeConstants.solanaChainId) {
+      return Uri.https('solscan.io', '/tx/$hash');
+    }
+    final host = switch (receipt.sourceChainId) {
+      BridgeConstants.ethereumChainId => 'etherscan.io',
+      BridgeConstants.baseChainId => 'basescan.org',
+      BridgeConstants.robinhoodChainId =>
+        'explorer.mainnet.chain.robinhood.com',
+      _ => null,
+    };
+    return host == null ? null : Uri.https(host, '/tx/$hash');
+  }
+
+  Uri? _baseExplorerUri(BridgeFundingReceipt receipt) {
+    final hash = receipt.destinationTransactionHash ??
+        (receipt.sourceChainId == BridgeConstants.baseChainId
+            ? receipt.sourceTransactionHash
+            : null);
+    return hash == null ? null : Uri.https('basescan.org', '/tx/$hash');
+  }
+
+  String _sourceAmount(BridgeFundingReceipt receipt) => _formatUnits(
+        receipt.sourceAmountUnits,
+        _tokenFor(receipt)?.decimals ??
+            _fallbackDecimals(receipt.sourceTokenSymbol),
+      );
+
+  String _receivedAmount(BridgeFundingReceipt receipt) => _formatUnits(
+        receipt.actualOutputUnits ?? receipt.minimumOutputUnits ?? '0',
+        6,
       );
 
   Future<void> _requireLiveCapabilities(BridgeFundingRequest request) async {
@@ -1195,14 +1390,8 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
     }
   }
 
-  void _trackCurrentIntent() {
-    final receipt = widget.controller.activeReceipt;
-    if (receipt != null) _sessionIntentIds.add(receipt.intentId);
-  }
-
   void _notifyIfCompleted(String intentId) {
-    if (!_sessionIntentIds.contains(intentId) ||
-        _completionCallbacksDelivered.contains(intentId)) {
+    if (_completionCallbacksDelivered.contains(intentId)) {
       return;
     }
     BridgeFundingReceipt? completed;
@@ -1217,6 +1406,7 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
     }
     if (completed == null) return;
     _completionCallbacksDelivered.add(intentId);
+    if (mounted) setState(() => _startAnotherTransfer = false);
     widget.onFundingCompleted?.call(completed);
   }
 
@@ -1509,6 +1699,27 @@ String _formatUnits(String units, int decimals) {
       .substring(padded.length - decimals)
       .replaceFirst(RegExp(r'0+$'), '');
   return fraction.isEmpty ? whole : '$whole.$fraction';
+}
+
+int _fallbackDecimals(String symbol) => switch (symbol.toUpperCase()) {
+      'ETH' => 18,
+      'SOL' => 9,
+      _ => 6,
+    };
+
+String _sourceChainLabel(int chainId) => switch (chainId) {
+      BridgeConstants.ethereumChainId => 'Ethereum',
+      BridgeConstants.baseChainId => 'Base Mainnet',
+      BridgeConstants.robinhoodChainId => 'Robinhood Chain',
+      BridgeConstants.solanaChainId => 'Solana',
+      _ => 'Chain $chainId',
+    };
+
+String _receiptTimestamp(DateTime value) {
+  final local = value.toLocal();
+  String two(int part) => part.toString().padLeft(2, '0');
+  return '${local.year}-${two(local.month)}-${two(local.day)} '
+      '${two(local.hour)}:${two(local.minute)}';
 }
 
 bool _validAddress(String address, BridgeChainType type) =>

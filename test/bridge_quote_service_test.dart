@@ -140,7 +140,7 @@ void main() {
       '/v1/connections',
       '/v1/quote',
     ]);
-    expect(quote.routeTool, 'Across');
+    expect(quote.routeTool, 'across');
     expect(quote.destinationAmountMinimum, '24.1');
     expect(quote.estimatedFeesUsd, closeTo(0.15, 0.00001));
     expect(quote.toAgentJson()['mayApproveOrSign'], isFalse);

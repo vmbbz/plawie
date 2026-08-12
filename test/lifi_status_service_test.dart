@@ -136,6 +136,47 @@ void main() {
     expect(observation.providerStatus, 'NOT_FOUND');
   });
 
+  test('retries once without a rejected legacy display tool label', () async {
+    final transport = _FakeTransport()
+      ..responses.addAll(<BridgeHttpResponse>[
+        const BridgeHttpResponse(
+          statusCode: 400,
+          headers: <String, String>{},
+          json: <String, Object?>{
+            'message': 'Unknown bridge tool Eco',
+            'code': 1011,
+          },
+        ),
+        _statusResponse(status: 'DONE', substatus: 'COMPLETED'),
+      ]);
+
+    final observation = await LifiStatusService(transport: transport).status(
+      sourceTransactionHash: sourceHash,
+      sourceChainId: 1,
+      routeTool: 'Eco',
+    );
+
+    expect(observation.state, BridgeFundingState.completed);
+    expect(transport.uris, hasLength(2));
+    expect(transport.uris.first.queryParameters['bridge'], 'Eco');
+    expect(transport.uris.last.queryParameters.containsKey('bridge'), isFalse);
+  });
+
+  test('legacy composite route labels use an evidence-bound lookup', () async {
+    final transport = _FakeTransport()..responses.add(_notFound());
+
+    await LifiStatusService(transport: transport).status(
+      sourceTransactionHash: sourceHash,
+      sourceChainId: 1,
+      routeTool: 'CCTPv2 + Mayan',
+    );
+
+    expect(transport.uris, hasLength(1));
+    expect(
+        transport.uris.single.queryParameters.containsKey('bridge'), isFalse);
+    expect(transport.uris.single.queryParameters['txHash'], sourceHash);
+  });
+
   test('accepts pending source evidence before a destination tx exists',
       () async {
     final response = _statusResponse(

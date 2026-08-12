@@ -50,7 +50,7 @@ Choose provider top-up
   -> Base USDC is insufficient
   -> reject and destroy that challenge
   -> open the foreground Wallet funding modal
-  -> prefer Robinhood when live; choose ETH or official USDG (or another live source)
+  -> default to direct Base USDC from another wallet; choose another live source when needed
   -> review and approve the exact source-chain bridge
   -> track settlement into the same Plawie Base address
   -> switch the Wallet view to Base and freshly verify native Base USDC
@@ -105,7 +105,8 @@ health. Inspection never opens authentication, signs, or spends.
 | Venice balance depleted | Blocked | Top up Venice |
 | Venice balance low but spendable | Selectable with warning | Top up Venice |
 | Venice balance fresh and spendable | Selectable | Manage |
-| BlockRun wallet path is ready | Selectable, never called funded | Fund wallet |
+| BlockRun wallet has no Base USDC | Selectable, payment approval cannot yet settle | Add Base USDC |
+| BlockRun wallet has Base USDC | Selectable and ready for pay-per-request | None |
 
 A stopped proxy is not an error: the picker says it starts on selection. A
 stale catalog remains visibly cached and can retain selectable live records;
@@ -140,9 +141,27 @@ failure closes the request without payment. A chat message cannot approve it.
 
 Catalog, wallet, transport, and balance errors remain distinct. A model cannot
 be selected from a non-live fallback, wallet existence cannot mark Venice
-ready, and BlockRun is never presented as prepaid or funded. If the paid proxy
+ready, and BlockRun is never presented as a prepaid provider balance. Wallet
+funding is shown separately as Base USDC available for exact per-request
+payments. If the paid proxy
 is unhealthy, the UI offers an explicit Gateway restart rather than silently
 restarting while a user may be chatting.
+
+## Settlement confirmation and receipts
+
+A terminal bridge remains visible as a Base funding confirmation instead of
+resetting immediately to a blank funding form. The confirmation shows source
+and received amounts, source and destination chains, route, update time,
+destination address, full transaction identifiers, and trusted explorer links.
+The user explicitly chooses **Add more funds** before a new form replaces it.
+
+Settlement uses the fail-closed Base-USDC balance reader. A bridge receipt does
+not clear `balanceRefreshPending` unless that exact token read succeeds.
+Recovered in-flight receipts deliver the same completion callback as receipts
+started in the current view, without resending a transaction. Completed bridge
+receipts also appear in Wallet transaction history; x402 provider-payment
+receipts remain a separate ledger because bridge settlement is not provider
+payment approval.
 
 On clear-data or uninstall, app preferences and the encrypted wallet envelope
 are intentionally removed. An ordinary APK update preserves app data and the

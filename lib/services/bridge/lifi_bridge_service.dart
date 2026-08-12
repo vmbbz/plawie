@@ -177,9 +177,10 @@ final class LifiBridgeService {
     final minimum =
         BigInt.tryParse(estimateJson['toAmountMin']?.toString() ?? '');
     final quoteId = root['id']?.toString().trim() ?? '';
-    final routeTool = root['toolDetails'] is Map
-        ? (root['toolDetails'] as Map)['name']?.toString().trim() ?? ''
-        : root['tool']?.toString().trim() ?? '';
+    // LI.FI's root `tool` is the canonical status API identifier. The
+    // human-facing toolDetails.name can contain casing, spaces, or composite
+    // labels that the /status `bridge` query does not accept.
+    final routeTool = root['tool']?.toString().trim() ?? '';
     if (minimum == null ||
         minimum <= BigInt.zero ||
         quoteId.isEmpty ||

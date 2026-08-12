@@ -432,6 +432,7 @@ final class _QuoteFixtureTransport implements BridgeHttpTransport {
     if (uri.path == '/v1/quote') {
       return _ok({
         'id': 'quote-1',
+        'tool': 'across',
         'toolDetails': {'name': 'Across'},
         'action': {
           'fromChainId': actionFromChainId ?? _sourceChainId,

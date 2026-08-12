@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:decimal/decimal.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../constants.dart';
 import '../providers/gateway_provider.dart';
 import '../services/ai_payment_provider_catalog.dart';
@@ -126,6 +127,9 @@ class _BaseScreenState extends State<BaseScreen> {
       _paymentReceipts = await _x402Transport.receiptStore.read();
       if (_baseService.isConnected) {
         await _baseService.refreshBalance();
+        if (_baseService.isBaseMainnet) {
+          await _baseService.refreshBaseUsdcBalanceUnitsForPayment();
+        }
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -493,7 +497,33 @@ class _BaseScreenState extends State<BaseScreen> {
       baseDestinationAddress: _baseService.address,
       baseWalletAvailable: _baseService.isConnected,
       baseMainnetSelected: _baseService.isBaseMainnet,
+      onFundingCompleted: _handleBridgeFundingCompleted,
     );
+  }
+
+  Future<void> _handleBridgeFundingCompleted(
+    BridgeFundingReceipt receipt,
+  ) async {
+    try {
+      if (receipt.balanceRefreshPending) {
+        await _bridgeFunding?.controller.refreshBaseBalance(receipt.intentId);
+      } else {
+        await _baseService.refreshBaseUsdcBalanceUnitsForPayment();
+      }
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_bridgeReceivedAmount(receipt)} USDC confirmed on Base Mainnet.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error =
+          'Funding settled, but the Base USDC display could not refresh: $error');
+    }
   }
 
   // ── Section helpers ────────────────────────────────────────────────────────
@@ -532,6 +562,9 @@ class _BaseScreenState extends State<BaseScreen> {
             AiPaymentProviderCatalog.providers.first;
     final mainnetReady = _baseService.isBaseMainnet;
     final readiness = _readinessFor(selected);
+    final baseUsdc =
+        _baseService.isBaseMainnet ? _baseService.usdcBalance : Decimal.zero;
+    final baseFunded = baseUsdc > Decimal.zero;
 
     return GlassCard(
       child: Padding(
@@ -608,6 +641,52 @@ class _BaseScreenState extends State<BaseScreen> {
                 ),
               ),
             ],
+            const SizedBox(height: 14),
+            Container(
+              key: const Key('base-ai-payment-wallet-balance'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0052FF).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFF5B8CFF).withValues(alpha: 0.28),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.account_balance_wallet_rounded,
+                      color: Color(0xFF5B8CFF), size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'BASE PAYMENT WALLET',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _baseService.isBaseMainnet
+                              ? '${baseUsdc.toString()} USDC available'
+                              : 'Switch to Base Mainnet to check USDC',
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (selected.fundingMode == AiPaymentFundingMode.perRequest &&
+                      baseFunded)
+                    const _WalletReadyBadge(),
+                ],
+              ),
+            ),
             const SizedBox(height: 14),
             Text('PROVIDER',
                 style: theme.textTheme.labelSmall?.copyWith(
@@ -736,6 +815,19 @@ class _BaseScreenState extends State<BaseScreen> {
                       ],
                     ),
                   ],
+                  if (!selected.supportsTopUp) ...[
+                    const SizedBox(height: 7),
+                    Text(
+                      baseFunded
+                          ? 'This Base USDC is already the BlockRun payment balance. Nothing is deposited into BlockRun in advance.'
+                          : 'BlockRun has no prepaid balance. Add USDC to this Base wallet before a paid request.',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -749,7 +841,8 @@ class _BaseScreenState extends State<BaseScreen> {
                         : _showWalletRequiredDialog,
                     icon: const Icon(Icons.account_balance_wallet_outlined,
                         size: 18),
-                    label: const Text('Fund wallet'),
+                    label:
+                        Text(baseFunded ? 'Add Base USDC' : 'Fund Base wallet'),
                   ),
                 ),
                 if (selected.supportsTopUp) ...[
@@ -855,6 +948,8 @@ class _BaseScreenState extends State<BaseScreen> {
       transportState: _paidTransportState,
       balance: _providerBalance,
       now: DateTime.now().toUtc(),
+      baseUsdcBalance:
+          _baseService.isBaseMainnet ? _baseService.usdcBalance : null,
     );
   }
 
@@ -1065,7 +1160,7 @@ class _BaseScreenState extends State<BaseScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'At least ${requirement.requiredBaseUsdcDisplay} USDC is required. Bridge Robinhood ETH or official USDG—or choose another live source—then approve the provider payment separately.',
+                              'At least ${requirement.requiredBaseUsdcDisplay} USDC is required in the Plawie Base wallet. Use Base USDC from another wallet, or choose any other live source route, then approve the provider payment separately.',
                               style: Theme.of(sheetContext)
                                   .textTheme
                                   .bodySmall
@@ -1091,8 +1186,8 @@ class _BaseScreenState extends State<BaseScreen> {
                       baseDestinationAddress: _baseService.address,
                       baseWalletAvailable: _baseService.isConnected,
                       baseMainnetSelected: _baseService.isBaseMainnet,
-                      initialSourceChainId: BridgeConstants.robinhoodChainId,
-                      initialSourceTokenSymbol: 'USDG',
+                      initialSourceChainId: BridgeConstants.baseChainId,
+                      initialSourceTokenSymbol: 'USDC',
                       onFundingCompleted: (_) {
                         if (Navigator.of(sheetContext).canPop()) {
                           Navigator.pop(sheetContext, true);
@@ -1858,6 +1953,7 @@ class _BaseScreenState extends State<BaseScreen> {
   // ── Transaction history ────────────────────────────────────────────────────
 
   Widget _buildTransactionHistory(ThemeData theme) {
+    final bridgeReceipts = _completedBridgeReceipts;
     return FutureBuilder<List<BaseTx>>(
       future: _baseService.fetchHistory(limit: 5),
       builder: (context, snapshot) {
@@ -1868,7 +1964,7 @@ class _BaseScreenState extends State<BaseScreen> {
           );
         }
         final txs = snapshot.data ?? [];
-        if (txs.isEmpty) {
+        if (txs.isEmpty && bridgeReceipts.isEmpty) {
           return Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
@@ -1878,10 +1974,114 @@ class _BaseScreenState extends State<BaseScreen> {
           );
         }
         return Column(
-          children: txs.map((tx) => _buildTxTile(theme, tx)).toList(),
+          children: <Widget>[
+            ...bridgeReceipts.map(
+              (receipt) => _buildBridgeTransactionTile(theme, receipt),
+            ),
+            ...txs.map((tx) => _buildTxTile(theme, tx)),
+          ],
         );
       },
     );
+  }
+
+  List<BridgeFundingReceipt> get _completedBridgeReceipts {
+    final runtime = _bridgeFunding;
+    if (runtime == null) return const <BridgeFundingReceipt>[];
+    final receipts = runtime.controller.receipts
+        .where((receipt) =>
+            receipt.state == BridgeFundingState.completed &&
+            receipt.destinationTransactionHash != null)
+        .toList(growable: false)
+      ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+    return receipts.take(5).toList(growable: false);
+  }
+
+  Widget _buildBridgeTransactionTile(
+    ThemeData theme,
+    BridgeFundingReceipt receipt,
+  ) {
+    final hash = receipt.destinationTransactionHash!;
+    final source = switch (receipt.sourceChainId) {
+      BridgeConstants.ethereumChainId => 'Ethereum',
+      BridgeConstants.baseChainId => 'Base wallet',
+      BridgeConstants.robinhoodChainId => 'Robinhood',
+      BridgeConstants.solanaChainId => 'Solana',
+      _ => 'external chain',
+    };
+    return ListTile(
+      key: ValueKey<String>('bridge-history-${receipt.intentId}'),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 2),
+      leading: CircleAvatar(
+        radius: 18,
+        backgroundColor: Colors.green.withValues(alpha: 0.15),
+        child: const Icon(Icons.call_received_rounded,
+            size: 18, color: Colors.greenAccent),
+      ),
+      title: const Text(
+        'Base funding received',
+        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        '$source · ${_shortDate(receipt.updatedAt)} · '
+        '${receipt.providerSubstatus ?? receipt.providerStatus ?? 'Completed'}',
+        style:
+            TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+      ),
+      trailing: InkWell(
+        onTap: () => _openTrustedTransaction(
+          Uri.https('basescan.org', '/tx/$hash'),
+        ),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '+${_bridgeReceivedAmount(receipt)} USDC',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.greenAccent,
+                ),
+              ),
+              Text(
+                '${hash.substring(0, 8)}… ↗',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openTrustedTransaction(Uri uri) async {
+    if (uri.scheme != 'https' || uri.host != 'basescan.org') return;
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transaction explorer could not open.')),
+      );
+    }
+  }
+
+  String _bridgeReceivedAmount(BridgeFundingReceipt receipt) {
+    final units = BigInt.tryParse(
+      receipt.actualOutputUnits ?? receipt.minimumOutputUnits ?? '0',
+    );
+    if (units == null || units.isNegative) return '0';
+    final padded = units.toString().padLeft(7, '0');
+    final whole = padded.substring(0, padded.length - 6);
+    final fraction =
+        padded.substring(padded.length - 6).replaceFirst(RegExp(r'0+$'), '');
+    return fraction.isEmpty ? whole : '$whole.$fraction';
   }
 
   Widget _buildTxTile(ThemeData theme, BaseTx tx) {
@@ -2496,4 +2696,35 @@ class _BaseScreenState extends State<BaseScreen> {
       ),
     );
   }
+}
+
+class _WalletReadyBadge extends StatelessWidget {
+  const _WalletReadyBadge();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        key: const Key('base-payment-wallet-ready'),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.greenAccent.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle_rounded,
+                color: Colors.greenAccent, size: 13),
+            SizedBox(width: 4),
+            Text(
+              'FUNDED',
+              style: TextStyle(
+                color: Colors.greenAccent,
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+                letterSpacing: .7,
+              ),
+            ),
+          ],
+        ),
+      );
 }

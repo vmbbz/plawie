@@ -157,7 +157,7 @@ final class _BaseBalanceRefreshAdapter implements BaseBalanceRefreshService {
   @override
   Future<bool> refresh() async {
     try {
-      await _baseService.refreshBalance();
+      await _baseService.refreshBaseUsdcBalanceUnitsForPayment();
       return true;
     } catch (_) {
       return false;

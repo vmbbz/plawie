@@ -103,6 +103,27 @@ void main() {
     expect(find.textContaining('USDG ·'), findsWidgets);
   });
 
+  testWidgets('provider funding can default to direct Base USDC',
+      (tester) async {
+    await _pumpPanel(
+      tester,
+      controller: _FakeController(),
+      capabilities: _FakeCapabilities(_baseSnapshot()),
+      initialSourceChainId: BridgeConstants.baseChainId,
+      initialSourceTokenSymbol: 'USDC',
+    );
+
+    final chain = tester.widget<DropdownButtonFormField<BridgeChain>>(
+      find.byKey(const Key('bridge-source-chain')),
+    );
+    final token = tester.widget<DropdownButtonFormField<BridgeToken>>(
+      find.byKey(const ValueKey<String>('bridge-source-token-8453')),
+    );
+    expect(chain.initialValue?.id, BridgeConstants.baseChainId);
+    expect(token.initialValue?.symbol, 'USDC');
+    expect(find.textContaining('not a cross-chain bridge'), findsOneWidget);
+  });
+
   testWidgets('shows and safely changes the connected external source wallet',
       (tester) async {
     final controller = _FakeController()
@@ -197,7 +218,7 @@ void main() {
     expect(find.text('Approve in wallet'), findsOneWidget);
   });
 
-  testWidgets('completion callback fires once for this session intent only',
+  testWidgets('completion callback fires once for a newly completed intent',
       (tester) async {
     final completions = <BridgeFundingReceipt>[];
     final controller = _FakeController()
@@ -226,6 +247,63 @@ void main() {
     expect(completions, hasLength(1));
     expect(completions.single.state, BridgeFundingState.completed);
     expect(completions.single.intentId, controller.currentReceipt?.intentId);
+  });
+
+  testWidgets('completed funding stays visible with amounts and explorers',
+      (tester) async {
+    final opened = <Uri>[];
+    final controller = _FakeController();
+    controller.currentReceipt = _completedReceipt(_reviewReceipt(_request()));
+
+    await _pumpPanel(
+      tester,
+      controller: controller,
+      capabilities: _FakeCapabilities(_snapshot()),
+      launchExternal: (uri) async {
+        opened.add(uri);
+        return true;
+      },
+    );
+
+    expect(find.byKey(const Key('bridge-completion-confirmation')),
+        findsOneWidget);
+    expect(find.text('Base funding confirmed'), findsOneWidget);
+    expect(find.textContaining('1.2 USDC arrived'), findsOneWidget);
+    expect(find.byKey(const Key('bridge-primary-action')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('bridge-completion-details')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Sent: 1.25 USDC'), findsOneWidget);
+    expect(find.textContaining('Received: 1.2 USDC'), findsOneWidget);
+    expect(find.textContaining('Source transaction:'), findsOneWidget);
+    expect(find.textContaining('Base transaction:'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('bridge-open-base-transaction')));
+    await tester.pump();
+    expect(opened.single.host, 'basescan.org');
+
+    await tester.tap(find.byKey(const Key('bridge-start-another-transfer')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('bridge-primary-action')), findsOneWidget);
+  });
+
+  testWidgets('resumed pending settlement notifies completion once',
+      (tester) async {
+    final completions = <BridgeFundingReceipt>[];
+    final controller = _FakeController()
+      ..currentReceipt = _pendingReceipt()
+      ..completeOnPoll = true;
+
+    await _pumpPanel(
+      tester,
+      controller: controller,
+      capabilities: _FakeCapabilities(_snapshot()),
+      onFundingCompleted: completions.add,
+    );
+
+    expect(controller.pollCalls, 1);
+    expect(completions, hasLength(1));
+    expect(find.text('Base funding confirmed'), findsOneWidget);
   });
 
   testWidgets('execution stops when mandatory capability refresh fails',
@@ -458,6 +536,7 @@ Future<void> _pumpPanel(
   int? initialSourceChainId,
   String? initialSourceTokenSymbol,
   ValueChanged<BridgeFundingReceipt>? onFundingCompleted,
+  Future<bool> Function(Uri uri)? launchExternal,
   bool settle = true,
   Size size = const Size(430, 900),
   TextScaler textScaler = TextScaler.noScaling,
@@ -478,7 +557,7 @@ Future<void> _pumpPanel(
               initialSourceChainId: initialSourceChainId,
               initialSourceTokenSymbol: initialSourceTokenSymbol,
               onFundingCompleted: onFundingCompleted,
-              launchExternal: (_) async => true,
+              launchExternal: launchExternal ?? (_) async => true,
               copyText: (_) async {},
             ),
           ),
@@ -548,6 +627,7 @@ final class _FakeController implements BridgeFundingUiController {
   ExternalWalletTransport? selectedTransport;
   bool relayPersistedBeforeReturn = false;
   bool completeOnConfirm = false;
+  bool completeOnPoll = false;
   int pollCalls = 0;
   int disconnectWalletCalls = 0;
   int cancelCalls = 0;
@@ -644,6 +724,9 @@ final class _FakeController implements BridgeFundingUiController {
   Future<void> pollSettlement(String intentId,
       {int maxObservations = 7}) async {
     pollCalls += 1;
+    if (completeOnPoll && currentReceipt?.intentId == intentId) {
+      currentReceipt = _completedReceipt(currentReceipt!);
+    }
   }
 
   @override
@@ -716,6 +799,35 @@ BridgeCapabilitySnapshot _robinhoodSnapshot() {
       BridgeConstants.robinhoodChainId: <BridgeToken>[
         _robinhoodEth,
         _robinhoodUsdg,
+      ],
+    },
+    relayTokensByChain: const <int, List<BridgeToken>>{},
+    availabilityReasons: const <String, String>{},
+  );
+}
+
+BridgeCapabilitySnapshot _baseSnapshot() {
+  const base = BridgeChain(
+    id: BridgeConstants.baseChainId,
+    key: 'bas',
+    name: 'Base',
+    type: BridgeChainType.evm,
+    nativeTokenSymbol: 'ETH',
+  );
+  return BridgeCapabilitySnapshot(
+    schemaVersion: 1,
+    refreshedAt: DateTime.now().toUtc(),
+    connectedChains: const <BridgeChain>[base],
+    relayChains: const <BridgeChain>[],
+    connectedTokensByChain: const <int, List<BridgeToken>>{
+      BridgeConstants.baseChainId: <BridgeToken>[
+        BridgeToken(
+          chainId: BridgeConstants.baseChainId,
+          address: BridgeConstants.baseUsdc,
+          symbol: 'USDC',
+          decimals: 6,
+          solverDepositable: false,
+        ),
       ],
     },
     relayTokensByChain: const <int, List<BridgeToken>>{},

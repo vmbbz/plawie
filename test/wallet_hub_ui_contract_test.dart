@@ -86,7 +86,7 @@ void main() {
     expect(router, contains("'USDG'"));
   });
 
-  test('provider top-up uses the guided Robinhood to Base funding modal', () {
+  test('provider top-up defaults to direct Base USDC funding', () {
     final screen = File('lib/screens/base_screen.dart')
         .readAsStringSync()
         .replaceAll('\r\n', '\n');
@@ -95,10 +95,10 @@ void main() {
         .replaceAll('\r\n', '\n');
 
     expect(screen, contains('ProviderTopUpFundingCoordinator('));
-    expect(screen,
-        contains('initialSourceChainId: BridgeConstants.robinhoodChainId'));
-    expect(screen, contains("initialSourceTokenSymbol: 'USDG'"));
-    expect(screen, contains('Robinhood ETH or official USDG'));
+    expect(
+        screen, contains('initialSourceChainId: BridgeConstants.baseChainId'));
+    expect(screen, contains("initialSourceTokenSymbol: 'USDC'"));
+    expect(screen, contains('Use Base USDC from another wallet'));
     expect(screen, contains('onFundingCompleted: (_)'));
     expect(wallet, contains('refreshBaseUsdcBalanceUnitsForPayment'));
     expect(
@@ -106,5 +106,21 @@ void main() {
       contains(
           'Refresh Base Mainnet USDC for a payment decision and fail closed.'),
     );
+  });
+
+  test('wallet hub distinguishes payment-wallet and provider balances', () {
+    final screen = File('lib/screens/base_screen.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    final bridge = File('lib/widgets/bridge_funding_panel.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+
+    expect(screen, contains("'BASE PAYMENT WALLET'"));
+    expect(screen,
+        contains("'This Base USDC is already the BlockRun payment balance."));
+    expect(screen, contains("'Top up'"));
+    expect(bridge, contains("'Base funding confirmed'"));
+    expect(screen, contains("Uri.https('basescan.org', '/tx/\$hash')"));
   });
 }
