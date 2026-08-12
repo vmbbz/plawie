@@ -836,7 +836,7 @@ BridgeFundingReceipt _interruptedConnectionReceipt() => BridgeFundingReceipt(
       provider: 'pending',
       state: BridgeFundingState.connectingWallet,
       sourceChainId: BridgeConstants.solanaChainId,
-      sourceTokenAddress: 'EPjFWdd5AufqSSqeM2q8kNxDXLyi45sfSFyTW2ymt1v',
+      sourceTokenAddress: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
       sourceTokenSymbol: 'USDC',
       sourceAmountUnits: '3000000',
       baseDestinationAddress: _baseAddress,
