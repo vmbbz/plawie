@@ -117,18 +117,41 @@ class X402PaymentChallenge {
   factory X402PaymentChallenge.fromHeader(
     String header, {
     required X402PaymentPolicy policy,
+    Uri? resourceUrlFallback,
+    String? resourceDescriptionFallback,
   }) {
     final decoded = _decodeHeaderJson(header);
     final version = _positiveInt(decoded['x402Version']);
     if (version != 2) {
       throw const X402PaymentPolicyException('Only x402 version 2 is allowed.');
     }
-    final resource = decoded['resource'];
-    if (resource is! Map) {
-      throw const X402PaymentPolicyException('x402 resource is missing.');
+    final rawResource = decoded['resource'];
+    late final Map<dynamic, dynamic> resource;
+    late final Uri resourceUrl;
+    if (rawResource is Map) {
+      resource = rawResource;
+      final declaredUrl = Uri.tryParse(resource['url']?.toString() ?? '');
+      if (declaredUrl == null || !policy.allowsHost(declaredUrl)) {
+        throw const X402PaymentPolicyException(
+            'x402 resource host or scheme is not allowlisted.');
+      }
+      resourceUrl = declaredUrl;
+    } else {
+      // Venice's documented top-up challenge currently has `accepts` but no
+      // `resource`. Only a provider catalog entry that explicitly opts into
+      // this compatibility path may supply an exact, pre-allowlisted URL.
+      final fallback = resourceUrlFallback;
+      if (fallback == null || !policy.allowsHost(fallback)) {
+        throw const X402PaymentPolicyException('x402 resource is missing.');
+      }
+      resource = <String, dynamic>{
+        'url': fallback.toString(),
+        if (resourceDescriptionFallback != null)
+          'description': resourceDescriptionFallback,
+      };
+      resourceUrl = fallback;
     }
-    final resourceUrl = Uri.tryParse(resource['url']?.toString() ?? '');
-    if (resourceUrl == null || !policy.allowsHost(resourceUrl)) {
+    if (!policy.allowsHost(resourceUrl)) {
       throw const X402PaymentPolicyException(
           'x402 resource host or scheme is not allowlisted.');
     }

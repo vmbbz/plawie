@@ -61,6 +61,36 @@ void main() {
     );
   });
 
+  test('permits a resource-less top-up challenge only with an exact fallback',
+      () {
+    final encoded = _encodedChallenge(includeResource: false);
+    final endpoint = Uri.parse('https://api.example.test/data');
+
+    expect(
+      () => X402PaymentChallenge.fromHeader(encoded, policy: policy),
+      throwsA(isA<X402PaymentPolicyException>()),
+    );
+
+    final challenge = X402PaymentChallenge.fromHeader(
+      encoded,
+      policy: policy,
+      resourceUrlFallback: endpoint,
+      resourceDescriptionFallback: 'Provider top-up',
+    );
+    expect(challenge.resourceUrl, endpoint);
+    expect(challenge.resource['url'], endpoint.toString());
+    expect(challenge.resourceDescription, 'Provider top-up');
+
+    expect(
+      () => X402PaymentChallenge.fromHeader(
+        encoded,
+        policy: policy,
+        resourceUrlFallback: Uri.parse('https://evil.example/data'),
+      ),
+      throwsA(isA<X402PaymentPolicyException>()),
+    );
+  });
+
   test('rejects wrong version, payee, timeout, and token-domain metadata', () {
     expect(
       () => X402PaymentChallenge.fromHeader(
@@ -207,13 +237,15 @@ String _encodedChallenge({
   List<Map<String, dynamic>>? accepts,
   int timeout = 60,
   int x402Version = 2,
+  bool includeResource = true,
 }) {
   final body = <String, dynamic>{
     'x402Version': x402Version,
-    'resource': <String, dynamic>{
-      'url': resourceUrl,
-      'description': 'Test paid resource',
-    },
+    if (includeResource)
+      'resource': <String, dynamic>{
+        'url': resourceUrl,
+        'description': 'Test paid resource',
+      },
     'accepts':
         accepts ?? <Map<String, dynamic>>[_requirement(timeout: timeout)],
   };

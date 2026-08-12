@@ -175,6 +175,9 @@ class X402PaymentTransportService {
     final challenge = X402PaymentChallenge.fromHeader(
       required,
       policy: policy,
+      resourceUrlFallback:
+          provider.allowsResourceLessTopUpChallenge ? endpoint : null,
+      resourceDescriptionFallback: '${provider.label} x402 top-up',
     );
     final intent = approvalService.createIntent(
       challenge: challenge,

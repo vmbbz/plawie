@@ -97,6 +97,30 @@ void main() {
     expect(signerCalled, isFalse);
   });
 
+  test("uses Venice's catalogued endpoint for a resource-less top-up challenge",
+      () async {
+    final service = X402PaymentTransportService(
+      client: MockClient((request) async {
+        expect(request.url, provider.topUpEndpoint);
+        return http.Response('', 402, headers: <String, String>{
+          'payment-required': _challenge(
+            provider.topUpEndpoint!,
+            includeResource: false,
+          ),
+        });
+      }),
+      receiptStore: _MemoryReceiptStore(),
+    );
+
+    final prepared = await service.prepareTopUp(provider);
+    expect(prepared.intent.challenge.resourceUrl, provider.topUpEndpoint);
+    expect(
+      prepared.intent.challenge.resource['url'],
+      provider.topUpEndpoint.toString(),
+    );
+    expect(prepared.intent.challenge.resourceDescription, 'Venice x402 top-up');
+  });
+
   test('a rejected settlement is terminal and is not retried again', () async {
     var calls = 0;
     final store = _MemoryReceiptStore();
@@ -201,14 +225,15 @@ void main() {
   });
 }
 
-String _challenge(Uri endpoint) {
+String _challenge(Uri endpoint, {bool includeResource = true}) {
   return base64Encode(utf8.encode(jsonEncode(<String, dynamic>{
     'x402Version': 2,
-    'resource': <String, dynamic>{
-      'url': endpoint.toString(),
-      'description': 'Venice x402 top-up',
-      'mimeType': 'application/json',
-    },
+    if (includeResource)
+      'resource': <String, dynamic>{
+        'url': endpoint.toString(),
+        'description': 'Venice x402 top-up',
+        'mimeType': 'application/json',
+      },
     'accepts': <Map<String, dynamic>>[
       <String, dynamic>{
         'scheme': 'exact',

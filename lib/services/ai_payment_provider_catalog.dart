@@ -26,6 +26,7 @@ class AiPaymentProviderOption {
     required this.allowedHosts,
     required this.supportsTopUp,
     required this.paymentHeaderContract,
+    this.allowsResourceLessTopUpChallenge = false,
     this.topUpEndpoint,
     this.balanceEndpointTemplate,
   });
@@ -39,6 +40,11 @@ class AiPaymentProviderOption {
   final Set<String> allowedHosts;
   final bool supportsTopUp;
   final AiPaymentHeaderContract paymentHeaderContract;
+
+  /// An explicit compatibility exception for a provider whose documented
+  /// top-up `PAYMENT-REQUIRED` header omits the normal x402 `resource` field.
+  /// The transport substitutes only its catalogued HTTPS top-up endpoint.
+  final bool allowsResourceLessTopUpChallenge;
   final Uri? topUpEndpoint;
   final String? balanceEndpointTemplate;
 
@@ -73,6 +79,7 @@ class AiPaymentProviderCatalog {
       allowedHosts: const <String>{'api.venice.ai'},
       supportsTopUp: true,
       paymentHeaderContract: AiPaymentHeaderContract.x402Payment,
+      allowsResourceLessTopUpChallenge: true,
       topUpEndpoint: Uri.parse('https://api.venice.ai/api/v1/x402/top-up'),
       balanceEndpointTemplate:
           'https://api.venice.ai/api/v1/x402/balance/{walletAddress}',

@@ -23,6 +23,7 @@ void main() {
     expect(venice!.connectionMode, AiPaymentConnectionMode.walletIdentity);
     expect(venice.fundingMode, AiPaymentFundingMode.prepaidBalance);
     expect(venice.supportsTopUp, isTrue);
+    expect(venice.allowsResourceLessTopUpChallenge, isTrue);
     expect(venice.topUpEndpoint?.host, 'api.venice.ai');
     expect(venice.allowedHosts, <String>{'api.venice.ai'});
     expect(venice.paymentHeaderName, 'X-402-Payment');
@@ -35,6 +36,7 @@ void main() {
     expect(blockRun!.connectionMode, AiPaymentConnectionMode.walletIdentity);
     expect(blockRun.fundingMode, AiPaymentFundingMode.perRequest);
     expect(blockRun.supportsTopUp, isFalse);
+    expect(blockRun.allowsResourceLessTopUpChallenge, isFalse);
     expect(blockRun.topUpEndpoint, isNull);
     expect(blockRun.allowedHosts, <String>{'blockrun.ai'});
   });
