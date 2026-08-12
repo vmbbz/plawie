@@ -957,13 +957,16 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
                           .refreshBaseBalance(receipt.intentId)),
                   child: const Text('Refresh Base balance'),
                 ),
-              if (receipt.state == BridgeFundingState.awaitingPlawieReview)
-                TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () => _runBusy(() => widget.controller
-                          .cancelBeforeSubmission(receipt.intentId)),
-                  child: const Text('Discard stale review'),
+              if (_canCancelBeforeSubmission(receipt))
+                TextButton.icon(
+                  key: const Key('bridge-cancel-pre-submission'),
+                  onPressed: _busy ? null : () => _cancelPreSubmission(receipt),
+                  icon: const Icon(Icons.restart_alt_rounded),
+                  label: Text(
+                    receipt.state == BridgeFundingState.awaitingPlawieReview
+                        ? 'Discard stale review'
+                        : 'Cancel and retry',
+                  ),
                 ),
             ],
           ),
@@ -1167,6 +1170,15 @@ final class _BridgeFundingPanelState extends State<BridgeFundingPanel> {
         () async {
           await widget.controller.refreshStatus(receipt.intentId);
           _notifyIfCompleted(receipt.intentId);
+        },
+      );
+
+  Future<void> _cancelPreSubmission(BridgeFundingReceipt receipt) => _runBusy(
+        () async {
+          await widget.controller.cancelBeforeSubmission(receipt.intentId);
+          _resumeStarted = false;
+          _walletOptions = const <ExternalWalletOption>[];
+          if (mounted) setState(() {});
         },
       );
 
@@ -1394,6 +1406,18 @@ bool _statusCanRefresh(BridgeFundingReceipt receipt) =>
     receipt.state == BridgeFundingState.destinationPending ||
     (receipt.method == BridgeFundingMethod.relayDeposit &&
         receipt.state == BridgeFundingState.expired);
+
+bool _canCancelBeforeSubmission(BridgeFundingReceipt receipt) =>
+    receipt.sourceTransactionHash == null &&
+    !receipt.submissionOutcomeUnknown &&
+    <BridgeFundingState>{
+      BridgeFundingState.draft,
+      BridgeFundingState.checkingCapabilities,
+      BridgeFundingState.connectingWallet,
+      BridgeFundingState.collectingRefundAddress,
+      BridgeFundingState.quoting,
+      BridgeFundingState.awaitingPlawieReview,
+    }.contains(receipt.state);
 
 String _stateTitle(BridgeFundingState state) => switch (state) {
       BridgeFundingState.awaitingPlawieReview => 'Review required',

@@ -183,6 +183,34 @@ void main() {
     );
   });
 
+  test('interrupted pre-submission connection cancels without a wallet send',
+      () async {
+    final receipt = BridgeFundingReceipt(
+      schemaVersion: 2,
+      intentId: 'interrupted-connect-intent',
+      method: BridgeFundingMethod.connectedWallet,
+      provider: 'pending',
+      state: BridgeFundingState.connectingWallet,
+      sourceChainId: BridgeConstants.solanaChainId,
+      sourceTokenAddress: _solanaToken.address,
+      sourceTokenSymbol: _solanaToken.symbol,
+      sourceAmountUnits: '3000000',
+      baseDestinationAddress: destination,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await store.upsert(receipt);
+
+    await controller().cancelBeforeSubmission(receipt.intentId);
+
+    expect(store.activeReceipt, isNull);
+    expect(store.receiptForIntent(receipt.intentId)?.state,
+        BridgeFundingState.cancelled);
+    expect(wallet.disconnectCalls, 1);
+    expect(wallet.sentPayloads, isEmpty);
+    expect(wallet.solanaSubmissions, isEmpty);
+  });
+
   test('insufficient allowance gets its own exact review and requote',
       () async {
     quotes.quotes

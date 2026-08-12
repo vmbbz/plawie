@@ -338,6 +338,33 @@ void main() {
     expect(find.textContaining('Submit again'), findsNothing);
     expect(find.text('Cancel transfer'), findsNothing);
     expect(find.text('Archive'), findsNothing);
+    expect(
+      find.byKey(const Key('bridge-cancel-pre-submission')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('interrupted wallet connection can be cancelled and retried',
+      (tester) async {
+    final controller = _FakeController()
+      ..currentReceipt = _interruptedConnectionReceipt();
+    await _pumpPanel(
+      tester,
+      controller: controller,
+      capabilities: _FakeCapabilities(_snapshot()),
+    );
+
+    expect(find.text('Funding in progress'), findsOneWidget);
+    expect(find.text('Cancel and retry'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const Key('bridge-cancel-pre-submission')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.cancelCalls, 1);
+    expect(find.text('Cancel and retry'), findsNothing);
+    expect(find.byKey(const Key('bridge-primary-action')), findsOneWidget);
   });
 
   testWidgets('resumes pending receipt with read-only polling once',
@@ -523,6 +550,7 @@ final class _FakeController implements BridgeFundingUiController {
   bool completeOnConfirm = false;
   int pollCalls = 0;
   int disconnectWalletCalls = 0;
+  int cancelCalls = 0;
 
   @override
   ExternalWalletIdentity? get connectedExternalWallet => externalWallet;
@@ -598,7 +626,10 @@ final class _FakeController implements BridgeFundingUiController {
   Future<void> archiveRelayInstructions(String intentId) async {}
 
   @override
-  Future<void> cancelBeforeSubmission(String intentId) async {}
+  Future<void> cancelBeforeSubmission(String intentId) async {
+    cancelCalls += 1;
+    if (currentReceipt?.intentId == intentId) currentReceipt = null;
+  }
 
   @override
   Future<void> confirmConnectedBridge(String intentId) async {
@@ -796,6 +827,21 @@ BridgeFundingReceipt _unknownReceipt() => BridgeFundingReceipt(
       submissionOutcomeUnknown: true,
       createdAt: DateTime.utc(2026, 8, 7, 12),
       updatedAt: DateTime.utc(2026, 8, 7, 12),
+    );
+
+BridgeFundingReceipt _interruptedConnectionReceipt() => BridgeFundingReceipt(
+      schemaVersion: 1,
+      intentId: '66666666666666666666666666666666',
+      method: BridgeFundingMethod.connectedWallet,
+      provider: 'pending',
+      state: BridgeFundingState.connectingWallet,
+      sourceChainId: BridgeConstants.solanaChainId,
+      sourceTokenAddress: 'EPjFWdd5AufqSSqeM2q8kNxDXLyi45sfSFyTW2ymt1v',
+      sourceTokenSymbol: 'USDC',
+      sourceAmountUnits: '3000000',
+      baseDestinationAddress: _baseAddress,
+      createdAt: DateTime.utc(2026, 8, 12, 17),
+      updatedAt: DateTime.utc(2026, 8, 12, 17),
     );
 
 BridgeFundingReceipt _pendingReceipt() => BridgeFundingReceipt(
