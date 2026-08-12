@@ -908,17 +908,39 @@ class _BaseScreenState extends State<BaseScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: _paymentReceipts.take(3).map((receipt) {
                             final amount = _formatReceiptAmount(receipt.amount);
+                            final deliveredUnverified =
+                                receipt.responseDeliveredSettlementUnverified;
+                            final status = deliveredUnverified
+                                ? 'response delivered'
+                                : receipt.settlementVerified
+                                    ? 'settlement verified'
+                                    : receipt.state.name;
                             return Padding(
-                              padding: const EdgeInsets.only(bottom: 5),
-                              child: Text(
-                                '${receipt.providerId ?? 'x402'} · $amount USDC · ${receipt.state.name} · ${_shortDate(receipt.recordedAt)}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color:
-                                      receipt.state == X402PaymentState.settled
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${receipt.providerId ?? 'x402'} · $amount USDC · $status · ${_shortDate(receipt.recordedAt)}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: receipt.settlementVerified
                                           ? Colors.greenAccent
                                           : Colors.orangeAccent,
-                                ),
+                                    ),
+                                  ),
+                                  if (deliveredUnverified)
+                                    Text(
+                                      'Settlement proof unavailable · paid request will not be retried.',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        height: 1.35,
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                ],
                               ),
                             );
                           }).toList(growable: false),

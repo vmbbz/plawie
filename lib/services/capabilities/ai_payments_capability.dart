@@ -236,7 +236,7 @@ class AiPaymentsCapability extends CapabilityHandler {
       'count': receipts.length,
       'receipts': receipts
           .take(20)
-          .map((receipt) => receipt.toJson())
+          .map((receipt) => receipt.toAgentJson())
           .toList(growable: false),
       'redacted': true,
       'containsSignatures': false,

@@ -230,6 +230,47 @@ void main() {
     expect(receipt.modelId, isNull);
     expect(receipt.paidRetryConsumed, isFalse);
   });
+
+  test('separates delivered response from unverified settlement proof', () {
+    final receipt = X402PaymentReceipt(
+      intentId: 'blockrun-delivered',
+      state: X402PaymentState.uncertain,
+      recordedAt: now,
+      providerId: 'blockrun',
+      amount: '18044',
+      httpStatus: 200,
+      errorCode: 'PAYMENT_RECEIPT_MISSING',
+      paidRetryConsumed: true,
+    );
+
+    expect(receipt.responseDelivered, isTrue);
+    expect(receipt.settlementVerified, isFalse);
+    expect(receipt.responseDeliveredSettlementUnverified, isTrue);
+    expect(receipt.retryAllowed, isFalse);
+    expect(receipt.deliveryStatus, 'delivered');
+    expect(receipt.settlementStatus, 'unverified');
+    expect(receipt.toAgentJson(), containsPair('retryAllowed', false));
+    expect(
+      receipt.toAgentJson()['statusSummary'],
+      'Model response delivered; settlement proof was not returned.',
+    );
+  });
+
+  test('reports a hash-bound settled receipt as verified', () {
+    final receipt = X402PaymentReceipt(
+      intentId: 'settled',
+      state: X402PaymentState.settled,
+      recordedAt: now,
+      transactionHash: '0x${'a' * 64}',
+      httpStatus: 200,
+      paidRetryConsumed: true,
+    );
+
+    expect(receipt.responseDelivered, isTrue);
+    expect(receipt.settlementVerified, isTrue);
+    expect(receipt.settlementStatus, 'verified');
+    expect(receipt.retryAllowed, isFalse);
+  });
 }
 
 String _encodedChallenge({

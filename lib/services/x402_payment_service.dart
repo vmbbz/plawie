@@ -345,6 +345,52 @@ class X402PaymentReceipt {
   final String? modelId;
   final bool paidRetryConsumed;
 
+  /// A successful paid inference response and a verified on-chain settlement
+  /// are deliberately separate facts. Some providers return the model payload
+  /// without exposing a payment receipt header or transaction hash. In that
+  /// case the response was delivered, but settlement must remain unverified.
+  bool get responseDelivered =>
+      paidRetryConsumed &&
+      httpStatus != null &&
+      httpStatus! >= 200 &&
+      httpStatus! < 300;
+
+  bool get settlementVerified =>
+      state == X402PaymentState.settled &&
+      (transactionHash?.trim().isNotEmpty ?? false);
+
+  bool get responseDeliveredSettlementUnverified =>
+      responseDelivered &&
+      state == X402PaymentState.uncertain &&
+      !(transactionHash?.trim().isNotEmpty ?? false);
+
+  /// A consumed paid retry is never safe to repeat automatically, regardless
+  /// of whether the provider exposed enough metadata to verify settlement.
+  bool get retryAllowed => !paidRetryConsumed;
+
+  String get deliveryStatus => responseDelivered
+      ? 'delivered'
+      : paidRetryConsumed
+          ? 'unknown'
+          : 'notAttempted';
+
+  String get settlementStatus => settlementVerified
+      ? 'verified'
+      : responseDeliveredSettlementUnverified
+          ? 'unverified'
+          : switch (state) {
+              X402PaymentState.signing ||
+              X402PaymentState.submitted =>
+                'pending',
+              X402PaymentState.uncertain => 'unverified',
+              X402PaymentState.rejected ||
+              X402PaymentState.expired ||
+              X402PaymentState.blockedByPolicy ||
+              X402PaymentState.failed =>
+                'notSettled',
+              _ => 'notStarted',
+            };
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'intentId': intentId,
         'state': state.name,
@@ -364,6 +410,19 @@ class X402PaymentReceipt {
           'requestFingerprint': requestFingerprint,
         if (modelId != null) 'modelId': modelId,
         if (paidRetryConsumed) 'paidRetryConsumed': true,
+      };
+
+  /// Redacted, interpretation-safe shape exposed to the agent. Persistence
+  /// remains backward-compatible through [toJson], while callers can no longer
+  /// mistake successful content delivery for verified settlement.
+  Map<String, dynamic> toAgentJson() => <String, dynamic>{
+        ...toJson(),
+        'deliveryStatus': deliveryStatus,
+        'settlementStatus': settlementStatus,
+        'retryAllowed': retryAllowed,
+        if (responseDeliveredSettlementUnverified)
+          'statusSummary':
+              'Model response delivered; settlement proof was not returned.',
       };
 
   factory X402PaymentReceipt.fromJson(Map<String, dynamic> json) {
