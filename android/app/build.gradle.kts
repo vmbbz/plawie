@@ -220,7 +220,10 @@ chaquopy {
             // incompatible with the Chaquopy 17.0 ABI on Android.
             install("numpy")
             install("pandas<2.2")
-            install("yfinance")
+            // `pandas<2.2` excludes the newer yfinance releases. Pin the last
+            // resolver-compatible release rather than letting a clean Android
+            // build backtrack across the whole yfinance history.
+            install("yfinance==0.2.57")
             install("python-dateutil")
             install("requests")
             install("six")

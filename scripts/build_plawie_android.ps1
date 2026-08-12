@@ -12,6 +12,10 @@ $arguments = @(
     'build',
     $artifact,
     "--$Mode",
+    # Plawie packages arm64 only. Supplying Flutter's target explicitly keeps
+    # code-asset plugins such as fllama from compiling unused arm and x64
+    # native binaries during every Android build.
+    '--target-platform=android-arm64',
     '--dart-define=ENABLE_LIFI_CONNECTED_BRIDGE=true',
     '--dart-define=ENABLE_RELAY_DEPOSIT_BRIDGE=true',
     '--dart-define=ENABLE_REOWN_EVM_WALLETS=true',
