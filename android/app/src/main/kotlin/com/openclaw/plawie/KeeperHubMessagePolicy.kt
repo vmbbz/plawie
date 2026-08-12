@@ -118,11 +118,11 @@ internal data class KeeperHubExecutionAttestationRequest(
 
 /**
  * Closed local attestation for the hackathon proof transaction. It cannot
- * authorize a Mainnet transfer: only a zero-value Base Sepolia self-transfer
- * from the separately labelled KeeperHub Agent Wallet is accepted.
+ * authorize value movement: only a zero-value Base Mainnet self-transfer from
+ * the separately labelled KeeperHub Agent Wallet is accepted.
  */
 internal object KeeperHubExecutionAttestationPolicy {
-    const val BASE_SEPOLIA_CHAIN_ID = 84532L
+    const val BASE_MAINNET_CHAIN_ID = 8453L
     private val addressPattern = Regex("^0x[0-9a-fA-F]{40}$")
     private val digestPattern = Regex("^[0-9a-f]{64}$")
     private val intentPattern = Regex("^[A-Za-z0-9_-]{8,128}$")
@@ -152,8 +152,8 @@ internal object KeeperHubExecutionAttestationPolicy {
         val intentId = arguments["intentId"]?.toString()?.trim() ?: ""
         require(intentPattern.matches(intentId)) { "KeeperHub intent ID is invalid." }
         val chainId = arguments["chainId"]?.toString()?.toLongOrNull()
-        require(chainId == BASE_SEPOLIA_CHAIN_ID) {
-            "Only the Base Sepolia proof transaction can be attested."
+        require(chainId == BASE_MAINNET_CHAIN_ID) {
+            "Only the zero-value Base Mainnet proof can be attested."
         }
         val from = arguments["from"]?.toString()?.trim() ?: ""
         val to = arguments["to"]?.toString()?.trim() ?: ""
@@ -185,7 +185,7 @@ internal object KeeperHubExecutionAttestationPolicy {
 Version: 1
 Personal Wallet: $personalWalletAddress
 Agent Wallet: $from
-Chain ID: $BASE_SEPOLIA_CHAIN_ID
+Chain ID: $BASE_MAINNET_CHAIN_ID
 Recipient: $to
 Amount: 0 ETH
 Intent ID: $intentId

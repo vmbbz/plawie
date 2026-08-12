@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../constants.dart';
 import '../services/keeperhub/keeperhub_approval_broker.dart';
 import '../services/keeperhub/keeperhub_models.dart';
+import '../services/keeperhub/keeperhub_proof_network.dart';
 import '../services/sensitive_approval_surface.dart';
 
 class KeeperHubExecutionApprovalHost extends StatefulWidget {
@@ -255,7 +256,7 @@ class _KeeperHubExecutionReviewDialogState
                 _detail(
                   context,
                   'NETWORK',
-                  'Base Sepolia · chain ${approval.chainId}',
+                  '${KeeperHubProofNetwork.name} · chain ${approval.chainId}',
                 ),
                 _detail(
                   context,
@@ -319,7 +320,7 @@ class _KeeperHubExecutionReviewDialogState
           ),
         ),
         child: Text(
-          'KeeperHub manages the Agent Execution Wallet key. This testnet proof moves 0 ETH. Plawie will request fresh Android authentication before submitting the exact simulated request.',
+          'KeeperHub manages the Agent Execution Wallet key. This Base Mainnet proof is an exact 0 ETH self-transfer. It still consumes gas unless sponsored. Plawie will request fresh Android authentication before submitting only the reviewed simulation.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
       );

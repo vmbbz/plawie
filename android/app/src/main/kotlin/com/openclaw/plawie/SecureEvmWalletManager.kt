@@ -387,7 +387,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
         }
     }
 
-    /** Device-authenticated local approval proof for one zero-value testnet run. */
+    /** Device-authenticated local approval for one zero-value Base Mainnet run. */
     fun attestKeeperHubExecution(arguments: Map<*, *>?, result: MethodChannel.Result) {
         val envelope = requireEnvelope(result) ?: return
         try {
@@ -398,7 +398,7 @@ class SecureEvmWalletManager(private val activity: Activity) {
             withDecryptedKey(
                 envelope = envelope,
                 title = "Authorize Agent Wallet proof",
-                description = "Approve 0 ETH self-transfer on Base Sepolia",
+                description = "Approve 0 ETH self-transfer on Base Mainnet",
                 result = result,
             ) { privateKey ->
                 val signed = signAndVerifyPrefixedMessage(

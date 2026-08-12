@@ -33,7 +33,7 @@ void main() {
     ]);
     final permissions = frame.payload!['agentPermissions'] as Map;
     expect(permissions['readStatus'], isTrue);
-    expect(permissions['prepareZeroValueTestnetProof'], isTrue);
+    expect(permissions['prepareZeroValueMainnetProof'], isTrue);
     expect(permissions['approve'], isFalse);
     expect(permissions['authenticate'], isFalse);
     expect(permissions['sign'], isFalse);
@@ -41,7 +41,7 @@ void main() {
     expect(permissions['retry'], isFalse);
     expect(permissions['revokeCredential'], isFalse);
     expect(permissions['executeGenericWorkflow'], isFalse);
-    expect(permissions['moveMainnetValue'], isFalse);
+    expect(permissions['moveNonZeroValue'], isFalse);
     final forbidden = await capability.handle(
       'keeperhub.execute',
       const <String, dynamic>{'amount': '1'},

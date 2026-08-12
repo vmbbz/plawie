@@ -4,9 +4,9 @@ import 'package:crypto/crypto.dart';
 
 import 'keeperhub_execution_models.dart';
 import 'keeperhub_models.dart';
+import 'keeperhub_proof_network.dart';
 
 class KeeperHubProofPolicy {
-  static const baseSepoliaChainId = 84532;
   static final RegExp _taskPattern = RegExp(r'^[A-Za-z0-9._:%|/-]{1,100}$');
 
   static Map<String, dynamic> transferBody(String agentWalletAddress) {
@@ -15,7 +15,7 @@ class KeeperHubProofPolicy {
       'Agent Execution Wallet',
     );
     return <String, dynamic>{
-      'chainId': baseSepoliaChainId,
+      'chainId': KeeperHubProofNetwork.chainId,
       'recipientAddress': address,
       'amount': '0',
     };
@@ -29,7 +29,7 @@ class KeeperHubProofPolicy {
     if (transfer.length != expectedKeys.length ||
         !transfer.keys.every(expectedKeys.contains) ||
         transfer['chainId'] is! int ||
-        transfer['chainId'] != baseSepoliaChainId ||
+        transfer['chainId'] != KeeperHubProofNetwork.chainId ||
         transfer['amount'] is! String ||
         transfer['amount'] != '0') {
       throw const KeeperHubException(
@@ -154,9 +154,13 @@ class KeeperHubProofPolicy {
       recipientAddress,
       'Agent Execution Wallet',
     ).toLowerCase();
-    final canonical = '$stableTask|$baseSepoliaChainId|$recipient|0|';
+    final canonical =
+        '$stableTask|${KeeperHubProofNetwork.chainId}|$recipient|0|';
     return sha256.convert(utf8.encode(canonical)).toString();
   }
+
+  static bool isLegacyTestnetTransfer(Map<String, dynamic> transfer) =>
+      transfer['chainId'] == KeeperHubProofNetwork.legacyBaseSepoliaChainId;
 
   static String canonicalTransferJson(Map<String, dynamic> transfer) =>
       jsonEncode(<String, dynamic>{

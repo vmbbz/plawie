@@ -5,11 +5,11 @@ import 'package:clawa/services/keeperhub/keeperhub_policy.dart';
 void main() {
   const wallet = '0x2222222222222222222222222222222222222222';
 
-  test('builds only a zero-value Base Sepolia self-transfer', () {
+  test('builds only a zero-value Base Mainnet self-transfer', () {
     expect(
       KeeperHubProofPolicy.transferBody(wallet),
       <String, dynamic>{
-        'chainId': 84532,
+        'chainId': 8453,
         'recipientAddress': wallet,
         'amount': '0',
       },
@@ -38,17 +38,17 @@ void main() {
   test('rejects any stored transfer outside the exact proof contract', () {
     for (final transfer in <Map<String, dynamic>>[
       <String, dynamic>{
-        'chainId': 8453,
+        'chainId': 84532,
         'recipientAddress': wallet,
         'amount': '0',
       },
       <String, dynamic>{
-        'chainId': 84532,
+        'chainId': 8453,
         'recipientAddress': wallet,
         'amount': '1',
       },
       <String, dynamic>{
-        'chainId': 84532,
+        'chainId': 8453,
         'recipientAddress': wallet,
         'amount': '0',
         'data': '0x',

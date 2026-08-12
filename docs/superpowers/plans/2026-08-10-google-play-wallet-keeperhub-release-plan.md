@@ -545,7 +545,7 @@ cancel, and release tools. If a per-workflow MCP endpoint is later used, registe
 only an individually reviewed slug/schema and still intercept writes in the
 app-owned coordinator.
 
-For the hackathon proof, chat may prepare only a zero-value Base Sepolia
+For the hackathon proof, chat may prepare only a zero-value Base Mainnet
 self-transfer. The capability asks KeeperHub to simulate the fixed transfer,
 then persists an inert proposal in Plawie's receipt store. It cannot approve,
 authenticate, submit, retry, revoke, or invoke a generic KeeperHub write. Only
@@ -560,6 +560,7 @@ lib/services/keeperhub/
   keeperhub_auth_store.dart
   keeperhub_headless_onboarding_service.dart
   keeperhub_models.dart
+  keeperhub_proof_network.dart
   keeperhub_policy.dart
   keeperhub_execution_coordinator.dart
   keeperhub_approval_broker.dart
@@ -901,8 +902,9 @@ narrow and demonstrable rather than a premature platform rewrite.
       run.
 - [x] Show Personal Wallet and Agent Execution Wallet as separate cards with
       explicit custody, chain, address, funding, and risk copy.
-- [x] Add typed Base Sepolia native transfer intent only; begin with a zero-value
-      self-transfer recommended by KeeperHub to prove the sponsored path safely.
+- [x] Add a typed Base Mainnet transfer intent restricted to a zero-value
+      self-transfer. Preserve historical Sepolia receipts as read-only evidence
+      and retire any unsubmitted legacy proposal before creating mainnet work.
 - [x] Implement the execution reliability core: simulation, immutable request
       binding, one-use foreground approval broker, device-authenticated local
       attestation, persisted idempotency key, single submission, bounded poll,
@@ -917,11 +919,11 @@ narrow and demonstrable rather than a premature platform rewrite.
       status-only recovery, and mismatched transaction receipts.
 - [ ] Demonstrate reject/cancel and a deliberately failing simulation before any
       successful write.
-- [ ] Submit one real zero-value Base Sepolia KeeperHub transaction, interrupt
+- [ ] Submit one real zero-value Base Mainnet KeeperHub transaction, interrupt
       the app/network during polling, reopen, and prove recovery reaches the same
       execution without a duplicate transaction.
-- [ ] Follow with one tiny non-zero testnet USDC workflow when test funds and the
-      exact reviewed contract are available.
+- [x] Keep all non-zero KeeperHub transfers and arbitrary calldata out of scope;
+      paid-provider Base USDC flows remain separate human-approved capabilities.
 - [x] Add chat proposal and status/receipt tools, while keeping approval and
       execution owned by the foreground Wallet UI.
 - [x] Implement device-authenticated remote API-key revocation through

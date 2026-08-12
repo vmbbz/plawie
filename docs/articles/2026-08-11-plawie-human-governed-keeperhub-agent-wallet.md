@@ -2,10 +2,10 @@
 
 ## Building a human-governed mobile Agent Wallet with Plawie, OpenClaw, KeeperHub, and Android
 
-> **Publication status — 11 August 2026:** Engineering draft. The software
+> **Publication status — 12 August 2026:** Engineering draft. The software
 > architecture described below is implemented. The final article must not be
 > published as a completed on-chain case study until the physical-device
-> KeeperHub onboarding, zero-value Base Sepolia execution, interruption
+> KeeperHub onboarding, zero-value Base Mainnet execution, interruption
 > recovery, and independently verifiable transaction receipt have been
 > captured. Public source and install links are intentionally held until
 > Plawie's 12 August release.
@@ -45,7 +45,7 @@ The KeeperHub integration therefore separates four responsibilities:
 
 | Layer | Responsibility | Explicitly cannot do |
 |---|---|---|
-| OpenClaw agent | Understand the request, explain it, inspect state, and prepare a bounded proof | Approve, authenticate, sign, submit, retry, revoke credentials, or move mainnet value |
+| OpenClaw agent | Understand the request, explain it, inspect state, and prepare a bounded proof | Approve, authenticate, sign, submit, retry, revoke credentials, or move non-zero value |
 | Plawie | Enforce policy, persist the immutable proposal, display the review, obtain fresh Android authentication, and retain receipts | Silently create an Agent Wallet or execute from background/chat |
 | KeeperHub | Provision the organization wallet, simulate the transaction, execute with an idempotency key, expose status, and return receipts | Replace Plawie's human review contract |
 | Human | Review network, wallet, recipient, value, reason, simulation, and expiry; then approve or reject | Be bypassed by an agent tool call |
@@ -215,7 +215,7 @@ Plawie exposes four bounded capability commands:
 | `keeperhub.capabilities` | Declares custody, proof network, amount, and every denied authority |
 | `keeperhub.status` | Reads redacted connection state and any active execution |
 | `keeperhub.receipts` | Reads at most 20 redacted local receipts without credentials or signatures |
-| `keeperhub.prepare` | Simulates and persists one zero-value Base Sepolia self-transfer proposal |
+| `keeperhub.prepare` | Simulates and persists one zero-value Base Mainnet self-transfer proposal |
 
 `keeperhub.prepare` does **not** open an approval sheet and does **not** submit a
 transaction. It returns the next human action: open **Wallet → Agent Execution
@@ -223,18 +223,20 @@ Wallet**, then review or discard the prepared proof.
 
 The current proof contract is intentionally narrow:
 
-- network: Base Sepolia;
-- chain ID: `84532`;
+- network: Base Mainnet;
+- chain ID: `8453`;
 - asset and amount: `0 ETH`;
 - sender and recipient: the same Agent Execution Wallet;
 - objective: bounded plain text;
 - no arbitrary contract call;
 - no generic workflow execution;
-- no mainnet value.
+- exactly zero transferred value.
 
 This produces a useful first proof without pretending that arbitrary autonomous
-spending is production-ready. KeeperHub itself recommends beginning with a real
-zero-value Base Sepolia transaction in its headless onboarding guide.
+spending is production-ready. Plawie deliberately keeps the same zero-value,
+self-transfer-only proof while running it on Base Mainnet. KeeperHub supports
+Base (`8453`) for direct execution and gas sponsorship, though sponsorship
+depends on organization settings and available gas credits.
 
 ---
 
@@ -322,7 +324,7 @@ The coordinator honors KeeperHub's polling hint within bounded limits.
 
 Completion is not inferred from a transaction URL or a self-reported hash.
 Plawie requires exactly one authoritative KeeperHub receipt whose transaction
-hash matches the execution status, whose chain is Base Sepolia, whose receipt
+hash matches the execution status, whose chain is Base Mainnet, whose receipt
 status is successful, and whose verification timestamp is present. A mismatch
 becomes `receipt_not_verified`, not a green success card.
 
@@ -344,27 +346,28 @@ separate code-complete controls from evidence-complete behavior.
 | Secure returned-once credential storage and restart recovery | Implemented |
 | Separate Personal and Agent Execution Wallet UI | Implemented |
 | Bounded agent status, receipt, and proof-preparation commands | Implemented |
-| Zero-value Base Sepolia self-transfer policy | Implemented |
+| Zero-value Base Mainnet self-transfer policy | Implemented |
 | Simulation, immutable request binding, one-use approval, and Android authentication | Implemented |
 | Persisted idempotency, bounded polling, restart recovery, and verified receipt checks | Implemented |
 | Device-authenticated remote organization-key revocation | Implemented |
-| Physical-device KeeperHub account and organization acceptance | **Still required** |
+| Physical-device KeeperHub account and organization acceptance | **Observed connected; publication capture still required** |
 | Live reject/cancel and deliberately failing simulation recording | **Still required** |
-| Real zero-value Base Sepolia transaction with interruption recovery | **Still required** |
-| Tiny non-zero testnet USDC workflow | Stretch after the zero-value proof |
+| Real zero-value Base Mainnet transaction with interruption recovery | **Still required** |
+| Non-zero KeeperHub transfer | Deliberately blocked and out of scope |
 | Paid x402 marketplace workflow through KeeperHub | Stretch; not implemented |
 | Multi-owner Safe with on-chain device co-approval | Production direction; not implemented |
 
-The repository contains 38 focused Flutter tests and five Android policy tests
+The repository contains focused Flutter and Android policy tests
 covering such cases as missing foreground UI, cancellation, immutable request
 binding, tampered local state, unexpected redirects, mismatched receipts,
 ambiguous submission, status-only recovery, unexpected KeeperHub challenges,
 and uncertain remote revocation.
 
-During the 11 August publication audit, the local Flutter and Gradle runners
-stalled before test execution on the Windows host. No failed assertion was
-reported, but this draft does not convert a stalled runner into a passing test
-claim. A clean CI/device run remains part of the evidence gate.
+On 12 August, the Base Mainnet migration subset completed with 26 focused
+Flutter tests and all five Android KeeperHub message-policy tests passing. The
+arm64 debug APK also compiled the native policy and passed the artifact secret
+audit. A physical-device transaction and recovery run remains the evidence
+gate; automated tests are not presented as on-chain proof.
 
 ---
 
@@ -386,7 +389,7 @@ works on the first attempt.
 
 1. Ask the OpenClaw agent what KeeperHub can do.
 2. Display the capability response with `approve`, `sign`, `submit`, `retry`,
-   and `moveMainnetValue` all denied.
+   and `moveNonZeroValue` all denied.
 3. Ask the agent to prepare the proof.
 4. Show that chat reports an inert proposal and directs the user to Wallet.
 5. Demonstrate a cancellation: open review, reject it, and prove there is no
@@ -394,7 +397,7 @@ works on the first attempt.
 
 ### Act 3 — Prove safe execution and recovery
 
-1. Prepare a fresh zero-value Base Sepolia proof.
+1. Prepare a fresh zero-value Base Mainnet proof.
 2. Show the exact successful simulation.
 3. Approve visibly and complete fresh Android authentication.
 4. Interrupt the app or network during polling.
@@ -447,13 +450,13 @@ Use real device captures only. Do not mock transaction evidence.
    signature visible.
 4. **Bounded agent:** chat response showing the four allowed KeeperHub commands
    and denied execution authority.
-5. **Review:** the zero-value Base Sepolia approval sheet showing wallet,
+5. **Review:** the zero-value Base Mainnet approval sheet showing wallet,
    recipient, amount, reason, simulation, and expiry.
 6. **Cancellation:** rejected proof with no transaction.
 7. **Recovery:** polling or `outcomeUnknown`, followed by the same execution
    recovered after reopening.
 8. **Receipt:** verified transaction card plus independently opened Base
-   Sepolia explorer page. This is mandatory before describing the workflow as
+   Mainnet explorer page. This is mandatory before describing the workflow as
    executed.
 9. **Architecture visual:** export the two Mermaid diagrams above as crisp SVG
    assets for the article and social thread.
@@ -481,8 +484,8 @@ balances.
 2. There are two wallets: an Android-protected Personal Wallet for identity and
    a separately custodial, minimally funded KeeperHub Agent Execution Wallet.
 3. The OpenClaw agent can inspect, read redacted receipts, and prepare one
-   zero-value Base Sepolia proof. It cannot approve, authenticate, sign, submit,
-   retry, revoke credentials, or move mainnet value.
+   zero-value Base Mainnet proof. It cannot approve, authenticate, sign, submit,
+   retry, revoke credentials, or move non-zero value.
 4. KeeperHub provides simulation, idempotent execution, status recovery, and
    verified receipts. Plawie binds those to a foreground review and fresh
    Android authentication.

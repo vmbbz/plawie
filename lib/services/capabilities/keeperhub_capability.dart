@@ -4,11 +4,12 @@ import '../../models/node_frame.dart';
 import '../keeperhub/keeperhub_auth_store.dart';
 import '../keeperhub/keeperhub_execution_coordinator.dart';
 import '../keeperhub/keeperhub_models.dart';
+import '../keeperhub/keeperhub_proof_network.dart';
 import 'capability_handler.dart';
 
 /// Bounded agent view of KeeperHub.
 ///
-/// The model may inspect local state and prepare a zero-value testnet proposal.
+/// The model may inspect local state and prepare a zero-value mainnet proposal.
 /// It cannot consume the foreground approval, authenticate, submit, retry,
 /// revoke credentials, or invoke KeeperHub's generic write-capable MCP tools.
 class KeeperHubCapability extends CapabilityHandler {
@@ -83,14 +84,14 @@ class KeeperHubCapability extends CapabilityHandler {
 
   Map<String, dynamic> _capabilities() => const <String, dynamic>{
         'mode': 'human-governed-managed-agent-wallet',
-        'proofNetwork': 'Base Sepolia',
-        'proofChainId': 84532,
+        'proofNetwork': KeeperHubProofNetwork.name,
+        'proofChainId': KeeperHubProofNetwork.chainId,
         'proofAmount': '0 ETH',
         'custody': 'KeeperHub/Turnkey managed Agent Execution Wallet',
         'agentPermissions': <String, bool>{
           'readStatus': true,
           'readRedactedReceipts': true,
-          'prepareZeroValueTestnetProof': true,
+          'prepareZeroValueMainnetProof': true,
           'openApprovalUi': false,
           'approve': false,
           'authenticate': false,
@@ -99,7 +100,7 @@ class KeeperHubCapability extends CapabilityHandler {
           'retry': false,
           'revokeCredential': false,
           'executeGenericWorkflow': false,
-          'moveMainnetValue': false,
+          'moveNonZeroValue': false,
         },
         'humanApprovalContract':
             'A prepared proof remains inert until the user opens Wallet, reviews the exact simulation, approves visibly, and completes fresh Android authentication.',
@@ -151,7 +152,7 @@ class KeeperHubCapability extends CapabilityHandler {
       'submitted': false,
       'approvalOpened': false,
       'nextHumanAction':
-          'Open Wallet > Agent Execution Wallet, refresh if needed, then review or discard the zero-value testnet proof.',
+          'Open Wallet > Agent Execution Wallet, refresh if needed, then review or discard the zero-value Base Mainnet proof.',
       'mayApproveOrExecute': false,
     });
   }

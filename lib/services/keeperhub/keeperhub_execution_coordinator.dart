@@ -9,6 +9,7 @@ import 'keeperhub_auth_store.dart';
 import 'keeperhub_execution_models.dart';
 import 'keeperhub_models.dart';
 import 'keeperhub_policy.dart';
+import 'keeperhub_proof_network.dart';
 import 'keeperhub_receipt_store.dart';
 
 typedef KeeperHubExecutionAttester = Future<Map<String, dynamic>> Function(
@@ -16,7 +17,7 @@ typedef KeeperHubExecutionAttester = Future<Map<String, dynamic>> Function(
 );
 
 /// Reliability coordinator for one deliberately narrow proof action:
-/// zero-value Base Sepolia self-transfer from the KeeperHub Agent Wallet.
+/// zero-value Base Mainnet self-transfer from the KeeperHub Agent Wallet.
 class KeeperHubExecutionCoordinator {
   KeeperHubExecutionCoordinator({
     KeeperHubApiClient? api,
@@ -51,7 +52,23 @@ class KeeperHubExecutionCoordinator {
     required String taskId,
     required String reason,
   }) async {
-    if (await receiptStore.active() != null) {
+    final active = await receiptStore.active();
+    if (active != null &&
+        KeeperHubProofPolicy.isLegacyTestnetTransfer(active.transfer) &&
+        const <KeeperHubExecutionPhase>{
+          KeeperHubExecutionPhase.proposed,
+          KeeperHubExecutionPhase.awaitingApproval,
+        }.contains(active.phase)) {
+      await receiptStore.upsert(
+        active.copyWith(
+          phase: KeeperHubExecutionPhase.rejected,
+          errorCode: 'legacy_testnet_proof_retired',
+          errorMessage:
+              'The unsubmitted Base Sepolia proof was retired when Plawie moved to Base Mainnet.',
+          updatedAt: _clock().toUtc(),
+        ),
+      );
+    } else if (active != null) {
       throw const KeeperHubException(
         'execution_already_active',
         'Recover or finish the active Agent Wallet execution first.',
@@ -168,7 +185,7 @@ class KeeperHubExecutionCoordinator {
         intentId: record.intentId,
         personalWalletAddress: record.personalWalletAddress,
         agentWalletAddress: record.agentWalletAddress,
-        chainId: KeeperHubProofPolicy.baseSepoliaChainId,
+        chainId: KeeperHubProofNetwork.chainId,
         amount: '0 ETH',
         reason: record.reason,
         simulation: record.simulation!,
@@ -190,7 +207,7 @@ class KeeperHubExecutionCoordinator {
 
     final attestation = await _attester(<String, dynamic>{
       'intentId': record.intentId,
-      'chainId': KeeperHubProofPolicy.baseSepoliaChainId,
+      'chainId': KeeperHubProofNetwork.chainId,
       'from': record.agentWalletAddress,
       'to': record.transfer['recipientAddress'],
       'amount': record.transfer['amount'],
@@ -467,7 +484,7 @@ class KeeperHubExecutionCoordinator {
       final verified = hash != null &&
           receipts.length == 1 &&
           receipts.single.hash.toLowerCase() == hash.toLowerCase() &&
-          receipts.single.chainId == KeeperHubProofPolicy.baseSepoliaChainId &&
+          receipts.single.chainId == KeeperHubProofNetwork.chainId &&
           receipts.single.verified &&
           receipts.single.receiptStatus == 'success' &&
           receipts.single.verifiedAt != null;

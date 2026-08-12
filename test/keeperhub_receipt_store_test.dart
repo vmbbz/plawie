@@ -79,7 +79,7 @@ void main() {
     final record = _record(now);
     final tampered = record.toJson();
     tampered['transfer'] = <String, dynamic>{
-      'chainId': 84532,
+      'chainId': 8453,
       'recipientAddress': record.agentWalletAddress,
       'amount': '1',
     };
@@ -89,6 +89,32 @@ void main() {
 
     expect(await store.read(), isEmpty);
     expect(await store.active(), isNull);
+  });
+
+  test('preserves a terminal legacy Sepolia receipt as read-only evidence',
+      () async {
+    final persistence = _MemoryPersistence();
+    final legacy = _record(now)
+        .copyWith(
+          phase: KeeperHubExecutionPhase.rejected,
+          errorCode: 'user_discarded',
+          errorMessage: 'Discarded before the Base Mainnet migration.',
+        )
+        .toJson();
+    legacy['transfer'] = <String, dynamic>{
+      'chainId': 84532,
+      'recipientAddress': legacy['agentWalletAddress'],
+      'amount': '0',
+    };
+    persistence.receipts = <String>[jsonEncode(legacy)];
+
+    final records = await KeeperHubReceiptStore(
+      persistence: persistence,
+    ).read();
+
+    expect(records, hasLength(1));
+    expect(records.single.transfer['chainId'], 84532);
+    expect(records.single.isTerminal, isTrue);
   });
 }
 
@@ -104,7 +130,7 @@ KeeperHubExecutionRecord _record(
       agentWalletAddress: '0x2222222222222222222222222222222222222222',
       reason: 'Prove the Agent Wallet path.',
       transfer: const <String, dynamic>{
-        'chainId': 84532,
+        'chainId': 8453,
         'recipientAddress': '0x2222222222222222222222222222222222222222',
         'amount': '0',
       },

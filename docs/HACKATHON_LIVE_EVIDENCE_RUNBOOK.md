@@ -11,10 +11,10 @@ submission and validate the two wallet-funded model paths without exposing a
 seed, private key, signature, organization credential, cookie, or payment
 header.
 
-The required KeeperHub proof is a zero-value, Base Sepolia self-transfer from
-the dedicated KeeperHub Agent Execution Wallet. It is not a mainnet transfer,
-it cannot target an arbitrary recipient, and it does not grant the agent a
-generic execution API.
+The required KeeperHub proof is a zero-value Base Mainnet self-transfer from
+the dedicated KeeperHub Agent Execution Wallet. It is a real mainnet
+transaction, but it cannot move non-zero value, target an arbitrary recipient,
+include calldata, or grant the agent a generic execution API.
 
 ```text
 OpenClaw prepares an inert proof
@@ -33,7 +33,7 @@ OpenClaw prepares an inert proof
 - Only a person holding the device may accept an Android authentication prompt
   or a payment/bridge approval. A test operator must not tap through one on the
   user's behalf.
-- The KeeperHub proof must remain `Base Sepolia (84532)`, amount `0`, and
+- The KeeperHub proof must remain `Base Mainnet (8453)`, amount `0`, and
   recipient equal to the Agent Execution Wallet. Stop immediately if the
   rendered review shows another network, value, recipient, contract call, or
   expiry that is unexpectedly short.
@@ -50,14 +50,16 @@ OpenClaw prepares an inert proof
 
 | Test | Funding required | What to fund | Why |
 | --- | --- | --- | --- |
-| KeeperHub zero-value proof | Usually no mainnet funds | Base Sepolia ETH only if KeeperHub gas sponsorship is unavailable | A `0 ETH` EVM transaction still consumes testnet gas. |
-| BlockRun paid chat | `$3` Base USDC is suitable | Plawie's **Personal Wallet** on Base (`8453`) | BlockRun charges per accepted request; price is discovered from the live `402` response, not hard-coded. |
+| KeeperHub zero-value proof | `0 ETH` value; gas is still required | Prefer KeeperHub sponsorship. If unavailable, fund only the **Agent Execution Wallet** with the minimum Base ETH needed for gas. | Base Mainnet is sponsorship-supported when the organization has gas credits; sponsorship pays gas, not transferred value. |
+| BlockRun paid chat | `$3` is the test budget, not a hard-coded price | Plawie's **Personal Wallet** on Base (`8453`) | Proceed only when the fresh `402` price and available Base USDC fit the funded balance. |
 | Venice top-up + chat | At least the current `$5` top-up plus bridge/transaction headroom | Plawie's **Personal Wallet** on Base (`8453`) | The 12 August 2026 top-up challenge required `5,000,000` USDC base units (`$5`). A `$3` balance cannot complete that top-up. |
 
 Phantom-held USDC on Solana is not spendable by the current in-app Base signer.
 Use Plawie's bridge flow to send it to the Personal Wallet's Base address, and
-retain enough SOL in Phantom for the source-chain transaction fee. Do not fund
-the Agent Execution Wallet with production funds for this proof.
+retain enough SOL in Phantom for the source-chain transaction fee. Do not send
+USDC or discretionary production funds to the Agent Execution Wallet for this
+proof. If sponsorship is unavailable, stop and fund only the minimum Base ETH
+gas amount after checking the simulation.
 
 Venice officially supports Base and Solana wallet authentication, but Plawie's
 current x402 payment policy intentionally accepts only Base Mainnet for its
@@ -104,7 +106,7 @@ organization or key.
 1. From chat, request KeeperHub capability/status information.
 2. Capture the result showing that the agent may inspect `capabilities`,
    `status`, and `receipts`, and may `prepare` the proof, but cannot approve,
-   sign, submit, retry, revoke a credential, or move mainnet value.
+   sign, submit, retry, revoke a credential, or move non-zero value.
 3. Ask it to prepare the proof. The expected result is an inert proposal that
    directs the human to **Wallet**; it must not open a payment sheet or submit.
 
@@ -117,17 +119,18 @@ organization or key.
 
    | Field | Required value |
    | --- | --- |
-   | Chain | Base Sepolia |
-   | Chain ID | `84532` |
+   | Chain | Base Mainnet |
+   | Chain ID | `8453` |
    | Sender | Agent Execution Wallet |
    | Recipient | Same Agent Execution Wallet |
    | Amount | `0 ETH` |
    | Action | bounded self-transfer only |
    | Simulation | success, not reverted |
 
-4. If the simulation or execution reports insufficient gas and no sponsorship
-   is available, use a Base Sepolia ETH faucet to fund the **Agent Execution
-   Wallet**. Re-simulate; do not substitute mainnet funds.
+4. If the simulation reports insufficient gas and sponsorship is unavailable,
+   stop. Fund only the displayed **Agent Execution Wallet** with the minimum
+   Base Mainnet ETH needed for gas, then re-simulate. Never substitute USDC or
+   broaden the transfer amount.
 5. Approve from the foreground review and authenticate on Android.
 6. Once the UI is polling, deliberately interrupt the app: force-close it or
    disable connectivity. Record the displayed execution ID before interruption
@@ -135,7 +138,7 @@ organization or key.
 7. Reopen the app and choose recovery/resume. Confirm that the same execution
    ID is polled, with no second submission or second request ID.
 8. Capture the completed card, the verified receipt, and the independent Base
-   Sepolia explorer transaction page. There must be exactly one transaction
+   Mainnet explorer transaction page. There must be exactly one transaction
    hash and one successful receipt matching the execution.
 
 ## B. BlockRun Base-USDC chat
@@ -179,16 +182,16 @@ claim of completion.
 
 | Item | Result | Evidence reference | Notes |
 | --- | --- | --- | --- |
-| Artifact version / SHA-256 | Not run |  |  |
-| Focused automated suite | 112 passed | local test output | 12 Aug 2026 |
+| Artifact version / SHA-256 | Debug built; install verification pending | `2E7EE12F12A5E9B60A769CAF9589D847C8DF87B105B04A804B519A0CEBC86C63` | 12 Aug 2026 |
+| Focused mainnet policy suite | 26 Flutter + 5 Android passed | local test output | 12 Aug 2026 |
 | Live Venice top-up challenge | Parsed, no signature | local live 402 check | 12 Aug 2026; the provider omits `resource`, so Plawie binds only its catalogued Venice HTTPS endpoint before it can display approval |
-| Agent Wallet disclosure | Not run |  |  |
-| KeeperHub SIWE onboarding | Not run |  |  |
-| Separate agent wallet visible | Not run |  |  |
+| Agent Wallet disclosure | Observed; capture required | physical device | 12 Aug 2026 |
+| KeeperHub SIWE onboarding | Completed; capture required | physical device | 12 Aug 2026 |
+| Separate agent wallet visible | Connected; capture required | physical device | 12 Aug 2026 |
 | Agent capability boundary | Not run |  |  |
 | Rejected proof / no execution | Not run |  |  |
 | Proof simulation | Not run |  |  |
-| Zero-value Base Sepolia submission | Not run |  |  |
+| Zero-value Base Mainnet submission | Not run |  |  |
 | Interrupted polling recovery | Not run |  |  |
 | One verified receipt / explorer hash | Not run |  |  |
 | Phantom to Base bridge | Not run |  |  |
@@ -204,7 +207,7 @@ now. It may describe a **completed live proof** only after the following are
 all present:
 
 - physical device onboarding evidence;
-- a completed zero-value Base Sepolia transaction;
+- a completed zero-value Base Mainnet transaction;
 - interruption/restart evidence that preserves one execution identity;
 - a verified receipt and independently reachable explorer transaction;
 - a short video or ordered screenshots showing the consent, review, recovery,
@@ -219,6 +222,7 @@ provider outage cannot delay the hackathon transaction.
 
 - [KeeperHub platform reference](https://docs.keeperhub.com/platform-reference)
 - [KeeperHub direct execution](https://docs.keeperhub.com/api/direct-execution)
-- [KeeperHub pricing and sponsored gas](https://keeperhub.com/pricing)
+- [KeeperHub gas and sponsorship](https://docs.keeperhub.com/wallet-management/gas)
+- [KeeperHub supported chains](https://docs.keeperhub.com/api/chains)
 - [Venice x402 integration](https://docs.venice.ai/guides/integrations/x402-venice-api)
 - [BlockRun x402 endpoints](https://blockrun.ai/docs/x402/endpoints)

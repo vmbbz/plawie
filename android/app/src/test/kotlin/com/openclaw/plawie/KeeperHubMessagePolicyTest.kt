@@ -90,10 +90,10 @@ Issued At: 2026-08-10T12:00:00.000Z""",
     }
 
     @Test
-    fun attestsOnlyTheZeroValueBaseSepoliaSelfTransfer() {
+    fun attestsOnlyTheZeroValueBaseMainnetSelfTransfer() {
         val arguments = mapOf(
             "intentId" to "intent_12345678",
-            "chainId" to "84532",
+            "chainId" to "8453",
             "from" to "0x2222222222222222222222222222222222222222",
             "to" to "0x2222222222222222222222222222222222222222",
             "amount" to "0",
@@ -112,7 +112,7 @@ Issued At: 2026-08-10T12:00:00.000Z""",
         assertTrue(request.message.contains("Amount: 0 ETH"))
 
         listOf(
-            arguments + ("chainId" to "8453"),
+            arguments + ("chainId" to "84532"),
             arguments + ("amount" to "0.000001"),
             arguments + ("to" to "0x3333333333333333333333333333333333333333"),
             arguments + ("contractAddress" to wallet),

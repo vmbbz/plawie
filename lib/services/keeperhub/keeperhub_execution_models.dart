@@ -1,4 +1,5 @@
 import 'keeperhub_models.dart';
+import 'keeperhub_proof_network.dart';
 
 enum KeeperHubExecutionPhase {
   proposed,
@@ -356,7 +357,10 @@ void _validateStoredProofTransfer(
   if (transfer.length != expectedKeys.length ||
       !transfer.keys.every(expectedKeys.contains) ||
       transfer['chainId'] is! int ||
-      transfer['chainId'] != 84532 ||
+      !const <int>{
+        KeeperHubProofNetwork.chainId,
+        KeeperHubProofNetwork.legacyBaseSepoliaChainId,
+      }.contains(transfer['chainId']) ||
       transfer['amount'] is! String ||
       transfer['amount'] != '0') {
     throw const FormatException('Stored KeeperHub proof transfer is invalid.');

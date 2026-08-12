@@ -34,7 +34,7 @@ void main() {
 
     expect(controller.connectCalls, 1);
     expect(find.text('KEEPERHUB-MANAGED'), findsOneWidget);
-    expect(find.text('BASE SEPOLIA'), findsOneWidget);
+    expect(find.text('BASE MAINNET'), findsOneWidget);
     expect(find.text('0x222222…222222'), findsOneWidget);
   });
 
@@ -49,7 +49,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Simulate safe testnet proof'));
+    await tester.tap(find.text('Simulate safe mainnet proof'));
     await tester.pumpAndSettle();
 
     expect(controller.prepareCalls, 1);
@@ -161,7 +161,7 @@ KeeperHubExecutionRecord _prepared() {
     agentWalletAddress: '0x2222222222222222222222222222222222222222',
     reason: 'Prove human-governed Agent Wallet execution.',
     transfer: const <String, dynamic>{
-      'chainId': 84532,
+      'chainId': 8453,
       'recipientAddress': '0x2222222222222222222222222222222222222222',
       'amount': '0',
     },

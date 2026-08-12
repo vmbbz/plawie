@@ -41,7 +41,7 @@ void main() {
           submittedIdempotency = request.headers['idempotency-key'];
           final body = jsonDecode(request.body) as Map<String, dynamic>;
           expect(body, <String, dynamic>{
-            'chainId': 84532,
+            'chainId': 8453,
             'recipientAddress': agent,
             'amount': '0',
           });
@@ -235,6 +235,57 @@ void main() {
     coordinator.close();
   });
 
+  test('retires an unsubmitted Sepolia proposal before preparing mainnet work',
+      () async {
+    final authStore = await _readyAuthStore(now, personal, agent);
+    final persistence = _MemoryReceiptPersistence();
+    final legacy = KeeperHubExecutionRecord(
+      intentId: 'kh_legacy_12345678',
+      taskId: 'legacy-proof-2026-08-10',
+      phase: KeeperHubExecutionPhase.proposed,
+      personalWalletAddress: personal,
+      agentWalletAddress: agent,
+      reason: 'Legacy unsubmitted proof.',
+      transfer: const <String, dynamic>{
+        'chainId': 84532,
+        'recipientAddress': agent,
+        'amount': '0',
+      },
+      createdAt: now,
+      updatedAt: now,
+    );
+    persistence.receipts = <String>[jsonEncode(legacy.toJson())];
+    final api = KeeperHubApiClient(
+      client: MockClient((request) async {
+        expect(jsonDecode(request.body)['chainId'], 8453);
+        expect(jsonDecode(request.body)['simulate'], isTrue);
+        return _json(200, _successfulSimulation(agent));
+      }),
+    );
+    final coordinator = KeeperHubExecutionCoordinator(
+      api: api,
+      authStore: authStore,
+      receiptStore: KeeperHubReceiptStore(persistence: persistence),
+      clock: () => now,
+    );
+
+    final prepared = await coordinator.prepareProof(
+      taskId: 'mainnet-proof-2026-08-12',
+      reason: 'Prepare the bounded Base Mainnet proof.',
+    );
+    final records = await coordinator.receiptStore.read();
+    final retired = records.singleWhere(
+      (record) => record.intentId == legacy.intentId,
+    );
+
+    expect(prepared.transfer['chainId'], 8453);
+    expect(retired.phase, KeeperHubExecutionPhase.rejected);
+    expect(retired.errorCode, 'legacy_testnet_proof_retired');
+    expect(
+        (await coordinator.receiptStore.active())?.intentId, prepared.intentId);
+    coordinator.close();
+  });
+
   test('records a reverting simulation and never requests approval or submit',
       () async {
     final authStore = await _readyAuthStore(now, personal, agent);
@@ -415,12 +466,12 @@ Map<String, dynamic> _completedStatus(String hash) => <String, dynamic>{
       'status': 'completed',
       'type': 'transfer',
       'transactionHash': hash,
-      'transactionLink': 'https://sepolia.basescan.org/tx/$hash',
+      'transactionLink': 'https://basescan.org/tx/$hash',
       'sponsored': true,
       'receipts': <Map<String, dynamic>>[
         <String, dynamic>{
           'hash': hash,
-          'chainId': 84532,
+          'chainId': 8453,
           'verified': true,
           'receiptStatus': 'success',
           'blockNumber': 123,

@@ -36,7 +36,7 @@ void main() {
     expect(find.text('Authorize Agent Wallet proof'), findsOneWidget);
     expect(find.text('Zero-value self-transfer'), findsOneWidget);
     expect(find.text('0 ETH'), findsOneWidget);
-    expect(find.text('Base Sepolia · chain 84532'), findsOneWidget);
+    expect(find.text('Base Mainnet · chain 8453'), findsOneWidget);
     expect(find.textContaining('KeeperHub manages'), findsOneWidget);
     expect(
       find.text('0x2222222222222222222222222222222222222222'),
@@ -101,7 +101,7 @@ PendingKeeperHubApproval _pending() => PendingKeeperHubApproval(
       intentId: 'kh_intent_12345678',
       personalWalletAddress: '0x1111111111111111111111111111111111111111',
       agentWalletAddress: '0x2222222222222222222222222222222222222222',
-      chainId: 84532,
+      chainId: 8453,
       amount: '0 ETH',
       reason: 'Prove human-governed Agent Wallet execution.',
       simulation: const KeeperHubSimulation(

@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../constants.dart';
 import '../services/keeperhub/keeperhub_execution_models.dart';
 import '../services/keeperhub/keeperhub_models.dart';
+import '../services/keeperhub/keeperhub_proof_network.dart';
 import '../services/keeperhub/keeperhub_wallet_controller.dart';
 import 'glass_card.dart';
 
@@ -119,7 +120,7 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
   }
 
   Future<void> _prepareProof() => _run(
-        initialProgress: 'Simulating a zero-value Base Sepolia proof…',
+        initialProgress: 'Simulating a zero-value Base Mainnet proof…',
         operation: _controller.prepareProof,
       );
 
@@ -358,7 +359,7 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
           runSpacing: 8,
           children: [
             _chip('KEEPERHUB-MANAGED', AppColors.statusAmber),
-            _chip('BASE SEPOLIA', AppColors.statusGreen),
+            _chip('BASE MAINNET', AppColors.statusGreen),
             _chip('HUMAN APPROVAL', AppColors.statusGreen),
           ],
         ),
@@ -405,7 +406,7 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
               child: FilledButton.icon(
                 onPressed: _busy ? null : _prepareProof,
                 icon: const Icon(Icons.science_outlined),
-                label: const Text('Simulate safe testnet proof'),
+                label: const Text('Simulate safe mainnet proof'),
               ),
             )
           else
@@ -493,7 +494,7 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
           Text(
             execution.phase == KeeperHubExecutionPhase.outcomeUnknown
                 ? 'The same persisted work will be reconciled. Plawie will not create a replacement transaction.'
-                : 'Base Sepolia self-transfer · simulation-bound · no Mainnet value',
+                : '${KeeperHubProofNetwork.name} self-transfer · simulation-bound · exactly 0 ETH',
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 12),

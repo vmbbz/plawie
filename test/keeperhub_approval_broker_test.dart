@@ -63,7 +63,7 @@ PendingKeeperHubApproval _pending(DateTime now) => PendingKeeperHubApproval(
       intentId: 'kh_intent_12345678',
       personalWalletAddress: '0x1111111111111111111111111111111111111111',
       agentWalletAddress: '0x2222222222222222222222222222222222222222',
-      chainId: 84532,
+      chainId: 8453,
       amount: '0 ETH',
       reason: 'Prove the Agent Wallet path.',
       simulation: const KeeperHubSimulation(
