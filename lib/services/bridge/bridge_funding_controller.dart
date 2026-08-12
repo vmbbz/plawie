@@ -902,13 +902,14 @@ final class BridgeFundingController implements BridgeFundingUiController {
         quote.fingerprint) {
       throw const BridgeValidationException('quote_fingerprint_mismatch');
     }
-    final mode = identity.approvedMethods.contains('solana_signTransaction')
-        ? SolanaWalletSubmissionMode.signOnly
-        : identity.approvedMethods.contains('solana_signAndSendTransaction')
+    final mode =
+        identity.approvedMethods.contains('solana_signAndSendTransaction')
             ? SolanaWalletSubmissionMode.signAndSend
-            : throw const BridgeValidationException(
-                'connected_wallet_mismatch',
-              );
+            : identity.approvedMethods.contains('solana_signTransaction')
+                ? SolanaWalletSubmissionMode.signOnly
+                : throw const BridgeValidationException(
+                    'connected_wallet_mismatch',
+                  );
     return _PreparedSolanaIntent(
       intentId: intentId,
       request: request,
@@ -1700,11 +1701,9 @@ final class BridgeFundingController implements BridgeFundingUiController {
     final methodUnchanged = switch (prepared.submissionMode) {
       SolanaWalletSubmissionMode.signOnly =>
         current?.approvedMethods.contains('solana_signTransaction') ?? false,
-      SolanaWalletSubmissionMode.signAndSend => !(current?.approvedMethods
-                  .contains('solana_signTransaction') ??
-              true) &&
-          (current?.approvedMethods.contains('solana_signAndSendTransaction') ??
-              false),
+      SolanaWalletSubmissionMode.signAndSend =>
+        current?.approvedMethods.contains('solana_signAndSendTransaction') ??
+            false,
     };
     if (current == null ||
         current.transport != prepared.identity.transport ||

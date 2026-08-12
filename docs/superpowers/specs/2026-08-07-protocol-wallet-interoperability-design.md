@@ -189,9 +189,9 @@ official Kotlin MWA client. A dedicated platform bridge exposes only:
 
 - discover/authorize a Mainnet wallet;
 - return the wallet-selected case-sensitive public key and supported features;
-- submit one exact serialized transaction using the strongest wallet-advertised
-  mode: sign-only when available, otherwise the standard MWA
-  `signAndSendTransactions` operation;
+- submit one exact serialized transaction through MWA 2.0's standard mandatory
+  `signAndSendTransactions` operation, even when the wallet also advertises the
+  deprecated sign-only extension;
 - deauthorize and clear SDK-scoped authorization state.
 
 The Android MWA intent invokes the system-compatible wallet chooser. Plawie does
@@ -199,10 +199,11 @@ not query or launch Phantom, Solflare, Jupiter, or another MWA wallet by package
 name. SDK authorization material stays in SDK-scoped secure storage or memory
 and never enters Dart preferences, receipts, logs, or agent payloads.
 
-Selection is capability-based, never brand-based. When the wallet still exposes
-sign-only, Plawie compares the returned signed transaction with the reviewed
-message and signer, persists the derived transaction signature, and broadcasts
-those exact bytes once through its bounded Solana broadcaster.
+Selection is capability-based, never brand-based. Sign-only remains available
+only to the explicit bounded compatibility adapters; Plawie compares their
+returned transaction with the reviewed message and signer, persists the derived
+signature, and broadcasts those exact bytes once through its bounded Solana
+broadcaster.
 
 MWA 2.0 requires wallets to expose `signAndSendTransactions`, while sign-only is
 deprecated and may be absent. In that case Plawie validates and freezes the
@@ -351,10 +352,10 @@ unmonitored Jumper. It never instructs the user to import a seed or private key.
 
 - Reown EVM supports any fake wallet exposing the requested namespace, chain,
   account, and method, regardless of brand label.
-- MWA authorizes, rejects, and deauthorizes; capability negotiation chooses
-  sign-only when exposed and otherwise chooses `signAndSendTransactions`.
-- The sign-only path rejects changed account/message bytes, persists the
-  signature, and invokes the Plawie broadcaster exactly once.
+- MWA authorizes, rejects, and deauthorizes; native submission always chooses
+  the standard `signAndSendTransactions` operation.
+- The bounded fallback sign-only path rejects changed account/message bytes,
+  persists the signature, and invokes the Plawie broadcaster exactly once.
 - The sign-and-send path validates the reviewed bytes before invocation,
   validates and persists the returned signature, never invokes the Plawie
   broadcaster, and converts ambiguous completion into
@@ -393,10 +394,9 @@ The master implementation plan must be amended before Task 2 starts:
   Solana fallback.
 - Task 6 covers generic EVM WalletConnect execution and direct Base USDC
   transfer in addition to LI.FI EVM execution.
-- Task 7 covers capability-negotiated MWA submission: verified sign-only plus
-  one Plawie RPC broadcast when supported, otherwise reviewed MWA sign-and-send
-  plus signature persistence and status polling. Reown fallback remains
-  sign-only.
+- Task 7 covers reviewed native MWA sign-and-send plus signature persistence and
+  status polling. Verified sign-only plus one Plawie RPC broadcast remains
+  exclusive to the bounded Reown fallback.
 - Task 10 presents protocol-based wallet choice and capability errors.
 - Task 11 documents the compatibility matrix as capability-based and read-only
   to agents.
@@ -417,8 +417,8 @@ The master implementation plan must be amended before Task 2 starts:
 - [ ] Base USDC already on Base uses a direct reviewed transfer, not a bridge.
 - [ ] Namespace, chain, account, method, review, callback, and returned signed
       bytes or transaction signature are bound before state advances.
-- [ ] MWA sign-only broadcasts through Plawie at most once; MWA sign-and-send
-      never triggers a Plawie broadcast or an automatic resubmission.
+- [ ] Native MWA sign-and-send never triggers a Plawie broadcast or automatic
+      resubmission; bounded fallback sign-only broadcasts at most once.
 - [ ] Agent, Gateway, receipts, and logs receive no wallet session material.
 - [ ] Internal Base wallet, x402, setup, models, native Gateway, and skills are
       unchanged by wallet transport availability.

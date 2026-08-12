@@ -492,10 +492,7 @@ void main() {
       () async {
     wallet.identity = _solanaIdentity(
       address: solanaFixture.signer,
-      methods: const <String>{
-        'solana_signTransaction',
-        'solana_signAndSendTransaction',
-      },
+      methods: const <String>{'solana_signTransaction'},
     );
     wallet.solanaResult = SignedSolanaTransaction(
       solanaFixture.signedTransaction,
@@ -548,12 +545,14 @@ void main() {
     expect(solanaRpc.broadcasts, hasLength(1));
   });
 
-  test(
-      'Solana MWA sign-and-send verifies the returned signature without RPC send',
+  test('Solana MWA prefers sign-and-send when sign-only is also advertised',
       () async {
     wallet.identity = _solanaIdentity(
       address: solanaFixture.signer,
-      methods: const <String>{'solana_signAndSendTransaction'},
+      methods: const <String>{
+        'solana_signTransaction',
+        'solana_signAndSendTransaction',
+      },
     );
     wallet.solanaResult = SubmittedSolanaTransaction(solanaFixture.signature);
     quotes.quotes.add(_solanaQuote(now: now, fixture: solanaFixture));

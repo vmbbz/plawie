@@ -115,9 +115,10 @@ USDC, expose a bridge execution button, or enable any wallet gate by default.
 - EVM sessions use Reown AppKit's protocol and dynamic Explorer catalog. The
   selected chain, public account, and `eth_sendTransaction` approval must match
   exactly; display names never choose EVM execution code.
-- Solana uses native MWA first. If sign-only is advertised, Dart receives the
-  signed bytes. Otherwise MWA's mandatory sign-and-send path returns one
-  signature. Native authorization state never crosses the platform channel.
+- Solana uses native MWA first. MWA uses its standard mandatory sign-and-send
+  path and returns one signature even when a wallet also advertises deprecated
+  sign-only support. Native authorization state never crosses the platform
+  channel.
 - Phantom and Solflare are bounded sign-only compatibility fallbacks. They are
   shown only after MWA is proven unavailable and must be selected explicitly.
   Their base58 response is decoded once into raw bytes before leaving the
@@ -219,12 +220,12 @@ Plawie review and wallet confirmation.
 
 ### Solana submission
 
-MWA sign-only returns signed bytes that must contain the exact reviewed message,
-blockhash, and signer; Plawie broadcasts those verified bytes at most once.
 MWA sign-and-send returns a signature that is verified and persisted; Plawie
-does not broadcast again. Unknown, stale, changed-account, changed-message, or
-ambiguous outcomes remain blocked from resubmission and require evidence-bound
-signature/history reconciliation.
+does not broadcast again. Sign-only remains limited to the explicit bounded
+compatibility adapters, whose returned bytes must contain the exact reviewed
+message, blockhash, and signer before Plawie broadcasts once. Unknown, stale,
+changed-account, changed-message, or ambiguous outcomes remain blocked from
+resubmission and require evidence-bound signature/history reconciliation.
 
 ### Relay self-custody deposit
 

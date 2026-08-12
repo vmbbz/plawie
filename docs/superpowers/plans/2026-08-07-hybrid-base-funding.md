@@ -1073,8 +1073,8 @@ one frozen base64 serialized transaction and returns exactly one tagged result:
 {mode: signAndSend, signatureBase58: ...}
 ```
 
-If sign-only is advertised, request it. Otherwise invoke MWA 2.0's mandatory
-`signAndSendTransactions` once. SDK authorization state stays in native
+Invoke MWA 2.0's mandatory `signAndSendTransactions` once even when deprecated
+sign-only is also advertised. SDK authorization state stays in native
 SDK-scoped storage or memory and is never returned to Dart. Cancellation,
 authorization failure, invalid payload, and ambiguous submission use stable
 error codes and never trigger a second request.
@@ -1376,12 +1376,12 @@ Prove both branches start from a fresh validated SVM quote, an exact Plawie
 review, and a persisted `awaitingExternalWallet` receipt containing the exact
 message SHA-256 `reviewedPayloadHash` and parsed `sourceBlockhash`:
 
-1. If MWA advertises sign-only, or an enabled Reown Phantom/Solflare fallback is
-   selected, send only the frozen reviewed transaction for signature; verify the
+1. If an enabled Reown Phantom/Solflare fallback is selected, send only the
+   frozen reviewed transaction for signature; verify the
    returned signed bytes; persist the derived source signature before RPC;
    invoke Plawie's broadcaster exactly once; and resume with status polling only.
-2. If MWA does not advertise sign-only, invoke native
-   `signAndSendTransactions` exactly once; verify the returned signature against
+2. For native MWA, invoke `signAndSendTransactions` exactly once even if the
+   wallet advertises deprecated sign-only; verify the returned signature against
    the frozen reviewed message and signer; persist it before any provider/RPC
    status call; never invoke Plawie's broadcaster; and resume with status
    polling only.
@@ -1735,7 +1735,7 @@ Advertise only the four read commands. Update the agent prompt to say that quote
   fallback behavior;
 - exact EVM allowance and double-review flow;
 - direct Base USDC transfer without LI.FI or an allowance;
-- MWA sign-only verification plus one-call Plawie broadcast when supported;
+- bounded fallback sign-only verification plus one-call Plawie broadcast;
 - mandatory MWA sign-and-send review, returned-signature verification,
   persistence, status polling, and unknown-outcome no-resubmit behavior;
 - Relay self-custody-only rule and CEX exclusion;
@@ -1853,10 +1853,10 @@ On device:
 - [ ] **Step 6: Perform controlled Mainnet proof only with fresh user approval**
 
 The user chooses method, source wallet, token, and deliberately small amount in
-the UI. Stream filtered wallet/bridge logs while the user approves. For a Solana
-proof, record the advertised MWA mode before approval: sign-only must show one
-Plawie broadcast; sign-and-send must show zero Plawie broadcasts and one
-persisted returned signature. For direct Base USDC, prove LI.FI and allowance
+the UI. Stream filtered wallet/bridge logs while the user approves. For a native
+MWA Solana proof, verify sign-and-send produces zero Plawie broadcasts and one
+persisted returned signature. A separately approved fallback sign-only proof
+must show one Plawie broadcast. For direct Base USDC, prove LI.FI and allowance
 calls are absent. For each enabled method, capture only redacted evidence of
 source signature/hash or deposit detection, provider/chain terminal status,
 destination hash, and Base balance refresh. Never automate confirmation or
@@ -1887,9 +1887,9 @@ If device acceptance required source corrections, rerun the affected focused and
       hardcoded support allowlist.
 - [ ] Native MWA invokes the Android-compatible wallet chooser without a Solana
       wallet package allowlist.
-- [ ] MWA sign-only verifies reviewed bytes and Plawie broadcasts at most once;
-      MWA sign-and-send verifies/persists its returned signature and triggers
-      zero Plawie broadcasts or automatic resubmissions.
+- [ ] Native MWA sign-and-send verifies/persists its returned signature and
+      triggers zero Plawie broadcasts or automatic resubmissions; bounded
+      fallback sign-only verifies reviewed bytes and broadcasts at most once.
 - [ ] Reown Phantom/Solflare links remain fallback-only and sign-only.
 - [ ] Base USDC already on Base uses one reviewed direct transfer, not LI.FI and
       not an allowance.

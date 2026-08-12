@@ -43,10 +43,8 @@ void main() {
     expect(source, contains('Solana.Mainnet'));
     expect(source, contains('getCapabilities()'));
     expect(source, contains('ProtocolContract.FEATURE_ID_SIGN_TRANSACTIONS'));
-    expect(source, contains('signTransactions(arrayOf(transaction))'));
+    expect(source, isNot(contains('signTransactions(arrayOf(transaction))')));
     expect(source, contains('signAndSendTransactions(arrayOf(transaction))'));
-    expect(source, contains('"mode" to "signOnly"'));
-    expect(source, contains('"signedTransactionBytes"'));
     expect(source, contains('"mode" to "signAndSend"'));
     expect(source, contains('"signatureBase58"'));
     expect(source, contains('"authorize"'));

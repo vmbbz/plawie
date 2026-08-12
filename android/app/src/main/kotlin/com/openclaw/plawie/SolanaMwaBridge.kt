@@ -111,7 +111,6 @@ internal class SolanaMwaBridge(private val activity: ComponentActivity) {
         complete(outcome, result, "MWA_AUTH_FAILED")
     }
 
-    @Suppress("DEPRECATION")
     private suspend fun submitTransaction(
         encodedTransaction: String?,
         result: MethodChannel.Result,
@@ -134,28 +133,19 @@ internal class SolanaMwaBridge(private val activity: ComponentActivity) {
             val account = authorization.accounts.firstOrNull()
                 ?: throw IllegalStateException("missing account")
             validateMainnetAccount(account.publicKey, account.chains)
-            val capabilities = getCapabilities()
-            val features = linkedSetOf<String>().apply {
-                account.features?.let(::addAll)
-                addAll(capabilities.supportedOptionalFeatures)
+            // MWA 2.0 makes sign-and-send the standard submission operation.
+            // Some wallets still advertise deprecated sign-only support but do
+            // not reliably complete that request after foreground approval.
+            // Keep sign-only capability discovery for compatibility reporting,
+            // while always using the mandatory submission path here.
+            val signatures = signAndSendTransactions(arrayOf(transaction)).signatures
+            if (signatures.size != 1 || signatures.single().size != 64) {
+                throw IllegalStateException("ambiguous result")
             }
-            if (features.contains(ProtocolContract.FEATURE_ID_SIGN_TRANSACTIONS)) {
-                val signed = signTransactions(arrayOf(transaction)).signedPayloads
-                if (signed.size != 1) throw IllegalStateException("ambiguous result")
-                mapOf(
-                    "mode" to "signOnly",
-                    "signedTransactionBytes" to signed.single(),
-                )
-            } else {
-                val signatures = signAndSendTransactions(arrayOf(transaction)).signatures
-                if (signatures.size != 1 || signatures.single().size != 64) {
-                    throw IllegalStateException("ambiguous result")
-                }
-                mapOf(
-                    "mode" to "signAndSend",
-                    "signatureBase58" to encodeBase58(signatures.single()),
-                )
-            }
+            mapOf(
+                "mode" to "signAndSend",
+                "signatureBase58" to encodeBase58(signatures.single()),
+            )
         }
         complete(outcome, result, "MWA_SUBMIT_FAILED")
     }

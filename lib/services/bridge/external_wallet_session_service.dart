@@ -279,11 +279,12 @@ final class RoutedExternalWalletSessionService
     if (current.publicAddress != payload.from) {
       throw const ExternalWalletException('wallet_account_mismatch');
     }
-    final method = current.approvedMethods.contains('solana_signTransaction')
-        ? 'solana_signTransaction'
-        : current.approvedMethods.contains('solana_signAndSendTransaction')
+    final method =
+        current.approvedMethods.contains('solana_signAndSendTransaction')
             ? 'solana_signAndSendTransaction'
-            : null;
+            : current.approvedMethods.contains('solana_signTransaction')
+                ? 'solana_signTransaction'
+                : null;
     if (method == null) {
       throw const ExternalWalletException('wallet_method_not_approved');
     }

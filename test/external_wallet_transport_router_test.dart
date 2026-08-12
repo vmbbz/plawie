@@ -276,7 +276,7 @@ void main() {
   });
 
   group('production adapter contracts', () {
-    test('native MWA maps public capabilities and preserves signed bytes',
+    test('native MWA maps capabilities and accepts standard submitted evidence',
         () async {
       final platform = _FakeMwaPlatform(
         authorization: <String, Object>{
@@ -288,8 +288,8 @@ void main() {
           'methods': <String>['signTransactions', 'signAndSendTransactions'],
         },
         submission: <String, Object>{
-          'mode': 'signOnly',
-          'signedTransactionBytes': Uint8List.fromList(<int>[1, 2, 3]),
+          'mode': 'signAndSend',
+          'signatureBase58': '1' * 64,
         },
       );
       final adapter = SolanaMwaWalletAdapter(
@@ -308,11 +308,10 @@ void main() {
 
       expect(option.available, isTrue);
       expect(identity.approvedMethods, contains('solana_signTransaction'));
-      expect(result, isA<SignedSolanaTransaction>());
       expect(
-        (result as SignedSolanaTransaction).signedTransaction,
-        <int>[1, 2, 3],
-      );
+          identity.approvedMethods, contains('solana_signAndSendTransaction'));
+      expect(result, isA<SubmittedSolanaTransaction>());
+      expect((result as SubmittedSolanaTransaction).signature, '1' * 64);
       expect(platform.lastTransaction, 'AQ==');
     });
 
