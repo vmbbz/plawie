@@ -1413,13 +1413,20 @@ class _ChatScreenState extends State<ChatScreen>
     }
 
     PaidProviderTurnLease? paidProviderTurnLease;
-    if (_selectedModel.startsWith('${PaidProviderId.venice.wireName}/')) {
+    PaidProviderId? paidProvider;
+    for (final candidate in PaidProviderId.values) {
+      if (_selectedModel.startsWith('${candidate.wireName}/')) {
+        paidProvider = candidate;
+        break;
+      }
+    }
+    if (paidProvider != null) {
       try {
         final conversationId = _persistence.activeSessionId?.trim() ?? '';
         paidProviderTurnLease = PaidProviderTurnAuthorizationService.instance
             .authorizeForegroundUserTurn(
           conversationId: conversationId,
-          provider: PaidProviderId.venice,
+          provider: paidProvider,
           modelId: _selectedModel,
         );
       } on PaidProviderTurnAuthorizationException catch (error) {

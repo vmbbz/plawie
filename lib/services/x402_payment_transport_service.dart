@@ -250,23 +250,13 @@ class X402PaymentTransportService {
         );
       }
 
-      final authorization = <String, dynamic>{
-        'from': payer,
-        'to': requirement.payTo,
-        'value': requirement.amount,
-        'validAfter': validAfter,
-        'validBefore': validBefore,
-        'nonce': intent.paymentNonce,
-      };
-      final paymentPayload = <String, dynamic>{
-        'x402Version': intent.challenge.x402Version,
-        'resource': intent.challenge.resource,
-        'accepted': requirement.toJson(),
-        'payload': <String, dynamic>{
-          'signature': signature,
-          'authorization': authorization,
-        },
-      };
+      final paymentPayload = buildX402V2PaymentPayload(
+        intent: intent,
+        signature: signature,
+        payer: payer,
+        validAfter: validAfter,
+        validBefore: validBefore,
+      );
       final paymentHeader =
           base64Encode(utf8.encode(jsonEncode(paymentPayload)));
 

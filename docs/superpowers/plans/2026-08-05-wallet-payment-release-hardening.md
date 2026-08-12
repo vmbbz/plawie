@@ -318,7 +318,7 @@ Refresh dynamic models, top up a user-selected small amount through exact x402 a
 
 - [ ] **Step 5: Verify BlockRun through OpenClaw**
 
-Select a BlockRun model, send one turn, verify the live 402 amount/payee/resource dialog, cancel once and confirm no retry/payment, then repeat and approve once. Verify one Android authentication, one paid retry, one redacted receipt, and a model response in the same Gateway session.
+Select a BlockRun model, send one turn, verify the live 402 amount/payee/resource dialog, cancel once and confirm no retry/payment, then repeat and approve once. Verify one Android authentication, one paid retry, one redacted receipt, and a model response in the same Gateway session. If the Gateway retries or changes its request body, verify the same visible message never opens a second payment approval; a further paid call requires a new user message.
 
 - [ ] **Step 6: Verify interruption/recovery**
 

@@ -38,6 +38,7 @@ void main() {
     expect(lease.leaseId, 'lease-a');
     expect(lease.conversationId, 'conversation-a');
     expect(lease.remainingProxyCalls, 8);
+    expect(lease.remainingPaymentApprovals, 1);
     expect(lease.expiresAt, start.add(const Duration(minutes: 10)));
 
     final consumed = service.consumeForProxy(
@@ -132,6 +133,37 @@ void main() {
           (error) => error.code,
           'code',
           'foreground_turn_exhausted',
+        ),
+      ),
+    );
+  });
+
+  test('one visible message can claim only one payment approval', () {
+    final service = PaidProviderTurnAuthorizationService(
+      clock: () => start,
+      leaseIdFactory: () => 'lease-a',
+    )..markAppForeground();
+    service.authorizeForegroundUserTurn(
+      conversationId: 'conversation-a',
+      provider: PaidProviderId.blockrun,
+      modelId: 'blockrun/openai/gpt-5.6-luna',
+    );
+
+    final claimed = service.claimPaymentApprovalForProxy(
+      provider: PaidProviderId.blockrun,
+      gatewayModelId: 'blockrun/openai/gpt-5.6-luna',
+    );
+    expect(claimed.remainingPaymentApprovals, 0);
+    expect(
+      () => service.claimPaymentApprovalForProxy(
+        provider: PaidProviderId.blockrun,
+        gatewayModelId: 'blockrun/openai/gpt-5.6-luna',
+      ),
+      throwsA(
+        isA<PaidProviderTurnAuthorizationException>().having(
+          (error) => error.code,
+          'code',
+          'foreground_payment_limit_reached',
         ),
       ),
     );

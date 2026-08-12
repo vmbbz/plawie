@@ -10,6 +10,7 @@ import 'package:clawa/services/paid_provider_approval_broker.dart';
 import 'package:clawa/services/paid_provider_http_client.dart';
 import 'package:clawa/services/paid_provider_proxy_models.dart';
 import 'package:clawa/services/blockrun_paid_provider_proxy_handler.dart';
+import 'package:clawa/services/paid_provider_turn_authorization_service.dart';
 import 'package:clawa/services/x402_payment_service.dart';
 import 'package:clawa/services/x402_payment_transport_service.dart';
 
@@ -17,6 +18,18 @@ void main() {
   const payer = '0x1111111111111111111111111111111111111111';
   const model = 'blockrun/openai/gpt-5.5';
   final now = DateTime.utc(2026, 8, 6, 12);
+  final turns = PaidProviderTurnAuthorizationService.instance;
+
+  setUp(() {
+    turns.markAppForeground();
+    turns.authorizeForegroundUserTurn(
+      conversationId: 'conversation-a',
+      provider: PaidProviderId.blockrun,
+      modelId: model,
+    );
+  });
+
+  tearDown(turns.markAppBackground);
 
   test('relays a free BlockRun response without opening payment UI', () async {
     var calls = 0;
@@ -137,6 +150,13 @@ void main() {
     expect(payment['x402Version'], 2);
     expect(payment['payload']['authorization']['from'], payer);
     expect(payment['payload']['authorization']['value'], '2000');
+    expect(payment['payload']['authorization']['validAfter'], isA<String>());
+    expect(payment['payload']['authorization']['validBefore'], isA<String>());
+    expect(payment['extensions']['bazaar']['info'], 'preserved');
+    expect(
+      payment['extensions']['builder-code']['info']['s'],
+      <String>['blockrun'],
+    );
 
     final receipt = store.receipts.single;
     expect(receipt.state, X402PaymentState.settled);
@@ -288,6 +308,11 @@ void main() {
   test('wallet failure and signer failure never perform a paid retry',
       () async {
     for (final signerFails in <bool>[false, true]) {
+      turns.authorizeForegroundUserTurn(
+        conversationId: 'conversation-a',
+        provider: PaidProviderId.blockrun,
+        modelId: model,
+      );
       var calls = 0;
       final broker = PaidProviderApprovalBroker(clock: () => now)
         ..markAppForeground();
@@ -347,6 +372,56 @@ void main() {
     await expectLater(
       handler(_chatRequest(model)),
       throwsA(
+        isA<PaidProviderProxyException>()
+            .having(
+              (error) => error.code,
+              'code',
+              'paid_retry_rejected',
+            )
+            .having(
+              (error) => error.statusCode,
+              'statusCode',
+              HttpStatus.badRequest,
+            ),
+      ),
+    );
+    expect(calls, 2);
+    expect(store.receipts.single.state, X402PaymentState.failed);
+    expect(store.receipts.single.paidRetryConsumed, isTrue);
+
+    await subscription.cancel();
+    handler.close();
+    await broker.close();
+  });
+
+  test('a changed Gateway retry cannot open a second approval for one message',
+      () async {
+    var calls = 0;
+    var approvals = 0;
+    final broker = PaidProviderApprovalBroker(clock: () => now)
+      ..markAppForeground();
+    final subscription = broker.approvals.listen((approval) {
+      approvals++;
+      broker.approve(approval.intentId);
+    });
+    final handler = BlockRunPaidProviderProxyHandler(
+      httpClient: PaidProviderHttpClient(client: _FakeClient((_) async {
+        calls++;
+        return _paymentRequired();
+      })),
+      approvals: broker,
+      receiptStore: _MemoryReceiptStore(),
+      signer: (_) async => <String, dynamic>{
+        'signature': '0x${'b' * 130}',
+        'payer': payer,
+      },
+      walletStatus: () async => _healthy(payer),
+      clock: () => now,
+    );
+
+    await expectLater(
+      handler(_chatRequest(model)),
+      throwsA(
         isA<PaidProviderProxyException>().having(
           (error) => error.code,
           'code',
@@ -354,9 +429,18 @@ void main() {
         ),
       ),
     );
-    expect(calls, 2);
-    expect(store.receipts.single.state, X402PaymentState.failed);
-    expect(store.receipts.single.paidRetryConsumed, isTrue);
+    await expectLater(
+      handler(_chatRequest(model, prompt: 'hello retry metadata changed')),
+      throwsA(
+        isA<PaidProviderProxyException>().having(
+          (error) => error.code,
+          'code',
+          'foreground_payment_limit_reached',
+        ),
+      ),
+    );
+    expect(calls, 2, reason: 'the changed retry must stop before upstream');
+    expect(approvals, 1, reason: 'one visible message has one approval');
 
     await subscription.cancel();
     handler.close();
@@ -547,11 +631,14 @@ void main() {
   });
 }
 
-PaidProviderProxyRequest _chatRequest(String model) {
+PaidProviderProxyRequest _chatRequest(
+  String model, {
+  String prompt = 'hello',
+}) {
   final body = <String, dynamic>{
     'model': model.substring('blockrun/'.length),
     'messages': [
-      {'role': 'user', 'content': 'hello'},
+      {'role': 'user', 'content': prompt},
     ],
     'tools': [
       {
@@ -612,6 +699,9 @@ String _challenge(String resource) =>
           },
         },
       ],
+      'extensions': <String, dynamic>{
+        'bazaar': <String, dynamic>{'info': 'preserved'},
+      },
     })));
 
 Future<String> _body(PaidProviderProxyResponse response) async => utf8.decode(

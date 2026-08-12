@@ -126,6 +126,18 @@ recipient, Base Mainnet, reason, resource host, and expiry. Approve only passes
 the exact request to the Android signer, which performs separate device
 authentication. Reject, expiry, app backgrounding, or obscured-touch defense
 failure closes the request without payment. A chat message cannot approve it.
+One visible Chat Send may open at most one BlockRun payment approval. Gateway
+retries, changed request bodies, and tool loops cannot mint another approval
+inside that message. If another paid model call is needed, the turn stops and
+the user must send a new foreground message. This preserves exact per-call
+payment review without allowing an internal retry cascade to create repeated
+charges or dialogs.
+
+The x402 v2 payment payload echoes the validated challenge resource and
+extensions, preserves provider attribution, and serializes EIP-3009 integer
+fields in the facilitator-compatible decimal-string wire form. The paid retry
+reuses the exact request bytes once; a second `402` is terminal and is never
+converted into another payment approval.
 
 ## Management surfaces
 

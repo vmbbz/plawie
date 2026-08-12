@@ -379,7 +379,7 @@ git commit -m "feat: expose wallet-funded model management"
 - [x] Gateway messages, context, tools, and tool results are invariant apart from model mapping.
 - [x] Venice inference requires a foreground turn lease and fresh bounded identity signature.
 - [x] Venice top-up and inference remain separate; balance refresh follows both successful operations.
-- [x] Every BlockRun paid call receives exact foreground approval and Android authentication.
+- [x] Every BlockRun paid call receives exact foreground approval and Android authentication; one visible message can open at most one payment approval.
 - [x] BlockRun retries identical upstream bytes once and persists a redacted receipt.
 - [x] Agent/background paths cannot create a lease, approve, sign, retry, or spend.
 - [x] BYOK, offline NDK, skills, and native node routes pass existing regression tests.

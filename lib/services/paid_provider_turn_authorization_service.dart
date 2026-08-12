@@ -23,6 +23,7 @@ class PaidProviderTurnLease {
     required this.createdAt,
     required this.expiresAt,
     required this.remainingProxyCalls,
+    required this.remainingPaymentApprovals,
   });
 
   final String leaseId;
@@ -32,6 +33,7 @@ class PaidProviderTurnLease {
   final DateTime createdAt;
   final DateTime expiresAt;
   final int remainingProxyCalls;
+  final int remainingPaymentApprovals;
 
   PaidProviderTurnLease consumeOne() => PaidProviderTurnLease(
         leaseId: leaseId,
@@ -41,6 +43,18 @@ class PaidProviderTurnLease {
         createdAt: createdAt,
         expiresAt: expiresAt,
         remainingProxyCalls: remainingProxyCalls - 1,
+        remainingPaymentApprovals: remainingPaymentApprovals,
+      );
+
+  PaidProviderTurnLease consumePaymentApproval() => PaidProviderTurnLease(
+        leaseId: leaseId,
+        conversationId: conversationId,
+        provider: provider,
+        modelId: modelId,
+        createdAt: createdAt,
+        expiresAt: expiresAt,
+        remainingProxyCalls: remainingProxyCalls,
+        remainingPaymentApprovals: remainingPaymentApprovals - 1,
       );
 }
 
@@ -54,10 +68,13 @@ class PaidProviderTurnAuthorizationService {
     DateTime Function()? clock,
     String Function()? leaseIdFactory,
     this.maxProxyCalls = 8,
+    this.maxPaymentApprovals = 1,
     this.leaseLifetime = const Duration(minutes: 10),
   })  : _clock = clock ?? DateTime.now,
         _leaseIdFactory = leaseIdFactory ?? _secureLeaseId {
-    if (maxProxyCalls <= 0 || leaseLifetime <= Duration.zero) {
+    if (maxProxyCalls <= 0 ||
+        maxPaymentApprovals <= 0 ||
+        leaseLifetime <= Duration.zero) {
       throw ArgumentError('Paid-provider turn bounds must be positive.');
     }
   }
@@ -68,6 +85,7 @@ class PaidProviderTurnAuthorizationService {
   final DateTime Function() _clock;
   final String Function() _leaseIdFactory;
   final int maxProxyCalls;
+  final int maxPaymentApprovals;
   final Duration leaseLifetime;
 
   bool _appForeground = false;
@@ -116,6 +134,7 @@ class PaidProviderTurnAuthorizationService {
       createdAt: createdAt,
       expiresAt: createdAt.add(leaseLifetime),
       remainingProxyCalls: maxProxyCalls,
+      remainingPaymentApprovals: maxPaymentApprovals,
     );
     if (lease.leaseId.trim().isEmpty) {
       throw StateError('Paid-provider lease identifier is empty.');
@@ -125,6 +144,47 @@ class PaidProviderTurnAuthorizationService {
   }
 
   PaidProviderTurnLease consumeForProxy({
+    required PaidProviderId provider,
+    required String gatewayModelId,
+  }) {
+    final lease = _requireMatchingLease(
+      provider: provider,
+      gatewayModelId: gatewayModelId,
+    );
+    if (lease.remainingProxyCalls <= 0) {
+      throw const PaidProviderTurnAuthorizationException(
+        'foreground_turn_exhausted',
+        'The foreground provider turn reached its request limit.',
+      );
+    }
+    final consumed = lease.consumeOne();
+    _activeLease = consumed;
+    return consumed;
+  }
+
+  /// Claims the single visible payment boundary attached to this user turn.
+  /// A changed request body, Gateway retry, or tool loop cannot mint another
+  /// approval. The user must send a new foreground message for another charge.
+  PaidProviderTurnLease claimPaymentApprovalForProxy({
+    required PaidProviderId provider,
+    required String gatewayModelId,
+  }) {
+    final lease = _requireMatchingLease(
+      provider: provider,
+      gatewayModelId: gatewayModelId,
+    );
+    if (lease.remainingPaymentApprovals <= 0) {
+      throw const PaidProviderTurnAuthorizationException(
+        'foreground_payment_limit_reached',
+        'This message already used its one payment approval. Send a new message to authorize another paid model call.',
+      );
+    }
+    final consumed = lease.consumePaymentApproval();
+    _activeLease = consumed;
+    return consumed;
+  }
+
+  PaidProviderTurnLease _requireMatchingLease({
     required PaidProviderId provider,
     required String gatewayModelId,
   }) {
@@ -156,15 +216,7 @@ class PaidProviderTurnAuthorizationService {
         'The provider request does not match the visible user turn.',
       );
     }
-    if (lease.remainingProxyCalls <= 0) {
-      throw const PaidProviderTurnAuthorizationException(
-        'foreground_turn_exhausted',
-        'The foreground provider turn reached its request limit.',
-      );
-    }
-    final consumed = lease.consumeOne();
-    _activeLease = consumed;
-    return consumed;
+    return lease;
   }
 
   void closeLease(String leaseId) {

@@ -7,6 +7,7 @@ import 'native_bridge.dart';
 import 'paid_provider_approval_broker.dart';
 import 'paid_provider_http_client.dart';
 import 'paid_provider_proxy_models.dart';
+import 'paid_provider_turn_authorization_service.dart';
 import 'x402_payment_service.dart';
 import 'x402_payment_transport_service.dart';
 
@@ -23,6 +24,7 @@ class BlockRunPaidProviderProxyHandler {
     X402PaymentReceiptStore? receiptStore,
     X402AuthorizationSigner? signer,
     BlockRunWalletStatusReader? walletStatus,
+    PaidProviderTurnAuthorizationService? turnAuthorization,
     DateTime Function()? clock,
   })  : _httpClient = httpClient,
         _approvals = approvals ?? PaidProviderApprovalBroker.instance,
@@ -31,6 +33,8 @@ class BlockRunPaidProviderProxyHandler {
         _receiptStore = receiptStore ?? X402PaymentReceiptStore(),
         _signer = signer ?? NativeBridge.signSecureX402Authorization,
         _walletStatus = walletStatus ?? NativeBridge.getSecureEvmWalletStatus,
+        _turnAuthorization =
+            turnAuthorization ?? PaidProviderTurnAuthorizationService.instance,
         _clock = clock ?? DateTime.now;
 
   final PaidProviderHttpClient _httpClient;
@@ -39,6 +43,7 @@ class BlockRunPaidProviderProxyHandler {
   final X402PaymentReceiptStore _receiptStore;
   final X402AuthorizationSigner _signer;
   final BlockRunWalletStatusReader _walletStatus;
+  final PaidProviderTurnAuthorizationService _turnAuthorization;
   final DateTime Function() _clock;
 
   final Set<String> _inFlightFingerprints = <String>{};
@@ -81,6 +86,26 @@ class BlockRunPaidProviderProxyHandler {
       bodyBytes: bodyBytes,
     );
     await _rejectConsumedFingerprint(fingerprint);
+    late PaidProviderTurnLease turnLease;
+    try {
+      turnLease = _turnAuthorization.consumeForProxy(
+        provider: PaidProviderId.blockrun,
+        gatewayModelId: modelId,
+      );
+    } on PaidProviderTurnAuthorizationException catch (error) {
+      throw PaidProviderProxyException(
+        error.message,
+        code: error.code,
+        statusCode: HttpStatus.badRequest,
+      );
+    }
+    if (turnLease.remainingPaymentApprovals <= 0) {
+      throw const PaidProviderProxyException(
+        'This message already used its one payment approval. Send a new message to authorize another paid model call.',
+        code: 'foreground_payment_limit_reached',
+        statusCode: HttpStatus.badRequest,
+      );
+    }
     if (!_inFlightFingerprints.add(fingerprint)) {
       throw const PaidProviderProxyException(
         'This exact BlockRun request is already awaiting payment.',
@@ -127,12 +152,41 @@ class BlockRunPaidProviderProxyHandler {
     }
 
     late X402PaymentChallenge challenge;
-    late PendingPaymentIntent intent;
     try {
       challenge = X402PaymentChallenge.fromHeader(
         challengeHeader,
         policy: const X402PaymentPolicy(allowedHosts: <String>{'blockrun.ai'}),
       );
+    } on X402PaymentPolicyException catch (error) {
+      throw PaidProviderProxyException(
+        error.message,
+        code: 'payment_challenge_invalid',
+        statusCode: HttpStatus.badGateway,
+      );
+    }
+
+    if (_paymentApprovals.activeIntent != null) {
+      throw const PaidProviderProxyException(
+        'Another BlockRun payment request is already active.',
+        code: 'payment_request_busy',
+        statusCode: HttpStatus.conflict,
+      );
+    }
+    try {
+      _turnAuthorization.claimPaymentApprovalForProxy(
+        provider: PaidProviderId.blockrun,
+        gatewayModelId: modelId,
+      );
+    } on PaidProviderTurnAuthorizationException catch (error) {
+      throw PaidProviderProxyException(
+        error.message,
+        code: error.code,
+        statusCode: HttpStatus.badRequest,
+      );
+    }
+
+    late PendingPaymentIntent intent;
+    try {
       intent = _paymentApprovals.createIntent(
         challenge: challenge,
         requestMethod: request.route.method,
@@ -140,13 +194,6 @@ class BlockRunPaidProviderProxyHandler {
         requestBody: bodyBytes,
       );
     } on X402PaymentPolicyException catch (error) {
-      if (_paymentApprovals.activeIntent != null) {
-        throw const PaidProviderProxyException(
-          'Another BlockRun payment request is already active.',
-          code: 'payment_request_busy',
-          statusCode: HttpStatus.conflict,
-        );
-      }
       throw PaidProviderProxyException(
         error.message,
         code: 'payment_challenge_invalid',
@@ -344,7 +391,7 @@ class BlockRunPaidProviderProxyHandler {
       throw const PaidProviderProxyException(
         'BlockRun rejected the one permitted paid retry.',
         code: 'paid_retry_rejected',
-        statusCode: HttpStatus.badGateway,
+        statusCode: HttpStatus.badRequest,
       );
     }
 
@@ -396,23 +443,14 @@ class BlockRunPaidProviderProxyHandler {
         payer.toLowerCase() != walletAddress.toLowerCase()) {
       throw const FormatException('The secure wallet signature is invalid.');
     }
-    final authorization = <String, dynamic>{
-      'from': payer,
-      'to': requirement.payTo,
-      'value': requirement.amount,
-      'validAfter': validAfter,
-      'validBefore': validBefore,
-      'nonce': intent.paymentNonce,
-    };
-    return base64Encode(utf8.encode(jsonEncode(<String, dynamic>{
-      'x402Version': intent.challenge.x402Version,
-      'resource': intent.challenge.resource,
-      'accepted': requirement.toJson(),
-      'payload': <String, dynamic>{
-        'signature': signature,
-        'authorization': authorization,
-      },
-    })));
+    return base64Encode(utf8.encode(jsonEncode(buildX402V2PaymentPayload(
+      intent: intent,
+      signature: signature,
+      payer: payer,
+      validAfter: validAfter,
+      validBefore: validBefore,
+      providerServiceCode: 'blockrun',
+    ))));
   }
 
   Future<void> _recordTerminalSafely({

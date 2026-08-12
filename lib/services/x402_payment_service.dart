@@ -102,6 +102,7 @@ class X402PaymentChallenge {
     required this.resourceDescription,
     required this.requirement,
     required this.challengeHash,
+    this.extensions = const <String, dynamic>{},
   });
 
   final int x402Version;
@@ -110,6 +111,7 @@ class X402PaymentChallenge {
   final String? resourceDescription;
   final X402PaymentRequirement requirement;
   final String challengeHash;
+  final Map<String, dynamic> extensions;
 
   /// Parses the base64 JSON required by the x402 v2 PAYMENT-REQUIRED header.
   /// Raw JSON is accepted only for diagnostic fixtures; wire clients should
@@ -176,6 +178,7 @@ class X402PaymentChallenge {
     }
 
     final canonical = _canonicalJson(decoded);
+    final rawExtensions = decoded['extensions'];
     return X402PaymentChallenge(
       x402Version: version,
       resource: resource.map(
@@ -185,8 +188,65 @@ class X402PaymentChallenge {
       resourceDescription: resource['description']?.toString(),
       requirement: selected,
       challengeHash: bytesToHex(keccak256(utf8.encode(canonical))),
+      extensions: rawExtensions is Map
+          ? rawExtensions.map(
+              (key, value) => MapEntry(key.toString(), value),
+            )
+          : const <String, dynamic>{},
     );
   }
+}
+
+/// Builds the x402 v2 wire payload while keeping numeric EIP-3009 values in
+/// the decimal-string form required by the protocol clients and facilitators.
+/// Provider attribution may be merged into the challenge extensions without
+/// discarding server-declared metadata such as Bazaar discovery information.
+Map<String, dynamic> buildX402V2PaymentPayload({
+  required PendingPaymentIntent intent,
+  required String signature,
+  required String payer,
+  required int validAfter,
+  required int validBefore,
+  String? providerServiceCode,
+}) {
+  final extensions = Map<String, dynamic>.from(intent.challenge.extensions);
+  final serviceCode = providerServiceCode?.trim() ?? '';
+  if (serviceCode.isNotEmpty) {
+    final rawBuilderCode = extensions['builder-code'];
+    final builderCode = rawBuilderCode is Map
+        ? rawBuilderCode.map(
+            (key, value) => MapEntry(key.toString(), value),
+          )
+        : <String, dynamic>{};
+    final rawInfo = builderCode['info'];
+    final info = rawInfo is Map
+        ? rawInfo.map(
+            (key, value) => MapEntry(key.toString(), value),
+          )
+        : <String, dynamic>{};
+    info['s'] = <String>[serviceCode];
+    builderCode['info'] = info;
+    extensions['builder-code'] = builderCode;
+  }
+
+  final requirement = intent.challenge.requirement;
+  return <String, dynamic>{
+    'x402Version': intent.challenge.x402Version,
+    'resource': intent.challenge.resource,
+    'accepted': requirement.toJson(),
+    'payload': <String, dynamic>{
+      'signature': signature,
+      'authorization': <String, dynamic>{
+        'from': payer,
+        'to': requirement.payTo,
+        'value': requirement.amount,
+        'validAfter': validAfter.toString(),
+        'validBefore': validBefore.toString(),
+        'nonce': intent.paymentNonce,
+      },
+    },
+    if (extensions.isNotEmpty) 'extensions': extensions,
+  };
 }
 
 class PendingPaymentIntent {
