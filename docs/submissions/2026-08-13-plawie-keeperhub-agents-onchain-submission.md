@@ -28,6 +28,15 @@
 > the signed-in form is the authority for its exact closing time and bounty
 > wording.
 
+> [!NOTE]
+> Android's protected authentication surface did not appear in the onboarding
+> screen recording. We did not weaken that protection. The onboarding proof is
+> instead the recorded custody disclosure and Connected transition, the
+> persistent Agent Wallet address `0x8f04a0…7cd788`, and the later verified
+> KeeperHub execution whose decoded target and recipient bind to that address.
+> KeeperHub/Turnkey wallet provisioning is off-chain, so there is no expected
+> “wallet creation transaction.”
+
 ---
 
 ## Executive summary
@@ -340,7 +349,8 @@ have not yet been recorded live.
 | Dart analyzer for changed production/test files | **No issues** |
 | Android arm64 debug build | **Passed** |
 | Installed APK equals local artifact | **Exact SHA-256 match** |
-| Installed APK SHA-256 | `7F48B540F2D7C708895DB59B7E81B7A7CC3ED7DCA3F44799438BF1C3432162E6` |
+| Installed APK version | `2.3.0` (`13`) |
+| Installed APK SHA-256 | `439EA31D00F6336CFA4F16BB873081C9495154A61B80330445B8427B9A4FED92` |
 | Existing app/wallet data after update | **Preserved**; original install date `2026-07-26` |
 
 The test surface covers headless onboarding, fixed-origin API behavior,
@@ -595,6 +605,9 @@ foreground, freshly authenticated Android operation.
       recovery
 - [x] Agent-originated `keeperhub.prepare` → Wallet → approval → receipt path
       recorded by the user
+- [x] GLM-5.2 capability/status/receipt-only turn recorded; device logs show
+      three read-only calls and no prepare or execution
+- [x] Raw onboarding, Wallet-first, and canonical chat-flow videos inventoried
 - [ ] Final edited public video uploaded and checked from a signed-out browser
 - [ ] Final media redaction review completed
 

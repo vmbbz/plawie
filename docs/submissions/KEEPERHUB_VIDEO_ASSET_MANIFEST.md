@@ -1,16 +1,16 @@
 # KeeperHub submission video — asset and edit manifest
 
-> **Status:** the canonical GLM-5 execution was recorded on the physical device.
-> Raw files and a public video URL are still pending. This manifest is the
-> handoff contract for the final edit; it must not be marked complete from
-> screenshots alone.
+> **Status:** four physical-device evidence recordings are available: wallet
+> onboarding, a Wallet-first proof, the canonical GLM-5 agent-originated proof,
+> and a separate GLM-5.2 capability/status/receipt read. A public final cut URL
+> is still pending. Raw MP4 files remain outside Git by design.
 
 ## Deliverables
 
 | Deliverable | Target | Status |
 |---|---|---|
-| Judge demo | `2:00–2:30`, `1920×1080`, H.264 MP4, 30 fps, AAC audio | Awaiting raw clips |
-| Captioned backup | Same cut with burned-in English captions | Awaiting raw clips |
+| Judge demo | `2:00–2:30`, `1920×1080`, H.264 MP4, 30 fps, AAC audio | Raw clips ready; edit pending |
+| Captioned backup | Same cut with burned-in English captions | Raw clips ready; edit pending |
 | Social cut | `45–75` seconds, `1080×1920` | Optional |
 | Public URL | YouTube unlisted/public or another signed-out-accessible host | Pending |
 | DoraHacks URL check | Opens without account, region prompt, or download permission | Pending |
@@ -28,15 +28,19 @@ identifiers, or a brief authentication overlay can leak more than a screenshot.
 
 | ID | Required content | Raw filename | Useful time range | Redaction status |
 |---|---|---|---|---|
-| `V01` | Plawie dashboard and native OpenClaw context | Pending | Pending | Pending |
-| `V02` | GLM-5 chat prompt and `keeperhub.prepare` tool result | Pending | Pending | Pending |
-| `V03` | Wallet showing the inert simulated proposal | Pending | Pending | Pending |
-| `V04` | Exact review: Base Mainnet, Agent Wallet self-recipient, `0 ETH`, simulation success | Pending | Pending | Pending |
-| `V05` | Human taps authorize; authentication transition without sensitive biometric imagery | Pending | Pending | Pending |
-| `V06` | Wallet returns **Verified on-chain** for `0x6b18c0e5…991430a` | Pending | Pending | Pending |
-| `V07` | BaseScan transaction and confirmed block `49,916,321` | Pending | Pending | Pending |
-| `V08` | Separate rejected proposal with no execution ID/hash | Pending | Pending | Pending |
-| `V09` | Optional onboarding/custody disclosure | Pending | Pending | Pending |
+| `V01` | Onboarding disclosure, Connected state, and persistent Agent Wallet address | `keeperhub-agent-wallet-create-video-proof.mp4` | Full clip, `01:53` | Review required; secure SIWE/auth prompt is intentionally absent |
+| `V02` | GLM-5 chat prompt and `keeperhub.prepare` tool result | `chat-page-agent-initiated-keeperhub-self-transfer.mp4` | Full clip, `03:01` | Review required |
+| `V03` | Wallet showing the inert simulated proposal | `chat-page-agent-initiated-keeperhub-self-transfer.mp4` | Select canonical review segment | Review required |
+| `V04` | Exact review: Base Mainnet, Agent Wallet self-recipient, `0 ETH`, simulation success | `walletpage-keeperhub-self-transfer.mp4` and canonical chat clip | Select review segment | Review required |
+| `V05` | Human taps authorize; protected authentication transition | `chat-page-agent-initiated-keeperhub-self-transfer.mp4` | Select authorization segment | Review required; do not fabricate a biometric frame |
+| `V06` | Wallet returns **Verified on-chain** for `0x6b18c0e5…991430a` | `chat-page-agent-initiated-keeperhub-self-transfer.mp4` | Select completion segment | Review required |
+| `V07` | BaseScan transaction and confirmed block `49,916,321` | `walletpage-keeperhub-self-transfer.mp4` | Select explorer segment | Review required |
+| `V08` | Rejected-before-execution records with no transaction | `walletpage-keeperhub-self-transfer.mp4` | Select receipt-history segment | Review required |
+| `V09` | GLM-5.2 reads capability, status, and receipts without preparing | Latest 13 Aug device recording, started `15:55` | Final successful turn near end | Review required; trim earlier failed retry |
+
+The three named user files are in `C:\Users\cosyc\Downloads` and must be
+uploaded as submission assets, not committed to the source repository. The
+separate A2 clip currently remains on the device until exported and renamed.
 
 ## Final cut
 
@@ -92,6 +96,8 @@ numbers, and the zero-value proof amount are expected evidence and may remain.
 ## Acceptance gate
 
 - [ ] Every raw clip is inventoried above.
+- [x] The three supplied raw clips are mapped to proof beats.
+- [x] A separate capability/status/receipt recording exists on the device.
 - [ ] The canonical flow visibly begins in Chat with GLM-5.
 - [ ] The review visibly says Base Mainnet and `0 ETH`.
 - [ ] Human authorization occurs only in Wallet.

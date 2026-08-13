@@ -109,6 +109,16 @@ If the workflow reports that the organization wallet is not yet available,
 leave the app state intact and use its recovery action. Do not create a second
 organization or key.
 
+> **Recording note:** Android may intentionally omit the SIWE/device-auth
+> surface from screenshots and screen recordings. Do not weaken secure-window
+> protections to obtain a frame. A defensible onboarding evidence set is the
+> recorded custody disclosure and Connected transition, the persistent Agent
+> Wallet address shown after onboarding (`0x8f04a0…7cd788`), and a later
+> KeeperHub receipt whose decoded target/recipient is that address. KeeperHub's
+> Turnkey organization wallet is provisioned before any chain write; creation
+> therefore has no expected Base transaction. The first on-chain evidence is
+> an actual execution, not wallet creation.
+
 ### A2. Establish the agent boundary
 
 1. From chat, request KeeperHub capability/status information.
@@ -117,6 +127,12 @@ organization or key.
    sign, submit, retry, revoke a credential, or move non-zero value.
 3. Ask it to prepare the proof. The expected result is an inert proposal that
    directs the human to **Wallet**; it must not open a payment sheet or submit.
+
+**Captured 13 August 2026:** GLM-5.2 invoked `keeperhub.status`,
+`keeperhub.capabilities`, and `keeperhub.receipts` and rendered the permission
+boundary plus the latest verified receipt. Device logs showed exactly those
+three read-only calls and no `keeperhub.prepare` in that turn. Preparation is
+demonstrated separately in the canonical agent-originated transaction video.
 
 ### A3. Cancel once, then execute once
 
@@ -190,15 +206,16 @@ claim of completion.
 
 | Item | Result | Evidence reference | Notes |
 | --- | --- | --- | --- |
-| Artifact version / SHA-256 | Debug installed with wallet data preserved | `7F48B540F2D7C708895DB59B7E81B7A7CC3ED7DCA3F44799438BF1C3432162E6` | version `2.2.1` (`12`); original 26 July app data preserved; secret audit passed |
+| Artifact version / SHA-256 | Hackathon preview installed with wallet data preserved | `439EA31D00F6336CFA4F16BB873081C9495154A61B80330445B8427B9A4FED92` | version `2.3.0` (`13`); original 26 July app data preserved; release `v2.3.0-hackathon-preview.1` |
 | KeeperHub regression suite | 41 Flutter + 5 Android passed | local test output | 13 Aug 2026; zero failures |
 | Paid-provider biometric continuation suite | 30 focused tests passed | local test output | transient Android `inactive` preserves the inert expiring turn lease; real background still erases it |
 | Live Venice top-up challenge | Parsed, no signature | local live 402 check | 12 Aug 2026; the provider omits `resource`, so Plawie binds only its catalogued Venice HTTPS endpoint before it can display approval |
 | Agent Wallet disclosure | Observed | physical device | separate KeeperHub-managed execution wallet and Android-owned approver visible |
-| KeeperHub SIWE onboarding | Completed | physical device | organization credential remained encrypted and wallet persisted across app updates |
+| KeeperHub SIWE onboarding | Completed; secure prompt not screen-capturable | `keeperhub-agent-wallet-create-video-proof.mp4` + physical device | disclosure and Connected transition recorded; Agent Wallet `0x8f04a0…7cd788` persisted; no wallet-creation transaction is expected because provisioning is off-chain |
 | Separate agent wallet visible | Connected | physical device | Agent Wallet `0x8f04a0…7cd788` |
+| Agent capability/status/receipt read | Passed | separate GLM-5.2 screen recording + device log | exactly `keeperhub.status`, `keeperhub.capabilities`, and `keeperhub.receipts`; no prepare, approval, or execution in the turn |
 | Agent capability boundary | Passed end-to-end through `keeperhub.prepare` | [`keeperhub-agent-originated-base-mainnet-verified.png`](articles/assets/keeperhub/keeperhub-agent-originated-base-mainnet-verified.png) | GLM-5 created intent `kh_44dc…`; Wallet alone exposed review/approval; KeeperHub execution `ti85uq…` completed only after human authentication |
-| Rejected proof / no execution | Passed | [`keeperhub-base-mainnet-rejected.png`](articles/assets/keeperhub/keeperhub-base-mainnet-rejected.png) | a fresh simulated intent was explicitly discarded; UI persisted `Rejected before execution`; no authentication or transaction followed |
+| Rejected proof / no execution | Passed; three rejected records visible | [`keeperhub-base-mainnet-rejected.png`](articles/assets/keeperhub/keeperhub-base-mainnet-rejected.png) and wallet recording | simulated intents were explicitly discarded before authorization; no execution ID or transaction followed |
 | Proof simulation | Passed | [`keeperhub-base-mainnet-review.png`](articles/assets/keeperhub/keeperhub-base-mainnet-review.png) | exact `0 ETH`, chain `8453`, self-recipient, non-reverting, `21,000` gas estimate |
 | Zero-value Base Mainnet submission | Passed three times as separately authorized intents | KeeperHub executions `ti85uq…`, `59ja3y…`, and `vxy25q…` | all sponsored; all `idempotentReplay: false`; `ti85uq…` is the canonical agent-originated path |
 | Interrupted polling recovery | Not run |  | terminal receipt persistence after force-stop/relaunch passed; do not claim in-flight recovery |
