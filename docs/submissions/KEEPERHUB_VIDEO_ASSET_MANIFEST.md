@@ -36,11 +36,10 @@ identifiers, or a brief authentication overlay can leak more than a screenshot.
 | `V06` | Wallet returns **Verified on-chain** for `0x6b18c0e5…991430a` | `chat-page-agent-initiated-keeperhub-self-transfer.mp4` | Select completion segment | Review required |
 | `V07` | BaseScan transaction and confirmed block `49,916,321` | `walletpage-keeperhub-self-transfer.mp4` | Select explorer segment | Review required |
 | `V08` | Rejected-before-execution records with no transaction | `walletpage-keeperhub-self-transfer.mp4` | Select receipt-history segment | Review required |
-| `V09` | GLM-5.2 reads capability, status, and receipts without preparing | Latest 13 Aug device recording, started `15:55` | Final successful turn near end | Review required; trim earlier failed retry |
+| `V09` | GLM-5.2 reads capability, status, and receipts without preparing | `chat-page-keeperhub=tools-status-check.mp4` | Full clip, `03:20`; final successful turn near end | Review required; trim earlier failed retry |
 
-The three named user files are in `C:\Users\cosyc\Downloads` and must be
-uploaded as submission assets, not committed to the source repository. The
-separate A2 clip currently remains on the device until exported and renamed.
+The four named user files are in `C:\Users\cosyc\Downloads` and must be
+uploaded as submission assets, not committed to the source repository.
 
 ## Final cut
 
