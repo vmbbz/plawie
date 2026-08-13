@@ -10,9 +10,12 @@
 > interrupted *in-flight* polling recovery and a deliberately failing
 > simulation remain separate evidence tasks and are not claimed below.
 >
-> The agent-originated `keeperhub.prepare` path is now also proven on-device:
-> it created an inert fourth proposal that remains at **Ready for human review**
-> with no execution ID or transaction hash.
+> The complete agent-originated `keeperhub.prepare` path is now proven
+> on-device. GLM-5 prepared the bounded proof in chat, the capability stopped at
+> the Wallet boundary, the human reviewed and authenticated there, and
+> KeeperHub sponsored a verified Base Mainnet execution. The canonical
+> transaction is
+> [`0x6b18c0e5…991430a`](https://basescan.org/tx/0x6b18c0e5475a97996f5a9654392050bf7cc754aa1b31c6f2492645750991430a).
 
 AI agents have become surprisingly good at deciding what should happen next.
 They can research a market, inspect a task queue, prepare a transaction, and
@@ -341,82 +344,94 @@ but this article does not present them as physical-device evidence yet.
 
 ## Live Base Mainnet evidence — 13 August 2026
 
-The first physical-device proof followed the production path rather than a
-test-only shortcut:
+The canonical physical-device recording follows the production path rather than
+a test-only shortcut:
 
-1. KeeperHub simulated an exact `0 ETH` transfer on Base Mainnet (`8453`) from
+1. GLM-5 invoked the real OpenClaw `keeperhub.prepare` capability from chat.
+2. KeeperHub simulated an exact `0 ETH` transfer on Base Mainnet (`8453`) from
    the Agent Execution Wallet back to itself.
-2. Plawie displayed the full review in the foreground and did not expose an
-   agent-accessible approval or submission command.
-3. The user continued to Android authentication on the physical device.
-4. KeeperHub accepted one persisted intent and sponsored its gas.
-5. Plawie polled the execution, required an authoritative matching receipt,
-   and rendered **Verified on-chain**.
-6. A public Base RPC independently returned receipt status `0x1` for the same
-   hash and block.
-7. Plawie was force-stopped and relaunched after completion. The same single
-   terminal receipt reappeared without an active request or resubmission.
+3. Chat stopped at an inert proposal and directed the user to Wallet. It did not
+   expose an approval or submission command.
+4. Plawie displayed the full immutable review in the foreground.
+5. The human explicitly authorized and completed Android authentication.
+6. KeeperHub accepted the persisted intent and sponsored its gas.
+7. Plawie required an authoritative matching receipt before rendering
+   **Verified on-chain**.
+8. A public Base RPC independently returned receipt status `0x1`, transaction
+   value `0x0`, and the same hash, block, and gas use.
 
 | Evidence field | Canonical proof |
 |---|---|
 | Network | Base Mainnet (`8453`) |
-| Intent | `kh_99dc92c349164d77b5895bdaf195117e` |
-| KeeperHub execution | `59ja3y71gxctnet4zprd8` |
+| Agent/model | OpenClaw + GLM-5 (`zai-org-glm-5-2`) |
+| Intent | `kh_44dc23e5122a4d17895927032a5881e5` |
+| KeeperHub execution | `ti85uqkad0hbnx57wi9p6` |
 | Amount | `0 ETH` |
-| Simulation | success; would not revert; estimate `21,000` gas |
+| Simulation | success; would not revert; estimate `21,227` gas |
 | Sponsorship | `true` |
 | Idempotent replay | `false` |
-| Transaction | [`0xdcf1a13c…73117b04`](https://basescan.org/tx/0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04) |
-| Base block | `49,896,836` |
-| Verified receipt | success; `80,521` gas used |
-| KeeperHub verification time | `2026-08-13T01:03:41.947Z` |
+| Transaction | [`0x6b18c0e5…991430a`](https://basescan.org/tx/0x6b18c0e5475a97996f5a9654392050bf7cc754aa1b31c6f2492645750991430a) |
+| Base block | `49,916,321` |
+| Verified receipt | success; `40,933` gas used |
+| KeeperHub verification time | `2026-08-13T11:53:11.586Z` |
 
-The public transaction is a sponsored delegated execution envelope. Its outer
-transaction sender and target belong to KeeperHub's execution infrastructure;
-the bounded Agent Wallet self-transfer is encoded in the transaction call. The
-chain proves that the envelope succeeded with zero native value, while
-KeeperHub's re-fetched authoritative receipt binds that settlement to the
-stored execution. This distinction avoids presenting an infrastructure
-transaction as a plain EOA transfer.
+The public transaction is a sponsored delegated execution envelope. That is why
+BaseScan's top-level addresses do not look like the Personal or Agent Wallet:
+
+```mermaid
+flowchart LR
+    R[Relay EOA<br/>0x7b70…9684] -->|pays gas| C[Execution contract<br/>0x5af5…f07d]
+    C -->|execute<br/>target = 0x8f04…d788<br/>recipient = 0x8f04…d788<br/>amount = 0 wei| A[Agent Execution Wallet]
+    P[Personal Wallet<br/>0xab29…b434] -. local authenticated approval .-> C
+```
+
+The selector `0x9aefaff8` decodes as
+`execute(address,address,uint256,bytes)`. Its first two arguments are both the
+Agent Execution Wallet `0x8f04a0b7…7cd788`; the third is zero. The outer
+transaction value is also zero. The Personal Wallet intentionally does not
+broadcast or fund the transaction: it authenticates Plawie's local approval
+boundary, while KeeperHub's relay and execution contract carry the sponsored
+envelope.
+
+The chain proves that this envelope succeeded with zero native value.
+KeeperHub's re-fetched authoritative receipt binds that settlement to execution
+`ti85uqkad0hbnx57wi9p6`. This distinction avoids presenting an infrastructure
+transaction as a plain EOA transfer while still making the reviewed effect
+auditable.
 
 ![Physical-device review of the exact zero-value Base Mainnet proof](assets/keeperhub/keeperhub-base-mainnet-review.png)
 
 ![The two separately authorized KeeperHub proofs persisted with verified on-chain metadata](assets/keeperhub/keeperhub-base-mainnet-verified-receipt.png)
 
-A second proof was later simulated and separately authorized by the user. It
-produced a distinct intent, execution ID, and verified transaction
-(`0x9ce5e377…d6def2a9`) with `idempotentReplay: false`. That is expected new
-work—not a retry or duplicate of the canonical proof. Each approved intent has
-exactly one successful receipt.
+![The completed agent-originated GLM-5 proof in the Wallet receipt ledger](assets/keeperhub/keeperhub-agent-originated-base-mainnet-verified.png)
 
-A third proposal was simulated only to exercise the negative boundary. It was
-explicitly discarded from the foreground Wallet UI before Android
-authentication. Plawie persisted **Rejected before execution**, and no third
-transaction appeared.
+Two earlier proofs produced distinct intent IDs, execution IDs, and verified
+transactions (`0xdcf1a13c…73117b04` and `0x9ce5e377…d6def2a9`) with
+`idempotentReplay: false`. They are expected new work—not retries or duplicates
+of the canonical proof. Each approved intent has exactly one successful
+receipt.
 
-A fourth proposal was prepared through the real agent-facing
-`keeperhub.prepare` capability. It remains `awaitingApproval`; the Wallet shows
-**Ready for human review** and exposes only **Review & authorize** or
-**Discard**. No execution ID or transaction hash exists for it.
+A separate proposal was simulated only to exercise the negative boundary. It
+was explicitly discarded from the foreground Wallet UI before Android
+authentication. Plawie persisted **Rejected before execution**; that intent has
+no execution ID or transaction hash.
 
 ![The agent-prepared proof stops at the human Wallet boundary](assets/keeperhub/keeperhub-agent-prepared-for-human-review.png)
 
-The model's narration after that tool call initially returned `403 A foreground
-user turn is required for this provider.` This was a Venice continuation issue,
-not a KeeperHub rejection. Code-path analysis identified Android's
-biometric/system authentication overlay as the source of a transient
-`inactive` lifecycle state that erased the bounded paid-provider turn lease.
-Plawie now preserves the inert lease across only that obscured state while
-continuing to erase it on true background states. Thirty focused paid-provider
-tests pass, including lifecycle, cancellation, one-payment-per-message,
-mismatch, uncertainty, and no-replay cases.
+Earlier provider-compatibility testing was itself a useful boundary test. A
+Venice/Gemini tool turn prepared a proposal but failed during post-tool
+narration; KeeperHub work remained inert and was later discarded. GLM-5 then
+completed the full tool continuation used for the canonical recording. Provider
+success never changed the authority model: both providers could prepare, and
+neither could approve or submit.
 
 ![A simulation-bound proposal rejected before authentication or execution](assets/keeperhub/keeperhub-base-mainnet-rejected.png)
 
 This run did **not** interrupt the app between broadcast and final receipt. It
-therefore proves completed-receipt persistence, but not the stronger in-flight
-reconciliation scenario. We keep that claim gated rather than manufacture a
-third Mainnet transaction solely for demonstration.
+therefore proves the end-to-end agent/human/execution path and completed-receipt
+persistence, but not the stronger in-flight reconciliation scenario. We keep
+that claim gated rather than manufacture another Mainnet transaction solely for
+demonstration.
 
 ---
 
@@ -432,7 +447,7 @@ separate code-complete controls from evidence-complete behavior.
 | Secure returned-once credential storage and restart recovery | Implemented |
 | Separate Personal and Agent Execution Wallet UI | Implemented |
 | Bounded agent status, receipt, and proof-preparation commands | Implemented |
-| Physical-device agent-originated inert proposal | Proven; awaiting human review with no execution ID/hash |
+| Physical-device agent-originated execution | Proven end-to-end with GLM-5, Wallet-only approval, and verified receipt |
 | Zero-value Base Mainnet self-transfer policy | Implemented |
 | Simulation, immutable request binding, one-use approval, and Android authentication | Implemented |
 | Persisted idempotency, bounded polling, restart recovery, and verified receipt checks | Implemented |
@@ -496,10 +511,16 @@ works on the first attempt.
 1. Prepare a fresh zero-value Base Mainnet proof.
 2. Show the exact successful simulation.
 3. Approve visibly and complete fresh Android authentication.
-4. Interrupt the app or network during polling.
-5. Reopen Plawie.
-6. Show recovery of the same KeeperHub execution ID.
-7. Show one verified receipt and one explorer transaction—never two.
+4. Show KeeperHub's sponsored execution and authoritative receipt.
+5. Open the matching BaseScan transaction and explain the sponsored envelope.
+6. Reopen Plawie and show that the same completed receipt is restored without
+   resubmission.
+
+An additional process-death recording may interrupt the app specifically while
+polling and recover the same execution ID. It is a useful reliability stretch,
+but it must remain clearly labelled **not yet recorded** until captured; the
+submission does not imply that completed-receipt persistence proves in-flight
+recovery.
 
 ### Act 4 — Explain the honest boundary
 
@@ -549,8 +570,8 @@ Use real device captures only. Do not mock transaction evidence.
 5. **Review:** the zero-value Base Mainnet approval sheet showing wallet,
    recipient, amount, reason, simulation, and expiry.
 6. **Cancellation:** rejected proof with no transaction.
-7. **Recovery:** polling or `outcomeUnknown`, followed by the same execution
-   recovered after reopening.
+7. **Persistence:** the completed receipt restored after reopening, without a
+   new submission. If an in-flight recovery clip is added, label it separately.
 8. **Receipt:** verified transaction card plus independently opened Base
    Mainnet explorer page. This is mandatory before describing the workflow as
    executed.
@@ -570,8 +591,8 @@ balances.
 > We built Plawie around one rule: the agent can propose an on-chain action, but
 > the phone still decides. OpenClaw prepares a bounded intent, KeeperHub
 > simulates and executes it, and Android forces visible review plus fresh human
-> authentication. Our first sponsored Base Mainnet proof is now independently
-> verifiable on-chain. [article link]
+> authentication. Our agent-originated sponsored Base Mainnet proof is now
+> independently verifiable on-chain: `0x6b18c0e5…991430a`. [article link]
 
 ### Five-post thread
 
@@ -585,9 +606,10 @@ balances.
 4. KeeperHub provides simulation, idempotent execution, status recovery, and
    verified receipts. Plawie binds those to a foreground review and fresh
    Android authentication.
-5. The first sponsored Base Mainnet proof now has a successful, independently
-   checked receipt. Completed-receipt restart persistence passed; deliberate
-   in-flight recovery remains the next recorded stress test. [video] [article]
+5. The agent-originated sponsored Base Mainnet proof has a successful,
+   independently checked receipt. Completed-receipt restart persistence passed;
+   deliberate in-flight recovery remains the next recorded stress test.
+   [video] [article]
 
 ---
 

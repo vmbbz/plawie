@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-13T11:53:12.596880Z",
+  "project": "Plawie - Human-Governed Agent Wallet",
+  "evidenceClass": "agent-originated-sponsored-mainnet-execution",
+  "agentPath": {
+    "framework": "OpenClaw",
+    "model": "zai-org-glm-5-2",
+    "capability": "keeperhub.prepare",
+    "taskId": "agent-proof:1786621869498967:0d53f530-4434-4f80-938a-c769cdd0ade0"
+  },
+  "keeperHub": {
+    "intentId": "kh_44dc23e5122a4d17895927032a5881e5",
+    "executionId": "ti85uqkad0hbnx57wi9p6",
+    "status": "completed",
+    "sponsored": true,
+    "idempotentReplay": false,
+    "receiptVerified": true,
+    "receiptStatus": "success",
+    "verifiedAt": "2026-08-13T11:53:11.586Z"
+  },
+  "reviewedEffect": {
+    "chain": "Base Mainnet",
+    "chainId": 8453,
+    "personalApprovalWallet": "0xab299fea9D2884A4B0321af1B79E452E464bB434",
+    "agentExecutionWallet": "0x8f04a0b7192b9da472d5a1b63d75ee61fa7cd788",
+    "recipient": "0x8f04a0b7192b9da472d5a1b63d75ee61fa7cd788",
+    "amountEth": "0",
+    "reason": "Prove human-governed Agent Wallet execution.",
+    "simulationSuccess": true,
+    "simulationWouldRevert": false,
+    "simulationGasEstimate": "21227"
+  },
+  "transaction": {
+    "hash": "0x6b18c0e5475a97996f5a9654392050bf7cc754aa1b31c6f2492645750991430a",
+    "explorer": "https://basescan.org/tx/0x6b18c0e5475a97996f5a9654392050bf7cc754aa1b31c6f2492645750991430a",
+    "blockNumber": 49916321,
+    "gasUsed": "40933"
+  },
+  "independentBaseRpc": {
+    "receiptStatus": "0x1",
+    "transactionValue": "0x0",
+    "blockNumber": "0x2f9a9a1",
+    "gasUsed": "0x9fe5",
+    "outerFrom": "0x7b70a2665ecad34e19d5870dd9efb3289de79684",
+    "outerTo": "0x5af5194b4b0909eb978e3cf1e25333852277f07d",
+    "functionSelector": "0x9aefaff8",
+    "decodedSignature": "execute(address,address,uint256,bytes)",
+    "argument1": "0x8f04a0b7192b9da472d5a1b63d75ee61fa7cd788",
+    "argument2": "0x8f04a0b7192b9da472d5a1b63d75ee61fa7cd788",
+    "argument3Wei": "0"
+  },
+  "media": {
+    "walletReceiptScreenshot": "../../articles/assets/keeperhub/keeperhub-agent-originated-base-mainnet-verified.png",
+    "walletReceiptScreenshotSha256": "D1282751067CE668D82DB123B2054132222F794C1BE857C3AE8F486F4667AA9B",
+    "rawVideo": "pending-user-attachment",
+    "publicVideoUrl": "pending"
+  },
+  "redactions": {
+    "organizationApiKey": "not-collected",
+    "privateKeys": "not-collected",
+    "signatures": "not-collected",
+    "cookies": "not-collected",
+    "deviceIdentifier": "not-collected"
+  }
+}

@@ -922,9 +922,9 @@ narrow and demonstrable rather than a premature platform rewrite.
 - [ ] Record a deliberately failing live simulation; automated failure coverage
       already exists, but it is not a substitute for physical-device evidence.
 - [x] Submit a real zero-value Base Mainnet KeeperHub transaction and require one
-      authoritative successful receipt. The canonical sponsored proof is
-      execution `59ja3y71gxctnet4zprd8`, transaction
-      `0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04`.
+      authoritative successful receipt. The canonical agent-originated
+      sponsored proof is execution `ti85uqkad0hbnx57wi9p6`, transaction
+      `0x6b18c0e5475a97996f5a9654392050bf7cc754aa1b31c6f2492645750991430a`.
 - [x] Force-stop and reopen after completion; restore the same terminal receipt
       without an active request or resubmission.
 - [ ] Interrupt the app/network specifically during in-flight polling and prove
@@ -935,8 +935,9 @@ narrow and demonstrable rather than a premature platform rewrite.
 - [x] Add chat proposal and status/receipt tools, while keeping approval and
       execution owned by the foreground Wallet UI.
 - [x] Prove `keeperhub.prepare` on a physical device. The agent-created Mainnet
-      proposal remains inert in `awaitingApproval` with no execution ID/hash;
-      Wallet alone exposes review or discard.
+      proposal remained inert in `awaitingApproval` until Wallet review and
+      human authentication; it then completed as the canonical execution above.
+      The agent never received approval or submission authority.
 - [x] Preserve a bounded paid-provider tool-loop continuation across Android's
       transient biometric `inactive` lifecycle without weakening the hard erase
       on paused/hidden/detached or the one-payment-per-message limit.
@@ -946,9 +947,11 @@ narrow and demonstrable rather than a premature platform rewrite.
       encrypted credential in an honest `revocationUnknown` recovery state.
 - [ ] Treat paid x402 marketplace workflow execution as a stretch goal after the
       core reliability demo passes.
-- [ ] Capture the final Git source link and demo video. The onboarding sequence,
-      rejected review, KeeperHub execution ID, and verified transaction link are
-      recorded; simulated failure and in-flight interruption recovery remain.
+- [ ] Publish the final Git source link and demo video. The onboarding sequence,
+      rejected review, complete agent-originated execution, KeeperHub execution
+      ID, and verified transaction link are recorded. The raw video still needs
+      editing/upload; signed-out source access currently fails. Simulated failure
+      and in-flight interruption recovery remain optional stronger evidence.
 
 **Exit:** a judge can create a real Agent Execution Wallet inside Plawie, ask the
 OpenClaw agent for an action, inspect a real KeeperHub simulation, authorize it

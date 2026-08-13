@@ -1,10 +1,11 @@
 # Plawie live evidence runbook
 
-**Status — 13 August 2026:** live execution in progress. KeeperHub onboarding,
-two separately authorized sponsored Base Mainnet proofs, bridge settlement,
-BlockRun paid chat, Venice top-up, and Venice chat have been observed on the
-physical device. The evidence table distinguishes verified settlement from a
-successful provider response whose payment receipt is still unavailable.
+**Status — 13 August 2026:** canonical evidence captured. KeeperHub onboarding,
+one complete agent-originated execution, two supporting separately authorized
+sponsored Base Mainnet proofs, bridge settlement, BlockRun paid chat, Venice
+top-up, and Venice chat have been observed on the physical device. The evidence
+table distinguishes verified settlement from a successful provider response
+whose payment receipt is still unavailable.
 
 ## Objective
 
@@ -24,9 +25,14 @@ OpenClaw prepares an inert proof
           -> Plawie shows the exact foreground review
           -> human approves and authenticates on Android
           -> KeeperHub executes once with an idempotency key
-          -> app is interrupted during polling
-          -> Plawie recovers one execution and one verified receipt
+          -> Plawie stores one verified receipt
+          -> completed receipt survives app restart without resubmission
 ```
+
+Deliberately interrupting the app *during* polling remains a separate,
+unrecorded reliability stretch. It is not required to describe the completed
+agent-originated proof, and completed-receipt persistence must not be presented
+as equivalent evidence.
 
 ## Scope and safety invariants
 
@@ -191,12 +197,12 @@ claim of completion.
 | Agent Wallet disclosure | Observed | physical device | separate KeeperHub-managed execution wallet and Android-owned approver visible |
 | KeeperHub SIWE onboarding | Completed | physical device | organization credential remained encrypted and wallet persisted across app updates |
 | Separate agent wallet visible | Connected | physical device | Agent Wallet `0x8f04a0…7cd788` |
-| Agent capability boundary | Passed through `keeperhub.prepare` | [`keeperhub-agent-prepared-for-human-review.png`](articles/assets/keeperhub/keeperhub-agent-prepared-for-human-review.png) | agent created intent `kh_e792…`; record is `awaitingApproval`; no execution ID or transaction hash; Wallet alone offers review/discard |
+| Agent capability boundary | Passed end-to-end through `keeperhub.prepare` | [`keeperhub-agent-originated-base-mainnet-verified.png`](articles/assets/keeperhub/keeperhub-agent-originated-base-mainnet-verified.png) | GLM-5 created intent `kh_44dc…`; Wallet alone exposed review/approval; KeeperHub execution `ti85uq…` completed only after human authentication |
 | Rejected proof / no execution | Passed | [`keeperhub-base-mainnet-rejected.png`](articles/assets/keeperhub/keeperhub-base-mainnet-rejected.png) | a fresh simulated intent was explicitly discarded; UI persisted `Rejected before execution`; no authentication or transaction followed |
 | Proof simulation | Passed | [`keeperhub-base-mainnet-review.png`](articles/assets/keeperhub/keeperhub-base-mainnet-review.png) | exact `0 ETH`, chain `8453`, self-recipient, non-reverting, `21,000` gas estimate |
-| Zero-value Base Mainnet submission | Passed twice as two separately authorized intents | KeeperHub executions `59ja3y…` and `vxy25q…` | both sponsored; both `idempotentReplay: false` |
+| Zero-value Base Mainnet submission | Passed three times as separately authorized intents | KeeperHub executions `ti85uq…`, `59ja3y…`, and `vxy25q…` | all sponsored; all `idempotentReplay: false`; `ti85uq…` is the canonical agent-originated path |
 | Interrupted polling recovery | Not run |  | terminal receipt persistence after force-stop/relaunch passed; do not claim in-flight recovery |
-| One verified receipt / explorer hash | Passed for canonical intent | [`0xdcf1a13c…73117b04`](https://basescan.org/tx/0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04) | status success; block `49,896,836`; `80,521` gas; public Base RPC status `0x1` |
+| One verified receipt / explorer hash | Passed for canonical agent-originated intent | [`0x6b18c0e5…991430a`](https://basescan.org/tx/0x6b18c0e5475a97996f5a9654392050bf7cc754aa1b31c6f2492645750991430a) | status success; block `49,916,321`; `40,933` gas; public Base RPC status `0x1`; decoded call binds the Agent Wallet as target and recipient with zero amount |
 | Phantom to Base bridge | Passed | destination `0x2c456dcf…f3254252` | `3.0` Solana USDC produced `2.9925` Base USDC; a later `2.1` USDC route produced `2.09475` Base USDC |
 | BlockRun approved paid chat | Model response passed; settlement proof incomplete | local receipt `7a0326c0…` | HTTP `200`; paid retry consumed once; provider omitted a payment receipt, so state remains `uncertain` rather than falsely settled |
 | BlockRun cancellation boundary | Passed | local receipt `5ae6847c…` | backgrounded approval recorded as rejected before payment |
@@ -211,13 +217,15 @@ interruption-recovery demonstration is not complete until every remaining gate
 below passes:
 
 - [x] physical-device onboarding evidence;
-- [x] an agent-originated inert proposal waiting at the Wallet boundary;
+- [x] an agent-originated proposal that stopped at the Wallet boundary and
+      completed only after human review and authentication;
 - [x] an explicitly rejected proposal with no execution;
 - [x] a completed zero-value Base Mainnet transaction;
 - [x] a verified receipt and independently reachable explorer transaction;
 - [ ] in-flight interruption/restart evidence that preserves one execution
       identity without a second submission;
-- [ ] a short video showing consent, review, interruption recovery, and receipt;
+- [x] raw physical-device video of the canonical agent-originated flow recorded;
+- [ ] final short video edited, redacted, uploaded, and checked while signed out;
 - [ ] a final redaction review of screenshots, logs, and the article.
 
 BlockRun and Venice are meaningful product validation but are not prerequisites
