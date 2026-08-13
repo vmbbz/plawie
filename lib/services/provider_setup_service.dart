@@ -100,6 +100,7 @@ class ProviderSetupService {
     await clearPending();
     _preferences.apiProvider = null;
     _preferences.configuredModel = null;
+    _preferences.canonicalModelSelectionJson = null;
     _preferences.aiPaymentProvider = provider.id;
   }
 

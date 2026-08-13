@@ -737,12 +737,59 @@ class GatewayConnection {
           model == expected.substring(separator + 1);
     }
 
+    return expectedModel?.trim().isEmpty != false &&
+        isLegacySessionPatchReceipt(response);
+  }
+
+  /// OpenClaw 2026.7.1 mutation receipt. It proves only that a patch was
+  /// accepted, not which provider/model the session resolved to.
+  static bool isLegacySessionPatchReceipt(Map<String, dynamic> response) {
+    if (response['type'] != 'res' ||
+        response['ok'] == false ||
+        response['error'] != null ||
+        response['errorCode'] != null ||
+        response['errorMessage'] != null) {
+      return false;
+    }
     final payload = response['payload'];
     if (payload is! Map || payload.length != 1 || !payload.containsKey('ts')) {
       return false;
     }
     final ts = payload['ts'];
     return ts is num && ts.isFinite && ts > 0;
+  }
+
+  /// Verifies the exact session provider/model in a `sessions.list` response.
+  /// This closes the identity gap left by legacy timestamp-only patch ACKs.
+  static bool sessionListConfirmsModel(
+    Map<String, dynamic> response, {
+    required String sessionKey,
+    required String expectedModel,
+  }) {
+    final separator = expectedModel.indexOf('/');
+    if (separator <= 0 || separator == expectedModel.length - 1) return false;
+    final expectedProvider = expectedModel.substring(0, separator);
+    final expectedUpstream = expectedModel.substring(separator + 1);
+    final payload =
+        response['payload'] is Map ? response['payload'] as Map : response;
+    final sessions = payload['sessions'];
+    if (sessions is! List) return false;
+
+    for (final value in sessions) {
+      if (value is! Map) continue;
+      final key = (value['key'] ?? value['sessionKey'])?.toString().trim();
+      if (key != sessionKey) continue;
+      final resolved =
+          value['resolved'] is Map ? value['resolved'] as Map : value;
+      final provider = resolved['modelProvider']?.toString().trim() ?? '';
+      final model = resolved['model']?.toString().trim() ?? '';
+      if (provider == expectedProvider && model == expectedUpstream) {
+        return true;
+      }
+      if (model == expectedModel) return true;
+      return false;
+    }
+    return false;
   }
 
   /// Update supported session metadata in-memory and wait for Gateway ACK.
@@ -772,6 +819,25 @@ class GatewayConnection {
       expectedModel: metadata['model']?.toString(),
     )) {
       return;
+    }
+
+    final expectedModel = metadata['model']?.toString().trim() ?? '';
+    if (expectedModel.isNotEmpty && isLegacySessionPatchReceipt(response)) {
+      final sessionSnapshot = await sendRequest(<String, dynamic>{
+        'method': 'sessions.list',
+        'params': <String, dynamic>{},
+      }).first.timeout(const Duration(seconds: 10));
+      if (sessionListConfirmsModel(
+        sessionSnapshot,
+        sessionKey: key,
+        expectedModel: expectedModel,
+      )) {
+        return;
+      }
+      throw StateError(
+        'sessions.patch was accepted by a legacy Gateway, but the live '
+        'session snapshot did not confirm $expectedModel for $key',
+      );
     }
 
     final error = response['error'] ?? response['payload'] ?? response;

@@ -19,8 +19,12 @@ selection identity, tool-loop validation, phase-aware errors, and safe fallback
 - Complete: provider-advertised chat/tool support is represented separately
   from schema acceptance and a verified complete tool loop. Legacy cached
   advertisements migrate conservatively and cannot become `Agent-ready`.
-- In progress: canonical model identity, phase-aware failures, capability
-  receipts/probes, provider-scoped runtime compatibility, and safe fallback.
+- Complete: one canonical selection receipt now binds the picker label,
+  provider, upstream ID, persisted model, chat header, and send path. Modern
+  session patch ACKs must match exactly; legacy timestamp ACKs require an exact
+  `sessions.list` reconciliation before any request is sent.
+- In progress: phase-aware failures, capability receipts/probes,
+  provider-scoped runtime compatibility, and safe fallback.
 
 Plawie must stop treating a provider's generic function-calling flag as proof
 that a model can run the complete mobile Agent loop.

@@ -14,6 +14,7 @@ import '../services/native_bridge.dart';
 import '../services/diagnostic_service.dart';
 import '../services/gateway_service.dart';
 import '../services/model_provider_catalog.dart';
+import '../services/canonical_model_selection.dart';
 import '../services/dynamic_model_catalog.dart';
 import '../services/ai_payment_provider_catalog.dart';
 import '../services/wallet_funded_provider_readiness.dart';
@@ -1281,7 +1282,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
         if (!context.mounted) return;
 
-        _prefs.configuredModel = modelId;
+        final selection = dynamicModel == null
+            ? CanonicalModelSelection.fromModelId(modelId)
+            : CanonicalModelSelection.fromDynamic(dynamicModel);
+        _prefs.setConfiguredModelSelection(selection);
         if (!ModelProviderCatalog.isDirectLocalModelId(modelId)) {
           _prefs.lastCloudModel = modelId;
         }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'canonical_model_selection.dart';
 import 'runtime_credential_store.dart';
 
 class PreferencesService {
@@ -27,6 +28,7 @@ class PreferencesService {
   static const _keyNodeCommandContractHash = 'node_command_contract_hash';
   static const _keyLocalChatModeEnabled = 'local_chat_mode_enabled';
   static const _keyLastCloudModel = 'last_cloud_model';
+  static const _keyCanonicalModelSelection = 'canonical_model_selection_v1';
   static const _keyImmersiveUiEnabled = 'immersive_ui_enabled';
   static const _keyPendingSetupId = 'pending_setup_id';
   static const _keyPendingSetupModel = 'pending_setup_model';
@@ -257,6 +259,44 @@ class PreferencesService {
     } else {
       _p.remove('configured_model');
     }
+    final receipt = CanonicalModelSelection.tryDecode(
+      _p.getString(_keyCanonicalModelSelection),
+    );
+    if (receipt != null && (value == null || !receipt.matchesModelId(value))) {
+      _p.remove(_keyCanonicalModelSelection);
+    }
+  }
+
+  /// Non-secret, validated model identity receipt. The raw configured model is
+  /// retained separately for compatibility with older installs and Gateway
+  /// configuration readers.
+  String? get canonicalModelSelectionJson =>
+      _p.getString(_keyCanonicalModelSelection);
+  set canonicalModelSelectionJson(String? value) {
+    if (value != null && value.trim().isNotEmpty) {
+      _p.setString(_keyCanonicalModelSelection, value.trim());
+    } else {
+      _p.remove(_keyCanonicalModelSelection);
+    }
+  }
+
+  CanonicalModelSelection? get configuredModelSelection {
+    final selection = CanonicalModelSelection.tryDecode(
+      canonicalModelSelectionJson,
+    );
+    final rawModel = configuredModel;
+    if (selection == null ||
+        rawModel == null ||
+        !selection.matchesModelId(rawModel)) {
+      return null;
+    }
+    return selection;
+  }
+
+  void setConfiguredModelSelection(CanonicalModelSelection selection) {
+    selection.validate();
+    configuredModel = selection.namespacedModelId;
+    canonicalModelSelectionJson = selection.encode();
   }
 
   bool get localChatModeEnabled =>

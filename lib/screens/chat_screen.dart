@@ -30,6 +30,7 @@ import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/model_provider_catalog.dart';
+import '../services/canonical_model_selection.dart';
 import '../services/dynamic_model_catalog.dart';
 import '../services/wallet_funded_provider_readiness.dart';
 import '../services/provider_balance_service.dart';
@@ -117,7 +118,15 @@ class _ChatScreenState extends State<ChatScreen>
 
   String _selectedAvatar = 'gemini.vrm';
   String _agentName = 'Plawie';
-  String _selectedModel = ModelProviderCatalog.defaultCloudFallbackModel;
+  CanonicalModelSelection _selectedModelSelection =
+      CanonicalModelSelection.fromModelId(
+    ModelProviderCatalog.defaultCloudFallbackModel,
+  );
+  String get _selectedModel => _selectedModelSelection.namespacedModelId;
+  set _selectedModel(String value) {
+    _selectedModelSelection = CanonicalModelSelection.fromModelId(value);
+  }
+
   // Cloud model to fall back to when a local NDK model stops.
   // Set at load time from onboarding provider; updated when user picks a cloud model.
   String _cloudFallbackModel = ModelProviderCatalog.defaultCloudFallbackModel;
@@ -263,7 +272,11 @@ class _ChatScreenState extends State<ChatScreen>
         if (!ModelProviderCatalog.isDirectLocalModelId(canonical) ||
             (ModelProviderCatalog.isDirectLocalModelId(canonical) &&
                 LocalLlmService().state.status == LocalLlmStatus.ready)) {
-          setState(() => _selectedModel = canonical);
+          final storedSelection = PreferencesService().configuredModelSelection;
+          setState(() => _selectedModelSelection =
+              storedSelection?.matchesModelId(canonical) == true
+                  ? storedSelection!
+                  : CanonicalModelSelection.fromModelId(canonical));
         }
       }
     });
@@ -633,6 +646,7 @@ class _ChatScreenState extends State<ChatScreen>
     final canonicalConfigured = storedConfigured == null
         ? null
         : ModelProviderCatalog.canonicalizeModelId(storedConfigured);
+    final storedSelection = prefs.configuredModelSelection;
     if (storedConfigured != null &&
         canonicalConfigured != null &&
         canonicalConfigured != storedConfigured) {
@@ -686,7 +700,10 @@ class _ChatScreenState extends State<ChatScreen>
             // user via the settings/chat dropdown. Do not fall back to
             // _cloudFallbackModel just because _availableModels hasn't
             // refreshed yet.
-            _selectedModel = configured;
+            _selectedModelSelection =
+                storedSelection?.matchesModelId(configured) == true
+                    ? storedSelection!
+                    : CanonicalModelSelection.fromModelId(configured);
             if (!isLocal) {
               prefs.lastCloudModel = configured;
             }
@@ -2425,11 +2442,12 @@ class _ChatScreenState extends State<ChatScreen>
       if (!mounted) return;
       final prefs = PreferencesService();
       await prefs.init();
+      final selection = CanonicalModelSelection.fromDynamic(model);
       setState(() {
-        _selectedModel = model.id;
+        _selectedModelSelection = selection;
         _cloudFallbackModel = model.id;
       });
-      prefs.configuredModel = model.id;
+      prefs.setConfiguredModelSelection(selection);
       prefs.lastCloudModel = model.id;
       if (providerOption?.requiresApiKey == false) {
         prefs.aiPaymentProvider = provider;
@@ -2980,7 +2998,9 @@ class _ChatScreenState extends State<ChatScreen>
             _cloudFallbackModel = model;
           }
         });
-        prefs.configuredModel = model;
+        prefs.setConfiguredModelSelection(
+          CanonicalModelSelection.fromModelId(model),
+        );
         if (!ModelProviderCatalog.isDirectLocalModelId(model)) {
           prefs.lastCloudModel = model;
         }
@@ -3629,7 +3649,7 @@ class _ChatScreenState extends State<ChatScreen>
                                 ModelProviderCatalog.isLocalModelId(
                                         _selectedModel)
                                     ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_localLlmState.status == LocalLlmStatus.starting ? 'STARTING...' : 'LOCAL ON-DEVICE'}'
-                                    : '${_selectedAvatar.split('.').first.toUpperCase()} · ${ModelProviderCatalog.labelForModel(_selectedModel).toUpperCase()}',
+                                    : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_selectedModelSelection.displayLabel.toUpperCase()}',
                                 style: TextStyle(
                                   color: ModelProviderCatalog.isLocalModelId(
                                           _selectedModel)

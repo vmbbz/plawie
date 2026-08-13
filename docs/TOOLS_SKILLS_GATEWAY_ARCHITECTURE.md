@@ -523,8 +523,10 @@ Gateways acknowledge this mutation with `ok: true` and report the resolved
 canonical `modelProvider`, `model`, and effective `agentRuntime`. Plawie checks
 the returned provider/model against the exact requested canonical ID before it
 allows the paid turn. The installed 2026.7.1 Gateway can instead return the
-legacy mutation receipt `payload: {ts: <epoch-ms>}`. Plawie accepts only those
-two versioned success forms. Explicit failures, mismatched resolved models,
+legacy mutation receipt `payload: {ts: <epoch-ms>}`. That timestamp does not
+prove the resolved model, so Plawie immediately reads `sessions.list` and
+requires the exact session key, provider, and upstream model before sending.
+Explicit failures, mismatched resolved models, unverifiable legacy receipts,
 error fields, empty responses, and arbitrary payloads fail closed before any
 paid provider request is sent.
 

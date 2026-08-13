@@ -23,8 +23,7 @@ void main() {
     );
   });
 
-  test('sessions.patch accepts current and legacy mutation acknowledgements',
-      () {
+  test('sessions.patch accepts only an exact modern model acknowledgement', () {
     expect(
       GatewayConnection.isSessionPatchAcknowledged(
         const {
@@ -51,7 +50,55 @@ void main() {
         },
         expectedModel: 'venice/gemini-3-6-flash',
       ),
+      isFalse,
+    );
+    expect(
+      GatewayConnection.isLegacySessionPatchReceipt(const {
+        'type': 'res',
+        'payload': {'ts': 1786580538180},
+      }),
       isTrue,
+    );
+  });
+
+  test('legacy receipt requires an exact sessions.list model snapshot', () {
+    const response = <String, dynamic>{
+      'type': 'res',
+      'ok': true,
+      'payload': {
+        'sessions': [
+          {
+            'key': 'agent:main:main',
+            'modelProvider': 'venice',
+            'model': 'gemini-3-6-flash',
+          },
+        ],
+      },
+    };
+
+    expect(
+      GatewayConnection.sessionListConfirmsModel(
+        response,
+        sessionKey: 'agent:main:main',
+        expectedModel: 'venice/gemini-3-6-flash',
+      ),
+      isTrue,
+    );
+    expect(
+      GatewayConnection.sessionListConfirmsModel(
+        response,
+        sessionKey: 'agent:main:main',
+        expectedModel: 'venice/gemma-4-uncensored',
+      ),
+      isFalse,
+    );
+    expect(
+      GatewayConnection.sessionListConfirmsModel(
+        response,
+        sessionKey: 'another-session',
+        expectedModel: 'venice/gemini-3-6-flash',
+      ),
+      isFalse,
     );
   });
 

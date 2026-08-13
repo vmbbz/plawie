@@ -17284,7 +17284,7 @@ ${lines.join('\n')}
   Future<List<Map<String, dynamic>>> fetchSessions() async {
     try {
       final frame = await invoke('sessions.list');
-      final raw = frame['sessions'];
+      final raw = _extractRpcPayload(frame)['sessions'];
       if (raw is! List) return [];
       return raw.whereType<Map<String, dynamic>>().toList();
     } catch (_) {

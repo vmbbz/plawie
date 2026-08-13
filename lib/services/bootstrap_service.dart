@@ -8,6 +8,7 @@ import 'native_bridge.dart';
 import 'package:flutter/services.dart';
 import 'preferences_service.dart';
 import 'model_provider_catalog.dart';
+import 'canonical_model_selection.dart';
 import 'gateway_tool_catalog.dart';
 import 'dart:io';
 import '../constants/openclaw_paths.dart';
@@ -380,7 +381,9 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
     await setupPrefs.init();
     try {
       await gateway.persistModel(pending.modelId);
-      setupPrefs.configuredModel = pending.modelId;
+      setupPrefs.setConfiguredModelSelection(
+        CanonicalModelSelection.fromModelId(pending.modelId),
+      );
       setupPrefs.apiProvider =
           ModelProviderCatalog.apiProviderForSetupId(pending.providerId);
     } catch (error) {
