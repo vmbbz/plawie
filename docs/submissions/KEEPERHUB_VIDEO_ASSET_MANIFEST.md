@@ -1,9 +1,10 @@
 # KeeperHub submission video — asset and edit manifest
 
-> **Status:** four physical-device evidence recordings are available: wallet
+> **Status:** five physical-device evidence recordings are available: wallet
 > onboarding, a Wallet-first proof, the canonical GLM-5 agent-originated proof,
-> and a separate GLM-5.2 capability/status/receipt read. A public final cut URL
-> is still pending. Raw MP4 files remain outside Git by design.
+> a separate GLM-5.2 capability/status/receipt read, and a fresh GLM-5.2
+> prepare/authorize/verified proof. A public final cut URL is still pending.
+> Raw MP4 files remain outside Git by design.
 
 ## Deliverables
 
@@ -37,9 +38,18 @@ identifiers, or a brief authentication overlay can leak more than a screenshot.
 | `V07` | BaseScan transaction and confirmed block `49,916,321` | `walletpage-keeperhub-self-transfer.mp4` | Select explorer segment | Review required |
 | `V08` | Rejected-before-execution records with no transaction | `walletpage-keeperhub-self-transfer.mp4` | Select receipt-history segment | Review required |
 | `V09` | GLM-5.2 reads capability, status, and receipts without preparing | `chat-page-keeperhub=tools-status-check.mp4` | Full clip, `03:20`; final successful turn near end | Review required; trim earlier failed retry |
+| `V10` | Fresh GLM-5.2 `keeperhub.prepare` → Wallet authorization → verified sponsored receipt `0x249fcef5…0cad58` | `keeperhub-a3-reject-prepare-authorize-verified.mp4` | Full clip, `07:29`; select Chat → Wallet → BaseScan → verified receipt sequence and trim initial protected/black transition | Preliminary contact-sheet review passed; final edit/redaction review required. The visible rejection is an earlier persisted record, not a fresh rejection in this clip. |
 
-The four named user files are in `C:\Users\cosyc\Downloads` and must be
+The five named user files are in `C:\Users\cosyc\Downloads` and must be
 uploaded as submission assets, not committed to the source repository.
+
+`V10` intake identity: `412,180,140` bytes, H.264/AAC, `1080×2340`, duration
+`449.571646` seconds, SHA-256
+`5AC4EDBB425045DD98CAF081FC9BD599BE16F011F03B29491E19BEF9C70C56A5`.
+Its persisted KeeperHub execution is `qfhbatqx6tez060s6mwww`; its independently
+verified Base Mainnet transaction is
+[`0x249fcef5…0cad58`](https://basescan.org/tx/0x249fcef5bf20ebc598f105ee2d6efbc11893fea70eeca7c07b0694f4f80cad58),
+block `49,921,458`, status `0x1`, zero value, and `40,933` gas.
 
 ## Final cut
 
@@ -94,9 +104,11 @@ numbers, and the zero-value proof amount are expected evidence and may remain.
 
 ## Acceptance gate
 
-- [ ] Every raw clip is inventoried above.
-- [x] The three supplied raw clips are mapped to proof beats.
+- [x] Every supplied raw clip is inventoried above.
+- [x] The five supplied raw clips are mapped to proof beats.
 - [x] A separate capability/status/receipt recording exists on the device.
+- [x] The latest A3 clip has a recorded SHA-256 and independently reconciled
+      receipt/transaction identity.
 - [ ] The canonical flow visibly begins in Chat with GLM-5.
 - [ ] The review visibly says Base Mainnet and `0 ETH`.
 - [ ] Human authorization occurs only in Wallet.

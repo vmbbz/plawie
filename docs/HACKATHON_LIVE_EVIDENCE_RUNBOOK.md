@@ -1,7 +1,7 @@
 # Plawie live evidence runbook
 
 **Status — 13 August 2026:** canonical evidence captured. KeeperHub onboarding,
-one complete agent-originated execution, two supporting separately authorized
+one complete agent-originated execution, three supporting separately authorized
 sponsored Base Mainnet proofs, bridge settlement, BlockRun paid chat, Venice
 top-up, and Venice chat have been observed on the physical device. The evidence
 table distinguishes verified settlement from a successful provider response
@@ -165,6 +165,19 @@ demonstrated separately in the canonical agent-originated transaction video.
    Mainnet explorer transaction page. There must be exactly one transaction
    hash and one successful receipt matching the execution.
 
+**Captured 13 August 2026:** the latest GLM-5.2 recording shows a fresh
+`keeperhub.prepare` call stopping at an inert simulated proposal, the user
+moving to Wallet, the exact `0 ETH` Base Mainnet review, human authorization,
+and a verified sponsored receipt for
+[`0x249fcef5…0cad58`](https://basescan.org/tx/0x249fcef5bf20ebc598f105ee2d6efbc11893fea70eeca7c07b0694f4f80cad58).
+The receipt is bound to intent `kh_f99a…1aaa0` and KeeperHub execution
+`qfhbat…6mwww`; a public Base RPC independently returned status `0x1`, block
+`49,921,458`, `40,933` gas, and zero value. The recording also displays an
+earlier persisted **Rejected before execution** record. It does not show a new
+reject action performed in that same clip, so rejection remains evidenced by
+the separate rejection recording and screenshot. In-flight interruption was
+not recorded and is not claimed.
+
 ## B. BlockRun Base-USDC chat
 
 1. Use the bridge UI to send `$3` USDC from Phantom/Solana to the displayed
@@ -217,7 +230,8 @@ claim of completion.
 | Agent capability boundary | Passed end-to-end through `keeperhub.prepare` | [`keeperhub-agent-originated-base-mainnet-verified.png`](articles/assets/keeperhub/keeperhub-agent-originated-base-mainnet-verified.png) | GLM-5 created intent `kh_44dc…`; Wallet alone exposed review/approval; KeeperHub execution `ti85uq…` completed only after human authentication |
 | Rejected proof / no execution | Passed; three rejected records visible | [`keeperhub-base-mainnet-rejected.png`](articles/assets/keeperhub/keeperhub-base-mainnet-rejected.png) and wallet recording | simulated intents were explicitly discarded before authorization; no execution ID or transaction followed |
 | Proof simulation | Passed | [`keeperhub-base-mainnet-review.png`](articles/assets/keeperhub/keeperhub-base-mainnet-review.png) | exact `0 ETH`, chain `8453`, self-recipient, non-reverting, `21,000` gas estimate |
-| Zero-value Base Mainnet submission | Passed three times as separately authorized intents | KeeperHub executions `ti85uq…`, `59ja3y…`, and `vxy25q…` | all sponsored; all `idempotentReplay: false`; `ti85uq…` is the canonical agent-originated path |
+| Zero-value Base Mainnet submission | Passed four times as separately authorized intents | KeeperHub executions `ti85uq…`, `59ja3y…`, `vxy25q…`, and `qfhbat…` | all sponsored; all `idempotentReplay: false`; `ti85uq…` is the canonical agent-originated path |
+| Latest A3 prepare / authorize / verify proof | Passed | [`0x249fcef5…0cad58`](https://basescan.org/tx/0x249fcef5bf20ebc598f105ee2d6efbc11893fea70eeca7c07b0694f4f80cad58) + `keeperhub-a3-reject-prepare-authorize-verified.mp4` | GLM-5.2 prepared intent `kh_f99a…`; execution `qfhbat…` completed after Wallet authorization; block `49,921,458`; public RPC status `0x1`; video SHA-256 `5AC4EDBB425045DD98CAF081FC9BD599BE16F011F03B29491E19BEF9C70C56A5` |
 | Interrupted polling recovery | Not run |  | terminal receipt persistence after force-stop/relaunch passed; do not claim in-flight recovery |
 | One verified receipt / explorer hash | Passed for canonical agent-originated intent | [`0x6b18c0e5…991430a`](https://basescan.org/tx/0x6b18c0e5475a97996f5a9654392050bf7cc754aa1b31c6f2492645750991430a) | status success; block `49,916,321`; `40,933` gas; public Base RPC status `0x1`; decoded call binds the Agent Wallet as target and recipient with zero amount |
 | Phantom to Base bridge | Passed | destination `0x2c456dcf…f3254252` | `3.0` Solana USDC produced `2.9925` Base USDC; a later `2.1` USDC route produced `2.09475` Base USDC |
@@ -242,6 +256,8 @@ below passes:
 - [ ] in-flight interruption/restart evidence that preserves one execution
       identity without a second submission;
 - [x] raw physical-device video of the canonical agent-originated flow recorded;
+- [x] latest A3 prepare → Wallet authorization → verified receipt video
+      recorded and reconciled with the persisted receipt and public Base RPC;
 - [ ] final short video edited, redacted, uploaded, and checked while signed out;
 - [ ] a final redaction review of screenshots, logs, and the article.
 

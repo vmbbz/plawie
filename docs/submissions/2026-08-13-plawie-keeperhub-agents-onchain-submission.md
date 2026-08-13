@@ -11,22 +11,21 @@
 | Website | <https://plawie.app> |
 | Source | <https://github.com/vmbbz/plawie/tree/codex/hybrid-bridge-funding-design> |
 | Canonical KeeperHub transaction | [Agent-originated Base Mainnet `0x6b18c0e5…991430a`](https://basescan.org/tx/0x6b18c0e5475a97996f5a9654392050bf7cc754aa1b31c6f2492645750991430a) |
-| Supporting KeeperHub transactions | [Base Mainnet `0xdcf1a13c…73117b04`](https://basescan.org/tx/0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04) and [`0x9ce5e377…d6def2a9`](https://basescan.org/tx/0x9ce5e37757383b1bd28232bd3a1d72e501671d5557a90aad1ddaca8ed6def2a9) |
+| Supporting KeeperHub transactions | [Base Mainnet `0xdcf1a13c…73117b04`](https://basescan.org/tx/0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04), [`0x9ce5e377…d6def2a9`](https://basescan.org/tx/0x9ce5e37757383b1bd28232bd3a1d72e501671d5557a90aad1ddaca8ed6def2a9), and latest A3 [`0x249fcef5…0cad58`](https://basescan.org/tx/0x249fcef5bf20ebc598f105ee2d6efbc11893fea70eeca7c07b0694f4f80cad58) |
 | Demo video | **ADD THE FINAL PUBLIC VIDEO URL BEFORE SUBMISSION** |
 | Video edit handoff | [Asset and edit manifest](KEEPERHUB_VIDEO_ASSET_MANIFEST.md) |
 | Canonical machine-readable evidence | [`keeperhub-agent-proof-0x6b18c0e5.json`](evidence/keeperhub-agent-proof-0x6b18c0e5.json) |
+| Latest A3 machine-readable evidence | [`keeperhub-a3-proof-0x249fcef5.json`](evidence/keeperhub-a3-proof-0x249fcef5.json) |
 | Long-form technical article | [The Agent Can Reason. The Phone Still Decides.](../articles/2026-08-11-plawie-human-governed-keeperhub-agent-wallet.md) |
 | Detailed evidence runbook | [Live evidence runbook](../HACKATHON_LIVE_EVIDENCE_RUNBOOK.md) |
-| Evidence status | GLM-5 prepared the canonical proof through OpenClaw; the human reviewed and authenticated in Wallet; KeeperHub sponsored and verified it on Base Mainnet. Two supporting proofs and one pre-execution rejection are also recorded. |
+| Evidence status | GLM-5 prepared the canonical proof through OpenClaw; the human reviewed and authenticated in Wallet; KeeperHub sponsored and verified it on Base Mainnet. Three supporting proofs and one pre-execution rejection are also recorded. |
 
 > [!IMPORTANT]
 > The transaction and product links above are ready. The source branch is
-> pushed, but a signed-out request currently returns `404`; make the submission
-> source publicly readable or publish a sanitized public submission repository
-> before filing. The final short demo video and a signed-in DoraHacks form
-> review are also mandatory. The reported build window ends **13 August 2026**;
-> the signed-in form is the authority for its exact closing time and bounty
-> wording.
+> pushed and was verified reachable from a signed-out request on 13 August
+> 2026. The final short demo video and a signed-in DoraHacks form review are
+> still mandatory. The signed-in form is the authority for its exact closing
+> time and bounty wording.
 
 > [!NOTE]
 > Android's protected authentication surface did not appear in the onboarding
@@ -63,7 +62,7 @@ Mainnet execution and returned an authoritative verified receipt.
 
 The zero value is an intentional safety constraint, not a mocked transaction.
 The canonical execution settled successfully in block `49,916,321`, and the
-receipt persisted in Wallet. Two earlier, separately authorized proof intents
+receipt persisted in Wallet. Three separately authorized supporting intents
 provide independent supporting transactions. Another simulated proposal was
 explicitly discarded before authentication and produced no transaction.
 
@@ -268,13 +267,19 @@ same successful status, block, and gas use.
 
 ### Independent supporting executions
 
-Two earlier fresh intents were separately reviewed and authorized. They are
+Three fresh intents were separately reviewed and authorized. They are
 supporting evidence, not retries of the canonical transaction:
 
 | Intent | KeeperHub execution | Transaction | Block | Receipt |
 |---|---|---|---:|---|
 | `kh_99dc92c349164d77b5895bdaf195117e` | `59ja3y71gxctnet4zprd8` | [`0xdcf1a13c…73117b04`](https://basescan.org/tx/0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04) | `49,896,836` | verified success; sponsored; fresh submission |
 | `kh_d21d76a707a8417b8b3f31a425cf4a99` | `vxy25qnik2izi1adeguhs` | [`0x9ce5e377…d6def2a9`](https://basescan.org/tx/0x9ce5e37757383b1bd28232bd3a1d72e501671d5557a90aad1ddaca8ed6def2a9) | `49,897,134` | verified success; sponsored; fresh submission |
+| `kh_f99a4b2c84014eebb760a14f74a1aaa0` | `qfhbatqx6tez060s6mwww` | [`0x249fcef5…0cad58`](https://basescan.org/tx/0x249fcef5bf20ebc598f105ee2d6efbc11893fea70eeca7c07b0694f4f80cad58) | `49,921,458` | verified success; sponsored; fresh GLM-5.2 prepare/Wallet authorization proof |
+
+The latest A3 recording is a fresh prepare/authorize/verify path. It also shows
+an older persisted rejection record, but does not capture a new rejection
+action in that same clip; the negative-path claim relies on the separate
+rejection recording and screenshot.
 
 ### Negative boundary
 
@@ -386,7 +391,7 @@ order:
 
 | Reported theme | Plawie evidence | How to present it |
 |---|---|---|
-| Execution | One complete agent-originated sponsored execution plus two independently authorized supporting proofs | Play the GLM-5 recording, open the canonical BaseScan link, then show the matching verified Wallet receipt |
+| Execution | One complete agent-originated sponsored execution plus three independently authorized supporting proofs | Play the GLM-5 recording, open the canonical BaseScan link, then show the matching verified Wallet receipt |
 | Use of KeeperHub surfaces | Headless onboarding plus simulate/execute/status/receipt APIs | Show that KeeperHub provisions, simulates, broadcasts, sponsors, and verifies; it is not a logo or generic fetch |
 | Reliability and observability | Persisted work identity, bounded polling, fail-closed unknown state, terminal receipt restoration, public RPC check | Focus on duplicate prevention and authoritative receipts; state the remaining in-flight live test honestly |
 | Originality and usefulness | A native Android human-governed execution boundary for a local OpenClaw agent | Demonstrate that consequential actions become portable without turning the phone into an unattended hot wallet |
@@ -489,7 +494,7 @@ and exposes status plus authoritative receipts. Plawie displays an immutable
 foreground review and requires fresh Android authentication before calling the
 execution path.
 
-We proved the integration with a complete agent-originated GLM-5 run and two
+We proved the integration with a complete agent-originated GLM-5 run and three
 independently authorized supporting executions. The canonical transaction
 settled successfully in Base block `49,916,321`; KeeperHub returned one verified
 receipt, and a public Base RPC independently returned status `0x1`, value `0`,
@@ -541,7 +546,7 @@ wallet.
   submission command.
 - Recorded the full GLM-5 agent proposal → Wallet review → human authentication
   → KeeperHub execution → verified receipt path on a physical Android device.
-- Executed and independently verified three separately authorized sponsored
+- Executed and independently verified four separately authorized sponsored
   Base Mainnet proofs.
 - Recorded a simulation-bound rejection that generated no transaction.
 - Persisted verified receipts across process/app updates without wallet loss.
@@ -581,8 +586,7 @@ foreground, freshly authenticated Android operation.
 
 ### Required artifacts reported by the event listing
 
-- [ ] Public source URL reachable while signed out; the pushed branch currently
-      returns `404` without repository access
+- [x] Public source URL reachable while signed out; verified on 13 August 2026
 - [x] Real transaction executed through KeeperHub
 - [x] Canonical BaseScan transaction URL prepared
 - [ ] Short public demo video uploaded and URL inserted at the top of this file
@@ -607,7 +611,8 @@ foreground, freshly authenticated Android operation.
       recorded by the user
 - [x] GLM-5.2 capability/status/receipt-only turn recorded; device logs show
       three read-only calls and no prepare or execution
-- [x] Raw onboarding, Wallet-first, and canonical chat-flow videos inventoried
+- [x] Five raw videos inventoried: onboarding, Wallet-first, canonical chat,
+      capability/status/receipts, and latest A3 prepare/authorize/verify
 - [ ] Final edited public video uploaded and checked from a signed-out browser
 - [ ] Final media redaction review completed
 
@@ -618,8 +623,8 @@ foreground, freshly authenticated Android operation.
 - [x] Changed Dart files analyze cleanly
 - [x] Final APK installed without clearing wallet data
 - [x] Local and installed APK hashes match
-- [ ] Confirm the pushed source branch is publicly readable from a signed-out
-      browser before submitting
+- [x] Pushed source branch publicly readable from a signed-out request on
+      13 August 2026
 - [ ] Add the final public video link; do not submit a placeholder
 
 ---

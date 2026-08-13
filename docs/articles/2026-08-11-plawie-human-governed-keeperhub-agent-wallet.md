@@ -401,15 +401,19 @@ auditable.
 
 ![Physical-device review of the exact zero-value Base Mainnet proof](assets/keeperhub/keeperhub-base-mainnet-review.png)
 
-![The two separately authorized KeeperHub proofs persisted with verified on-chain metadata](assets/keeperhub/keeperhub-base-mainnet-verified-receipt.png)
+![Two earlier separately authorized KeeperHub proofs persisted with verified on-chain metadata](assets/keeperhub/keeperhub-base-mainnet-verified-receipt.png)
 
 ![The completed agent-originated GLM-5 proof in the Wallet receipt ledger](assets/keeperhub/keeperhub-agent-originated-base-mainnet-verified.png)
 
-Two earlier proofs produced distinct intent IDs, execution IDs, and verified
-transactions (`0xdcf1a13c…73117b04` and `0x9ce5e377…d6def2a9`) with
-`idempotentReplay: false`. They are expected new work—not retries or duplicates
-of the canonical proof. Each approved intent has exactly one successful
-receipt.
+Three supporting proofs produced distinct intent IDs, execution IDs, and
+verified transactions (`0xdcf1a13c…73117b04`, `0x9ce5e377…d6def2a9`, and
+[`0x249fcef5…0cad58`](https://basescan.org/tx/0x249fcef5bf20ebc598f105ee2d6efbc11893fea70eeca7c07b0694f4f80cad58))
+with `idempotentReplay: false`. They are expected new work—not retries or
+duplicates of the canonical proof. Each approved intent has exactly one
+successful receipt. The latest GLM-5.2 A3 recording independently shows the
+agent prepare, Wallet-only authorization, BaseScan anatomy, and the verified
+`0x249f…` receipt. Its visible rejected record predates that recording and is
+not presented as a fresh rejection within the same clip.
 
 A separate proposal was simulated only to exercise the negative boundary. It
 was explicitly discarded from the foreground Wallet UI before Android
