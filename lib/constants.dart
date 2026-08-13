@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class AppConstants {
   static const String appName = 'Plawie';
-  static const String version = '2.2.1';
+  static const String version = '2.3.0';
   static const String packageName = 'com.openclaw.plawie';
 
   /// Matches ANSI escape sequences (e.g. color codes in terminal output).
