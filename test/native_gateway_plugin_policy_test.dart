@@ -5,10 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   const filesDir = '/data/user/0/com.openclaw.plawie/files';
   const verifiedId = 'plawie-venice-compat';
+  const coreVerifiedId = 'plawie-tool-probe-guard';
   const verifiedPath =
       '$filesDir/native-node-embedded/full-openclaw/verified-plugins/$verifiedId';
 
-  test('rejects arbitrary plugin paths and install records without Venice', () {
+  test('rejects arbitrary paths and retains only the verified core guard', () {
     final config = <String, dynamic>{
       'plugins': <String, dynamic>{
         'allow': <String>['malicious'],
@@ -32,11 +33,33 @@ void main() {
     );
 
     final plugins = config['plugins']! as Map<String, dynamic>;
-    expect(plugins['allow'],
-        ModelProviderCatalog.nativeGatewayBundledPluginIds.toList()..sort());
-    expect(plugins, isNot(contains('load')));
+    expect(
+        plugins['allow'],
+        <String>[
+          ...ModelProviderCatalog.nativeGatewayBundledPluginIds,
+          coreVerifiedId,
+        ]..sort());
+    expect(
+      plugins['load'],
+      <String, dynamic>{
+        'paths': <String>[
+          '$filesDir/native-node-embedded/full-openclaw/verified-plugins/$coreVerifiedId',
+        ],
+      },
+    );
     expect(plugins, isNot(contains('installs')));
-    expect(plugins, isNot(contains('entries')));
+    expect(
+      plugins['entries'],
+      <String, dynamic>{
+        coreVerifiedId: const <String, dynamic>{
+          'enabled': true,
+          'hooks': <String, dynamic>{
+            'allowConversationAccess': true,
+            'allowPromptInjection': false,
+          },
+        },
+      },
+    );
     expect(plugins, isNot(contains('slots')));
   });
 
@@ -65,15 +88,26 @@ void main() {
     final plugins = config['plugins']! as Map<String, dynamic>;
     final allow = plugins['allow']! as List<dynamic>;
     expect(allow, contains(verifiedId));
+    expect(allow, contains(coreVerifiedId));
     expect(
       plugins['load'],
       <String, dynamic>{
-        'paths': <String>[verifiedPath],
+        'paths': <String>[
+          '$filesDir/native-node-embedded/full-openclaw/verified-plugins/$coreVerifiedId',
+          verifiedPath,
+        ],
       },
     );
     expect(
       plugins['entries'],
       <String, dynamic>{
+        coreVerifiedId: const <String, dynamic>{
+          'enabled': true,
+          'hooks': <String, dynamic>{
+            'allowConversationAccess': true,
+            'allowPromptInjection': false,
+          },
+        },
         verifiedId: const <String, dynamic>{'enabled': true},
       },
     );

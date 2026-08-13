@@ -108,4 +108,72 @@ void main() {
     expect(failure.retryDisposition, ProviderRetryDisposition.repairRequired);
     expect(failure.message, contains('Repair this provider'));
   });
+
+  test('pre-tool failure may name a verified same-provider option', () {
+    final failure = ProviderTurnFailure.classify(
+      'Invalid request parameters: tool payload',
+      trace: const ProviderTurnTrace(
+        requestAccepted: true,
+        toolCallObserved: false,
+        toolResultObserved: false,
+        assistantTextObserved: false,
+      ),
+      modelId: 'venice/gemma',
+      suggestedFallbackModelId: 'venice/glm',
+      suggestedFallbackLabel: 'GLM',
+    );
+
+    expect(failure.message, contains('Verified same-provider option'));
+    expect(failure.message, contains('did not switch models'));
+    expect(failure.allowsAutomaticReplay, isFalse);
+  });
+
+  test('post-tool failure never offers a fallback rerun', () {
+    final failure = ProviderTurnFailure.classify(
+      'Invalid request parameters: tool payload',
+      trace: const ProviderTurnTrace(
+        requestAccepted: true,
+        toolCallObserved: true,
+        toolResultObserved: true,
+        assistantTextObserved: false,
+      ),
+      modelId: 'venice/gemini',
+      suggestedFallbackModelId: 'venice/glm',
+      suggestedFallbackLabel: 'GLM',
+    );
+
+    expect(failure.message, isNot(contains('Verified same-provider option')));
+    expect(failure.message, contains('Verify the action or receipt'));
+  });
+
+  test('model, context, malformed, and outage failures stay distinct', () {
+    const trace = ProviderTurnTrace(
+      requestAccepted: true,
+      toolCallObserved: false,
+      toolResultObserved: false,
+      assistantTextObserved: false,
+    );
+
+    expect(
+      ProviderTurnFailure.classify('Model not found', trace: trace).kind,
+      ProviderFailureKind.modelUnavailable,
+    );
+    expect(
+      ProviderTurnFailure.classify('Maximum context length exceeded',
+              trace: trace)
+          .kind,
+      ProviderFailureKind.contextLimit,
+    );
+    expect(
+      ProviderTurnFailure.classify('Malformed response from upstream',
+              trace: trace)
+          .kind,
+      ProviderFailureKind.malformedResponse,
+    );
+    expect(
+      ProviderTurnFailure.classify('503 service unavailable', trace: trace)
+          .kind,
+      ProviderFailureKind.providerUnavailable,
+    );
+  });
 }

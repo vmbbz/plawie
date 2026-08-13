@@ -1,0 +1,11 @@
+{
+  "id": "plawie-tool-probe-guard",
+  "name": "Plawie tool probe guard",
+  "description": "Fail-closed execution guard for Plawie's explicit read-only provider tool probe.",
+  "version": "1.0.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

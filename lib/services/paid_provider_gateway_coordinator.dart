@@ -3,6 +3,7 @@ import 'paid_provider_http_client.dart';
 import 'paid_provider_loopback_credential_service.dart';
 import 'paid_provider_proxy_models.dart';
 import 'paid_provider_proxy_service.dart';
+import 'paid_provider_tool_route_policy.dart';
 
 class PaidProviderGatewayException implements Exception {
   const PaidProviderGatewayException(this.code, this.message);
@@ -47,6 +48,7 @@ class PaidProviderGatewayCoordinator {
     final proxy = PaidProviderProxyService(
       credentialService: credentials,
       readyProviders: () => PaidProviderId.values.toSet(),
+      toolRoutePolicy: PaidProviderToolRoutePolicy(),
       handler: (request) => switch (request.provider) {
         PaidProviderId.venice => venice(request),
         PaidProviderId.blockrun => blockRun(request),

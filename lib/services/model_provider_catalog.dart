@@ -268,7 +268,15 @@ class ModelProviderCatalog {
   /// app-private verified-plugin directory. These are deliberately separate
   /// from upstream bundled plugins and arbitrary writable extension paths.
   static const Set<String> nativeGatewayVerifiedPluginIds = <String>{
+    'plawie-tool-probe-guard',
     'plawie-venice-compat',
+  };
+
+  /// Verified policy plugins required for every native Gateway regardless of
+  /// which cloud provider is selected. They are app-private and hash checked
+  /// by Android before the Gateway can load them.
+  static const Set<String> nativeGatewayCoreVerifiedPluginIds = <String>{
+    'plawie-tool-probe-guard',
   };
 
   static const Map<String, String> nativeGatewayVerifiedPluginByProvider =

@@ -32,8 +32,43 @@ selection identity, tool-loop validation, phase-aware errors, and safe fallback
   changes, never store turn content, and are merged only at display/send
   boundaries. A real successful foreground tool loop can promote its route;
   schema/replay failures quarantine only the failing model route.
-- In progress: explicit side-effect-free probes, provider-scoped runtime
-  compatibility, and safe fallback.
+- Complete: a signed, app-private `plawie-venice-compat` plugin delegates
+  Venice-hosted Gemini replay and schema handling to OpenClaw's official
+  provider hooks. It is exact-provider/model-family scoped, version bounded,
+  SHA-256 verified during Android provisioning, and never fabricates opaque
+  thought signatures.
+- Complete: the model picker exposes an explicit foreground `Test tools`
+  action for unverified routes. The test uses the existing read-only
+  `session_status` tool, requires exactly one bounded call and result, an exact
+  final marker, and a terminal Gateway frame, then stores an exact-route
+  `explicitProbe` receipt. It never runs during setup, startup, catalog
+  refresh, or background work.
+- Complete: a second signed app-private core plugin binds the exact probe prompt
+  to its Gateway run and blocks every tool except `session_status` with the
+  fixed `{sessionKey: current}` input. The guard is provider-neutral, has no
+  network/filesystem behavior, expires bounded run state, and is enabled for
+  every native Gateway. It observes ordinary turns only long enough to reject
+  non-matching probe text and does not change their tools or provider path.
+- Complete: incompatible paid-provider routes are converted to ordinary chat
+  at the private loopback transport edge by removing only tool-specific request
+  fields. The quarantine is exact provider/model/fingerprint scoped and leaves
+  messages, context, payment, model identity, and unrelated providers intact.
+  Retesting requires a short-lived, process-local permit issued only after the
+  foreground confirmation and paid-turn authorization; copying the private
+  probe prompt cannot bypass quarantine or mint a receipt.
+- Complete: receipt precedence is chronological within the current
+  fingerprint. A newer tool failure supersedes an older pass, a newer explicit
+  pass repairs an older quarantine, and an ordinary chat success cannot alter
+  tool readiness because it did not exercise tools.
+- Complete: pre-tool failures may propose a same-provider, same-route,
+  modality-preserving model only when it has a current `loopVerified` receipt.
+  Plawie never changes the selection or resends the message; post-tool
+  failures never offer a rerun.
+- Pending physical-device evidence: run the explicit probe against Venice
+  Gemini and Gemma on the signed APK and promote only routes that complete.
+  Until then, GLM 5.2 remains the shipped verified Venice Agent route, Gemini
+  remains schema-accepted but unverified for the complete loop, and Gemma
+  remains chat-only after its observed tool-schema rejection.
 
 Plawie must stop treating a provider's generic function-calling flag as proof
 that a model can run the complete mobile Agent loop.
@@ -503,18 +538,19 @@ serving; OpenClaw/provider adapters own protocol formatting.
 
 ## 10. Full-loop compatibility probe
 
-Use a deterministic, side-effect-free internal tool such as
-`plawie_compat_echo`:
+Use a deterministic, side-effect-free internal tool. The implementation reuses
+OpenClaw's built-in `session_status` rather than permanently adding another
+diagnostic schema to normal model requests:
 
 ```json
 {
-  "value": "plawie-tool-probe",
-  "sequence": 1
+  "sessionKey": "current"
 }
 ```
 
-The tool returns a fixed, bounded object and performs no Node, skill, network,
-wallet, file, notification, camera, or device action.
+The tool returns bounded session status and performs no Node, skill, network,
+wallet, file, notification, camera, or device action. The model must return the
+exact marker `PLAWIE TOOL COMPATIBILITY VERIFIED` after the result.
 
 Required stages:
 
@@ -535,6 +571,13 @@ Required stages:
 - Setup/startup never runs inference.
 - BlockRun probes use the existing exact payment approval and cannot share a
   hidden approval lease.
+- A probe permit is process-local, exact-provider/model, request bounded,
+  expiring, and closed with the foreground turn. Prompt text is never treated
+  as authorization.
+- The signed Gateway guard independently prevents a matching probe run from
+  executing any tool except the fixed read-only `session_status` call. A copied
+  marker cannot mint a receipt because Flutter also requires app-owned runtime
+  authorization.
 - A real successful foreground tool turn can upgrade a local receipt.
 - A provider failure can quarantine only the exact provider/model/fingerprint,
   not the provider globally.
@@ -748,10 +791,18 @@ done safely.
 
 ### Phase 4 — Probe and receipt framework
 
-- Add the deterministic internal tool and staged probe runner.
-- Add shipped profiles, local receipts, invalidation, and model-scoped
+- [x] Add the deterministic read-only staged probe runner.
+- [x] Add shipped profiles, local receipts, invalidation, and model-scoped
   quarantine.
-- Keep probes off automatic lifecycle paths.
+- [x] Keep probes off automatic lifecycle paths.
+- [x] Enforce exact-model paid-route quarantine at the loopback transport edge
+  while preserving all conversation/context fields.
+- [x] Require app-owned runtime authorization in addition to the exact prompt
+  before a quarantined paid route can be retested or a probe can be evaluated.
+- [x] Add a provider-neutral, SHA-256-pinned Gateway policy plugin that
+  fail-closes any non-status tool selected during the exact probe run.
+- [x] Keep chat and tool evidence independently supersedable so ordinary chat
+  cannot lift a tool quarantine.
 
 **Exit:** `Agent-ready` means the complete loop passed for the effective
 fingerprint.
@@ -764,7 +815,8 @@ fingerprint.
 - [x] Adopt official `passthrough-gemini` replay sanitation and Gemini
   provider-tool hooks behind exact `venice` plus Gemini-family detection.
 - [x] Invalidate old capability receipts by advancing the compatibility profile
-  from `provider-tools-v1` to `provider-tools-v2`.
+  from `provider-tools-v1` to `provider-tools-v2` when the provider plugin
+  landed, then to `provider-tools-v3` when the exact probe contract landed.
 - [ ] Diagnose signature presence/loss on a physical-device full-loop probe.
 - [ ] Retain the existing request mapper until direct/Gateway parity passes.
 - Run the Gemma reduction ladder and add only evidence-backed normalization.
@@ -774,9 +826,11 @@ Gemma is enabled only if its full loop passes; other providers are unchanged.
 
 ### Phase 6 — User-confirmed safe fallback
 
-- Rank only same-provider, same-contract, verified candidates.
-- Add the pre-tool switch confirmation.
-- Add post-tool result-preserving recovery without replay.
+- [x] Rank only same-provider, same-contract, verified candidates.
+- [x] Keep the actual switch explicit through the existing model picker; no
+  automatic selection or resend exists.
+- [x] Suppress fallback proposals after any tool call/result and preserve the
+  verify-before-retry warning.
 
 **Exit:** a compatibility failure has a useful path forward with no silent
 provider/payment change and no duplicated action.

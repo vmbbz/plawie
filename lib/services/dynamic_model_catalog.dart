@@ -143,10 +143,6 @@ class DynamicModelRecord {
       ModelToolEvidence.loopVerified => ModelToolReadiness.loopVerified,
       ModelToolEvidence.incompatible => ModelToolReadiness.incompatible,
     };
-    final tools = receipt.toolEvidence == ModelToolEvidence.schemaAccepted &&
-            toolReadiness == ModelToolReadiness.loopVerified
-        ? toolReadiness
-        : receiptTools;
     final ownsToolAssessment = receipt.toolEvidence != ModelToolEvidence.none ||
         capabilityAssessmentId == null;
     return DynamicModelRecord(
@@ -162,7 +158,7 @@ class DynamicModelRecord {
       supportsVision: supportsVision,
       toolPolicy: toolPolicy,
       chatReadiness: chat,
-      toolReadiness: tools,
+      toolReadiness: receiptTools,
       advertisedContextWindow: advertisedContextWindow,
       advertisedMaxOutputTokens: advertisedMaxOutputTokens,
       deprecationDate: deprecationDate,
@@ -961,9 +957,12 @@ DynamicModelRecord _applyNewestMatchingReceipt(
           ))
       .toList(growable: false)
     ..sort((a, b) {
-      final sourceOrder = a.source.index.compareTo(b.source.index);
-      if (sourceOrder != 0) return sourceOrder;
-      return a.observedAt.compareTo(b.observedAt);
+      final aShipped = a.source == ModelCapabilityReceiptSource.shipped;
+      final bShipped = b.source == ModelCapabilityReceiptSource.shipped;
+      if (aShipped != bShipped) return aShipped ? -1 : 1;
+      final observedOrder = a.observedAt.compareTo(b.observedAt);
+      if (observedOrder != 0) return observedOrder;
+      return a.source.index.compareTo(b.source.index);
     });
   var assessed = model;
   for (final receipt in matching) {

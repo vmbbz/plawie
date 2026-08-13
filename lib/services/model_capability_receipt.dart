@@ -41,7 +41,7 @@ class ModelCapabilityReceipt {
 
   static const int schemaVersion = 1;
   static const String currentGatewayVersion = '2026.7.1';
-  static const String currentCompatibilityProfileVersion = 'provider-tools-v2';
+  static const String currentCompatibilityProfileVersion = 'provider-tools-v3';
   static const String currentStreamMode = 'gateway-streaming';
 
   final String assessmentId;
@@ -222,6 +222,55 @@ class ModelCapabilityReceiptRepository {
     ];
   }
 
+  Future<ModelCapabilityReceipt?> latestForModel(
+    String modelId, {
+    DateTime? now,
+  }) async {
+    final canonical = ModelProviderCatalog.canonicalizeModelId(modelId);
+    final separator = canonical.indexOf('/');
+    if (separator <= 0 || separator == canonical.length - 1) return null;
+    final providerId = canonical.substring(0, separator);
+    final upstreamModelId = canonical.substring(separator + 1);
+    final timestamp = (now ?? DateTime.now()).toUtc();
+    final matching = (await readCurrent(now: timestamp))
+        .where((receipt) => receipt.matchesModel(
+              providerId: providerId,
+              namespacedModelId: canonical,
+              upstreamModelId: upstreamModelId,
+              now: timestamp,
+            ))
+        .toList(growable: false)
+      ..sort(_compareReceiptAuthority);
+    return matching.isEmpty ? null : matching.last;
+  }
+
+  /// Returns the newest current observation that actually exercised or
+  /// rejected tools. A later ordinary chat receipt must not erase a verified
+  /// tool loop or lift a quarantine it did not retest.
+  Future<ModelCapabilityReceipt?> latestToolReceiptForModel(
+    String modelId, {
+    DateTime? now,
+  }) async {
+    final canonical = ModelProviderCatalog.canonicalizeModelId(modelId);
+    final separator = canonical.indexOf('/');
+    if (separator <= 0 || separator == canonical.length - 1) return null;
+    final providerId = canonical.substring(0, separator);
+    final upstreamModelId = canonical.substring(separator + 1);
+    final timestamp = (now ?? DateTime.now()).toUtc();
+    final matching = (await readCurrent(now: timestamp))
+        .where((receipt) =>
+            receipt.toolEvidence != ModelToolEvidence.none &&
+            receipt.matchesModel(
+              providerId: providerId,
+              namespacedModelId: canonical,
+              upstreamModelId: upstreamModelId,
+              now: timestamp,
+            ))
+        .toList(growable: false)
+      ..sort(_compareReceiptAuthority);
+    return matching.isEmpty ? null : matching.last;
+  }
+
   Future<void> recordSuccessfulTurn({
     required String modelId,
     required bool toolCallObserved,
@@ -244,9 +293,28 @@ class ModelCapabilityReceiptRepository {
     ));
   }
 
+  Future<void> recordSuccessfulExplicitProbe({
+    required String modelId,
+    String? catalogRevision,
+    DateTime? now,
+  }) async {
+    await _upsert(_newLocalReceipt(
+      modelId: modelId,
+      chatEvidence: ModelChatEvidence.verified,
+      toolEvidence: ModelToolEvidence.loopVerified,
+      source: ModelCapabilityReceiptSource.explicitProbe,
+      catalogRevision: catalogRevision,
+      detail:
+          'Explicit foreground test completed the exact read-only tool loop.',
+      now: now,
+    ));
+  }
+
   Future<void> recordFailure({
     required String modelId,
     required ProviderTurnFailure failure,
+    ModelCapabilityReceiptSource source =
+        ModelCapabilityReceiptSource.localTurn,
     String? catalogRevision,
     DateTime? now,
   }) async {
@@ -261,7 +329,7 @@ class ModelCapabilityReceiptRepository {
       modelId: modelId,
       chatEvidence: ModelChatEvidence.none,
       toolEvidence: toolEvidence,
-      source: ModelCapabilityReceiptSource.localTurn,
+      source: source,
       catalogRevision: catalogRevision,
       failureKind: failure.kind.name,
       detail: failure.kind == ProviderFailureKind.replayMetadataMissing
@@ -276,9 +344,7 @@ class ModelCapabilityReceiptRepository {
     final current = await readCurrent();
     final local = current
         .where((item) => item.source != ModelCapabilityReceiptSource.shipped)
-        .where((item) =>
-            item.namespacedModelId != receipt.namespacedModelId ||
-            item.endpointClass != receipt.endpointClass)
+        .where((item) => !_isFullySupersededBy(item, receipt))
         .toList(growable: true)
       ..add(receipt)
       ..sort((a, b) => b.observedAt.compareTo(a.observedAt));
@@ -386,6 +452,42 @@ class ModelCapabilityReceiptRepository {
         detail: 'This Venice route rejected the mobile tool request.',
       ),
     ];
+  }
+
+  static int _compareReceiptAuthority(
+    ModelCapabilityReceipt a,
+    ModelCapabilityReceipt b,
+  ) {
+    final shippedOrder = _shippedBaselineOrder(a, b);
+    if (shippedOrder != 0) return shippedOrder;
+    final observedOrder = a.observedAt.compareTo(b.observedAt);
+    if (observedOrder != 0) return observedOrder;
+    return a.source.index.compareTo(b.source.index);
+  }
+
+  static int _shippedBaselineOrder(
+    ModelCapabilityReceipt a,
+    ModelCapabilityReceipt b,
+  ) {
+    final aShipped = a.source == ModelCapabilityReceiptSource.shipped;
+    final bShipped = b.source == ModelCapabilityReceiptSource.shipped;
+    if (aShipped == bShipped) return 0;
+    return aShipped ? -1 : 1;
+  }
+
+  static bool _isFullySupersededBy(
+    ModelCapabilityReceipt existing,
+    ModelCapabilityReceipt incoming,
+  ) {
+    if (existing.namespacedModelId != incoming.namespacedModelId ||
+        existing.endpointClass != incoming.endpointClass) {
+      return false;
+    }
+    final preservesChat = existing.chatEvidence != ModelChatEvidence.none &&
+        incoming.chatEvidence == ModelChatEvidence.none;
+    final preservesTools = existing.toolEvidence != ModelToolEvidence.none &&
+        incoming.toolEvidence == ModelToolEvidence.none;
+    return !preservesChat && !preservesTools;
   }
 }
 

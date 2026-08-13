@@ -38,6 +38,7 @@ class DynamicModelPickerPanel extends StatefulWidget {
     this.autofocusSearch = false,
     this.autoRefreshWalletBalances = false,
     this.onRefreshProviderBalance,
+    this.onTestTools,
   });
 
   final DynamicCatalogSnapshot snapshot;
@@ -52,6 +53,7 @@ class DynamicModelPickerPanel extends StatefulWidget {
   final bool autofocusSearch;
   final bool autoRefreshWalletBalances;
   final WalletProviderBalanceRefresh? onRefreshProviderBalance;
+  final ValueChanged<DynamicModelRecord>? onTestTools;
 
   @override
   State<DynamicModelPickerPanel> createState() =>
@@ -382,6 +384,11 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
             ? '${readiness.title} — ${readiness.detail}'
             : '${model.readinessLabel} · ${model.id}${retirement == null ? '' : ' · retires $retirement'}'
                 '${model.capabilityDetail == null ? '' : '\n${model.capabilityDetail}'}';
+    final canTestTools = widget.onTestTools != null &&
+        enabled &&
+        !blocked &&
+        !model.agentReady &&
+        model.supportsToolCalls != false;
     return RadioListTile<String>(
       key: Key('model-option-${model.id}'),
       dense: true,
@@ -390,15 +397,32 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
       subtitle: Text(
         subtitle,
         style: Theme.of(context).textTheme.labelSmall,
-        maxLines: blocked || model.capabilityDetail != null ? 2 : null,
+        maxLines: blocked || model.capabilityDetail != null ? 3 : null,
         overflow: model.liveAvailable ? TextOverflow.ellipsis : null,
       ),
       secondary: blocked
           ? const Icon(Icons.lock_clock_rounded, size: 18, color: Colors.amber)
-          : !model.liveAvailable && model.deprecationDate != null
-              ? const Icon(Icons.event_busy_rounded,
-                  size: 18, color: Colors.amber)
-              : null,
+          : canTestTools
+              ? TextButton.icon(
+                  key: Key('model-tool-test-${model.id}'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                  ),
+                  onPressed: () => widget.onTestTools!(model),
+                  icon: const Icon(Icons.science_outlined, size: 16),
+                  label: const Text('Test tools'),
+                )
+              : !model.liveAvailable && model.deprecationDate != null
+                  ? const Icon(Icons.event_busy_rounded,
+                      size: 18, color: Colors.amber)
+                  : model.agentReady
+                      ? const Tooltip(
+                          message: 'Complete tool loop verified',
+                          child: Icon(Icons.verified_rounded,
+                              size: 18, color: Colors.greenAccent),
+                        )
+                      : null,
       value: model.id,
     );
   }

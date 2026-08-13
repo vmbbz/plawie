@@ -37,6 +37,8 @@ import 'gateway_config_signature.dart';
 import 'provider_turn_failure.dart';
 import 'model_capability_receipt.dart';
 import 'native_gateway_plugin_policy.dart';
+import 'model_tool_compatibility_probe.dart';
+import 'provider_compatible_fallback.dart';
 
 class _FastCloudRoute {
   final String provider;
@@ -164,6 +166,8 @@ ${_boundedText(visibleText)}
 
 class _AssistantStreamAccumulator {
   String _delivered = '';
+
+  String get delivered => _delivered;
 
   String add(String text) {
     if (text.isEmpty) return '';
@@ -15173,6 +15177,7 @@ ${lines.join('\n')}
     String? model,
     List<Map<String, dynamic>>? conversationHistory,
     String? sessionKey,
+    bool explicitToolCompatibilityProbe = false,
   }) async* {
     model = await _resolveModel(model);
 
@@ -15953,6 +15958,25 @@ ${lines.join('\n')}
     var toolResultObserved = requiredToolContinuation != null;
     var gatewayToolCallObserved = false;
     var gatewayToolResultObserved = false;
+    final explicitCompatibilityProbe =
+        ModelToolCompatibilityProbe.isAuthorizedProbe(
+      message,
+      authorized: explicitToolCompatibilityProbe,
+    );
+    final probeToolCalls = <ModelToolProbeEvent>[];
+    final probeToolResults = <ModelToolProbeEvent>[];
+    var terminalFrameObserved = false;
+    ProviderCompatibleFallback? fallbackCandidate;
+    try {
+      final snapshot = await DynamicModelCatalogRepository().loadOrBundled();
+      fallbackCandidate = ProviderCompatibleFallbackPlanner.find(
+        snapshot: snapshot,
+        selectedModelId: model,
+        requiresVision: false,
+      );
+    } catch (_) {
+      // A stale/unavailable catalog must never block the selected model turn.
+    }
 
     ProviderTurnTrace currentTurnTrace() => ProviderTurnTrace(
           requestAccepted: gatewayAcceptedAt != null || runStarted,
@@ -15973,10 +15997,15 @@ ${lines.join('\n')}
         modelId: model!,
         timeout: timeout,
         transport: transport,
+        suggestedFallbackModelId: fallbackCandidate?.modelId,
+        suggestedFallbackLabel: fallbackCandidate?.label,
       );
       unawaited(ModelCapabilityReceiptRepository().recordFailure(
         modelId: model,
         failure: failure,
+        source: explicitCompatibilityProbe
+            ? ModelCapabilityReceiptSource.explicitProbe
+            : ModelCapabilityReceiptSource.localTurn,
       ));
       return failure.message;
     }
@@ -16137,6 +16166,7 @@ ${lines.join('\n')}
                 _addActivity('[CHAT] ✗ $msg');
                 finishChatWithError(msg);
               } else if (!chunkController.isClosed) {
+                terminalFrameObserved = true;
                 chunkController.close();
               }
             } else if ((state == 'aborted' || state == 'error') &&
@@ -16198,6 +16228,17 @@ ${lines.join('\n')}
                       frame['name']) as String? ??
                   '';
               final input = innerData?['input'] ?? payload?['input'];
+              if (explicitCompatibilityProbe && name.isNotEmpty) {
+                probeToolCalls.add(ModelToolProbeEvent(
+                  name: name,
+                  payload: input,
+                  callId: (innerData?['id'] ??
+                          innerData?['toolCallId'] ??
+                          payload?['id'] ??
+                          payload?['toolCallId'])
+                      ?.toString(),
+                ));
+              }
               if (name.isNotEmpty && !chunkController.isClosed) {
                 markVisibleChatOutput();
                 chunkController
@@ -16220,6 +16261,17 @@ ${lines.join('\n')}
                   payload?['result'] ??
                   innerData?['output'] ??
                   payload?['output'];
+              if (explicitCompatibilityProbe) {
+                probeToolResults.add(ModelToolProbeEvent(
+                  name: name,
+                  payload: result,
+                  callId: (innerData?['id'] ??
+                          innerData?['toolCallId'] ??
+                          payload?['id'] ??
+                          payload?['toolCallId'])
+                      ?.toString(),
+                ));
+              }
 
               // Gateway TTS: intercept tts tool results that contain a MEDIA: path.
               // The gateway sherpa-onnx-tts skill returns a plain string like:
@@ -16268,6 +16320,17 @@ ${lines.join('\n')}
                         frame['name']) as String? ??
                     '';
                 final input = innerData?['input'] ?? payload?['input'];
+                if (explicitCompatibilityProbe && name.isNotEmpty) {
+                  probeToolCalls.add(ModelToolProbeEvent(
+                    name: name,
+                    payload: input,
+                    callId: (innerData?['id'] ??
+                            innerData?['toolCallId'] ??
+                            payload?['id'] ??
+                            payload?['toolCallId'])
+                        ?.toString(),
+                  ));
+                }
                 if (name.isNotEmpty && !chunkController.isClosed) {
                   markVisibleChatOutput();
                   chunkController
@@ -16287,6 +16350,17 @@ ${lines.join('\n')}
                     payload?['result'] ??
                     innerData?['output'] ??
                     payload?['output'];
+                if (explicitCompatibilityProbe) {
+                  probeToolResults.add(ModelToolProbeEvent(
+                    name: name,
+                    payload: result,
+                    callId: (innerData?['id'] ??
+                            innerData?['toolCallId'] ??
+                            payload?['id'] ??
+                            payload?['toolCallId'])
+                        ?.toString(),
+                  ));
+                }
                 if (name == 'tts') {
                   final mediaStr =
                       result is String ? result : result?.toString() ?? '';
@@ -16335,6 +16409,7 @@ ${lines.join('\n')}
                   return;
                 }
                 markRelevantGatewayActivity();
+                terminalFrameObserved = true;
                 final rawEndSignal = (innerData?['error'] ??
                             payload?['error'] ??
                             innerData?['reason'] ??
@@ -16453,12 +16528,29 @@ ${lines.join('\n')}
             'firstToComplete=${_formatChatElapsed(completedAt.difference(firstOutputAt))}');
       }
       if (!providerFailureObserved) {
-        unawaited(ModelCapabilityReceiptRepository().recordSuccessfulTurn(
-          modelId: model,
-          toolCallObserved: gatewayToolCallObserved,
-          toolResultObserved: gatewayToolResultObserved,
-          assistantTextObserved: assistantTextOutputSeen,
-        ));
+        if (explicitCompatibilityProbe) {
+          final verdict = ModelToolCompatibilityProbe.evaluate(
+            toolCalls: probeToolCalls,
+            toolResults: probeToolResults,
+            assistantText: assistantStream.delivered,
+            terminalFrameObserved: terminalFrameObserved,
+          );
+          if (verdict.passed) {
+            await ModelCapabilityReceiptRepository()
+                .recordSuccessfulExplicitProbe(modelId: model);
+            yield '\n\nCompatibility receipt saved for this exact model.';
+          } else {
+            yield '\n\n[Error] Compatibility test did not pass: '
+                '${verdict.reason} No model was switched and no tool was retried.';
+          }
+        } else {
+          await ModelCapabilityReceiptRepository().recordSuccessfulTurn(
+            modelId: model,
+            toolCallObserved: gatewayToolCallObserved,
+            toolResultObserved: gatewayToolResultObserved,
+            assistantTextObserved: assistantTextOutputSeen,
+          );
+        }
         _addActivity('[CHAT] ✓ Complete (${timing.join(', ')})');
       }
     } catch (e) {

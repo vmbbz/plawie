@@ -10,7 +10,10 @@ import 'chat_persistence_service.dart';
 import 'gateway_service.dart';
 import 'local_llm_service.dart';
 import 'model_provider_catalog.dart';
+import 'model_tool_compatibility_probe.dart';
 import 'paid_provider_turn_authorization_service.dart';
+import 'paid_provider_tool_probe_authorization.dart';
+import 'paid_provider_proxy_models.dart';
 import 'preferences_service.dart';
 import 'tool_media_event_bus.dart';
 import 'tts_service.dart';
@@ -222,15 +225,32 @@ class ChatRuntimeService extends ChangeNotifier {
     String? imageBase64,
     String? videoBase64,
     PaidProviderTurnLease? paidProviderTurnLease,
+    bool explicitToolCompatibilityProbe = false,
   }) async {
+    final authorizedProbe = ModelToolCompatibilityProbe.isAuthorizedProbe(
+      text,
+      authorized: explicitToolCompatibilityProbe,
+    );
     try {
       await _sendMessageAuthorized(
         text: text,
         model: model,
         imageBase64: imageBase64,
         videoBase64: videoBase64,
+        explicitToolCompatibilityProbe: authorizedProbe,
       );
     } finally {
+      if (authorizedProbe) {
+        for (final provider in PaidProviderId.values) {
+          if (model.startsWith('${provider.wireName}/')) {
+            PaidProviderToolProbeAuthorization.instance.close(
+              provider: provider,
+              modelId: model,
+            );
+            break;
+          }
+        }
+      }
       final lease = paidProviderTurnLease;
       if (lease != null) {
         PaidProviderTurnAuthorizationService.instance.closeLease(lease.leaseId);
@@ -243,6 +263,7 @@ class ChatRuntimeService extends ChangeNotifier {
     required String model,
     String? imageBase64,
     String? videoBase64,
+    required bool explicitToolCompatibilityProbe,
   }) async {
     await init();
     if ((text.trim().isEmpty && imageBase64 == null && videoBase64 == null) ||
@@ -266,7 +287,9 @@ class ChatRuntimeService extends ChangeNotifier {
     _messages.add(ChatMessage(text: '', isUser: false));
     _setState(isThinking: true, isGenerating: true);
     await persistNow();
-    addDiagnostic('Sending message: $text');
+    addDiagnostic(explicitToolCompatibilityProbe
+        ? 'Sending explicit compatibility test.'
+        : 'Sending message: $text');
 
     var fullResponse = '';
     final sendStopwatch = Stopwatch()..start();
@@ -395,6 +418,7 @@ class ChatRuntimeService extends ChangeNotifier {
             model: model,
             conversationHistory: _conversationHistoryBeforePendingReply(),
             sessionKey: streamSessionKey,
+            explicitToolCompatibilityProbe: explicitToolCompatibilityProbe,
           );
         }
       } else if (videoBase64 != null) {
@@ -415,6 +439,7 @@ class ChatRuntimeService extends ChangeNotifier {
           model: model,
           conversationHistory: _conversationHistoryBeforePendingReply(),
           sessionKey: streamSessionKey,
+          explicitToolCompatibilityProbe: explicitToolCompatibilityProbe,
         );
       }
 

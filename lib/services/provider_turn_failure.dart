@@ -20,6 +20,10 @@ enum ProviderFailureKind {
   authentication,
   payment,
   rateLimit,
+  modelUnavailable,
+  contextLimit,
+  malformedResponse,
+  providerUnavailable,
   timeout,
   transport,
   providerRejected,
@@ -71,6 +75,8 @@ class ProviderTurnFailure {
     required this.retryDisposition,
     required this.message,
     this.modelId,
+    this.suggestedFallbackModelId,
+    this.suggestedFallbackLabel,
   });
 
   final ProviderFailureKind kind;
@@ -79,6 +85,8 @@ class ProviderTurnFailure {
   final ProviderRetryDisposition retryDisposition;
   final String message;
   final String? modelId;
+  final String? suggestedFallbackModelId;
+  final String? suggestedFallbackLabel;
 
   /// Provider turns are never replayed silently. Even a safe initial rejection
   /// is returned to the user so they choose whether to retry or switch.
@@ -90,6 +98,8 @@ class ProviderTurnFailure {
     String? modelId,
     bool timeout = false,
     bool transport = false,
+    String? suggestedFallbackModelId,
+    String? suggestedFallbackLabel,
   }) {
     final sanitized = _sanitize(rawError);
     final lower = sanitized.toLowerCase();
@@ -110,7 +120,8 @@ class ProviderTurnFailure {
                 kind == ProviderFailureKind.authentication ||
                 kind == ProviderFailureKind.payment
             ? ProviderRetryDisposition.repairRequired
-            : kind == ProviderFailureKind.schemaRejected
+            : kind == ProviderFailureKind.schemaRejected ||
+                    kind == ProviderFailureKind.modelUnavailable
                 ? ProviderRetryDisposition.askBeforeSwitching
                 : ProviderRetryDisposition.retryOnce;
 
@@ -120,6 +131,13 @@ class ProviderTurnFailure {
       sideEffectStatus: sideEffects,
       retryDisposition: retry,
       modelId: modelId?.trim().isEmpty == false ? modelId!.trim() : null,
+      suggestedFallbackModelId:
+          suggestedFallbackModelId?.trim().isEmpty == false
+              ? suggestedFallbackModelId!.trim()
+              : null,
+      suggestedFallbackLabel: suggestedFallbackLabel?.trim().isEmpty == false
+          ? suggestedFallbackLabel!.trim()
+          : null,
       message: _messageFor(
         sanitized,
         kind: kind,
@@ -127,6 +145,8 @@ class ProviderTurnFailure {
         sideEffects: sideEffects,
         retry: retry,
         modelId: modelId,
+        suggestedFallbackModelId: suggestedFallbackModelId,
+        suggestedFallbackLabel: suggestedFallbackLabel,
       ),
     );
   }
@@ -160,6 +180,34 @@ ProviderFailureKind _kindFromError(String lower) {
   if (lower.contains('rate limit') || lower.contains('too many requests')) {
     return ProviderFailureKind.rateLimit;
   }
+  if (lower.contains('model not found') ||
+      lower.contains('unknown model') ||
+      lower.contains('model unavailable') ||
+      lower.contains('model is unavailable') ||
+      lower.contains('model has been deprecated') ||
+      lower.contains('model does not exist')) {
+    return ProviderFailureKind.modelUnavailable;
+  }
+  if (lower.contains('context length') ||
+      lower.contains('context window') ||
+      lower.contains('maximum context') ||
+      lower.contains('max context') ||
+      lower.contains('too many tokens')) {
+    return ProviderFailureKind.contextLimit;
+  }
+  if (lower.contains('malformed response') ||
+      lower.contains('invalid json response') ||
+      lower.contains('failed to parse provider response') ||
+      lower.contains('empty error payload')) {
+    return ProviderFailureKind.malformedResponse;
+  }
+  if (lower.contains('service unavailable') ||
+      lower.contains('upstream unavailable') ||
+      lower.contains('provider unavailable') ||
+      lower.contains('provider overloaded') ||
+      RegExp(r'\b50[234]\b').hasMatch(lower)) {
+    return ProviderFailureKind.providerUnavailable;
+  }
   return ProviderFailureKind.providerRejected;
 }
 
@@ -170,6 +218,8 @@ String _messageFor(
   required ProviderSideEffectStatus sideEffects,
   required ProviderRetryDisposition retry,
   String? modelId,
+  String? suggestedFallbackModelId,
+  String? suggestedFallbackLabel,
 }) {
   final details = <String>[
     raw,
@@ -213,8 +263,43 @@ String _messageFor(
       'Refresh this provider\'s balance or funding state before retrying. '
       'Plawie will not switch providers or replay the turn automatically.',
     );
+  } else if (kind == ProviderFailureKind.modelUnavailable) {
+    details.add(
+      'This exact model route is unavailable or retired. Refresh the live '
+      'catalog, then explicitly choose an available model. Plawie did not '
+      'change the selection or resend the turn.',
+    );
+  } else if (kind == ProviderFailureKind.contextLimit) {
+    details.add(
+      'The selected route could not accept this turn within its context '
+      'limit. Plawie did not trim conversation history or switch models.',
+    );
+  } else if (kind == ProviderFailureKind.malformedResponse) {
+    details.add(
+      'The provider returned a response the Gateway could not safely parse. '
+      'No provider-specific payload was reused.',
+    );
+  } else if (kind == ProviderFailureKind.providerUnavailable) {
+    details.add(
+      'The selected provider route is temporarily unavailable. You may retry '
+      'once; Plawie will not switch providers automatically.',
+    );
   } else if (retry == ProviderRetryDisposition.retryOnce) {
     details.add('You may retry once. Provider switching is never automatic.');
+  }
+  final fallbackId = suggestedFallbackModelId?.trim() ?? '';
+  if (fallbackId.isNotEmpty &&
+      sideEffects == ProviderSideEffectStatus.noneObserved &&
+      (kind == ProviderFailureKind.schemaRejected ||
+          kind == ProviderFailureKind.modelUnavailable ||
+          kind == ProviderFailureKind.providerRejected)) {
+    final fallbackLabel = suggestedFallbackLabel?.trim();
+    details.add(
+      'Verified same-provider option: '
+      '${fallbackLabel?.isNotEmpty == true ? fallbackLabel : fallbackId} '
+      '($fallbackId). Plawie did not switch models or resend your message. '
+      'Choose it from the model picker only if you want to retry.',
+    );
   }
   return details.join('\n\n');
 }

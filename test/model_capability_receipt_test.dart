@@ -81,6 +81,22 @@ void main() {
     );
   });
 
+  test('explicit probe is persisted as distinct exact-route evidence',
+      () async {
+    await receipts.recordSuccessfulExplicitProbe(
+      modelId: 'venice/llama-3',
+      now: DateTime.utc(2026, 8, 13, 12),
+    );
+
+    final current = await receipts.readCurrent(now: DateTime.utc(2026, 8, 13));
+    final receipt = current.singleWhere(
+      (item) => item.namespacedModelId == 'venice/llama-3',
+    );
+    expect(receipt.source, ModelCapabilityReceiptSource.explicitProbe);
+    expect(receipt.chatEvidence, ModelChatEvidence.verified);
+    expect(receipt.toolEvidence, ModelToolEvidence.loopVerified);
+  });
+
   test('schema failure quarantines exact model without disabling chat',
       () async {
     final failure = ProviderTurnFailure.classify(
@@ -106,6 +122,137 @@ void main() {
     expect(llama.liveAvailable, isTrue);
     expect(llama.toolReadiness, ModelToolReadiness.incompatible);
     expect(llama.readinessLabel, 'Chat only');
+  });
+
+  test('newer tool failure overrides an older explicit pass', () async {
+    await receipts.recordSuccessfulExplicitProbe(
+      modelId: 'venice/llama-3',
+      now: DateTime.utc(2026, 8, 13, 10),
+    );
+    await receipts.recordFailure(
+      modelId: 'venice/llama-3',
+      failure: ProviderTurnFailure.classify(
+        'Invalid request parameters: tool payload',
+        trace: const ProviderTurnTrace(
+          requestAccepted: true,
+          toolCallObserved: false,
+          toolResultObserved: false,
+          assistantTextObserved: false,
+        ),
+      ),
+      now: DateTime.utc(2026, 8, 13, 11),
+    );
+
+    final latest = await receipts.latestToolReceiptForModel(
+      'venice/llama-3',
+      now: DateTime.utc(2026, 8, 13, 12),
+    );
+    final assessed = await DynamicModelCatalogRepository(
+      preferences: preferences,
+    ).assess(_veniceSnapshot(), now: DateTime.utc(2026, 8, 13, 12));
+
+    expect(latest?.toolEvidence, ModelToolEvidence.incompatible);
+    expect(
+      assessed.providers.single.models
+          .singleWhere((model) => model.id == 'venice/llama-3')
+          .toolReadiness,
+      ModelToolReadiness.incompatible,
+    );
+  });
+
+  test('local evidence overrides shipped baseline even with an earlier clock',
+      () async {
+    await receipts.recordFailure(
+      modelId: 'venice/zai-org-glm-5-2',
+      failure: ProviderTurnFailure.classify(
+        'Invalid request parameters: tool payload',
+        trace: const ProviderTurnTrace(
+          requestAccepted: true,
+          toolCallObserved: false,
+          toolResultObserved: false,
+          assistantTextObserved: false,
+        ),
+      ),
+      now: DateTime.utc(2026, 8, 12, 23, 59),
+    );
+
+    final assessed = await DynamicModelCatalogRepository(
+      preferences: preferences,
+    ).assess(_veniceSnapshot(), now: DateTime.utc(2026, 8, 13, 12));
+
+    expect(
+      assessed.providers.single.models
+          .singleWhere((model) => model.id == 'venice/zai-org-glm-5-2')
+          .toolReadiness,
+      ModelToolReadiness.incompatible,
+    );
+  });
+
+  test('newer explicit pass repairs an older tool quarantine', () async {
+    await receipts.recordFailure(
+      modelId: 'venice/llama-3',
+      failure: ProviderTurnFailure.classify(
+        'Invalid request parameters: tool payload',
+        trace: const ProviderTurnTrace(
+          requestAccepted: true,
+          toolCallObserved: false,
+          toolResultObserved: false,
+          assistantTextObserved: false,
+        ),
+      ),
+      now: DateTime.utc(2026, 8, 13, 10),
+    );
+    await receipts.recordSuccessfulExplicitProbe(
+      modelId: 'venice/llama-3',
+      now: DateTime.utc(2026, 8, 13, 11),
+    );
+
+    final latest = await receipts.latestToolReceiptForModel(
+      'venice/llama-3',
+      now: DateTime.utc(2026, 8, 13, 12),
+    );
+
+    expect(latest?.toolEvidence, ModelToolEvidence.loopVerified);
+  });
+
+  test('ordinary chat success does not lift an existing tool quarantine',
+      () async {
+    await receipts.recordFailure(
+      modelId: 'venice/llama-3',
+      failure: ProviderTurnFailure.classify(
+        'Invalid request parameters: tool payload',
+        trace: const ProviderTurnTrace(
+          requestAccepted: true,
+          toolCallObserved: false,
+          toolResultObserved: false,
+          assistantTextObserved: false,
+        ),
+      ),
+      now: DateTime.utc(2026, 8, 13, 10),
+    );
+    await receipts.recordSuccessfulTurn(
+      modelId: 'venice/llama-3',
+      toolCallObserved: false,
+      toolResultObserved: false,
+      assistantTextObserved: true,
+      now: DateTime.utc(2026, 8, 13, 11),
+    );
+
+    final latest = await receipts.latestToolReceiptForModel(
+      'venice/llama-3',
+      now: DateTime.utc(2026, 8, 13, 12),
+    );
+    final assessed = await DynamicModelCatalogRepository(
+      preferences: preferences,
+    ).assess(_veniceSnapshot(), now: DateTime.utc(2026, 8, 13, 12));
+
+    expect(latest?.toolEvidence, ModelToolEvidence.incompatible);
+    expect(
+      assessed.providers.single.models
+          .singleWhere((model) => model.id == 'venice/llama-3')
+          .toolReadiness,
+      ModelToolReadiness.incompatible,
+    );
   });
 
   test('receipt storage contains no turn payload or secrets', () async {

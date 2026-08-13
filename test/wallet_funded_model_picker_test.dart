@@ -155,6 +155,21 @@ void main() {
     expect(find.textContaining('Agent-ready'), findsNothing);
   });
 
+  testWidgets('unverified model exposes an explicit tool test action',
+      (tester) async {
+    String? tested;
+    await tester.pumpWidget(_host(
+      snapshot: _snapshot(<DynamicProviderRecord>[_provider('openrouter')]),
+      readiness: const <String, WalletFundedProviderReadiness>{},
+      onTestTools: (model) => tested = model.id,
+    ));
+
+    await tester
+        .tap(find.byKey(const Key('model-tool-test-openrouter/model-1')));
+    await tester.pump();
+    expect(tested, 'openrouter/model-1');
+  });
+
   testWidgets('search filters grouped providers and preserves stale warning',
       (tester) async {
     await tester.pumpWidget(_host(
@@ -245,6 +260,7 @@ Widget _host({
   void Function(String, WalletFundedProviderAction)? onAction,
   bool autoRefreshWalletBalances = false,
   WalletProviderBalanceRefresh? onRefreshBalance,
+  ValueChanged<DynamicModelRecord>? onTestTools,
 }) {
   return MaterialApp(
     theme: ThemeData.dark(),
@@ -261,6 +277,7 @@ Widget _host({
           onProviderAction: onAction ?? (_, __) {},
           autoRefreshWalletBalances: autoRefreshWalletBalances,
           onRefreshProviderBalance: onRefreshBalance,
+          onTestTools: onTestTools,
         ),
       ),
     ),

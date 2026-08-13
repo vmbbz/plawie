@@ -15,7 +15,7 @@ abstract final class NativeGatewayPluginPolicy {
     required Set<String> retainedProviderIds,
     required String filesDir,
   }) {
-    final verifiedPluginIds = retainedProviderIds
+    final providerPluginIds = retainedProviderIds
         .map(
           (providerId) => ModelProviderCatalog
               .nativeGatewayVerifiedPluginByProvider[providerId],
@@ -23,6 +23,10 @@ abstract final class NativeGatewayPluginPolicy {
         .whereType<String>()
         .where(ModelProviderCatalog.nativeGatewayVerifiedPluginIds.contains)
         .toSet();
+    final verifiedPluginIds = <String>{
+      ...ModelProviderCatalog.nativeGatewayCoreVerifiedPluginIds,
+      ...providerPluginIds,
+    };
     final allowedIds = <String>{
       ...ModelProviderCatalog.nativeGatewayBundledPluginIds,
       ...verifiedPluginIds,
@@ -58,7 +62,15 @@ abstract final class NativeGatewayPluginPolicy {
       if (!allowedIds.contains(id)) entries.remove(rawId);
     }
     for (final pluginId in verifiedPluginIds) {
-      entries[pluginId] = const <String, dynamic>{'enabled': true};
+      entries[pluginId] = pluginId == 'plawie-tool-probe-guard'
+          ? const <String, dynamic>{
+              'enabled': true,
+              'hooks': <String, dynamic>{
+                'allowConversationAccess': true,
+                'allowPromptInjection': false,
+              },
+            }
+          : const <String, dynamic>{'enabled': true};
     }
     if (entries.isEmpty) {
       plugins.remove('entries');

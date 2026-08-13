@@ -75,6 +75,24 @@ class NativeNodeEmbeddedService : Service() {
             "flutter_assets/assets/openclaw/node-executable-pack/bin"
         private const val AGENT_CLI_BIN_ASSET_DIR =
             "flutter_assets/assets/openclaw/agent-cli-pack/bin"
+        private const val PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ID =
+            "plawie-tool-probe-guard"
+        private const val PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ASSET_DIR =
+            "flutter_assets/assets/openclaw/plugins/plawie-tool-probe-guard"
+        private val PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ASSETS = listOf(
+            VerifiedPluginAsset(
+                "index.js",
+                "b595a5b46571f3baa4f06d6609ac0a5f7382f8203ba8715d5c6de3f7e9fb8cff"
+            ),
+            VerifiedPluginAsset(
+                "openclaw.plugin.json",
+                "7f31fdca4b7c77657650c2c916dbb6067ac02273190b95ca91e63f6008499fc1"
+            ),
+            VerifiedPluginAsset(
+                "package.json",
+                "86e03343a5a006031c68ead9eb09de8e47d7cfb93031bcb171fd8629e61fe2da"
+            )
+        )
         private const val PLAWIE_VENICE_COMPAT_PLUGIN_ID =
             "plawie-venice-compat"
         private const val PLAWIE_VENICE_COMPAT_PLUGIN_ASSET_DIR =
@@ -665,17 +683,42 @@ class NativeNodeEmbeddedService : Service() {
             return emptyList()
         }
 
-        val target = File(pluginRoot, PLAWIE_VENICE_COMPAT_PLUGIN_ID)
-        val staging = File(pluginRoot, ".$PLAWIE_VENICE_COMPAT_PLUGIN_ID.staging")
+        val provisioned = mutableListOf<String>()
+        provisioned += provisionVerifiedOpenClawPlugin(
+            pluginRoot = pluginRoot,
+            pluginId = PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ID,
+            assetDir = PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ASSET_DIR,
+            pluginAssets = PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ASSETS,
+            gatewayVersion = gatewayVersion
+        )
+        provisioned += provisionVerifiedOpenClawPlugin(
+            pluginRoot = pluginRoot,
+            pluginId = PLAWIE_VENICE_COMPAT_PLUGIN_ID,
+            assetDir = PLAWIE_VENICE_COMPAT_PLUGIN_ASSET_DIR,
+            pluginAssets = PLAWIE_VENICE_COMPAT_PLUGIN_ASSETS,
+            gatewayVersion = gatewayVersion
+        )
+        return provisioned
+    }
+
+    private fun provisionVerifiedOpenClawPlugin(
+        pluginRoot: File,
+        pluginId: String,
+        assetDir: String,
+        pluginAssets: List<VerifiedPluginAsset>,
+        gatewayVersion: String
+    ): String {
+        val target = File(pluginRoot, pluginId)
+        val staging = File(pluginRoot, ".$pluginId.staging")
         if (staging.exists()) staging.deleteRecursively()
         staging.mkdirs()
 
         try {
-            for (asset in PLAWIE_VENICE_COMPAT_PLUGIN_ASSETS) {
+            for (asset in pluginAssets) {
                 val destination = File(staging, asset.relativePath)
                 destination.parentFile?.mkdirs()
                 assets.open(
-                    "$PLAWIE_VENICE_COMPAT_PLUGIN_ASSET_DIR/${asset.relativePath}"
+                    "$assetDir/${asset.relativePath}"
                 ).use { input ->
                     destination.outputStream().use { output -> input.copyTo(output) }
                 }
@@ -688,7 +731,7 @@ class NativeNodeEmbeddedService : Service() {
             }
 
             val pluginManifest = JSONObject(File(staging, "openclaw.plugin.json").readText())
-            if (pluginManifest.optString("id") != PLAWIE_VENICE_COMPAT_PLUGIN_ID) {
+            if (pluginManifest.optString("id") != pluginId) {
                 throw IllegalStateException("Bundled plugin manifest id is invalid.")
             }
             val packageJson = JSONObject(File(staging, "package.json").readText())
@@ -705,10 +748,10 @@ class NativeNodeEmbeddedService : Service() {
                 throw IllegalStateException("Could not activate the verified bundled plugin.")
             }
             appendLog(
-                "verified plugin provisioned id=$PLAWIE_VENICE_COMPAT_PLUGIN_ID " +
-                    "gatewayVersion=$gatewayVersion files=${PLAWIE_VENICE_COMPAT_PLUGIN_ASSETS.size}"
+                "verified plugin provisioned id=$pluginId " +
+                    "gatewayVersion=$gatewayVersion files=${pluginAssets.size}"
             )
-            return listOf(target.absolutePath)
+            return target.absolutePath
         } catch (error: Exception) {
             staging.deleteRecursively()
             target.deleteRecursively()

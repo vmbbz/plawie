@@ -7,6 +7,7 @@ import 'paid_provider_loopback_credential_service.dart';
 import 'paid_provider_http_client.dart';
 import 'paid_provider_proxy_models.dart';
 import 'paid_provider_turn_authorization_service.dart';
+import 'paid_provider_tool_route_policy.dart';
 import 'provider_balance_service.dart';
 import 'venice_wallet_auth_service.dart';
 
@@ -30,15 +31,18 @@ class PaidProviderProxyService implements PaidProviderProxyController {
     this.port = 11436,
     this.maxRequestBodyBytes = 4 * 1024 * 1024,
     Set<PaidProviderId> Function()? readyProviders,
+    PaidProviderToolRoutePolicy? toolRoutePolicy,
   })  : _credentialService = credentialService,
         _handler = handler,
         _bindAddress = bindAddress ?? InternetAddress.loopbackIPv4,
-        _readyProviders = readyProviders ?? _noReadyProviders;
+        _readyProviders = readyProviders ?? _noReadyProviders,
+        _toolRoutePolicy = toolRoutePolicy;
 
   final PaidProviderLoopbackCredentialService _credentialService;
   final PaidProviderProxyHandler _handler;
   final Set<PaidProviderId> Function() _readyProviders;
   final InternetAddress _bindAddress;
+  final PaidProviderToolRoutePolicy? _toolRoutePolicy;
   @override
   final int port;
   final int maxRequestBodyBytes;
@@ -244,6 +248,10 @@ class PaidProviderProxyService implements PaidProviderProxyController {
       if (route.method == 'POST') {
         jsonBody = await _readJsonObject(request);
         if (route.kind == PaidProviderProxyRouteKind.chatCompletions) {
+          final policy = _toolRoutePolicy;
+          if (policy != null) {
+            jsonBody = await policy.apply(jsonBody, provider: route.provider);
+          }
           jsonBody = PaidProviderRequestMapper.mapChatRequest(
             jsonBody,
             provider: route.provider,

@@ -30,6 +30,8 @@ import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/model_provider_catalog.dart';
+import '../services/model_tool_compatibility_probe.dart';
+import '../services/paid_provider_tool_probe_authorization.dart';
 import '../services/canonical_model_selection.dart';
 import '../services/dynamic_model_catalog.dart';
 import '../services/wallet_funded_provider_readiness.dart';
@@ -1422,7 +1424,28 @@ class _ChatScreenState extends State<ChatScreen>
         lower.contains('agent cleanup timed out');
   }
 
-  Future<void> _handleSubmit(String text) async {
+  Future<void> _handleSubmit(
+    String text, {
+    bool explicitToolCompatibilityProbe = false,
+  }) async {
+    if (explicitToolCompatibilityProbe &&
+        !ModelToolCompatibilityProbe.isProbe(text)) {
+      throw StateError(
+        'Only the app-owned compatibility prompt can enter probe mode.',
+      );
+    }
+    if (explicitToolCompatibilityProbe &&
+        (_pendingImageBase64 != null || _pendingVideoBase64 != null)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Remove the pending photo or video before running the read-only tool test.',
+          ),
+        ),
+      );
+      return;
+    }
     if ((text.trim().isEmpty &&
             _pendingImageBase64 == null &&
             _pendingVideoBase64 == null) ||
@@ -1454,6 +1477,12 @@ class _ChatScreenState extends State<ChatScreen>
         );
         return;
       }
+      if (explicitToolCompatibilityProbe) {
+        PaidProviderToolProbeAuthorization.instance.authorize(
+          provider: paidProvider,
+          modelId: _selectedModel,
+        );
+      }
     }
 
     final imageBase64 = _pendingImageBase64;
@@ -1474,6 +1503,7 @@ class _ChatScreenState extends State<ChatScreen>
       imageBase64: imageBase64,
       videoBase64: videoBase64,
       paidProviderTurnLease: paidProviderTurnLease,
+      explicitToolCompatibilityProbe: explicitToolCompatibilityProbe,
     ));
   }
 
@@ -2327,6 +2357,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _showDynamicModelPicker() async {
+    const toolTestSelectionPrefix = 'plawie-tool-test::';
     final snapshot = await DynamicModelCatalogRepository().loadOrBundled();
     final readiness =
         await WalletFundedProviderReadinessService().inspect(snapshot);
@@ -2384,6 +2415,12 @@ class _ChatScreenState extends State<ChatScreen>
                     },
                     onSelected: (model) =>
                         Navigator.pop(sheetContext, model.id),
+                    onTestTools: (model) {
+                      Navigator.pop(
+                        sheetContext,
+                        '$toolTestSelectionPrefix${model.id}',
+                      );
+                    },
                     onProviderAction: (providerId, action) {
                       Navigator.pop(sheetContext);
                       unawaited(runWalletFundedProviderAction(
@@ -2401,10 +2438,18 @@ class _ChatScreenState extends State<ChatScreen>
       },
     );
     if (selection == null || !mounted) return;
+    final testTools = selection.startsWith(toolTestSelectionPrefix);
+    final selectedId = testTools
+        ? selection.substring(toolTestSelectionPrefix.length)
+        : selection;
     final dynamicModel = <DynamicModelRecord>[
       for (final provider in snapshot.providers) ...provider.models,
-    ].firstWhere((model) => model.id == selection);
-    await _selectDynamicModel(dynamicModel);
+    ].firstWhere((model) => model.id == selectedId);
+    if (testTools) {
+      await _runModelToolCompatibilityTest(dynamicModel);
+    } else {
+      await _selectDynamicModel(dynamicModel);
+    }
   }
 
   Future<void> _selectDynamicModel(DynamicModelRecord model) async {
@@ -2455,6 +2500,55 @@ class _ChatScreenState extends State<ChatScreen>
         SnackBar(content: Text('Model selection failed: $error')),
       );
     }
+  }
+
+  Future<void> _runModelToolCompatibilityTest(DynamicModelRecord model) async {
+    final paid = model.providerId == 'venice' || model.providerId == 'blockrun';
+    final approved = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text('Test tools with ${model.label}?'),
+            content: Text(
+              'Plawie will select this exact model and run one short, '
+              'read-only OpenClaw session-status turn. It cannot access '
+              'files, device controls, apps, notifications, camera, or your '
+              'wallet.${paid ? ' This provider may charge its normal model usage.' : ''}\n\n'
+              'The model must call the tool once, accept its result, and '
+              'finish the response before it is marked Agent-ready.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                icon: const Icon(Icons.science_outlined),
+                label: const Text('Run test'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!approved || !mounted) return;
+
+    await _selectDynamicModel(model);
+    if (!mounted || _selectedModel != model.id) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'The exact model could not be selected, so no test was sent.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    await _handleSubmit(
+      ModelToolCompatibilityProbe.prompt,
+      explicitToolCompatibilityProbe: true,
+    );
   }
 
   void _showUnifiedMenu(BuildContext context) {
