@@ -550,6 +550,21 @@ original schema and remains the final argument validator; BlockRun and
 non-Gemini Venice payloads stay byte-semantically unchanged apart from the
 already documented provider model-prefix mapping.
 
+### Phase-aware provider failures
+
+Gateway chat errors are classified from observed turn state, not inferred only
+from provider prose. Plawie records whether the request was accepted, a tool
+call was emitted, a tool result was observed, and assistant text was emitted.
+The user-facing failure then identifies the stage and uses a conservative
+side-effect status.
+
+Plawie never automatically replays a failed provider turn or silently switches
+providers. When a tool call or result has been observed, the user must verify
+the action or receipt before retrying. Authentication and payment failures
+direct the user to repair the selected provider; schema failures may offer an
+explicit switch only before a tool could have run. Diagnostics are bounded and
+redact credential/signature-shaped fields.
+
 ## Device Health Cost And Freshness
 
 `device.health` includes filesystem skill parity and dependency-pack planning,

@@ -34,6 +34,7 @@ import 'tts_service.dart';
 import 'paid_provider_gateway_coordinator.dart';
 import 'runtime_credential_store.dart';
 import 'gateway_config_signature.dart';
+import 'provider_turn_failure.dart';
 
 class _FastCloudRoute {
   final String provider;
@@ -5498,24 +5499,20 @@ HEARTBEAT_OK.
     }
   }
 
-  String _formatGatewayProviderError(String rawError, {String? model}) {
-    final normalized = rawError.trim();
-    if (normalized.isEmpty || normalized.toLowerCase() == 'null') {
-      return 'Gateway/provider returned an empty error payload.';
-    }
-    final lower = normalized.toLowerCase();
-    if (lower.contains('request schema') ||
-        lower.contains('tool payload') ||
-        lower.contains('schema or tool')) {
-      final selectedModel = model?.trim();
-      return '$normalized'
-          '${selectedModel == null || selectedModel.isEmpty ? '' : '\n\nSelected model: $selectedModel.'} '
-          'The provider rejected this turn before generation. Retry once; if '
-          'it persists, choose another model that supports tool calling. '
-          'Plawie keeps the official Gateway/tool lane enabled.';
-    }
-    return normalized;
-  }
+  String _formatGatewayProviderError(
+    String rawError, {
+    String? model,
+    required ProviderTurnTrace trace,
+    bool timeout = false,
+    bool transport = false,
+  }) =>
+      ProviderTurnFailure.classify(
+        rawError,
+        trace: trace,
+        modelId: model,
+        timeout: timeout,
+        transport: transport,
+      ).message;
 
   String _formatChatElapsed(Duration duration) {
     final ms = duration.inMilliseconds;
@@ -15987,6 +15984,29 @@ ${lines.join('\n')}
     // (which may complete after our Flutter timeout) cannot close the next request's
     // stream before any content arrives.
     bool runStarted = false;
+    var toolCallObserved = requiredToolContinuation != null;
+    var toolResultObserved = requiredToolContinuation != null;
+
+    ProviderTurnTrace currentTurnTrace() => ProviderTurnTrace(
+          requestAccepted: gatewayAcceptedAt != null || runStarted,
+          toolCallObserved: toolCallObserved,
+          toolResultObserved: toolResultObserved,
+          assistantTextObserved: assistantTextOutputSeen,
+        );
+
+    String formatProviderFailure(
+      String rawError, {
+      bool timeout = false,
+      bool transport = false,
+    }) =>
+        _formatGatewayProviderError(
+          rawError,
+          model: model,
+          trace: currentTurnTrace(),
+          timeout: timeout,
+          transport: transport,
+        );
+
     final assistantStream = _AssistantStreamAccumulator();
     bool isActiveRunFrame(String? agentRun) {
       return activeRunId == null || agentRun == null || agentRun == activeRunId;
@@ -16029,12 +16049,13 @@ ${lines.join('\n')}
       );
       disconnectWebSocket();
       unawaited(_recoverChatNoFirstTokenLane('gateway request deadline'));
-      finishChatWithError(
+      finishChatWithError(formatProviderFailure(
         'Gateway accepted the turn but did not deliver a final assistant/tool '
         'response before the ${timeoutMs ~/ 1000}s request deadline plus '
         '${hardGatewayResponseGrace.inSeconds}s grace. The chat lane is being '
         'rebuilt now; resend after Gateway settles.',
-      );
+        timeout: true,
+      ));
       timer.cancel();
     });
 
@@ -16052,7 +16073,7 @@ ${lines.join('\n')}
               payload?['message'] ?? payload ?? frame,
               fallback: 'API Error encountered',
             );
-            final errMsg = _formatGatewayProviderError(rawMsg, model: model);
+            final errMsg = formatProviderFailure(rawMsg);
             _addActivity('[CHAT] ✗ $errMsg');
             finishChatWithError(errMsg);
             return;
@@ -16070,7 +16091,7 @@ ${lines.join('\n')}
                 errStr.toLowerCase().contains('insufficient balance') ||
                 errStr.toLowerCase().contains('balance exhausted')) {
               markRelevantGatewayActivity();
-              final errMsg = _formatGatewayProviderError(errStr, model: model);
+              final errMsg = formatProviderFailure(errStr);
               _addActivity('[CHAT] ✗ $errMsg');
               finishChatWithError(errMsg);
               return;
@@ -16083,10 +16104,9 @@ ${lines.join('\n')}
             final ok = frame['ok'] as bool? ?? false;
             if (!ok) {
               final error = frame['error'] as Map<String, dynamic>?;
-              final msg = _formatGatewayProviderError(
+              final msg = formatProviderFailure(
                 _rawGatewayErrorText(error?['message'] ?? error,
                     fallback: 'chat.send failed'),
-                model: model,
               );
               _addActivity('[CHAT] ✗ $msg');
               finishChatWithError(msg);
@@ -16135,7 +16155,14 @@ ${lines.join('\n')}
             if ((state == 'final' || state == 'aborted' || state == 'error') &&
                 (runStarted || !firstToken)) {
               markRelevantGatewayActivity();
-              if (!chunkController.isClosed) {
+              if (state == 'aborted' || state == 'error') {
+                final rawError = _rawGatewayErrorText(
+                  data['error'] ?? data['reason'] ?? data['message'] ?? state,
+                );
+                final msg = formatProviderFailure(rawError);
+                _addActivity('[CHAT] ✗ $msg');
+                finishChatWithError(msg);
+              } else if (!chunkController.isClosed) {
                 chunkController.close();
               }
             } else if ((state == 'aborted' || state == 'error') &&
@@ -16145,7 +16172,7 @@ ${lines.join('\n')}
               final rawError = _rawGatewayErrorText(
                 data['error'] ?? data['reason'] ?? data['message'] ?? state,
               );
-              final msg = _formatGatewayProviderError(rawError, model: model);
+              final msg = formatProviderFailure(rawError);
               _addActivity('[CHAT] ✗ $msg');
               finishChatWithError(msg);
             }
@@ -16190,6 +16217,7 @@ ${lines.join('\n')}
                 return;
               }
               markRelevantGatewayActivity();
+              toolCallObserved = true;
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -16205,6 +16233,8 @@ ${lines.join('\n')}
                 return;
               }
               markRelevantGatewayActivity();
+              toolCallObserved = true;
+              toolResultObserved = true;
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -16254,6 +16284,7 @@ ${lines.join('\n')}
                   (innerData?['type'] ?? payload?['type'] ?? '') as String?;
               if (itemType == 'tool_use') {
                 markRelevantGatewayActivity();
+                toolCallObserved = true;
                 final name = (innerData?['name'] ??
                         payload?['name'] ??
                         frame['name']) as String? ??
@@ -16266,6 +16297,8 @@ ${lines.join('\n')}
                 }
               } else if (itemType == 'tool_result') {
                 markRelevantGatewayActivity();
+                toolCallObserved = true;
+                toolResultObserved = true;
                 final name = (innerData?['name'] ??
                         payload?['name'] ??
                         frame['name']) as String? ??
@@ -16311,8 +16344,7 @@ ${lines.join('\n')}
                 final rawError = _rawGatewayErrorText(
                   innerData?['error'] ?? payload?['error'] ?? frame['error'],
                 );
-                final error =
-                    _formatGatewayProviderError(rawError, model: model);
+                final error = formatProviderFailure(rawError);
                 _addActivity('[CHAT] ✗ $error');
                 if (!chunkController.isClosed) {
                   chunkController.add('[Error] $error');
@@ -16345,9 +16377,8 @@ ${lines.join('\n')}
                     frame['aborted'] == true ||
                     hasMeaningfulEndSignal;
                 if (firstToken && endedWithError && !chunkController.isClosed) {
-                  final msg = _formatGatewayProviderError(
+                  final msg = formatProviderFailure(
                     rawEndSignal.isEmpty ? 'Unknown API error' : rawEndSignal,
-                    model: model,
                   );
                   _addActivity('[CHAT] ✗ $msg');
                   chunkController.add('[Error] $msg');
@@ -16377,9 +16408,8 @@ ${lines.join('\n')}
                   rawErr.toLowerCase().contains('auth') ||
                   rawErr.toLowerCase().contains('surface_error');
               if (isAuthError) {
-                final authMsg = _formatGatewayProviderError(
+                final authMsg = formatProviderFailure(
                   rawErr.isEmpty ? 'Cloud model authentication error.' : rawErr,
-                  model: model,
                 );
                 _addActivity('[CHAT] ✗ $authMsg');
                 if (!chunkController.isClosed) {
@@ -16388,7 +16418,7 @@ ${lines.join('\n')}
                 }
                 return;
               }
-              final error = _formatGatewayProviderError(rawErr, model: model);
+              final error = formatProviderFailure(rawErr);
               _addActivity('[CHAT] ✗ $error');
               if (!chunkController.isClosed) {
                 chunkController.add('[Error] $error');
@@ -16403,10 +16433,11 @@ ${lines.join('\n')}
           // Always convert to a string message — never propagate raw stream errors.
           // StateError('WebSocket disconnected') from _onDisconnect would otherwise
           // surface as "[Error: Bad state: ...]" via the catch block.
-          final msg = (e is StateError)
-              ? '[Error] Gateway connection lost. Please try again.'
-              : '[Error] WebSocket error: $e';
-          chunkController.add(msg);
+          final rawError = e is StateError
+              ? 'Gateway connection lost.'
+              : 'WebSocket error: $e';
+          final msg = formatProviderFailure(rawError, transport: true);
+          chunkController.add('[Error] $msg');
           chunkController.close();
         }
       },
@@ -16444,7 +16475,11 @@ ${lines.join('\n')}
       _addActivity('[CHAT] ✓ Complete (${timing.join(', ')})');
     } catch (e) {
       _addActivity('[CHAT] ✗ $e');
-      yield '[Error] WebSocket chat error: $e';
+      final msg = formatProviderFailure(
+        'WebSocket chat error: $e',
+        transport: true,
+      );
+      yield '[Error] $msg';
     } finally {
       inactivityWatchdog.cancel();
       frameSub.cancel();

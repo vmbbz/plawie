@@ -23,8 +23,12 @@ selection identity, tool-loop validation, phase-aware errors, and safe fallback
   provider, upstream ID, persisted model, chat header, and send path. Modern
   session patch ACKs must match exactly; legacy timestamp ACKs require an exact
   `sessions.list` reconciliation before any request is sent.
-- In progress: phase-aware failures, capability receipts/probes,
-  provider-scoped runtime compatibility, and safe fallback.
+- Complete: Gateway events now produce phase-aware, redacted provider failures
+  with conservative side-effect status. Plawie never silently replays a turn;
+  a tool call or result changes recovery to verify-before-retry, while auth and
+  funding failures require repair on the selected provider.
+- In progress: capability receipts/probes, provider-scoped runtime
+  compatibility, and safe fallback.
 
 Plawie must stop treating a provider's generic function-calling flag as proof
 that a model can run the complete mobile Agent loop.
