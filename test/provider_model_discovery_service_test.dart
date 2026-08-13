@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:clawa/services/dynamic_model_catalog.dart';
+import 'package:clawa/services/model_execution_policy.dart';
 import 'package:clawa/services/model_provider_catalog.dart';
 import 'package:clawa/services/native_bridge.dart';
 import 'package:clawa/services/preferences_service.dart';
@@ -71,6 +72,10 @@ void main() {
     expect(model.id, 'openrouter/openai/gpt-5.4');
     expect(model.providerModelId, 'openai/gpt-5.4');
     expect(model.supportsToolCalls, isTrue);
+    expect(model.toolPolicy, ModelToolPolicy.variable);
+    expect(model.chatReadiness, ModelChatReadiness.providerAdvertised);
+    expect(model.toolReadiness, ModelToolReadiness.providerAdvertised);
+    expect(model.agentReady, isFalse);
     expect(model.supportsVision, isTrue);
     expect(model.advertisedContextWindow, 128000);
     expect(model.advertisedMaxOutputTokens, 16384);
@@ -187,6 +192,10 @@ void main() {
     expect(model.providerModelId, 'llama-3.3-70b');
     expect(model.label, 'Llama 3.3 70B');
     expect(model.supportsToolCalls, isTrue);
+    expect(model.toolPolicy, ModelToolPolicy.variable);
+    expect(model.chatReadiness, ModelChatReadiness.providerAdvertised);
+    expect(model.toolReadiness, ModelToolReadiness.providerAdvertised);
+    expect(model.agentReady, isFalse);
     expect(model.supportsVision, isFalse);
     expect(model.capabilities, contains('reasoning'));
     expect(model.advertisedContextWindow, 131072);

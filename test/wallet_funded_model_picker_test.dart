@@ -144,6 +144,17 @@ void main() {
     expect(selected, 'blockrun/model-1');
   });
 
+  testWidgets('advertised tools are not presented as Agent-ready',
+      (tester) async {
+    await tester.pumpWidget(_host(
+      snapshot: _snapshot(<DynamicProviderRecord>[_provider('openrouter')]),
+      readiness: const <String, WalletFundedProviderReadiness>{},
+    ));
+
+    expect(find.textContaining('Provider advertises tools'), findsOneWidget);
+    expect(find.textContaining('Agent-ready'), findsNothing);
+  });
+
   testWidgets('search filters grouped providers and preserves stale warning',
       (tester) async {
     await tester.pumpWidget(_host(
@@ -299,6 +310,12 @@ DynamicProviderRecord _provider(
         label: live ? 'Model One' : 'Refresh $label models',
         route: ModelRouteKind.cloud,
         supportsToolCalls: live,
+        chatReadiness: live
+            ? ModelChatReadiness.providerAdvertised
+            : ModelChatReadiness.unknown,
+        toolReadiness: live
+            ? ModelToolReadiness.providerAdvertised
+            : ModelToolReadiness.incompatible,
         liveAvailable: live,
         unavailableReason: live ? null : 'Current models have not been loaded.',
       ),

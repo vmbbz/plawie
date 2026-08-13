@@ -380,7 +380,7 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
         ? model.unavailableReason ?? 'This catalog entry is informational.'
         : blocked
             ? '${readiness.title} — ${readiness.detail}'
-            : '${model.agentReady ? 'Agent-ready' : 'Tool support unknown'} · ${model.id}${retirement == null ? '' : ' · retires $retirement'}';
+            : '${model.readinessLabel} · ${model.id}${retirement == null ? '' : ' · retires $retirement'}';
     return RadioListTile<String>(
       key: Key('model-option-${model.id}'),
       dense: true,

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:clawa/services/dynamic_model_catalog.dart';
+import 'package:clawa/services/model_execution_policy.dart';
 import 'package:clawa/services/model_provider_catalog.dart';
 import 'package:clawa/services/preferences_service.dart';
 
@@ -160,6 +161,43 @@ void main() {
     expect(snapshot.providers.single.catalogState,
         DynamicProviderCatalogState.fresh);
     expect(snapshot.providers.single.models.single.liveAvailable, isTrue);
+    expect(snapshot.providers.single.models.single.chatReadiness,
+        ModelChatReadiness.providerAdvertised);
+    expect(snapshot.providers.single.models.single.toolReadiness,
+        ModelToolReadiness.unknown);
+    expect(snapshot.providers.single.models.single.agentReady, isFalse);
+  });
+
+  test('shipped and advertised tool evidence remain distinct', () {
+    final shipped = DynamicModelRecord.fromStatic(
+      ModelProviderCatalog.modelById('openai/gpt-5.4')!,
+    );
+    const verified = DynamicModelRecord(
+      id: 'openai/gpt-5.4',
+      providerId: 'openai',
+      label: 'GPT-5.4',
+      route: ModelRouteKind.cloud,
+      supportsToolCalls: true,
+      chatReadiness: ModelChatReadiness.verified,
+      toolReadiness: ModelToolReadiness.loopVerified,
+      toolPolicy: ModelToolPolicy.reliable,
+    );
+    const advertised = DynamicModelRecord(
+      id: 'venice/gemma-4-uncensored',
+      providerId: 'venice',
+      label: 'Gemma 4 Uncensored',
+      route: ModelRouteKind.cloud,
+      supportsToolCalls: true,
+      chatReadiness: ModelChatReadiness.providerAdvertised,
+      toolReadiness: ModelToolReadiness.providerAdvertised,
+    );
+
+    expect(shipped.agentReady, isFalse);
+    expect(shipped.readinessLabel, 'Provider advertises tools');
+    expect(verified.agentReady, isTrue);
+    expect(verified.readinessLabel, 'Agent-ready');
+    expect(advertised.agentReady, isFalse);
+    expect(advertised.readinessLabel, 'Provider advertises tools');
   });
 
   test('error receipts redact length and never break on an expired cache',

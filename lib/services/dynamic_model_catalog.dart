@@ -34,6 +34,27 @@ enum DynamicProviderConnectionState {
   error,
 }
 
+/// Evidence that a model can complete an ordinary chat turn through the exact
+/// provider route Plawie will use. A catalog listing is only an advertisement;
+/// it is not a successful inference receipt.
+enum ModelChatReadiness {
+  unknown,
+  providerAdvertised,
+  verified,
+  failed,
+}
+
+/// Evidence accumulated across the complete tool lifecycle. In particular,
+/// accepting a tool schema does not prove that the provider can replay a tool
+/// result and produce the final assistant response.
+enum ModelToolReadiness {
+  unknown,
+  providerAdvertised,
+  schemaAccepted,
+  loopVerified,
+  incompatible,
+}
+
 /// A model record used by dynamic discovery and the future grouped picker.
 ///
 /// The context/output fields are advertised provider metadata only. They must
@@ -52,6 +73,8 @@ class DynamicModelRecord {
     this.supportsToolCalls,
     this.supportsVision,
     this.toolPolicy = ModelToolPolicy.variable,
+    this.chatReadiness = ModelChatReadiness.unknown,
+    this.toolReadiness = ModelToolReadiness.unknown,
     this.advertisedContextWindow,
     this.advertisedMaxOutputTokens,
     this.deprecationDate,
@@ -72,6 +95,8 @@ class DynamicModelRecord {
   final bool? supportsToolCalls;
   final bool? supportsVision;
   final ModelToolPolicy toolPolicy;
+  final ModelChatReadiness chatReadiness;
+  final ModelToolReadiness toolReadiness;
   final int? advertisedContextWindow;
   final int? advertisedMaxOutputTokens;
   final DateTime? deprecationDate;
@@ -82,8 +107,24 @@ class DynamicModelRecord {
 
   bool get agentReady =>
       liveAvailable &&
+      chatReadiness == ModelChatReadiness.verified &&
+      toolReadiness == ModelToolReadiness.loopVerified &&
       supportsToolCalls == true &&
       toolPolicy != ModelToolPolicy.disabled;
+
+  String get readinessLabel {
+    if (chatReadiness == ModelChatReadiness.failed) {
+      return 'Chat verification failed';
+    }
+    return switch (toolReadiness) {
+      ModelToolReadiness.loopVerified => 'Agent-ready',
+      ModelToolReadiness.schemaAccepted => 'Tool schema accepted',
+      ModelToolReadiness.providerAdvertised => 'Provider advertises tools',
+      ModelToolReadiness.incompatible => 'Chat only',
+      ModelToolReadiness.unknown =>
+        supportsToolCalls == false ? 'Chat only' : 'Tool support unknown',
+    };
+  }
 
   bool isDeprecatedAt(DateTime now) =>
       deprecationDate != null && !deprecationDate!.isAfter(now.toUtc());
@@ -129,6 +170,11 @@ class DynamicModelRecord {
       supportsToolCalls: model.supportsToolCalls,
       supportsVision: model.supportsVision,
       toolPolicy: model.toolPolicy,
+      chatReadiness: ModelChatReadiness.providerAdvertised,
+      toolReadiness: !model.supportsToolCalls ||
+              model.toolPolicy == ModelToolPolicy.disabled
+          ? ModelToolReadiness.incompatible
+          : ModelToolReadiness.providerAdvertised,
       advertisedContextWindow: model.contextWindow,
       advertisedMaxOutputTokens: model.maxTokens,
       deprecationDate: model.deprecationDate,
@@ -167,6 +213,12 @@ class DynamicModelRecord {
       supportsToolCalls: _optionalBool(raw, 'supportsToolCalls'),
       supportsVision: _optionalBool(raw, 'supportsVision'),
       toolPolicy: _toolPolicyFromJson(raw['toolPolicy']),
+      chatReadiness: _chatReadinessFromJson(raw['chatReadiness']),
+      toolReadiness: _toolReadinessFromJson(
+        raw['toolReadiness'],
+        supportsToolCalls: _optionalBool(raw, 'supportsToolCalls'),
+        toolPolicy: _toolPolicyFromJson(raw['toolPolicy']),
+      ),
       advertisedContextWindow:
           _optionalPositiveInt(raw, 'advertisedContextWindow'),
       advertisedMaxOutputTokens:
@@ -192,6 +244,8 @@ class DynamicModelRecord {
         if (supportsToolCalls != null) 'supportsToolCalls': supportsToolCalls,
         if (supportsVision != null) 'supportsVision': supportsVision,
         'toolPolicy': toolPolicy.name,
+        'chatReadiness': chatReadiness.name,
+        'toolReadiness': toolReadiness.name,
         if (advertisedContextWindow != null)
           'advertisedContextWindow': advertisedContextWindow,
         if (advertisedMaxOutputTokens != null)
@@ -721,6 +775,36 @@ ModelToolPolicy _toolPolicyFromJson(dynamic value) {
     (policy) => policy.name == value,
     orElse: () => ModelToolPolicy.variable,
   );
+}
+
+ModelChatReadiness _chatReadinessFromJson(dynamic value) {
+  if (value is! String) return ModelChatReadiness.providerAdvertised;
+  return ModelChatReadiness.values.firstWhere(
+    (readiness) => readiness.name == value,
+    orElse: () => ModelChatReadiness.unknown,
+  );
+}
+
+ModelToolReadiness _toolReadinessFromJson(
+  dynamic value, {
+  required bool? supportsToolCalls,
+  required ModelToolPolicy toolPolicy,
+}) {
+  if (value is String) {
+    return ModelToolReadiness.values.firstWhere(
+      (readiness) => readiness.name == value,
+      orElse: () => ModelToolReadiness.unknown,
+    );
+  }
+  // Legacy dynamic snapshots must not inherit the old overclaim where a
+  // provider advertisement was serialized as a reliable tool route.
+  if (supportsToolCalls == false || toolPolicy == ModelToolPolicy.disabled) {
+    return ModelToolReadiness.incompatible;
+  }
+  if (supportsToolCalls == true) {
+    return ModelToolReadiness.providerAdvertised;
+  }
+  return ModelToolReadiness.unknown;
 }
 
 bool _isSafeId(String value) {

@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-13
 
-**Status:** Audited design; implementation has not started
+**Status:** Implementation in progress
 
 **Primary incident:** Venice-hosted Gemini 3.6 and Gemma 4 failures during
 OpenClaw tool use
@@ -11,6 +11,16 @@ OpenClaw tool use
 selection identity, tool-loop validation, phase-aware errors, and safe fallback
 
 ## 1. Decision summary
+
+### Implementation ledger
+
+- Complete: expiring Groq defaults migrated to current GPT-OSS replacements,
+  with date-aware provider retirement metadata and safe legacy aliases.
+- Complete: provider-advertised chat/tool support is represented separately
+  from schema acceptance and a verified complete tool loop. Legacy cached
+  advertisements migrate conservatively and cannot become `Agent-ready`.
+- In progress: canonical model identity, phase-aware failures, capability
+  receipts/probes, provider-scoped runtime compatibility, and safe fallback.
 
 Plawie must stop treating a provider's generic function-calling flag as proof
 that a model can run the complete mobile Agent loop.

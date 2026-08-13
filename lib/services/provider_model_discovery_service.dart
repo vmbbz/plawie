@@ -538,6 +538,14 @@ class ProviderModelDiscoveryService {
     final staticModel = ModelProviderCatalog.modelById(id);
     final supportsToolCalls = _toolSupport(raw);
     final supportsVision = _visionSupport(raw);
+    final effectiveSupportsToolCalls =
+        supportsToolCalls ?? staticModel?.supportsToolCalls;
+    final toolReadiness = supportsToolCalls == false ||
+            staticModel?.toolPolicy == ModelToolPolicy.disabled
+        ? ModelToolReadiness.incompatible
+        : effectiveSupportsToolCalls == true
+            ? ModelToolReadiness.providerAdvertised
+            : ModelToolReadiness.unknown;
     final deprecationDate = _providerDeprecationDate(raw);
     final deprecated =
         deprecationDate != null && !deprecationDate.isAfter(_clock().toUtc());
@@ -571,13 +579,15 @@ class ProviderModelDiscoveryService {
           .trim(),
       sourceModelId: sourceId,
       capabilities: capabilities,
-      supportsToolCalls: supportsToolCalls ?? staticModel?.supportsToolCalls,
+      supportsToolCalls: effectiveSupportsToolCalls,
       supportsVision: supportsVision ?? staticModel?.supportsVision,
       toolPolicy: supportsToolCalls == false
           ? ModelToolPolicy.disabled
-          : supportsToolCalls == true
+          : staticModel?.toolPolicy == ModelToolPolicy.reliable
               ? ModelToolPolicy.reliable
-              : staticModel?.toolPolicy ?? ModelToolPolicy.variable,
+              : ModelToolPolicy.variable,
+      chatReadiness: ModelChatReadiness.providerAdvertised,
+      toolReadiness: toolReadiness,
       advertisedContextWindow: _firstPositiveInt(<dynamic>[
         raw['context_length'],
         raw['inputTokenLimit'],
