@@ -27,7 +27,19 @@ void main() {
       () {
     expect(
       GatewayConnection.isSessionPatchAcknowledged(
-        const {'type': 'res', 'ok': true, 'payload': <String, dynamic>{}},
+        const {
+          'type': 'res',
+          'ok': true,
+          'payload': {
+            'ok': true,
+            'resolved': {
+              'modelProvider': 'venice',
+              'model': 'gemini-3-6-flash',
+              'agentRuntime': {'id': 'openclaw'},
+            },
+          },
+        },
+        expectedModel: 'venice/gemini-3-6-flash',
       ),
       isTrue,
     );
@@ -37,6 +49,7 @@ void main() {
           'type': 'res',
           'payload': {'ts': 1786580538180},
         },
+        expectedModel: 'venice/gemini-3-6-flash',
       ),
       isTrue,
     );
@@ -48,6 +61,22 @@ void main() {
         'type': 'res',
         'ok': false,
         'payload': {'ts': 1786580538180}
+      },
+      {
+        'type': 'res',
+        'ok': true,
+        'payload': <String, dynamic>{},
+      },
+      {
+        'type': 'res',
+        'ok': true,
+        'payload': {
+          'ok': true,
+          'resolved': {
+            'modelProvider': 'blockrun',
+            'model': 'openai/gpt-5.6-luna',
+          },
+        },
       },
       {'type': 'res', 'error': 'model not allowed'},
       {'type': 'res', 'payload': <String, dynamic>{}},
@@ -67,7 +96,10 @@ void main() {
 
     for (final response in rejected) {
       expect(
-        GatewayConnection.isSessionPatchAcknowledged(response),
+        GatewayConnection.isSessionPatchAcknowledged(
+          response,
+          expectedModel: 'venice/gemini-3-6-flash',
+        ),
         isFalse,
         reason: '$response must not authorize a provider request',
       );

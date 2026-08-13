@@ -703,12 +703,16 @@ class GatewayConnection {
 
   /// Whether a `sessions.patch` response is an acknowledged success.
   ///
-  /// Current Gateways use the protocol-v3 `ok: true` envelope. OpenClaw
+  /// Current Gateways return the protocol-v3 `ok: true` envelope and a
+  /// structured result containing the resolved canonical model. OpenClaw
   /// 2026.7.1 can instead return the legacy mutation receipt
   /// `{type: "res", payload: {ts: <epoch-ms>}}`. Keep that compatibility
   /// narrow: an explicit failure or error never succeeds, and an untyped or
   /// otherwise empty response is not accepted.
-  static bool isSessionPatchAcknowledged(Map<String, dynamic> response) {
+  static bool isSessionPatchAcknowledged(
+    Map<String, dynamic> response, {
+    String? expectedModel,
+  }) {
     if (response['type'] != 'res' ||
         response['ok'] == false ||
         response['error'] != null ||
@@ -716,7 +720,22 @@ class GatewayConnection {
         response['errorMessage'] != null) {
       return false;
     }
-    if (response['ok'] == true) return true;
+    if (response['ok'] == true) {
+      final payload = response['payload'];
+      if (payload is! Map || payload['ok'] != true) return false;
+
+      final expected = expectedModel?.trim() ?? '';
+      if (expected.isEmpty) return true;
+      final separator = expected.indexOf('/');
+      if (separator <= 0 || separator == expected.length - 1) return false;
+
+      final resolved = payload['resolved'];
+      if (resolved is! Map) return false;
+      final provider = resolved['modelProvider']?.toString().trim() ?? '';
+      final model = resolved['model']?.toString().trim() ?? '';
+      return provider == expected.substring(0, separator) &&
+          model == expected.substring(separator + 1);
+    }
 
     final payload = response['payload'];
     if (payload is! Map || payload.length != 1 || !payload.containsKey('ts')) {
@@ -748,7 +767,12 @@ class GatewayConnection {
       buildSessionPatchRequest(metadata, sessionKey: key),
     ).first.timeout(const Duration(seconds: 10));
 
-    if (isSessionPatchAcknowledged(response)) return;
+    if (isSessionPatchAcknowledged(
+      response,
+      expectedModel: metadata['model']?.toString(),
+    )) {
+      return;
+    }
 
     final error = response['error'] ?? response['payload'] ?? response;
     final message = error is Map
