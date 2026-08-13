@@ -2,13 +2,17 @@
 
 ## Building a human-governed mobile Agent Wallet with Plawie, OpenClaw, KeeperHub, and Android
 
-> **Publication status — 12 August 2026:** Engineering draft. The software
-> architecture described below is implemented. The final article must not be
-> published as a completed on-chain case study until the physical-device
-> KeeperHub onboarding, zero-value Base Mainnet execution, interruption
-> recovery, and independently verifiable transaction receipt have been
-> captured. Public source and install links are intentionally held until
-> Plawie's 12 August release.
+> **Publication status — 13 August 2026:** Evidence-backed draft. Physical-device
+> KeeperHub onboarding, bounded review, Android authentication, and sponsored
+> zero-value Base Mainnet execution are now proven with independently checked
+> receipts. Terminal receipt persistence after process restart is also proven.
+> An explicit pre-execution rejection is also recorded. A deliberately
+> interrupted *in-flight* polling recovery and a deliberately failing
+> simulation remain separate evidence tasks and are not claimed below.
+>
+> The agent-originated `keeperhub.prepare` path is now also proven on-device:
+> it created an inert fourth proposal that remains at **Ready for human review**
+> with no execution ID or transaction hash.
 
 AI agents have become surprisingly good at deciding what should happen next.
 They can research a market, inspect a task queue, prepare a transaction, and
@@ -328,9 +332,91 @@ hash matches the execution status, whose chain is Base Mainnet, whose receipt
 status is successful, and whose verification timestamp is present. A mismatch
 becomes `receipt_not_verified`, not a green success card.
 
-That gives the hackathon demo its most important moment: kill the app while it
-is polling, reopen it, and show that the same execution is recovered without a
-duplicate transaction.
+The remaining live reliability stress test is to kill the app while it is
+polling, reopen it, and show that the same execution is recovered without a
+duplicate transaction. The state machine and automated failure coverage exist,
+but this article does not present them as physical-device evidence yet.
+
+---
+
+## Live Base Mainnet evidence — 13 August 2026
+
+The first physical-device proof followed the production path rather than a
+test-only shortcut:
+
+1. KeeperHub simulated an exact `0 ETH` transfer on Base Mainnet (`8453`) from
+   the Agent Execution Wallet back to itself.
+2. Plawie displayed the full review in the foreground and did not expose an
+   agent-accessible approval or submission command.
+3. The user continued to Android authentication on the physical device.
+4. KeeperHub accepted one persisted intent and sponsored its gas.
+5. Plawie polled the execution, required an authoritative matching receipt,
+   and rendered **Verified on-chain**.
+6. A public Base RPC independently returned receipt status `0x1` for the same
+   hash and block.
+7. Plawie was force-stopped and relaunched after completion. The same single
+   terminal receipt reappeared without an active request or resubmission.
+
+| Evidence field | Canonical proof |
+|---|---|
+| Network | Base Mainnet (`8453`) |
+| Intent | `kh_99dc92c349164d77b5895bdaf195117e` |
+| KeeperHub execution | `59ja3y71gxctnet4zprd8` |
+| Amount | `0 ETH` |
+| Simulation | success; would not revert; estimate `21,000` gas |
+| Sponsorship | `true` |
+| Idempotent replay | `false` |
+| Transaction | [`0xdcf1a13c…73117b04`](https://basescan.org/tx/0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04) |
+| Base block | `49,896,836` |
+| Verified receipt | success; `80,521` gas used |
+| KeeperHub verification time | `2026-08-13T01:03:41.947Z` |
+
+The public transaction is a sponsored delegated execution envelope. Its outer
+transaction sender and target belong to KeeperHub's execution infrastructure;
+the bounded Agent Wallet self-transfer is encoded in the transaction call. The
+chain proves that the envelope succeeded with zero native value, while
+KeeperHub's re-fetched authoritative receipt binds that settlement to the
+stored execution. This distinction avoids presenting an infrastructure
+transaction as a plain EOA transfer.
+
+![Physical-device review of the exact zero-value Base Mainnet proof](assets/keeperhub/keeperhub-base-mainnet-review.png)
+
+![The two separately authorized KeeperHub proofs persisted with verified on-chain metadata](assets/keeperhub/keeperhub-base-mainnet-verified-receipt.png)
+
+A second proof was later simulated and separately authorized by the user. It
+produced a distinct intent, execution ID, and verified transaction
+(`0x9ce5e377…d6def2a9`) with `idempotentReplay: false`. That is expected new
+work—not a retry or duplicate of the canonical proof. Each approved intent has
+exactly one successful receipt.
+
+A third proposal was simulated only to exercise the negative boundary. It was
+explicitly discarded from the foreground Wallet UI before Android
+authentication. Plawie persisted **Rejected before execution**, and no third
+transaction appeared.
+
+A fourth proposal was prepared through the real agent-facing
+`keeperhub.prepare` capability. It remains `awaitingApproval`; the Wallet shows
+**Ready for human review** and exposes only **Review & authorize** or
+**Discard**. No execution ID or transaction hash exists for it.
+
+![The agent-prepared proof stops at the human Wallet boundary](assets/keeperhub/keeperhub-agent-prepared-for-human-review.png)
+
+The model's narration after that tool call initially returned `403 A foreground
+user turn is required for this provider.` This was a Venice continuation issue,
+not a KeeperHub rejection. Code-path analysis identified Android's
+biometric/system authentication overlay as the source of a transient
+`inactive` lifecycle state that erased the bounded paid-provider turn lease.
+Plawie now preserves the inert lease across only that obscured state while
+continuing to erase it on true background states. Thirty focused paid-provider
+tests pass, including lifecycle, cancellation, one-payment-per-message,
+mismatch, uncertainty, and no-replay cases.
+
+![A simulation-bound proposal rejected before authentication or execution](assets/keeperhub/keeperhub-base-mainnet-rejected.png)
+
+This run did **not** interrupt the app between broadcast and final receipt. It
+therefore proves completed-receipt persistence, but not the stronger in-flight
+reconciliation scenario. We keep that claim gated rather than manufacture a
+third Mainnet transaction solely for demonstration.
 
 ---
 
@@ -339,20 +425,24 @@ duplicate transaction.
 The implementation is substantial, but a credible technical story must
 separate code-complete controls from evidence-complete behavior.
 
-| Capability | Current status on 11 August 2026 |
+| Capability | Current status on 13 August 2026 |
 |---|---|
 | Fixed-origin KeeperHub REST client and strict request handling | Implemented |
 | Explicit headless SIWE onboarding and organization-key step-up | Implemented |
 | Secure returned-once credential storage and restart recovery | Implemented |
 | Separate Personal and Agent Execution Wallet UI | Implemented |
 | Bounded agent status, receipt, and proof-preparation commands | Implemented |
+| Physical-device agent-originated inert proposal | Proven; awaiting human review with no execution ID/hash |
 | Zero-value Base Mainnet self-transfer policy | Implemented |
 | Simulation, immutable request binding, one-use approval, and Android authentication | Implemented |
 | Persisted idempotency, bounded polling, restart recovery, and verified receipt checks | Implemented |
 | Device-authenticated remote organization-key revocation | Implemented |
-| Physical-device KeeperHub account and organization acceptance | **Observed connected; publication capture still required** |
-| Live reject/cancel and deliberately failing simulation recording | **Still required** |
-| Real zero-value Base Mainnet transaction with interruption recovery | **Still required** |
+| Physical-device KeeperHub account and organization acceptance | Proven on the connected Android device |
+| Live reject/cancel with no execution | Proven; physical-device rejection capture above |
+| Deliberately failing simulation recording | **Still required** |
+| Real zero-value Base Mainnet transaction and verified receipt | Proven; canonical explorer hash above |
+| Completed receipt persistence after process restart | Proven; same receipt restored without resubmission |
+| Deliberately interrupted in-flight polling recovery | **Still required** |
 | Non-zero KeeperHub transfer | Deliberately blocked and out of scope |
 | Paid x402 marketplace workflow through KeeperHub | Stretch; not implemented |
 | Multi-owner Safe with on-chain device co-approval | Production direction; not implemented |
@@ -366,8 +456,14 @@ and uncertain remote revocation.
 On 12 August, the Base Mainnet migration subset completed with 26 focused
 Flutter tests and all five Android KeeperHub message-policy tests passing. The
 arm64 debug APK also compiled the native policy and passed the artifact secret
-audit. A physical-device transaction and recovery run remains the evidence
-gate; automated tests are not presented as on-chain proof.
+audit. On 13 August, the physical-device Mainnet proof passed and its receipt
+was independently reconciled through a public Base RPC. The final evidence
+round then passed all 41 KeeperHub Flutter tests and the five Android-native
+message-policy tests with zero failures. A separate 30-test paid-provider
+lifecycle suite also passed after the transient biometric continuation fix.
+The in-flight interruption case remains the outstanding reliability evidence
+gate; automated tests are not presented as a substitute for that live
+scenario.
 
 ---
 
@@ -473,9 +569,9 @@ balances.
 
 > We built Plawie around one rule: the agent can propose an on-chain action, but
 > the phone still decides. OpenClaw prepares a bounded intent, KeeperHub
-> simulates and executes it reliably, and Android forces visible review plus
-> fresh human authentication. Then we kill the app mid-flight and recover the
-> same execution—without submitting twice. [article link]
+> simulates and executes it, and Android forces visible review plus fresh human
+> authentication. Our first sponsored Base Mainnet proof is now independently
+> verifiable on-chain. [article link]
 
 ### Five-post thread
 
@@ -489,9 +585,9 @@ balances.
 4. KeeperHub provides simulation, idempotent execution, status recovery, and
    verified receipts. Plawie binds those to a foreground review and fresh
    Android authentication.
-5. The proof is not just a successful transaction: reject one request, fail one
-   simulation, approve another, kill the app during polling, and recover the
-   same execution without a duplicate. [video] [article]
+5. The first sponsored Base Mainnet proof now has a successful, independently
+   checked receipt. Completed-receipt restart persistence passed; deliberate
+   in-flight recovery remains the next recorded stress test. [video] [article]
 
 ---
 

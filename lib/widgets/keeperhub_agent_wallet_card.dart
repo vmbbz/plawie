@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../constants.dart';
 import '../services/keeperhub/keeperhub_execution_models.dart';
@@ -537,6 +538,15 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
     final verified = receipt.phase == KeeperHubExecutionPhase.completed &&
         receipt.receipts.isNotEmpty &&
         receipt.receipts.every((item) => item.verified);
+    final authoritativeReceipt =
+        receipt.receipts.length == 1 ? receipt.receipts.single : null;
+    final proofDetails = <String>[
+      if (receipt.sponsored == true) 'Sponsored',
+      if (authoritativeReceipt?.blockNumber != null)
+        'block ${_groupDigits(authoritativeReceipt!.blockNumber.toString())}',
+      if (authoritativeReceipt?.gasUsed != null)
+        'gas ${_groupDigits(authoritativeReceipt!.gasUsed!)}',
+    ];
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
@@ -577,19 +587,68 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
+                  if (proofDetails.isNotEmpty)
+                    Text(
+                      proofDetails.join(' · '),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                 ],
               ),
             ),
             if (receipt.transactionHash != null)
-              IconButton(
-                tooltip: 'Copy transaction hash',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _copy(receipt.transactionHash!),
-                icon: const Icon(Icons.copy, size: 18),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Open transaction in BaseScan',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _openTransaction(receipt.transactionHash!),
+                    icon: const Icon(Icons.open_in_new, size: 18),
+                  ),
+                  IconButton(
+                    tooltip: 'Copy transaction hash',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _copy(receipt.transactionHash!),
+                    icon: const Icon(Icons.copy, size: 18),
+                  ),
+                ],
               ),
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _openTransaction(String hash) async {
+    if (!RegExp(r'^0x[0-9a-fA-F]{64}$').hasMatch(hash)) {
+      _showMessage('The stored Base transaction hash is invalid.');
+      return;
+    }
+    try {
+      final opened = await launchUrl(
+        Uri.https('basescan.org', '/tx/$hash'),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) _showMessage('Could not open BaseScan.');
+    } catch (_) {
+      _showMessage('Could not open BaseScan.');
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  String _groupDigits(String value) {
+    if (!RegExp(r'^\d+$').hasMatch(value)) return value;
+    return value.replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => ',',
     );
   }
 

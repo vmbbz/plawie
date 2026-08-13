@@ -60,6 +60,23 @@ void main() {
     expect(find.text('Discard'), findsOneWidget);
   });
 
+  testWidgets('verified receipts expose explorer and proof metadata',
+      (tester) async {
+    await _pump(
+      tester,
+      KeeperHubAgentWalletCard(
+        personalWalletAddress: personal,
+        controller: _FakeController(_completedSnapshot()),
+      ),
+    );
+
+    expect(find.text('Verified on-chain'), findsOneWidget);
+    expect(
+        find.text('Sponsored · block 49,896,836 · gas 80,521'), findsOneWidget);
+    expect(find.byTooltip('Open transaction in BaseScan'), findsOneWidget);
+    expect(find.byTooltip('Copy transaction hash'), findsOneWidget);
+  });
+
   testWidgets('requires destructive confirmation before remote revocation',
       (tester) async {
     final controller = _FakeController(_ready());
@@ -178,6 +195,49 @@ KeeperHubExecutionRecord _prepared() {
     approvalExpiresAt: now.add(const Duration(minutes: 5)),
     createdAt: now,
     updatedAt: now,
+  );
+}
+
+KeeperHubWalletSnapshot _completedSnapshot() {
+  final completedAt = DateTime.utc(2026, 8, 13, 1, 3, 43);
+  final record = KeeperHubExecutionRecord(
+    intentId: 'kh_99dc92c349164d77b5895bdaf195117e',
+    taskId: 'mobile-proof:1786582973457728:test',
+    phase: KeeperHubExecutionPhase.completed,
+    personalWalletAddress: '0x1111111111111111111111111111111111111111',
+    agentWalletAddress: '0x2222222222222222222222222222222222222222',
+    reason: 'Prove human-governed Agent Wallet execution.',
+    transfer: const <String, dynamic>{
+      'chainId': 8453,
+      'recipientAddress': '0x2222222222222222222222222222222222222222',
+      'amount': '0',
+    },
+    executionId: '59ja3y71gxctnet4zprd8',
+    remoteStatus: 'completed',
+    sponsored: true,
+    transactionHash:
+        '0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04',
+    transactionLink:
+        'https://basescan.org/tx/0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04',
+    receipts: <KeeperHubVerifiedReceipt>[
+      KeeperHubVerifiedReceipt(
+        hash:
+            '0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04',
+        chainId: 8453,
+        verified: true,
+        receiptStatus: 'success',
+        blockNumber: 49896836,
+        gasUsed: '80521',
+        verifiedAt: DateTime.utc(2026, 8, 13, 1, 3, 41),
+      ),
+    ],
+    createdAt: DateTime.utc(2026, 8, 13, 1, 2, 53),
+    updatedAt: completedAt,
+  );
+  return KeeperHubWalletSnapshot(
+    connection: _connection(),
+    activeExecution: null,
+    receipts: <KeeperHubExecutionRecord>[record],
   );
 }
 

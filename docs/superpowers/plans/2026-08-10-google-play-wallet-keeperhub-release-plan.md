@@ -898,7 +898,7 @@ narrow and demonstrable rather than a premature platform rewrite.
       recovery after restart.
 - [x] Expose onboarding through explicit Wallet UI consent; creation never runs
       from startup, setup, chat, or card rendering.
-- [ ] Complete one physical-device KeeperHub account/organization acceptance
+- [x] Complete one physical-device KeeperHub account/organization acceptance
       run.
 - [x] Show Personal Wallet and Agent Execution Wallet as separate cards with
       explicit custody, chain, address, funding, and risk copy.
@@ -917,24 +917,38 @@ narrow and demonstrable rather than a premature platform rewrite.
 - [x] Add automated failure coverage for cancellation, missing foreground UI,
       tampered receipts, deliberate simulation failure, ambiguous submission,
       status-only recovery, and mismatched transaction receipts.
-- [ ] Demonstrate reject/cancel and a deliberately failing simulation before any
-      successful write.
-- [ ] Submit one real zero-value Base Mainnet KeeperHub transaction, interrupt
-      the app/network during polling, reopen, and prove recovery reaches the same
-      execution without a duplicate transaction.
+- [x] Demonstrate a physical-device reject/cancel path with no authentication
+      or execution. The rejected proposal is persisted as terminal local state.
+- [ ] Record a deliberately failing live simulation; automated failure coverage
+      already exists, but it is not a substitute for physical-device evidence.
+- [x] Submit a real zero-value Base Mainnet KeeperHub transaction and require one
+      authoritative successful receipt. The canonical sponsored proof is
+      execution `59ja3y71gxctnet4zprd8`, transaction
+      `0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04`.
+- [x] Force-stop and reopen after completion; restore the same terminal receipt
+      without an active request or resubmission.
+- [ ] Interrupt the app/network specifically during in-flight polling and prove
+      recovery reaches the same execution without a duplicate transaction. Do
+      not substitute terminal-receipt persistence for this stronger claim.
 - [x] Keep all non-zero KeeperHub transfers and arbitrary calldata out of scope;
       paid-provider Base USDC flows remain separate human-approved capabilities.
 - [x] Add chat proposal and status/receipt tools, while keeping approval and
       execution owned by the foreground Wallet UI.
+- [x] Prove `keeperhub.prepare` on a physical device. The agent-created Mainnet
+      proposal remains inert in `awaitingApproval` with no execution ID/hash;
+      Wallet alone exposes review or discard.
+- [x] Preserve a bounded paid-provider tool-loop continuation across Android's
+      transient biometric `inactive` lifecycle without weakening the hard erase
+      on paused/hidden/detached or the one-payment-per-message limit.
 - [x] Implement device-authenticated remote API-key revocation through
       `DELETE /api/keys/{keyId}`. Clear local credentials only after confirmed
       revocation or an already-unavailable response; otherwise retain the
       encrypted credential in an honest `revocationUnknown` recovery state.
 - [ ] Treat paid x402 marketplace workflow execution as a stretch goal after the
       core reliability demo passes.
-- [ ] Capture Git source link, demo video, onboarding sequence, simulated failure,
-      interruption recovery, KeeperHub execution ID, and verified transaction
-      link required by the event.
+- [ ] Capture the final Git source link and demo video. The onboarding sequence,
+      rejected review, KeeperHub execution ID, and verified transaction link are
+      recorded; simulated failure and in-flight interruption recovery remain.
 
 **Exit:** a judge can create a real Agent Execution Wallet inside Plawie, ask the
 OpenClaw agent for an action, inspect a real KeeperHub simulation, authorize it
