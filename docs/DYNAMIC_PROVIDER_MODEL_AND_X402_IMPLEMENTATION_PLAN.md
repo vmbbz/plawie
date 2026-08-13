@@ -388,6 +388,12 @@ provider change, failure cleanup, or expiry.
 
 This phase must be completed before changing the production model picker.
 
+The post-live-testing protocol audit and concern-separated remediation design
+are documented in
+[`Provider Tool Compatibility, Model Truth, and Safe Failover Design`](superpowers/specs/2026-08-13-provider-tool-compatibility-and-failover-design.md).
+That document supersedes any interpretation that a provider's generic function-
+calling flag alone is sufficient to label a model Agent-ready.
+
 ### 5.1 Context audit result
 
 The current cloud selection path changes the selected model and provider config;
