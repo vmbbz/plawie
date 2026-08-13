@@ -538,6 +538,9 @@ class ProviderModelDiscoveryService {
     final staticModel = ModelProviderCatalog.modelById(id);
     final supportsToolCalls = _toolSupport(raw);
     final supportsVision = _visionSupport(raw);
+    final deprecationDate = _providerDeprecationDate(raw);
+    final deprecated =
+        deprecationDate != null && !deprecationDate.isAfter(_clock().toUtc());
     final capabilities = <String>{
       ..._stringList(raw['capabilities']),
       ..._stringList(raw['supported_parameters']),
@@ -590,9 +593,35 @@ class ProviderModelDiscoveryService {
         modelSpec['maxOutputTokens'],
         (raw['top_provider'] as Map?)?['max_completion_tokens'],
       ]),
+      deprecationDate: deprecationDate,
       recommended: staticModel?.recommended ?? false,
-      liveAvailable: true,
+      liveAvailable: !deprecated,
+      unavailableReason: deprecated
+          ? 'This provider retired the model on ${deprecationDate.toIso8601String().split('T').first}.'
+          : null,
     );
+  }
+
+  DateTime? _providerDeprecationDate(Map<dynamic, dynamic> raw) {
+    for (final value in <dynamic>[
+      raw['expiration_date'],
+      raw['deprecation_date'],
+      raw['deprecated_at'],
+    ]) {
+      if (value is! String || value.trim().isEmpty) continue;
+      final normalized = value.trim();
+      final dateOnly =
+          RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(normalized);
+      final parsed = dateOnly == null
+          ? DateTime.tryParse(normalized)
+          : DateTime.utc(
+              int.parse(dateOnly.group(1)!),
+              int.parse(dateOnly.group(2)!),
+              int.parse(dateOnly.group(3)!),
+            );
+      if (parsed != null) return parsed.toUtc();
+    }
+    return null;
   }
 
   DynamicProviderRecord _connectedProvider(

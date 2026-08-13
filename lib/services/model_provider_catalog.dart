@@ -29,6 +29,8 @@ class ModelOption {
 
   /// Safe per-request output cap written to the gateway config.
   final int? maxTokens;
+  final DateTime? deprecationDate;
+  final String? replacementModelId;
 
   const ModelOption({
     required this.id,
@@ -43,6 +45,8 @@ class ModelOption {
     this.toolPolicy = ModelToolPolicy.reliable,
     this.contextWindow,
     this.maxTokens,
+    this.deprecationDate,
+    this.replacementModelId,
   });
 
   String get shortId => id.contains('/') ? id.split('/').last : id;
@@ -75,6 +79,9 @@ class ModelOption {
     if (toolPolicy == ModelToolPolicy.variable) return 'VARIABLE TOOLS';
     return 'FULL TOOLS';
   }
+
+  bool isDeprecatedAt(DateTime now) =>
+      deprecationDate != null && !deprecationDate!.isAfter(now.toUtc());
 }
 
 class ProviderOption {
@@ -170,7 +177,7 @@ class ModelProviderCatalog {
       envKey: 'GROQ_API_KEY',
       keyHint: 'gsk_...',
       keyPrefix: 'gsk_',
-      defaultModel: 'groq/llama-3.3-70b-versatile',
+      defaultModel: 'groq/openai/gpt-oss-120b',
       description: 'Very fast hosted inference for responsive chat.',
     ),
     ProviderOption(
@@ -409,12 +416,12 @@ class ModelProviderCatalog {
       maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
     ModelOption(
-      id: 'groq/llama-3.3-70b-versatile',
-      label: 'Llama 3.3 70B Versatile',
+      id: 'groq/openai/gpt-oss-120b',
+      label: 'GPT-OSS 120B via Groq',
       providerId: 'groq',
       route: ModelRouteKind.cloud,
       description:
-          'Low-latency hosted model; full Gateway tools need enough Groq TPM.',
+          'Production Groq model for capable, low-latency cloud reasoning.',
       category: 'Fast',
       recommended: true,
       toolPolicy: ModelToolPolicy.variable,
@@ -422,12 +429,12 @@ class ModelProviderCatalog {
       maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),
     ModelOption(
-      id: 'groq/llama-3.1-8b-instant',
-      label: 'Llama 3.1 8B Instant',
+      id: 'groq/openai/gpt-oss-20b',
+      label: 'GPT-OSS 20B via Groq',
       providerId: 'groq',
       route: ModelRouteKind.cloud,
       description:
-          'Very fast lightweight Groq route; best for short cloud turns.',
+          'Production lightweight Groq route for fast, economical turns.',
       category: 'Fast',
       toolPolicy: ModelToolPolicy.variable,
       contextWindow: ModelExecutionPolicy.groqLlamaContextWindow,
@@ -544,8 +551,11 @@ class ModelProviderCatalog {
         return 'anthropic/claude-sonnet-4-6';
       case 'xai/grok-4.3':
         return 'xai/grok-4';
+      case 'groq/llama-3.3-70b-versatile':
       case 'groq/llama-3.1-405b':
-        return 'groq/llama-3.3-70b-versatile';
+        return 'groq/openai/gpt-oss-120b';
+      case 'groq/llama-3.1-8b-instant':
+        return 'groq/openai/gpt-oss-20b';
       default:
         return trimmed;
     }

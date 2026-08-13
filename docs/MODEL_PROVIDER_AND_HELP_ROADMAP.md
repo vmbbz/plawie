@@ -71,7 +71,7 @@ User-facing surfaces should use the catalog instead of hardcoded provider lists:
 | OpenAI | `openai/gpt-5.4` | `OPENAI_API_KEY` | Gateway provider |
 | xAI / Grok | `xai/grok-4` | `XAI_API_KEY` | Gateway provider |
 | OpenRouter | `openrouter/openai/gpt-oss-20b:free` | `OPENROUTER_API_KEY` | Gateway provider |
-| Groq | `groq/llama-3.3-70b-versatile` | `GROQ_API_KEY` | Gateway provider |
+| Groq | `groq/openai/gpt-oss-120b` | `GROQ_API_KEY` | Gateway provider |
 | Plawie NDK bridge | `plawie_ndk/local-llm` | local placeholder key | Manual Gateway bridge |
 
 Known model entries include `contextWindow` and `maxTokens` so Gateway/provider
@@ -110,7 +110,7 @@ Examples of current model metadata:
 | OpenRouter Free Router | 200,000 | compact safe cap | disabled/chat only |
 | OpenRouter Auto | 2,000,000 | standard safe cap | variable |
 | Kimi K2.6 via OpenRouter | 262,144 | standard safe cap | reliable metadata |
-| Groq Llama routes | 131,072 | compact safe cap | variable; full tools require enough Groq TPM |
+| Groq GPT-OSS routes | 131,072 | compact safe cap | variable; full tools require enough Groq TPM |
 | Plawie NDK bridge | 4,096 | 768 | variable |
 
 ## Compatibility Aliases
@@ -120,7 +120,9 @@ Examples of current model metadata:
 | `anthropic/claude-opus-4.6` | `anthropic/claude-opus-4-6` |
 | `anthropic/claude-sonnet-4.6` | `anthropic/claude-sonnet-4-6` |
 | `xai/grok-4.3` | `xai/grok-4` |
-| `groq/llama-3.1-405b` | `groq/llama-3.3-70b-versatile` |
+| `groq/llama-3.3-70b-versatile` | `groq/openai/gpt-oss-120b` |
+| `groq/llama-3.1-405b` | `groq/openai/gpt-oss-120b` |
+| `groq/llama-3.1-8b-instant` | `groq/openai/gpt-oss-20b` |
 | any `ollama/...` | `openrouter/openai/gpt-oss-20b:free` |
 
 ## Runtime Guardrails

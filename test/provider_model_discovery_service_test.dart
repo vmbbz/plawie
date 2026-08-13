@@ -79,6 +79,46 @@ void main() {
     expect(snapshot.encode(), isNot(contains('test-key')));
   });
 
+  test('preserves upcoming retirement and disables an expired model', () async {
+    final client = _FakeClient((request) async => _jsonResponse(
+          <String, dynamic>{
+            'data': <dynamic>[
+              <String, dynamic>{
+                'id': 'provider/upcoming',
+                'expiration_date': '2026-08-16',
+              },
+              <String, dynamic>{
+                'id': 'provider/expired',
+                'expiration_date': '2026-08-01',
+              },
+            ],
+          },
+        ));
+    final service = ProviderModelDiscoveryService(
+      client: client,
+      repository: repository,
+      clock: () => now,
+    );
+
+    final snapshot = await service.refreshProvider(
+      'openrouter',
+      apiKey: 'test-key',
+    );
+    final models = snapshot.providers
+        .firstWhere((provider) => provider.id == 'openrouter')
+        .models;
+    final upcoming = models
+        .firstWhere((model) => model.id == 'openrouter/provider/upcoming');
+    final expired =
+        models.firstWhere((model) => model.id == 'openrouter/provider/expired');
+
+    expect(upcoming.deprecationDate, DateTime.utc(2026, 8, 16));
+    expect(upcoming.liveAvailable, isTrue);
+    expect(expired.deprecationDate, DateTime.utc(2026, 8, 1));
+    expect(expired.liveAvailable, isFalse);
+    expect(expired.unavailableReason, contains('retired'));
+  });
+
   test('discovers Venice with a fresh bounded wallet identity', () async {
     const address = '0x857b06519E91e3A54538791bDbb0E22373e36b66';
     var signedRequests = 0;

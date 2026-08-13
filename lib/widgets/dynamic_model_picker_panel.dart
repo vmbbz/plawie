@@ -374,11 +374,13 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
     final blocked =
         model.liveAvailable && readiness != null && !readiness.canSelectModels;
     final enabled = model.liveAvailable;
+    final retirement =
+        model.deprecationDate?.toIso8601String().split('T').first;
     final subtitle = !model.liveAvailable
         ? model.unavailableReason ?? 'This catalog entry is informational.'
         : blocked
             ? '${readiness.title} — ${readiness.detail}'
-            : '${model.agentReady ? 'Agent-ready' : 'Tool support unknown'} · ${model.id}';
+            : '${model.agentReady ? 'Agent-ready' : 'Tool support unknown'} · ${model.id}${retirement == null ? '' : ' · retires $retirement'}';
     return RadioListTile<String>(
       key: Key('model-option-${model.id}'),
       dense: true,
@@ -392,7 +394,10 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
       ),
       secondary: blocked
           ? const Icon(Icons.lock_clock_rounded, size: 18, color: Colors.amber)
-          : null,
+          : !model.liveAvailable && model.deprecationDate != null
+              ? const Icon(Icons.event_busy_rounded,
+                  size: 18, color: Colors.amber)
+              : null,
       value: model.id,
     );
   }

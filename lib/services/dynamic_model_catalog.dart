@@ -54,6 +54,8 @@ class DynamicModelRecord {
     this.toolPolicy = ModelToolPolicy.variable,
     this.advertisedContextWindow,
     this.advertisedMaxOutputTokens,
+    this.deprecationDate,
+    this.replacementModelId,
     this.recommended = false,
     this.liveAvailable = true,
     this.unavailableReason,
@@ -72,6 +74,8 @@ class DynamicModelRecord {
   final ModelToolPolicy toolPolicy;
   final int? advertisedContextWindow;
   final int? advertisedMaxOutputTokens;
+  final DateTime? deprecationDate;
+  final String? replacementModelId;
   final bool recommended;
   final bool liveAvailable;
   final String? unavailableReason;
@@ -80,6 +84,9 @@ class DynamicModelRecord {
       liveAvailable &&
       supportsToolCalls == true &&
       toolPolicy != ModelToolPolicy.disabled;
+
+  bool isDeprecatedAt(DateTime now) =>
+      deprecationDate != null && !deprecationDate!.isAfter(now.toUtc());
 
   String get shortId => id.contains('/') ? id.split('/').last : id;
 
@@ -124,6 +131,8 @@ class DynamicModelRecord {
       toolPolicy: model.toolPolicy,
       advertisedContextWindow: model.contextWindow,
       advertisedMaxOutputTokens: model.maxTokens,
+      deprecationDate: model.deprecationDate,
+      replacementModelId: model.replacementModelId,
       recommended: model.recommended,
       liveAvailable: true,
     );
@@ -162,6 +171,8 @@ class DynamicModelRecord {
           _optionalPositiveInt(raw, 'advertisedContextWindow'),
       advertisedMaxOutputTokens:
           _optionalPositiveInt(raw, 'advertisedMaxOutputTokens'),
+      deprecationDate: _optionalDateTime(raw, 'deprecationDate'),
+      replacementModelId: _optionalString(raw, 'replacementModelId'),
       recommended: raw['recommended'] == true,
       liveAvailable: raw['liveAvailable'] != false,
       unavailableReason: _optionalString(raw, 'unavailableReason'),
@@ -185,6 +196,10 @@ class DynamicModelRecord {
           'advertisedContextWindow': advertisedContextWindow,
         if (advertisedMaxOutputTokens != null)
           'advertisedMaxOutputTokens': advertisedMaxOutputTokens,
+        if (deprecationDate != null)
+          'deprecationDate': deprecationDate!.toUtc().toIso8601String(),
+        if (replacementModelId != null)
+          'replacementModelId': replacementModelId,
         if (recommended) 'recommended': true,
         'liveAvailable': liveAvailable,
         if (unavailableReason != null) 'unavailableReason': unavailableReason,

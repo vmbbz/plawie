@@ -87,16 +87,34 @@ void main() {
     );
   });
 
-  test('Groq routes are marked variable and compact by default', () {
-    final groq70b =
-        ModelProviderCatalog.modelById('groq/llama-3.3-70b-versatile');
-    final groq8b = ModelProviderCatalog.modelById('groq/llama-3.1-8b-instant');
+  test('Groq defaults use current production replacements', () {
+    final groq120b = ModelProviderCatalog.modelById('groq/openai/gpt-oss-120b');
+    final groq20b = ModelProviderCatalog.modelById('groq/openai/gpt-oss-20b');
 
-    expect(groq70b, isNotNull);
-    expect(groq8b, isNotNull);
-    expect(groq70b!.toolPolicy, ModelToolPolicy.variable);
-    expect(groq8b!.toolPolicy, ModelToolPolicy.variable);
-    expect(groq70b.maxTokens, ModelExecutionPolicy.compactOutputTokens);
-    expect(groq8b.maxTokens, ModelExecutionPolicy.compactOutputTokens);
+    expect(groq120b, isNotNull);
+    expect(groq20b, isNotNull);
+    expect(ModelProviderCatalog.defaultModelForProvider('groq'),
+        'groq/openai/gpt-oss-120b');
+    expect(groq120b!.providerModelId, 'openai/gpt-oss-120b');
+    expect(groq20b!.providerModelId, 'openai/gpt-oss-20b');
+    expect(groq120b.toolPolicy, ModelToolPolicy.variable);
+    expect(groq20b.toolPolicy, ModelToolPolicy.variable);
+    expect(groq120b.maxTokens, ModelExecutionPolicy.compactOutputTokens);
+    expect(groq20b.maxTokens, ModelExecutionPolicy.compactOutputTokens);
+  });
+
+  test('retired Groq selections migrate to supported replacements', () {
+    expect(
+      ModelProviderCatalog.canonicalizeModelId('groq/llama-3.3-70b-versatile'),
+      'groq/openai/gpt-oss-120b',
+    );
+    expect(
+      ModelProviderCatalog.canonicalizeModelId('groq/llama-3.1-8b-instant'),
+      'groq/openai/gpt-oss-20b',
+    );
+    expect(
+      ModelProviderCatalog.canonicalizeModelId('groq/llama-3.1-405b'),
+      'groq/openai/gpt-oss-120b',
+    );
   });
 }
