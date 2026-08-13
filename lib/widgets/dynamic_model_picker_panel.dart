@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import '../services/dynamic_model_catalog.dart';
 import '../services/wallet_funded_provider_readiness.dart';
 
+typedef WalletProviderBalanceRefresh
+    = Future<Map<String, WalletFundedProviderReadiness>> Function(
+  String providerId,
+);
+
 class DynamicModelPickerLocalOption {
   const DynamicModelPickerLocalOption({
     required this.id,
@@ -16,8 +21,9 @@ class DynamicModelPickerLocalOption {
 }
 
 /// Shared searchable provider/model surface for Chat and Settings. It renders
-/// catalog truth separately from wallet/payment readiness and never performs a
-/// provider action itself.
+/// catalog truth separately from wallet/payment readiness. An injected balance
+/// refresher may perform a read-only, device-authenticated provider check in
+/// place; payment, top-up, transport, and wallet actions remain parent-owned.
 class DynamicModelPickerPanel extends StatefulWidget {
   const DynamicModelPickerPanel({
     super.key,
@@ -30,6 +36,8 @@ class DynamicModelPickerPanel extends StatefulWidget {
     this.onLocalSelected,
     this.initiallyExpandedProviderIds = const <String>{},
     this.autofocusSearch = false,
+    this.autoRefreshWalletBalances = false,
+    this.onRefreshProviderBalance,
   });
 
   final DynamicCatalogSnapshot snapshot;
@@ -42,6 +50,8 @@ class DynamicModelPickerPanel extends StatefulWidget {
   final ValueChanged<String>? onLocalSelected;
   final Set<String> initiallyExpandedProviderIds;
   final bool autofocusSearch;
+  final bool autoRefreshWalletBalances;
+  final WalletProviderBalanceRefresh? onRefreshProviderBalance;
 
   @override
   State<DynamicModelPickerPanel> createState() =>
@@ -51,11 +61,53 @@ class DynamicModelPickerPanel extends StatefulWidget {
 class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
   String _query = '';
   late final Set<String> _expanded;
+  late Map<String, WalletFundedProviderReadiness> _walletReadiness;
+  final Set<String> _busyProviders = <String>{};
+  String? _balanceStatus;
+  bool _autoRefreshScheduled = false;
 
   @override
   void initState() {
     super.initState();
     _expanded = <String>{...widget.initiallyExpandedProviderIds};
+    _walletReadiness = <String, WalletFundedProviderReadiness>{
+      ...widget.walletReadiness,
+    };
+    _scheduleAutomaticBalanceRefresh();
+  }
+
+  @override
+  void didUpdateWidget(covariant DynamicModelPickerPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.walletReadiness != widget.walletReadiness) {
+      _walletReadiness = <String, WalletFundedProviderReadiness>{
+        ...widget.walletReadiness,
+      };
+      _scheduleAutomaticBalanceRefresh();
+    }
+  }
+
+  void _scheduleAutomaticBalanceRefresh() {
+    if (!widget.autoRefreshWalletBalances ||
+        widget.onRefreshProviderBalance == null ||
+        _autoRefreshScheduled) {
+      return;
+    }
+    final providers = _walletReadiness.values
+        .where((readiness) =>
+            readiness.state == WalletFundedProviderState.balanceUnknown &&
+            readiness.primaryAction ==
+                WalletFundedProviderAction.refreshBalance)
+        .map((readiness) => readiness.providerId)
+        .toList(growable: false);
+    if (providers.isEmpty) return;
+    _autoRefreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      for (final providerId in providers) {
+        if (!mounted) return;
+        await _refreshProviderBalance(providerId, automatic: true);
+      }
+    });
   }
 
   @override
@@ -91,10 +143,16 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
         for (final provider in widget.snapshot.providers) {
           for (final model in provider.models) {
             if (model.id == modelId) {
-              final readiness = widget.walletReadiness[provider.id];
-              if (model.liveAvailable &&
-                  (readiness == null || readiness.canSelectModels)) {
+              final readiness = _walletReadiness[provider.id];
+              if (!model.liveAvailable) return;
+              if (readiness == null || readiness.canSelectModels) {
                 widget.onSelected(model);
+              } else if (readiness.primaryAction !=
+                  WalletFundedProviderAction.none) {
+                _runProviderAction(
+                  provider.id,
+                  readiness.primaryAction,
+                );
               }
               return;
             }
@@ -122,6 +180,42 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
               style: theme.textTheme.labelSmall?.copyWith(
                 color: Colors.amber,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (_balanceStatus != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              key: const Key('provider-balance-status'),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.tealAccent.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: Colors.tealAccent.withValues(alpha: 0.24),
+                ),
+              ),
+              child: Row(
+                children: [
+                  if (_busyProviders.isNotEmpty) ...[
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 8),
+                  ] else ...[
+                    const Icon(Icons.info_outline_rounded, size: 16),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: Text(
+                      _balanceStatus!,
+                      style: theme.textTheme.labelSmall,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -174,7 +268,7 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
     List<DynamicModelRecord> models,
     String normalizedQuery,
   ) {
-    final readiness = widget.walletReadiness[provider.id];
+    final readiness = _walletReadiness[provider.id];
     final isExpanded =
         normalizedQuery.isNotEmpty || _expanded.contains(provider.id);
     return ExpansionTile(
@@ -245,11 +339,20 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
                           visualDensity: VisualDensity.compact,
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                         ),
-                        onPressed: () => widget.onProviderAction(
-                          provider.id,
-                          readiness.primaryAction,
-                        ),
-                        child: Text(readiness.primaryActionLabel),
+                        onPressed: _busyProviders.contains(provider.id)
+                            ? null
+                            : () => _runProviderAction(
+                                  provider.id,
+                                  readiness.primaryAction,
+                                ),
+                        child: _busyProviders.contains(provider.id)
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Text(readiness.primaryActionLabel),
                       ),
                   ],
                 ),
@@ -268,10 +371,14 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
     DynamicModelRecord model,
     WalletFundedProviderReadiness? readiness,
   ) {
-    final enabled = model.liveAvailable && (readiness?.canSelectModels ?? true);
+    final blocked =
+        model.liveAvailable && readiness != null && !readiness.canSelectModels;
+    final enabled = model.liveAvailable;
     final subtitle = !model.liveAvailable
         ? model.unavailableReason ?? 'This catalog entry is informational.'
-        : '${model.agentReady ? 'Agent-ready' : 'Tool support unknown'} · ${model.id}';
+        : blocked
+            ? '${readiness.title} — ${readiness.detail}'
+            : '${model.agentReady ? 'Agent-ready' : 'Tool support unknown'} · ${model.id}';
     return RadioListTile<String>(
       key: Key('model-option-${model.id}'),
       dense: true,
@@ -280,10 +387,79 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
       subtitle: Text(
         subtitle,
         style: Theme.of(context).textTheme.labelSmall,
+        maxLines: blocked ? 2 : null,
         overflow: model.liveAvailable ? TextOverflow.ellipsis : null,
       ),
+      secondary: blocked
+          ? const Icon(Icons.lock_clock_rounded, size: 18, color: Colors.amber)
+          : null,
       value: model.id,
     );
+  }
+
+  void _runProviderAction(
+    String providerId,
+    WalletFundedProviderAction action,
+  ) {
+    if (action == WalletFundedProviderAction.refreshBalance &&
+        widget.onRefreshProviderBalance != null) {
+      _refreshProviderBalance(providerId, automatic: false);
+      return;
+    }
+    widget.onProviderAction(providerId, action);
+  }
+
+  Future<void> _refreshProviderBalance(
+    String providerId, {
+    required bool automatic,
+  }) async {
+    if (_busyProviders.contains(providerId) ||
+        widget.onRefreshProviderBalance == null) {
+      return;
+    }
+    var label = providerId;
+    for (final provider in widget.snapshot.providers) {
+      if (provider.id == providerId) {
+        label = provider.label;
+        break;
+      }
+    }
+    setState(() {
+      _busyProviders.add(providerId);
+      _balanceStatus = automatic
+          ? 'Securely checking $label balance… Approve the device authentication request to continue.'
+          : 'Refreshing $label balance securely…';
+    });
+    try {
+      final refreshed = await widget.onRefreshProviderBalance!(providerId);
+      if (!mounted) return;
+      final readiness = refreshed[providerId];
+      setState(() {
+        _walletReadiness = <String, WalletFundedProviderReadiness>{
+          ..._walletReadiness,
+          ...refreshed,
+        };
+        _balanceStatus = switch (readiness?.state) {
+          WalletFundedProviderState.ready ||
+          WalletFundedProviderState.balanceLow =>
+            '$label balance refreshed. Available models are ready to select.',
+          WalletFundedProviderState.balanceDepleted =>
+            '$label balance refreshed. Top up before selecting a model.',
+          _ => readiness?.detail ??
+              '$label balance refresh finished. Review its current status below.',
+        };
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _balanceStatus =
+            '$label balance was not refreshed. Use its check-balance action to try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _busyProviders.remove(providerId));
+      }
+    }
   }
 
   Widget _walletBadge(BuildContext context) {

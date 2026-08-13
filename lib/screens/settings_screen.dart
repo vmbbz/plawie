@@ -17,6 +17,7 @@ import '../services/model_provider_catalog.dart';
 import '../services/dynamic_model_catalog.dart';
 import '../services/ai_payment_provider_catalog.dart';
 import '../services/wallet_funded_provider_readiness.dart';
+import '../services/provider_balance_service.dart';
 import '../services/provider_model_discovery_service.dart';
 import '../services/preferences_service.dart';
 import '../services/tts_service.dart';
@@ -1324,6 +1325,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             snapshot: snapshot,
             currentModelId: current,
             walletReadiness: walletReadiness,
+            autoRefreshWalletBalances: true,
+            onRefreshProviderBalance: (providerId) async {
+              await ProviderBalanceService.instance.refresh(providerId);
+              return WalletFundedProviderReadinessService().inspect(snapshot);
+            },
             localOption: localOption,
             initiallyExpandedProviderIds: {
               for (final provider in snapshot.providers) provider.id,

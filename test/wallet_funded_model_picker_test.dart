@@ -35,10 +35,87 @@ void main() {
     await tester.tap(find.byKey(const Key('model-option-venice/model-1')));
     await tester.pump();
     expect(selected, isNull);
+    expect(action, WalletFundedProviderAction.openBase);
 
+    action = null;
     await tester.tap(find.byKey(const Key('provider-action-venice')));
     await tester.pump();
     expect(action, WalletFundedProviderAction.openBase);
+  });
+
+  testWidgets(
+      'unknown Venice balance refreshes automatically and enables selection',
+      (tester) async {
+    String? selected;
+    var refreshCount = 0;
+    await tester.pumpWidget(_host(
+      snapshot: _snapshot(<DynamicProviderRecord>[_provider('venice')]),
+      readiness: <String, WalletFundedProviderReadiness>{
+        'venice': _readiness(
+          providerId: 'venice',
+          state: WalletFundedProviderState.balanceUnknown,
+          canSelect: false,
+          title: 'Venice balance needs checking',
+          detail: 'Check the wallet-linked Venice balance.',
+          action: WalletFundedProviderAction.refreshBalance,
+          actionLabel: 'Check Venice balance',
+        ),
+      },
+      autoRefreshWalletBalances: true,
+      onRefreshBalance: (providerId) async {
+        refreshCount += 1;
+        expect(providerId, 'venice');
+        return <String, WalletFundedProviderReadiness>{
+          'venice': _readiness(
+            providerId: 'venice',
+            state: WalletFundedProviderState.ready,
+            canSelect: true,
+            title: 'Prepaid balance ready',
+            detail: r'$4.75 spendable',
+            action: WalletFundedProviderAction.openBase,
+            actionLabel: 'Manage',
+          ),
+        };
+      },
+      onSelected: (value) => selected = value.id,
+    ));
+
+    await tester.pumpAndSettle();
+    expect(refreshCount, 1);
+    expect(
+        find.text(
+            'Venice balance refreshed. Available models are ready to select.'),
+        findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('model-option-venice/model-1')));
+    await tester.pump();
+    expect(selected, 'venice/model-1');
+  });
+
+  testWidgets('blocked Venice model explains the balance gate and retries it',
+      (tester) async {
+    WalletFundedProviderAction? action;
+    await tester.pumpWidget(_host(
+      snapshot: _snapshot(<DynamicProviderRecord>[_provider('venice')]),
+      readiness: <String, WalletFundedProviderReadiness>{
+        'venice': _readiness(
+          providerId: 'venice',
+          state: WalletFundedProviderState.balanceUnknown,
+          canSelect: false,
+          title: 'Venice balance needs checking',
+          detail: 'Check the wallet-linked Venice balance.',
+          action: WalletFundedProviderAction.refreshBalance,
+          actionLabel: 'Check Venice balance',
+        ),
+      },
+      onAction: (_, value) => action = value,
+    ));
+
+    expect(find.textContaining('Venice balance needs checking'), findsWidgets);
+    expect(find.byIcon(Icons.lock_clock_rounded), findsOneWidget);
+    await tester.tap(find.byKey(const Key('model-option-venice/model-1')));
+    await tester.pump();
+    expect(action, WalletFundedProviderAction.refreshBalance);
   });
 
   testWidgets('BlockRun is selectable but never described as funded',
@@ -155,6 +232,8 @@ Widget _host({
   required Map<String, WalletFundedProviderReadiness> readiness,
   ValueChanged<DynamicModelRecord>? onSelected,
   void Function(String, WalletFundedProviderAction)? onAction,
+  bool autoRefreshWalletBalances = false,
+  WalletProviderBalanceRefresh? onRefreshBalance,
 }) {
   return MaterialApp(
     theme: ThemeData.dark(),
@@ -169,6 +248,8 @@ Widget _host({
               snapshot.providers.map((provider) => provider.id).toSet(),
           onSelected: onSelected ?? (_) {},
           onProviderAction: onAction ?? (_, __) {},
+          autoRefreshWalletBalances: autoRefreshWalletBalances,
+          onRefreshProviderBalance: onRefreshBalance,
         ),
       ),
     ),

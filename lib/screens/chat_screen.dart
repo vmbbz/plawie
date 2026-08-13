@@ -32,6 +32,7 @@ import '../services/local_llm_service.dart';
 import '../services/model_provider_catalog.dart';
 import '../services/dynamic_model_catalog.dart';
 import '../services/wallet_funded_provider_readiness.dart';
+import '../services/provider_balance_service.dart';
 import '../widgets/dynamic_model_picker_panel.dart';
 import '../widgets/wallet_funded_provider_actions.dart';
 import '../widgets/aura_dot.dart';
@@ -2363,6 +2364,12 @@ class _ChatScreenState extends State<ChatScreen>
                     snapshot: snapshot,
                     currentModelId: _selectedModel,
                     walletReadiness: readiness,
+                    autoRefreshWalletBalances: true,
+                    onRefreshProviderBalance: (providerId) async {
+                      await ProviderBalanceService.instance.refresh(providerId);
+                      return WalletFundedProviderReadinessService()
+                          .inspect(snapshot);
+                    },
                     onSelected: (model) =>
                         Navigator.pop(sheetContext, model.id),
                     onProviderAction: (providerId, action) {
