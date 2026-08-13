@@ -526,6 +526,18 @@ the config file needs no write. It may cache an acknowledged assertion for the
 lifetime of that WebSocket, but must invalidate the cache on disconnect,
 Gateway config transition, reload, or restart.
 
+## Paid-provider Tool Schema Compatibility
+
+The paid-provider loopback keeps OpenClaw's complete tool list and schemas by
+default. Compatibility adaptation is permitted only when a live provider/model
+error identifies a narrower schema dialect. Venice-hosted Gemini models reject
+JSON Schema's numeric `exclusiveMinimum` and `exclusiveMaximum` fields in
+function declarations, so the loopback translates only those fields to Gemini
+compatible inclusive bounds. Integer bounds remain exact. OpenClaw retains the
+original schema and remains the final argument validator; BlockRun and
+non-Gemini Venice payloads stay byte-semantically unchanged apart from the
+already documented provider model-prefix mapping.
+
 ## Device Health Cost And Freshness
 
 `device.health` includes filesystem skill parity and dependency-pack planning,

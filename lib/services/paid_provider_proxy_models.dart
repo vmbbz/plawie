@@ -229,6 +229,82 @@ class PaidProviderRequestMapper {
       );
     }
     copied['model'] = providerModelId;
+    if (provider == PaidProviderId.venice &&
+        _isVeniceGeminiModel(providerModelId)) {
+      _adaptVeniceGeminiToolSchemas(copied);
+    }
     return copied;
+  }
+
+  static bool _isVeniceGeminiModel(String modelId) =>
+      modelId.toLowerCase().startsWith('gemini-');
+
+  /// Venice exposes Gemini models through its OpenAI-compatible endpoint, but
+  /// Gemini's function-declaration schema accepts a narrower JSON Schema
+  /// dialect. Keep every OpenClaw tool and adapt only unsupported exclusive
+  /// numeric bounds inside provider-facing function parameter schemas.
+  ///
+  /// OpenClaw retains the original schemas and remains the authoritative tool
+  /// argument validator. Integer exclusivity can be represented exactly;
+  /// continuous-number bounds are represented by the corresponding inclusive
+  /// bound for provider guidance and are still enforced exactly by OpenClaw.
+  static void _adaptVeniceGeminiToolSchemas(Map<String, dynamic> request) {
+    final tools = request['tools'];
+    if (tools is! List) return;
+    for (final tool in tools) {
+      if (tool is! Map) continue;
+      final function = tool['function'];
+      if (function is! Map) continue;
+      final parameters = function['parameters'];
+      if (parameters is Map) {
+        _adaptGeminiSchemaNode(parameters);
+      }
+    }
+  }
+
+  static void _adaptGeminiSchemaNode(Map<dynamic, dynamic> schema) {
+    _replaceExclusiveBound(
+      schema,
+      exclusiveKey: 'exclusiveMinimum',
+      inclusiveKey: 'minimum',
+      lowerBound: true,
+    );
+    _replaceExclusiveBound(
+      schema,
+      exclusiveKey: 'exclusiveMaximum',
+      inclusiveKey: 'maximum',
+      lowerBound: false,
+    );
+    for (final value in schema.values.toList(growable: false)) {
+      if (value is Map) {
+        _adaptGeminiSchemaNode(value);
+      } else if (value is List) {
+        for (final child in value) {
+          if (child is Map) _adaptGeminiSchemaNode(child);
+        }
+      }
+    }
+  }
+
+  static void _replaceExclusiveBound(
+    Map<dynamic, dynamic> schema, {
+    required String exclusiveKey,
+    required String inclusiveKey,
+    required bool lowerBound,
+  }) {
+    final exclusive = schema.remove(exclusiveKey);
+    if (exclusive is! num) return;
+
+    num replacement = exclusive;
+    if (schema['type'] == 'integer') {
+      replacement = lowerBound ? exclusive.floor() + 1 : exclusive.ceil() - 1;
+    }
+    final existing = schema[inclusiveKey];
+    if (existing is num) {
+      replacement = lowerBound
+          ? (existing > replacement ? existing : replacement)
+          : (existing < replacement ? existing : replacement);
+    }
+    schema[inclusiveKey] = replacement;
   }
 }

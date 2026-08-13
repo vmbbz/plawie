@@ -109,6 +109,120 @@ void main() {
       expect(identical(mapped, original), isFalse);
     });
 
+    test('adapts only Venice Gemini exclusive tool-schema bounds', () {
+      final original = <String, dynamic>{
+        'model': 'venice/gemini-3-6-flash',
+        'messages': [
+          {'role': 'user', 'content': 'use the mobile tools'},
+        ],
+        'tools': [
+          {
+            'type': 'function',
+            'function': {
+              'name': 'nodes',
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'count': {
+                    'type': 'integer',
+                    'exclusiveMinimum': 0,
+                    'exclusiveMaximum': 11,
+                  },
+                  'ratio': {
+                    'type': 'number',
+                    'exclusiveMinimum': 0.0,
+                  },
+                  'nested': {
+                    'type': 'array',
+                    'items': {
+                      'type': 'integer',
+                      'minimum': 3,
+                      'exclusiveMinimum': 1,
+                    },
+                  },
+                },
+                'required': ['count'],
+              },
+            },
+          },
+        ],
+      };
+      final snapshot = jsonDecode(jsonEncode(original));
+
+      final mapped = PaidProviderRequestMapper.mapChatRequest(
+        original,
+        provider: PaidProviderId.venice,
+      );
+      final properties = ((mapped['tools'] as List).single['function']
+          ['parameters']['properties']) as Map;
+
+      expect(mapped['model'], 'gemini-3-6-flash');
+      expect(properties['count'], {
+        'type': 'integer',
+        'minimum': 1,
+        'maximum': 10,
+      });
+      expect(properties['ratio'], {
+        'type': 'number',
+        'minimum': 0.0,
+      });
+      expect(properties['nested']['items'], {
+        'type': 'integer',
+        'minimum': 3,
+      });
+      expect(
+        (mapped['tools'] as List).single['function']['name'],
+        'nodes',
+      );
+      expect(
+        (mapped['tools'] as List).single['function']['parameters']['required'],
+        ['count'],
+      );
+      expect(original, snapshot, reason: 'Gateway request must stay immutable');
+    });
+
+    test('does not rewrite BlockRun or non-Gemini Venice tool schemas', () {
+      Map<String, dynamic> body(String model) => <String, dynamic>{
+            'model': model,
+            'messages': const [
+              {'role': 'user', 'content': 'hello'},
+            ],
+            'tools': [
+              {
+                'type': 'function',
+                'function': {
+                  'name': 'nodes',
+                  'parameters': {
+                    'type': 'object',
+                    'properties': {
+                      'count': {
+                        'type': 'integer',
+                        'exclusiveMinimum': 0,
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          };
+
+      final blockRun = PaidProviderRequestMapper.mapChatRequest(
+        body('blockrun/openai/gpt-5.6-luna'),
+        provider: PaidProviderId.blockrun,
+      );
+      final veniceLlama = PaidProviderRequestMapper.mapChatRequest(
+        body('venice/llama-3.3-70b'),
+        provider: PaidProviderId.venice,
+      );
+
+      for (final mapped in [blockRun, veniceLlama]) {
+        final count = (mapped['tools'] as List).single['function']['parameters']
+            ['properties']['count'] as Map;
+        expect(count['exclusiveMinimum'], 0);
+        expect(count, isNot(contains('minimum')));
+      }
+    });
+
     test('rejects missing, empty, and cross-provider model identifiers', () {
       for (final body in <Map<String, dynamic>>[
         <String, dynamic>{},
