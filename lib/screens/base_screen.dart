@@ -113,10 +113,7 @@ class _BaseScreenState extends State<BaseScreen> {
         baseService: _baseService,
         isForeground: () => mounted,
       );
-      final cachedCatalog = await DynamicModelCatalogRepository().load();
-      _modelCatalog =
-          (cachedCatalog ?? DynamicCatalogSnapshot.bundledFallback())
-              .withEffectiveState(DateTime.now());
+      _modelCatalog = await DynamicModelCatalogRepository().loadOrBundled();
       final transportHealth =
           await PaidProviderGatewayCoordinator.instance.inspectHealth();
       _paidTransportState = transportHealth == null
@@ -987,7 +984,9 @@ class _BaseScreenState extends State<BaseScreen> {
       if (readiness.primaryAction == WalletFundedProviderAction.refreshModels) {
         final refreshed =
             await ProviderModelDiscoveryService().refreshProvider(selected.id);
-        _modelCatalog = refreshed.withEffectiveState(DateTime.now());
+        _modelCatalog = await DynamicModelCatalogRepository().assess(
+          refreshed.withEffectiveState(DateTime.now()),
+        );
       } else if (readiness.primaryAction ==
           WalletFundedProviderAction.restartGateway) {
         final gateway = context.read<GatewayProvider>();

@@ -565,6 +565,22 @@ direct the user to repair the selected provider; schema failures may offer an
 explicit switch only before a tool could have run. Diagnostics are bounded and
 redact credential/signature-shaped fields.
 
+### Capability evidence and route quarantine
+
+Provider catalog flags remain advertisements. `Agent-ready` requires a
+matching full-loop receipt for the exact provider, upstream model, endpoint
+class, Gateway version, compatibility profile, mobile tool-schema digest, and
+stream mode. Local receipts are bounded, non-secret, expire after 30 days, and
+survive app updates. They contain no prompt, tool argument/result, opaque
+reasoning metadata, credential, signature, or payment proof.
+
+The release profile records physical-device evidence for the exact Venice
+`zai-org-glm-5-2` route. Venice `gemini-3-6-flash` remains schema-accepted but
+not loop-verified until continuation metadata is preserved; Venice
+`gemma-4-uncensored` remains selectable for chat but quarantined from an
+Agent-ready claim. These records do not alter any other Venice model, direct
+Google, BlockRun, BYOK provider, or local/native route.
+
 ## Device Health Cost And Freshness
 
 `device.health` includes filesystem skill parity and dependency-pack planning,

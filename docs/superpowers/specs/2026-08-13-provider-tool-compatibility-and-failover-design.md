@@ -27,7 +27,12 @@ selection identity, tool-loop validation, phase-aware errors, and safe fallback
   with conservative side-effect status. Plawie never silently replays a turn;
   a tool call or result changes recovery to verify-before-retry, while auth and
   funding failures require repair on the selected provider.
-- In progress: capability receipts/probes, provider-scoped runtime
+- Complete: shipped and local capability receipts are now exact-route and
+  fingerprint scoped. They invalidate across Gateway/profile/tool-schema
+  changes, never store turn content, and are merged only at display/send
+  boundaries. A real successful foreground tool loop can promote its route;
+  schema/replay failures quarantine only the failing model route.
+- In progress: explicit side-effect-free probes, provider-scoped runtime
   compatibility, and safe fallback.
 
 Plawie must stop treating a provider's generic function-calling flag as proof
@@ -802,7 +807,7 @@ wallet services, Node tools, skill services, setup flow, or local model code.
 ## 17. Release acceptance checklist
 
 - [ ] Provider catalog flags are displayed as advertised, not verified.
-- [ ] Only a matching full-loop receipt produces `Agent-ready`.
+- [x] Only a matching full-loop receipt produces `Agent-ready`.
 - [ ] Venice Gemini's exact thought signature is either preserved or the route
       stays Chat-only.
 - [ ] No opaque signature is logged or persisted.
@@ -811,12 +816,12 @@ wallet services, Node tools, skill services, setup flow, or local model code.
 - [ ] BlockRun approval/payment behavior is unchanged.
 - [ ] Direct BYOK and local/native golden controls pass.
 - [ ] Selected, displayed, configured, and resolved model IDs match.
-- [ ] Errors report phase and side-effect certainty.
-- [ ] No post-tool automatic replay exists.
-- [ ] No cross-provider automatic fallback exists.
+- [x] Errors report phase and side-effect certainty.
+- [x] No post-tool automatic replay exists.
+- [x] No cross-provider automatic fallback exists.
 - [ ] Context, history, tools, skills, Node policy, and native routing snapshots
       are unchanged.
-- [ ] Scheduled-dead Groq defaults are removed in their own commit.
+- [x] Scheduled-dead Groq defaults are removed in their own commit.
 - [ ] Every compatibility change has an exact provider/model kill switch.
 
 ## 18. Primary references

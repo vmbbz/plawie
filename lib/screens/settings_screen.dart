@@ -1207,12 +1207,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showChangeModelDialog(BuildContext context) async {
-    final cached = await DynamicModelCatalogRepository().load();
-    final loadedSnapshot = cached != null &&
-            cached.providers.any((provider) => provider.models.isNotEmpty)
-        ? cached
-        : DynamicCatalogSnapshot.bundledFallback();
-    final snapshot = loadedSnapshot.withEffectiveState(DateTime.now());
+    final snapshot = await DynamicModelCatalogRepository().loadOrBundled();
     final walletReadiness =
         await WalletFundedProviderReadinessService().inspect(snapshot);
     if (!context.mounted) return;

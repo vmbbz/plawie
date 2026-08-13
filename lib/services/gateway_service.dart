@@ -35,6 +35,7 @@ import 'paid_provider_gateway_coordinator.dart';
 import 'runtime_credential_store.dart';
 import 'gateway_config_signature.dart';
 import 'provider_turn_failure.dart';
+import 'model_capability_receipt.dart';
 
 class _FastCloudRoute {
   final String provider;
@@ -5498,21 +5499,6 @@ HEARTBEAT_OK.
       _nodeAutoConnectInFlight = false;
     }
   }
-
-  String _formatGatewayProviderError(
-    String rawError, {
-    String? model,
-    required ProviderTurnTrace trace,
-    bool timeout = false,
-    bool transport = false,
-  }) =>
-      ProviderTurnFailure.classify(
-        rawError,
-        trace: trace,
-        modelId: model,
-        timeout: timeout,
-        transport: transport,
-      ).message;
 
   String _formatChatElapsed(Duration duration) {
     final ms = duration.inMilliseconds;
@@ -15984,8 +15970,11 @@ ${lines.join('\n')}
     // (which may complete after our Flutter timeout) cannot close the next request's
     // stream before any content arrives.
     bool runStarted = false;
+    var providerFailureObserved = false;
     var toolCallObserved = requiredToolContinuation != null;
     var toolResultObserved = requiredToolContinuation != null;
+    var gatewayToolCallObserved = false;
+    var gatewayToolResultObserved = false;
 
     ProviderTurnTrace currentTurnTrace() => ProviderTurnTrace(
           requestAccepted: gatewayAcceptedAt != null || runStarted,
@@ -15998,14 +15987,21 @@ ${lines.join('\n')}
       String rawError, {
       bool timeout = false,
       bool transport = false,
-    }) =>
-        _formatGatewayProviderError(
-          rawError,
-          model: model,
-          trace: currentTurnTrace(),
-          timeout: timeout,
-          transport: transport,
-        );
+    }) {
+      providerFailureObserved = true;
+      final failure = ProviderTurnFailure.classify(
+        rawError,
+        trace: currentTurnTrace(),
+        modelId: model!,
+        timeout: timeout,
+        transport: transport,
+      );
+      unawaited(ModelCapabilityReceiptRepository().recordFailure(
+        modelId: model,
+        failure: failure,
+      ));
+      return failure.message;
+    }
 
     final assistantStream = _AssistantStreamAccumulator();
     bool isActiveRunFrame(String? agentRun) {
@@ -16218,6 +16214,7 @@ ${lines.join('\n')}
               }
               markRelevantGatewayActivity();
               toolCallObserved = true;
+              gatewayToolCallObserved = true;
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -16235,6 +16232,8 @@ ${lines.join('\n')}
               markRelevantGatewayActivity();
               toolCallObserved = true;
               toolResultObserved = true;
+              gatewayToolCallObserved = true;
+              gatewayToolResultObserved = true;
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -16285,6 +16284,7 @@ ${lines.join('\n')}
               if (itemType == 'tool_use') {
                 markRelevantGatewayActivity();
                 toolCallObserved = true;
+                gatewayToolCallObserved = true;
                 final name = (innerData?['name'] ??
                         payload?['name'] ??
                         frame['name']) as String? ??
@@ -16299,6 +16299,8 @@ ${lines.join('\n')}
                 markRelevantGatewayActivity();
                 toolCallObserved = true;
                 toolResultObserved = true;
+                gatewayToolCallObserved = true;
+                gatewayToolResultObserved = true;
                 final name = (innerData?['name'] ??
                         payload?['name'] ??
                         frame['name']) as String? ??
@@ -16472,7 +16474,15 @@ ${lines.join('\n')}
         timing.add(
             'firstToComplete=${_formatChatElapsed(completedAt.difference(firstOutputAt))}');
       }
-      _addActivity('[CHAT] ✓ Complete (${timing.join(', ')})');
+      if (!providerFailureObserved) {
+        unawaited(ModelCapabilityReceiptRepository().recordSuccessfulTurn(
+          modelId: model,
+          toolCallObserved: gatewayToolCallObserved,
+          toolResultObserved: gatewayToolResultObserved,
+          assistantTextObserved: assistantTextOutputSeen,
+        ));
+        _addActivity('[CHAT] ✓ Complete (${timing.join(', ')})');
+      }
     } catch (e) {
       _addActivity('[CHAT] ✗ $e');
       final msg = formatProviderFailure(

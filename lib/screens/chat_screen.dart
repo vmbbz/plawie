@@ -2327,12 +2327,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _showDynamicModelPicker() async {
-    final cached = await DynamicModelCatalogRepository().load();
-    final loadedSnapshot = cached != null &&
-            cached.providers.any((provider) => provider.models.isNotEmpty)
-        ? cached
-        : DynamicCatalogSnapshot.bundledFallback();
-    final snapshot = loadedSnapshot.withEffectiveState(DateTime.now());
+    final snapshot = await DynamicModelCatalogRepository().loadOrBundled();
     final readiness =
         await WalletFundedProviderReadinessService().inspect(snapshot);
     if (!mounted) return;

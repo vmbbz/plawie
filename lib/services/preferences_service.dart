@@ -39,6 +39,7 @@ class PreferencesService {
       'last_provider_setup_receipt_id';
   static const _keyDynamicModelCatalogSnapshot =
       'dynamic_model_catalog_snapshot_v1';
+  static const _keyModelCapabilityReceipts = 'model_capability_receipts_v1';
   static const _keyAiPaymentProvider = 'ai_payment_provider';
   static const _keyX402PaymentReceipts = 'x402_payment_receipts_v1';
   static const _keyBridgeCapabilitySnapshot = 'bridge_capability_snapshot_v1';
@@ -489,6 +490,18 @@ class PreferencesService {
       _p.setString(_keyDynamicModelCatalogSnapshot, value);
     } else {
       _p.remove(_keyDynamicModelCatalogSnapshot);
+    }
+  }
+
+  /// Non-secret, bounded model compatibility evidence. It never contains
+  /// prompts, credentials, tool arguments/results, or payment proofs.
+  String? get modelCapabilityReceiptsJson =>
+      _p.getString(_keyModelCapabilityReceipts);
+  set modelCapabilityReceiptsJson(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyModelCapabilityReceipts, value);
+    } else {
+      _p.remove(_keyModelCapabilityReceipts);
     }
   }
 }

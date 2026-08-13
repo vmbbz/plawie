@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'model_execution_policy.dart';
+import 'model_capability_receipt.dart';
 import 'model_provider_catalog.dart';
 import 'preferences_service.dart';
 
@@ -82,6 +83,8 @@ class DynamicModelRecord {
     this.recommended = false,
     this.liveAvailable = true,
     this.unavailableReason,
+    this.capabilityAssessmentId,
+    this.capabilityDetail,
   });
 
   final String id;
@@ -104,6 +107,8 @@ class DynamicModelRecord {
   final bool recommended;
   final bool liveAvailable;
   final String? unavailableReason;
+  final String? capabilityAssessmentId;
+  final String? capabilityDetail;
 
   bool get agentReady =>
       liveAvailable &&
@@ -124,6 +129,51 @@ class DynamicModelRecord {
       ModelToolReadiness.unknown =>
         supportsToolCalls == false ? 'Chat only' : 'Tool support unknown',
     };
+  }
+
+  DynamicModelRecord withCapabilityReceipt(ModelCapabilityReceipt receipt) {
+    final chat = switch (receipt.chatEvidence) {
+      ModelChatEvidence.none => chatReadiness,
+      ModelChatEvidence.verified => ModelChatReadiness.verified,
+      ModelChatEvidence.failed => ModelChatReadiness.failed,
+    };
+    final receiptTools = switch (receipt.toolEvidence) {
+      ModelToolEvidence.none => toolReadiness,
+      ModelToolEvidence.schemaAccepted => ModelToolReadiness.schemaAccepted,
+      ModelToolEvidence.loopVerified => ModelToolReadiness.loopVerified,
+      ModelToolEvidence.incompatible => ModelToolReadiness.incompatible,
+    };
+    final tools = receipt.toolEvidence == ModelToolEvidence.schemaAccepted &&
+            toolReadiness == ModelToolReadiness.loopVerified
+        ? toolReadiness
+        : receiptTools;
+    final ownsToolAssessment = receipt.toolEvidence != ModelToolEvidence.none ||
+        capabilityAssessmentId == null;
+    return DynamicModelRecord(
+      id: id,
+      providerId: providerId,
+      label: label,
+      route: route,
+      providerModelId: providerModelId,
+      description: description,
+      sourceModelId: sourceModelId,
+      capabilities: capabilities,
+      supportsToolCalls: supportsToolCalls,
+      supportsVision: supportsVision,
+      toolPolicy: toolPolicy,
+      chatReadiness: chat,
+      toolReadiness: tools,
+      advertisedContextWindow: advertisedContextWindow,
+      advertisedMaxOutputTokens: advertisedMaxOutputTokens,
+      deprecationDate: deprecationDate,
+      replacementModelId: replacementModelId,
+      recommended: recommended,
+      liveAvailable: liveAvailable,
+      unavailableReason: unavailableReason,
+      capabilityAssessmentId:
+          ownsToolAssessment ? receipt.assessmentId : capabilityAssessmentId,
+      capabilityDetail: ownsToolAssessment ? receipt.detail : capabilityDetail,
+    );
   }
 
   bool isDeprecatedAt(DateTime now) =>
@@ -477,6 +527,48 @@ class DynamicCatalogSnapshot {
     );
   }
 
+  DynamicCatalogSnapshot withCapabilityReceipts(
+    Iterable<ModelCapabilityReceipt> receipts, {
+    DateTime? now,
+  }) {
+    final timestamp = (now ?? DateTime.now()).toUtc();
+    final current = receipts.where((receipt) => receipt.isCurrentAt(timestamp));
+    return DynamicCatalogSnapshot(
+      schemaVersion: schemaVersion,
+      snapshotId: snapshotId,
+      state: state,
+      updatedAt: updatedAt,
+      expiresAt: expiresAt,
+      source: source,
+      errorMessage: errorMessage,
+      providers: <DynamicProviderRecord>[
+        for (final provider in providers)
+          DynamicProviderRecord(
+            id: provider.id,
+            label: provider.label,
+            subtitle: provider.subtitle,
+            description: provider.description,
+            authenticationMode: provider.authenticationMode,
+            defaultModelId: provider.defaultModelId,
+            connectionState: provider.connectionState,
+            catalogState: provider.catalogState,
+            source: provider.source,
+            etag: provider.etag,
+            lastRefreshedAt: provider.lastRefreshedAt,
+            errorMessage: provider.errorMessage,
+            models: <DynamicModelRecord>[
+              for (final model in provider.models)
+                _applyNewestMatchingReceipt(
+                  model,
+                  current,
+                  now: timestamp,
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
   factory DynamicCatalogSnapshot.fromJson(Map<dynamic, dynamic> raw) {
     final schemaVersion = raw['schemaVersion'];
     if (schemaVersion != currentSchemaVersion) {
@@ -604,9 +696,10 @@ class DynamicModelCatalogRepository {
     try {
       final decoded = jsonDecode(encoded);
       if (decoded is! Map) return null;
-      return DynamicCatalogSnapshot.fromJson(decoded).withEffectiveState(
-        now ?? DateTime.now(),
-      );
+      final timestamp = now ?? DateTime.now();
+      final snapshot = DynamicCatalogSnapshot.fromJson(decoded)
+          .withEffectiveState(timestamp);
+      return snapshot;
     } on FormatException {
       return null;
     } on StateError {
@@ -614,6 +707,33 @@ class DynamicModelCatalogRepository {
     } on TypeError {
       return null;
     }
+  }
+
+  Future<DynamicCatalogSnapshot?> loadAssessed({DateTime? now}) async {
+    final timestamp = now ?? DateTime.now();
+    final snapshot = await load(now: timestamp);
+    return snapshot == null ? null : assess(snapshot, now: timestamp);
+  }
+
+  Future<DynamicCatalogSnapshot> assess(
+    DynamicCatalogSnapshot snapshot, {
+    DateTime? now,
+  }) async {
+    final timestamp = now ?? DateTime.now();
+    final receipts = await ModelCapabilityReceiptRepository(
+      preferences: _preferences,
+    ).readCurrent(now: timestamp);
+    return snapshot.withCapabilityReceipts(receipts, now: timestamp);
+  }
+
+  Future<DynamicCatalogSnapshot> loadOrBundled({DateTime? now}) async {
+    final timestamp = now ?? DateTime.now();
+    final cached = await loadAssessed(now: timestamp);
+    if (cached != null && cached.hasModels) return cached;
+    return assess(
+      DynamicCatalogSnapshot.bundledFallback(now: timestamp),
+      now: timestamp,
+    );
   }
 
   Future<void> save(DynamicCatalogSnapshot snapshot) async {
@@ -825,4 +945,29 @@ String _redactError(String message) {
   );
   if (compact.isEmpty) return 'Provider model discovery failed.';
   return compact.length <= 240 ? compact : '${compact.substring(0, 239)}…';
+}
+
+DynamicModelRecord _applyNewestMatchingReceipt(
+  DynamicModelRecord model,
+  Iterable<ModelCapabilityReceipt> receipts, {
+  required DateTime now,
+}) {
+  final matching = receipts
+      .where((receipt) => receipt.matchesModel(
+            providerId: model.providerId,
+            namespacedModelId: model.id,
+            upstreamModelId: model.gatewayModelId,
+            now: now,
+          ))
+      .toList(growable: false)
+    ..sort((a, b) {
+      final sourceOrder = a.source.index.compareTo(b.source.index);
+      if (sourceOrder != 0) return sourceOrder;
+      return a.observedAt.compareTo(b.observedAt);
+    });
+  var assessed = model;
+  for (final receipt in matching) {
+    assessed = assessed.withCapabilityReceipt(receipt);
+  }
+  return assessed;
 }

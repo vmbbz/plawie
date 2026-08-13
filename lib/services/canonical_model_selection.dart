@@ -46,7 +46,8 @@ class CanonicalModelSelection {
       routeKind: model.route,
       connectionId: connectionId,
       catalogRevision: catalogRevision,
-      capabilityAssessmentId: capabilityAssessmentId,
+      capabilityAssessmentId:
+          capabilityAssessmentId ?? model.capabilityAssessmentId,
     )..validate();
   }
 

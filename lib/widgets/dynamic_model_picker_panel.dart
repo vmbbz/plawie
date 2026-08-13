@@ -380,7 +380,8 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
         ? model.unavailableReason ?? 'This catalog entry is informational.'
         : blocked
             ? '${readiness.title} — ${readiness.detail}'
-            : '${model.readinessLabel} · ${model.id}${retirement == null ? '' : ' · retires $retirement'}';
+            : '${model.readinessLabel} · ${model.id}${retirement == null ? '' : ' · retires $retirement'}'
+                '${model.capabilityDetail == null ? '' : '\n${model.capabilityDetail}'}';
     return RadioListTile<String>(
       key: Key('model-option-${model.id}'),
       dense: true,
@@ -389,7 +390,7 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
       subtitle: Text(
         subtitle,
         style: Theme.of(context).textTheme.labelSmall,
-        maxLines: blocked ? 2 : null,
+        maxLines: blocked || model.capabilityDetail != null ? 2 : null,
         overflow: model.liveAvailable ? TextOverflow.ellipsis : null,
       ),
       secondary: blocked
