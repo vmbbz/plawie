@@ -66,16 +66,26 @@ class _PaidProviderApprovalHostState extends State<PaidProviderApprovalHost>
   }
 
   void _applyLifecycle(AppLifecycleState? state) {
-    final foreground = state == null || state == AppLifecycleState.resumed;
-    _foreground = foreground;
-    if (foreground) {
+    final effectiveState = state ?? AppLifecycleState.resumed;
+    _foreground = effectiveState == AppLifecycleState.resumed;
+    if (_foreground) {
       _broker.markAppForeground();
       _turnAuthorization.markAppForeground();
       return;
     }
 
+    // Any obscuring surface immediately cancels a visible payment approval.
+    // For the model-bound turn lease, however, Android's transient `inactive`
+    // state is distinct from actually leaving Plawie: biometric and device-
+    // credential prompts use it while authenticating a request that already
+    // originated from this foreground chat turn. Preserve (but disable) the
+    // bounded lease until `resumed`; paused/hidden/detached still erase it.
     _broker.markAppBackground();
-    _turnAuthorization.markAppBackground();
+    if (effectiveState == AppLifecycleState.inactive) {
+      _turnAuthorization.markAppObscured();
+    } else {
+      _turnAuthorization.markAppBackground();
+    }
     final route = _dialogRoute;
     final navigator = widget.navigatorKey.currentState;
     if (route != null && navigator != null) {

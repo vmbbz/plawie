@@ -105,6 +105,45 @@ void main() {
     );
   });
 
+  test('system authentication obscures but does not erase a bounded turn', () {
+    final service = PaidProviderTurnAuthorizationService(
+      clock: () => start,
+      leaseIdFactory: () => 'lease-biometric',
+    )..markAppForeground();
+    service.authorizeForegroundUserTurn(
+      conversationId: 'conversation-a',
+      provider: PaidProviderId.venice,
+      modelId: 'venice/model-a',
+    );
+
+    service.markAppObscured();
+    expect(service.isAppForeground, isFalse);
+    expect(service.activeLease?.leaseId, 'lease-biometric');
+    expect(
+      () => service.consumeForProxy(
+        provider: PaidProviderId.venice,
+        gatewayModelId: 'venice/model-a',
+      ),
+      throwsA(
+        isA<PaidProviderTurnAuthorizationException>().having(
+          (error) => error.code,
+          'code',
+          'foreground_turn_required',
+        ),
+      ),
+    );
+
+    service.markAppForeground();
+    final continued = service.consumeForProxy(
+      provider: PaidProviderId.venice,
+      gatewayModelId: 'venice/model-a',
+    );
+    expect(continued.remainingProxyCalls, 7);
+
+    service.markAppBackground();
+    expect(service.activeLease, isNull);
+  });
+
   test('eighth proxy call is allowed and ninth is rejected', () {
     final service = PaidProviderTurnAuthorizationService(
       clock: () => start,

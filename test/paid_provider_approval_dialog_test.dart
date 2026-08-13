@@ -92,6 +92,57 @@ void main() {
     await broker.close();
   });
 
+  testWidgets('biometric inactive state preserves only the bounded turn lease',
+      (tester) async {
+    final broker = PaidProviderApprovalBroker();
+    final turns = PaidProviderTurnAuthorizationService(
+      leaseIdFactory: () => 'lease-biometric',
+    );
+    final navigatorKey = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: navigatorKey,
+      builder: (context, child) => PaidProviderApprovalHost(
+        navigatorKey: navigatorKey,
+        broker: broker,
+        turnAuthorization: turns,
+        child: child ?? const SizedBox.shrink(),
+      ),
+      home: const Scaffold(body: Text('Chat')),
+    ));
+    await tester.pump();
+
+    turns.authorizeForegroundUserTurn(
+      conversationId: 'conversation-a',
+      provider: PaidProviderId.venice,
+      modelId: 'venice/model-a',
+    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+
+    expect(turns.isAppForeground, isFalse);
+    expect(turns.activeLease?.leaseId, 'lease-biometric');
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(turns.isAppForeground, isTrue);
+    expect(
+      turns
+          .consumeForProxy(
+            provider: PaidProviderId.venice,
+            gatewayModelId: 'venice/model-a',
+          )
+          .remainingProxyCalls,
+      7,
+    );
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    expect(turns.activeLease, isNull);
+
+    await broker.close();
+  });
+
   testWidgets('reject completes the exact intent without approval',
       (tester) async {
     final broker = PaidProviderApprovalBroker();

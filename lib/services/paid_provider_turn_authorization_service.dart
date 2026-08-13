@@ -89,6 +89,7 @@ class PaidProviderTurnAuthorizationService {
   final Duration leaseLifetime;
 
   bool _appForeground = false;
+  bool _temporarilyObscured = false;
   PaidProviderTurnLease? _activeLease;
 
   bool get isAppForeground => _appForeground;
@@ -96,10 +97,24 @@ class PaidProviderTurnAuthorizationService {
 
   void markAppForeground() {
     _appForeground = true;
+    _temporarilyObscured = false;
+  }
+
+  /// Marks the app as temporarily covered by a system-owned surface.
+  ///
+  /// Android biometric/device-credential prompts report `inactive` before
+  /// returning to the same visible activity. The bounded turn lease must not be
+  /// consumed while obscured, but clearing it here would break the model's
+  /// post-tool continuation after a successful authentication. A real
+  /// background transition still calls [markAppBackground] and erases it.
+  void markAppObscured() {
+    _appForeground = false;
+    _temporarilyObscured = true;
   }
 
   void markAppBackground() {
     _appForeground = false;
+    _temporarilyObscured = false;
     _activeLease = null;
   }
 
@@ -189,7 +204,10 @@ class PaidProviderTurnAuthorizationService {
     required String gatewayModelId,
   }) {
     if (!_appForeground) {
-      _activeLease = null;
+      // A trusted Android authentication surface can temporarily obscure the
+      // activity while a proxy call is in flight. Keep the expiring lease inert
+      // for that interval; an actual background callback has already erased it.
+      if (!_temporarilyObscured) _activeLease = null;
       throw const PaidProviderTurnAuthorizationException(
         'foreground_turn_required',
         'A foreground user turn is required for this provider.',
