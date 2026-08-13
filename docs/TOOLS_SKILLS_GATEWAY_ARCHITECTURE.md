@@ -518,6 +518,14 @@ OpenClaw `2026.7.1` rejects `primaryModel` in `sessions.patch`. The app must
 wait for the patch response and must not tear down a healthy WebSocket merely
 to apply the supported live-session field.
 
+The persisted primary and the live session model are independent truths. A
+provider selection can already be present in `openclaw.json` while an existing
+`agent:main:main` session still owns the previous provider/model. Plawie must
+therefore assert the selected model on each newly connected session even when
+the config file needs no write. It may cache an acknowledged assertion for the
+lifetime of that WebSocket, but must invalidate the cache on disconnect,
+Gateway config transition, reload, or restart.
+
 ## Device Health Cost And Freshness
 
 `device.health` includes filesystem skill parity and dependency-pack planning,

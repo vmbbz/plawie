@@ -286,6 +286,8 @@ class GatewayService {
   bool _nativeDefaultOwnerSwitchInFlight = false;
   bool _chatLaneRecoveryInFlight = false;
   bool _gatewayChatTurnInFlight = false;
+  final Map<String, String> _patchedSessionModels = <String, String>{};
+  GatewayConnection? _patchedSessionConnection;
   bool _runtimeLogged = false;
   bool _appNativeSkillsRegisteredWithGateway = false;
   String _appNativeSkillBridgeStatus = 'not_registered';
@@ -369,6 +371,8 @@ class GatewayService {
       _gatewayConfigTransitionUntil = until;
     }
     _gatewayConfigTransitionReason = reason;
+    _patchedSessionModels.clear();
+    _patchedSessionConnection = null;
     _rpcDiscoveryDone = false;
     _gatewayInteractiveReadyAt = null;
     _updateState(_state.copyWith(isInteractiveReady: false));
@@ -15865,11 +15869,11 @@ ${lines.join('\n')}
           '$requestedSessionKey -> $resolvedSessionKey');
     }
 
-    if (modelSyncChanges.isNotEmpty) {
-      await _patchActiveGatewaySessionModel(
-        modelSyncChanges,
-        sessionKey: resolvedSessionKey,
-      );
+    if (modelSyncChanges.isNotEmpty &&
+        !_activeSessionAlreadyUsesModel(
+          modelSyncChanges,
+          sessionKey: resolvedSessionKey,
+        )) {
       token = await _waitForGatewayChatLaneReady(token);
       if (token == null || token.isEmpty) {
         yield '[Error] Gateway is still finishing the selected model/provider update.\n\n'
@@ -15882,6 +15886,16 @@ ${lines.join('\n')}
         yield '[Error] Gateway WebSocket is reconnecting after the model/provider update.\n\n'
             'Please retry in a moment. Your message was not sent during the '
             'Gateway reload window.';
+        return;
+      }
+      try {
+        await _patchActiveGatewaySessionModel(
+          modelSyncChanges,
+          sessionKey: resolvedSessionKey,
+        );
+      } catch (error) {
+        yield '[Error] The selected model could not be attached to the active '
+            'Gateway session. No provider request was sent.\n\n$error';
         return;
       }
     }
@@ -17444,16 +17458,21 @@ ${lines.join('\n')}
   }
 
   /// Ensure agents.defaults.model.primary in openclaw.json matches the
-  /// user-selected [model]. Returns a map of changed metadata if the
-  /// config was updated, allowing for hot-sync via sessions.patch.
+  /// user-selected [model], and return the model metadata that must be
+  /// asserted on the live Gateway session.
+  ///
+  /// Persisted config and live session state are independent. The file can
+  /// already contain Venice while an existing `agent:main:main` session still
+  /// owns the prior BlockRun model, so every newly connected session must be
+  /// patched and acknowledged before chat.send.
   Future<Map<String, dynamic>> _syncModelToConfig(String model) async {
     // DO NOT sync agent models to the global defaults.
     // Agents have their own IDs and config; writing 'agent/id' to the global primary
     // would corrupt the default provider model setting.
     if (model.startsWith('agent/')) return {};
 
-    final Map<String, dynamic> changedMetadata = {};
     final canonical = ModelProviderCatalog.canonicalizeModelId(model);
+    final sessionMetadata = _sessionModelMetadata(canonical);
     final config = await _readConfig();
     final nativeOwner = await _nativeConfigOwnerSelected();
     if (nativeOwner) {
@@ -17494,13 +17513,32 @@ ${lines.join('\n')}
       } catch (_) {}
       await _writeConfig(config);
       _addActivity('[MODEL] syncToConfig: $canonical');
-
-      // OpenClaw SessionsPatchParamsSchema uses `model`. `primaryModel` is not
-      // a supported session field and is rejected as an additional property.
-      changedMetadata['model'] = canonical;
     }
 
-    return changedMetadata;
+    return sessionMetadata;
+  }
+
+  Map<String, dynamic> _sessionModelMetadata(String canonicalModel) {
+    if (canonicalModel.startsWith('agent/') ||
+        ModelProviderCatalog.isDirectLocalModelId(canonicalModel)) {
+      return const <String, dynamic>{};
+    }
+    // OpenClaw SessionsPatchParamsSchema uses `model`. `primaryModel` is not
+    // a supported session field and is rejected as an additional property.
+    return <String, dynamic>{'model': canonicalModel};
+  }
+
+  Map<String, dynamic> debugSessionModelMetadataForTesting(String model) =>
+      _sessionModelMetadata(ModelProviderCatalog.canonicalizeModelId(model));
+
+  bool _activeSessionAlreadyUsesModel(
+    Map<String, dynamic> metadata, {
+    required String sessionKey,
+  }) {
+    final desiredModel = metadata['model']?.toString().trim() ?? '';
+    return desiredModel.isNotEmpty &&
+        identical(_patchedSessionConnection, _connection) &&
+        _patchedSessionModels[sessionKey] == desiredModel;
   }
 
   Future<void> _patchActiveGatewaySessionModel(
@@ -17508,17 +17546,31 @@ ${lines.join('\n')}
     String sessionKey = 'main',
   }) async {
     if (changedMetadata.isEmpty || _connection == null) return;
+    final connection = _connection!;
+    if (!identical(_patchedSessionConnection, connection)) {
+      _patchedSessionModels.clear();
+      _patchedSessionConnection = connection;
+    }
+    final desiredModel = changedMetadata['model']?.toString().trim() ?? '';
+    if (desiredModel.isNotEmpty &&
+        _patchedSessionModels[sessionKey] == desiredModel) {
+      return;
+    }
     try {
-      await _connection!.patchSessionMetadata(
+      await connection.patchSessionMetadata(
         changedMetadata,
         sessionKey: sessionKey,
       );
+      if (desiredModel.isNotEmpty) {
+        _patchedSessionModels[sessionKey] = desiredModel;
+      }
       _addActivity(
         '[MODEL] active gateway session patched ($sessionKey): $changedMetadata',
       );
       await Future.delayed(const Duration(milliseconds: 500));
     } catch (e) {
       _addActivity('[MODEL] active session model patch skipped: $e');
+      rethrow;
     }
   }
 
@@ -17562,6 +17614,8 @@ ${lines.join('\n')}
   void disconnectWebSocket() {
     _rpcDiscoveryDone = false;
     _gatewayInteractiveReadyAt = null;
+    _patchedSessionModels.clear();
+    _patchedSessionConnection = null;
     _connection?.dispose();
     _connection = null;
     _updateState(_state.copyWith(
