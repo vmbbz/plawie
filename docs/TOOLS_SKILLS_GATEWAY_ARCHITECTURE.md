@@ -518,6 +518,13 @@ OpenClaw `2026.7.1` rejects `primaryModel` in `sessions.patch`. The app must
 wait for the patch response and must not tear down a healthy WebSocket merely
 to apply the supported live-session field.
 
+The response compatibility boundary is also explicit. Newer protocol-v3
+Gateways acknowledge this mutation with `ok: true`; the installed 2026.7.1
+Gateway can return the legacy mutation receipt `payload: {ts: <epoch-ms>}`.
+Plawie accepts only those two success forms. Explicit failures, error fields,
+empty responses, and arbitrary payloads fail closed before any paid provider
+request is sent.
+
 The persisted primary and the live session model are independent truths. A
 provider selection can already be present in `openclaw.json` while an existing
 `agent:main:main` session still owns the previous provider/model. Plawie must

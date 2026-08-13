@@ -701,6 +701,31 @@ class GatewayConnection {
     };
   }
 
+  /// Whether a `sessions.patch` response is an acknowledged success.
+  ///
+  /// Current Gateways use the protocol-v3 `ok: true` envelope. OpenClaw
+  /// 2026.7.1 can instead return the legacy mutation receipt
+  /// `{type: "res", payload: {ts: <epoch-ms>}}`. Keep that compatibility
+  /// narrow: an explicit failure or error never succeeds, and an untyped or
+  /// otherwise empty response is not accepted.
+  static bool isSessionPatchAcknowledged(Map<String, dynamic> response) {
+    if (response['type'] != 'res' ||
+        response['ok'] == false ||
+        response['error'] != null ||
+        response['errorCode'] != null ||
+        response['errorMessage'] != null) {
+      return false;
+    }
+    if (response['ok'] == true) return true;
+
+    final payload = response['payload'];
+    if (payload is! Map || payload.length != 1 || !payload.containsKey('ts')) {
+      return false;
+    }
+    final ts = payload['ts'];
+    return ts is num && ts.isFinite && ts > 0;
+  }
+
   /// Update supported session metadata in-memory and wait for Gateway ACK.
   ///
   /// Waiting for the response is important: fire-and-forget patches made an
@@ -723,7 +748,7 @@ class GatewayConnection {
       buildSessionPatchRequest(metadata, sessionKey: key),
     ).first.timeout(const Duration(seconds: 10));
 
-    if (response['type'] == 'res' && response['ok'] == true) return;
+    if (isSessionPatchAcknowledged(response)) return;
 
     final error = response['error'] ?? response['payload'] ?? response;
     final message = error is Map
