@@ -758,10 +758,15 @@ fingerprint.
 
 ### Phase 5 — Venice runtime provider plugin
 
-- Add the versioned app-owned OpenClaw provider plugin.
-- Diagnose signature presence/loss.
-- Adopt official Gemini tool/replay hooks behind model-family detection.
-- Retain the existing mapper until parity passes.
+- [x] Add the versioned app-owned OpenClaw provider plugin.
+- [x] Admit it through a fixed app-private path only after APK-source SHA-256
+  verification and an OpenClaw 2026.7.x compatibility check.
+- [x] Adopt official `passthrough-gemini` replay sanitation and Gemini
+  provider-tool hooks behind exact `venice` plus Gemini-family detection.
+- [x] Invalidate old capability receipts by advancing the compatibility profile
+  from `provider-tools-v1` to `provider-tools-v2`.
+- [ ] Diagnose signature presence/loss on a physical-device full-loop probe.
+- [ ] Retain the existing request mapper until direct/Gateway parity passes.
 - Run the Gemma reduction ladder and add only evidence-backed normalization.
 
 **Exit:** Venice Gemini completes the full loop or remains honestly Chat-only;
@@ -811,6 +816,10 @@ wallet services, Node tools, skill services, setup flow, or local model code.
 - [ ] Venice Gemini's exact thought signature is either preserved or the route
       stays Chat-only.
 - [ ] No opaque signature is logged or persisted.
+- [x] Venice compatibility is loaded only from a hash-verified APK-owned path,
+      has a Gateway-version ceiling, and cannot be installed by runtime config.
+- [x] Venice compatibility uses official OpenClaw provider hooks and is scoped
+      to exact `venice` plus Gemini-family model IDs.
 - [ ] Venice Gemma has exact direct/Gateway evidence before tool enablement.
 - [ ] Venice GLM's known-good path remains green.
 - [ ] BlockRun approval/payment behavior is unchanged.

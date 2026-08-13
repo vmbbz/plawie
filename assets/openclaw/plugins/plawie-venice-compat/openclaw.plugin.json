@@ -1,0 +1,17 @@
+{
+  "id": "plawie-venice-compat",
+  "name": "Plawie Venice compatibility",
+  "description": "Provider-scoped OpenClaw replay and tool-schema compatibility for Venice-hosted Gemini models.",
+  "version": "1.0.0",
+  "providers": [
+    "venice"
+  ],
+  "autoEnableWhenConfiguredProviders": [
+    "venice"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

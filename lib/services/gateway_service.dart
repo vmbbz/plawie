@@ -36,6 +36,7 @@ import 'runtime_credential_store.dart';
 import 'gateway_config_signature.dart';
 import 'provider_turn_failure.dart';
 import 'model_capability_receipt.dart';
+import 'native_gateway_plugin_policy.dart';
 
 class _FastCloudRoute {
   final String provider;
@@ -3321,7 +3322,10 @@ HEARTBEAT_OK.
     } else {
       _removeNativeProviderAuthMetadata(config, retainedProviderIds);
       _removeUnavailableNativeModelReferences(config, retainedProviderIds);
-      _applyNativeBundledPluginPolicy(config);
+      await _applyNativePluginPolicy(
+        config,
+        retainedProviderIds: retainedProviderIds,
+      );
       return;
     }
 
@@ -3347,7 +3351,10 @@ HEARTBEAT_OK.
     }
     _removeNativeProviderAuthMetadata(config, retainedProviderIds);
     _removeUnavailableNativeModelReferences(config, retainedProviderIds);
-    _applyNativeBundledPluginPolicy(config);
+    await _applyNativePluginPolicy(
+      config,
+      retainedProviderIds: retainedProviderIds,
+    );
 
     if (removedProviderIds.isNotEmpty) {
       final removed = removedProviderIds.toList()..sort();
@@ -3357,44 +3364,15 @@ HEARTBEAT_OK.
     }
   }
 
-  void _applyNativeBundledPluginPolicy(Map<String, dynamic> config) {
-    final allowed = ModelProviderCatalog.nativeGatewayBundledPluginIds.toList()
-      ..sort();
-    final rawPlugins = config['plugins'];
-    final plugins = rawPlugins is Map ? rawPlugins : <String, dynamic>{};
-    config['plugins'] = plugins;
-
-    // Native gateway startup is read-only with respect to package management.
-    // Runtime plugin paths/install records are accepted only by a future
-    // verified extension-pack flow, never by an arbitrary config mutation.
-    plugins['allow'] = allowed;
-    plugins.remove('load');
-    plugins.remove('installs');
-
-    final entries = plugins['entries'];
-    if (entries is Map) {
-      for (final rawId in entries.keys.toList(growable: false)) {
-        final id = rawId.toString().trim().toLowerCase();
-        if (!ModelProviderCatalog.nativeGatewayBundledPluginIds.contains(id)) {
-          entries.remove(rawId);
-        }
-      }
-      if (entries.isEmpty) plugins.remove('entries');
-    }
-
-    final slots = plugins['slots'];
-    if (slots is Map) {
-      for (final rawSlot in slots.keys.toList(growable: false)) {
-        final selectedId = slots[rawSlot]?.toString().trim().toLowerCase();
-        if (selectedId == null ||
-            selectedId == 'none' ||
-            !ModelProviderCatalog.nativeGatewayBundledPluginIds
-                .contains(selectedId)) {
-          slots.remove(rawSlot);
-        }
-      }
-      if (slots.isEmpty) plugins.remove('slots');
-    }
+  Future<void> _applyNativePluginPolicy(
+    Map<String, dynamic> config, {
+    required Set<String> retainedProviderIds,
+  }) async {
+    NativeGatewayPluginPolicy.apply(
+      config,
+      retainedProviderIds: retainedProviderIds,
+      filesDir: await getFilesDir(),
+    );
   }
 
   Future<bool> _hasDurableProviderCredential(

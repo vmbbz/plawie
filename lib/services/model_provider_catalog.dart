@@ -263,6 +263,19 @@ class ModelProviderCatalog {
     'xai',
   };
 
+  /// App-owned OpenClaw plugins whose exact source bytes are bundled in the
+  /// APK, SHA-256 verified during native bootstrap, and loaded only from the
+  /// app-private verified-plugin directory. These are deliberately separate
+  /// from upstream bundled plugins and arbitrary writable extension paths.
+  static const Set<String> nativeGatewayVerifiedPluginIds = <String>{
+    'plawie-venice-compat',
+  };
+
+  static const Map<String, String> nativeGatewayVerifiedPluginByProvider =
+      <String, String>{
+    'venice': 'plawie-venice-compat',
+  };
+
   /// Upstream provider packages which must be delivered through an explicit,
   /// verified Plawie extension path before native configuration may enable
   /// them. They are never installed implicitly by gateway startup.

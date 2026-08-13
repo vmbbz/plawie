@@ -215,8 +215,25 @@ runtime. For example, Groq is an upstream external
 verified native extension pack exists.
 
 The native config writes an explicit `plugins.allow` containing only
-Android-safe bundled official-core plugins. It drops arbitrary load paths,
-legacy install records, unsupported entries, and unsupported slot selections.
+Android-safe bundled official-core plugins and app-owned plugins admitted by
+the verified-plugin policy. It drops arbitrary load paths, legacy install
+records, unsupported entries, and unsupported slot selections on every policy
+pass. A verified plugin is copied from the signed APK into app-private storage,
+checked file-by-file against pinned SHA-256 values, bounded to its reviewed
+OpenClaw version line, and activated through a staging-directory rename before
+the Gateway starts. Config can refer only to the fixed derived path under
+`$filesDir/native-node-embedded/full-openclaw/verified-plugins`; it cannot add a
+writable or downloaded plugin path.
+
+The first verified extension is `plawie-venice-compat`. It registers hooks only
+for provider `venice` and upstream model IDs in the Gemini family. It delegates
+replay sanitation and tool-schema normalization to OpenClaw 2026.7.1's official
+`passthrough-gemini` and Gemini provider-tool helpers. It does not make network
+requests, hold credentials, invent thought signatures, or alter Venice GLM,
+Venice Gemma, BlockRun, BYOK, or local-model traffic. Changing its source bytes
+or supported Gateway line requires updating the pinned bootstrap receipt and
+the model capability-profile version.
+
 If upstream nevertheless requests npm, the launcher blocks it and records
 sanitized command arguments and a callsite in
 `native-full-gateway-bootstrap-stdio.log`; it never logs credentials.

@@ -41,7 +41,7 @@ class ModelCapabilityReceipt {
 
   static const int schemaVersion = 1;
   static const String currentGatewayVersion = '2026.7.1';
-  static const String currentCompatibilityProfileVersion = 'provider-tools-v1';
+  static const String currentCompatibilityProfileVersion = 'provider-tools-v2';
   static const String currentStreamMode = 'gateway-streaming';
 
   final String assessmentId;
