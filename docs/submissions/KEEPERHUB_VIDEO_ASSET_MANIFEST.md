@@ -3,18 +3,18 @@
 > **Status:** five physical-device evidence recordings are available: wallet
 > onboarding, a Wallet-first proof, the canonical GLM-5 agent-originated proof,
 > a separate GLM-5.2 capability/status/receipt read, and a fresh GLM-5.2
-> prepare/authorize/verified proof. A public final cut URL is still pending.
-> Raw MP4 files remain outside Git by design.
+> prepare/authorize/verified proof. The public submission video is available at
+> <https://youtu.be/jcZN3e34LVs>. Raw MP4 files remain outside Git by design.
 
 ## Deliverables
 
 | Deliverable | Target | Status |
 |---|---|---|
-| Judge demo | `2:00–2:30`, `1920×1080`, H.264 MP4, 30 fps, AAC audio | Raw clips ready; edit pending |
+| Judge demo | Public submission cut | [Published on YouTube](https://youtu.be/jcZN3e34LVs) |
 | Captioned backup | Same cut with burned-in English captions | Raw clips ready; edit pending |
 | Social cut | `45–75` seconds, `1080×1920` | Optional |
-| Public URL | YouTube unlisted/public or another signed-out-accessible host | Pending |
-| DoraHacks URL check | Opens without account, region prompt, or download permission | Pending |
+| Public URL | YouTube unlisted/public or another signed-out-accessible host | [Published](https://youtu.be/jcZN3e34LVs) |
+| Public video access check | Opens without account, region prompt, or download permission | Passed by signed-out HTTP request on 13 August 2026 |
 
 Keep vertical phone footage at its native aspect ratio inside a branded
 horizontal frame. Use the free side area for short proof labels and the
@@ -117,5 +117,6 @@ numbers, and the zero-value proof amount are expected evidence and may remain.
 - [ ] No in-flight recovery claim is made unless that separate stress test is
       actually present in the footage.
 - [ ] Captions are legible on a phone at normal playback size.
-- [ ] The final URL opens in a private browser window without authentication.
-- [ ] The public URL is inserted into the submission dossier and DoraHacks form.
+- [x] The final URL opens from a signed-out request without authentication.
+- [x] The public URL is inserted into the submission dossier and DoraHacks
+      BUIDL page.

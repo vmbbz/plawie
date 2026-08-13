@@ -12,7 +12,7 @@
 | Source | <https://github.com/vmbbz/plawie/tree/codex/hybrid-bridge-funding-design> |
 | Canonical KeeperHub transaction | [Agent-originated Base Mainnet `0x6b18c0e5…991430a`](https://basescan.org/tx/0x6b18c0e5475a97996f5a9654392050bf7cc754aa1b31c6f2492645750991430a) |
 | Supporting KeeperHub transactions | [Base Mainnet `0xdcf1a13c…73117b04`](https://basescan.org/tx/0xdcf1a13c3e83ded25c8104e5aa654ff300f381269a506a83b69fd9fd73117b04), [`0x9ce5e377…d6def2a9`](https://basescan.org/tx/0x9ce5e37757383b1bd28232bd3a1d72e501671d5557a90aad1ddaca8ed6def2a9), and latest A3 [`0x249fcef5…0cad58`](https://basescan.org/tx/0x249fcef5bf20ebc598f105ee2d6efbc11893fea70eeca7c07b0694f4f80cad58) |
-| Demo video | **ADD THE FINAL PUBLIC VIDEO URL BEFORE SUBMISSION** |
+| Demo video | [Plawie — Human-Governed Agent Wallet](https://youtu.be/jcZN3e34LVs) |
 | Video edit handoff | [Asset and edit manifest](KEEPERHUB_VIDEO_ASSET_MANIFEST.md) |
 | Canonical machine-readable evidence | [`keeperhub-agent-proof-0x6b18c0e5.json`](evidence/keeperhub-agent-proof-0x6b18c0e5.json) |
 | Latest A3 machine-readable evidence | [`keeperhub-a3-proof-0x249fcef5.json`](evidence/keeperhub-a3-proof-0x249fcef5.json) |
@@ -23,9 +23,9 @@
 > [!IMPORTANT]
 > The transaction and product links above are ready. The source branch is
 > pushed and was verified reachable from a signed-out request on 13 August
-> 2026. The final short demo video and a signed-in DoraHacks form review are
-> still mandatory. The signed-in form is the authority for its exact closing
-> time and bounty wording.
+> 2026. The final demo video is public and linked from the DoraHacks BUIDL page.
+> The signed-in hackathon event page remains the authority for any separate
+> enrollment action, exact closing time, or changed bounty wording.
 
 > [!NOTE]
 > Android's protected authentication surface did not appear in the onboarding
@@ -589,9 +589,10 @@ foreground, freshly authenticated Android operation.
 - [x] Public source URL reachable while signed out; verified on 13 August 2026
 - [x] Real transaction executed through KeeperHub
 - [x] Canonical BaseScan transaction URL prepared
-- [ ] Short public demo video uploaded and URL inserted at the top of this file
-- [ ] Signed-in DoraHacks form reviewed for exact deadline/timezone and any
-      changed requirements
+- [x] Public demo video uploaded, reachable while signed out, and inserted at
+      the top of this file
+- [x] Signed-in DoraHacks BUIDL page reviewed and updated with the video,
+      website, repository, release, dossier, and transaction links
 
 ### Evidence quality
 
@@ -613,7 +614,7 @@ foreground, freshly authenticated Android operation.
       three read-only calls and no prepare or execution
 - [x] Five raw videos inventoried: onboarding, Wallet-first, canonical chat,
       capability/status/receipts, and latest A3 prepare/authorize/verify
-- [ ] Final edited public video uploaded and checked from a signed-out browser
+- [x] Final public video uploaded and checked from a signed-out request
 - [ ] Final media redaction review completed
 
 ### Repository and release hygiene
@@ -625,15 +626,16 @@ foreground, freshly authenticated Android operation.
 - [x] Local and installed APK hashes match
 - [x] Pushed source branch publicly readable from a signed-out request on
       13 August 2026
-- [ ] Add the final public video link; do not submit a placeholder
+- [x] Final public video link added; no placeholder remains
 
 ---
 
 ## Honest limitations
 
 - The canonical transaction is the complete agent-originated GLM-5 path. The
-  raw recording still needs final editing, redaction review, upload, and a
-  public URL before submission.
+  final video is published and linked. A separately recorded frame-by-frame
+  media redaction audit remains unchecked rather than being inferred from
+  publication alone.
 - Completed receipt persistence after force-stop/relaunch is proven. A live
   interruption specifically during polling is not yet recorded.
 - The current human approval gate is strongly enforced by Plawie and Android,
