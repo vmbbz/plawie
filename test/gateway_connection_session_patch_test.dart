@@ -23,6 +23,31 @@ void main() {
     );
   });
 
+  test('unary session RPCs ignore broadcast Gateway events', () {
+    expect(
+      GatewayConnection.isTerminalRpcResponseFrame(const {
+        'type': 'event',
+        'event': 'sessions.changed',
+        'payload': {'ts': 1786671814476},
+      }),
+      isFalse,
+    );
+    expect(
+      GatewayConnection.isTerminalRpcResponseFrame(const {
+        'type': 'res',
+        'payload': {'ts': 1786671814476},
+      }),
+      isTrue,
+    );
+    expect(
+      GatewayConnection.isTerminalRpcResponseFrame(const {
+        'type': 'error',
+        'payload': {'message': 'rejected'},
+      }),
+      isTrue,
+    );
+  });
+
   test('sessions.patch accepts only an exact modern model acknowledgement', () {
     expect(
       GatewayConnection.isSessionPatchAcknowledged(

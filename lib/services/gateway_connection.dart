@@ -701,6 +701,14 @@ class GatewayConnection {
     };
   }
 
+  /// Id-less Gateway events are intentionally broadcast to active request
+  /// streams because chat turns consume them. Unary RPCs must ignore those
+  /// events and wait for their correlated terminal response instead.
+  static bool isTerminalRpcResponseFrame(Map<String, dynamic> frame) {
+    final type = frame['type'];
+    return type == 'res' || type == 'error';
+  }
+
   /// Whether a `sessions.patch` response is an acknowledged success.
   ///
   /// Current Gateways return the protocol-v3 `ok: true` envelope and a
@@ -812,7 +820,9 @@ class GatewayConnection {
         : mainSessionKey ?? 'main';
     final response = await sendRequest(
       buildSessionPatchRequest(metadata, sessionKey: key),
-    ).first.timeout(const Duration(seconds: 10));
+    )
+        .firstWhere(isTerminalRpcResponseFrame)
+        .timeout(const Duration(seconds: 10));
 
     if (isSessionPatchAcknowledged(
       response,
@@ -826,7 +836,9 @@ class GatewayConnection {
       final sessionSnapshot = await sendRequest(<String, dynamic>{
         'method': 'sessions.list',
         'params': <String, dynamic>{},
-      }).first.timeout(const Duration(seconds: 10));
+      })
+          .firstWhere(isTerminalRpcResponseFrame)
+          .timeout(const Duration(seconds: 10));
       if (sessionListConfirmsModel(
         sessionSnapshot,
         sessionKey: key,
