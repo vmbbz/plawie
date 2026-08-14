@@ -310,6 +310,36 @@ class ModelCapabilityReceiptRepository {
     ));
   }
 
+  /// Persists a completed foreground probe that did not satisfy the bounded
+  /// tool contract. The reason comes from [ModelToolCompatibilityProbe]'s
+  /// closed evaluator vocabulary; no prompt, tool payload, or provider body is
+  /// stored in the receipt.
+  Future<void> recordFailedExplicitProbe({
+    required String modelId,
+    required String reason,
+    required bool assistantTextObserved,
+    String? catalogRevision,
+    DateTime? now,
+  }) async {
+    final sanitizedReason =
+        reason.replaceAll(RegExp(r'[\u0000-\u001F\u007F]+'), ' ').trim();
+    final boundedReason = sanitizedReason.length <= 180
+        ? sanitizedReason
+        : '${sanitizedReason.substring(0, 179)}…';
+    await _upsert(_newLocalReceipt(
+      modelId: modelId,
+      chatEvidence: assistantTextObserved
+          ? ModelChatEvidence.verified
+          : ModelChatEvidence.none,
+      toolEvidence: ModelToolEvidence.incompatible,
+      source: ModelCapabilityReceiptSource.explicitProbe,
+      catalogRevision: catalogRevision,
+      failureKind: 'explicitProbeContractFailed',
+      detail: 'Explicit tool test failed: $boundedReason',
+      now: now,
+    ));
+  }
+
   Future<void> recordFailure({
     required String modelId,
     required ProviderTurnFailure failure,

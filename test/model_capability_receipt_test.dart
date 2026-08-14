@@ -97,6 +97,39 @@ void main() {
     expect(receipt.toolEvidence, ModelToolEvidence.loopVerified);
   });
 
+  test('completed explicit probe failure quarantines only the exact tool route',
+      () async {
+    await receipts.recordFailedExplicitProbe(
+      modelId: 'venice/gemini-3-6-flash',
+      reason: 'Expected one tool call but observed 0.',
+      assistantTextObserved: true,
+      now: DateTime.utc(2026, 8, 13, 12),
+    );
+
+    final assessed = await DynamicModelCatalogRepository(
+      preferences: preferences,
+    ).assess(_veniceSnapshot(), now: DateTime.utc(2026, 8, 13, 13));
+    final models = assessed.providers.single.models;
+    final gemini = models.singleWhere(
+      (model) => model.id == 'venice/gemini-3-6-flash',
+    );
+    final glm = models.singleWhere(
+      (model) => model.id == 'venice/zai-org-glm-5-2',
+    );
+    final receipt = await receipts.latestToolReceiptForModel(
+      gemini.id,
+      now: DateTime.utc(2026, 8, 13, 13),
+    );
+
+    expect(gemini.chatReadiness, ModelChatReadiness.verified);
+    expect(gemini.toolReadiness, ModelToolReadiness.incompatible);
+    expect(gemini.readinessLabel, 'Chat only');
+    expect(glm.agentReady, isTrue);
+    expect(receipt?.source, ModelCapabilityReceiptSource.explicitProbe);
+    expect(receipt?.sanitizedFailureKind, 'explicitProbeContractFailed');
+    expect(receipt?.detail, contains('observed 0'));
+  });
+
   test('schema failure quarantines exact model without disabling chat',
       () async {
     final failure = ProviderTurnFailure.classify(

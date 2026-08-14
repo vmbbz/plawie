@@ -16540,6 +16540,15 @@ ${lines.join('\n')}
                 .recordSuccessfulExplicitProbe(modelId: model);
             yield '\n\nCompatibility receipt saved for this exact model.';
           } else {
+            if (terminalFrameObserved) {
+              await ModelCapabilityReceiptRepository()
+                  .recordFailedExplicitProbe(
+                modelId: model,
+                reason: verdict.reason ?? 'The bounded tool contract failed.',
+                assistantTextObserved:
+                    assistantStream.delivered.trim().isNotEmpty,
+              );
+            }
             yield '\n\n[Error] Compatibility test did not pass: '
                 '${verdict.reason} No model was switched and no tool was retried.';
           }

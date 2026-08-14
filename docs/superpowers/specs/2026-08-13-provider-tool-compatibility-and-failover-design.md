@@ -64,11 +64,12 @@ selection identity, tool-loop validation, phase-aware errors, and safe fallback
   modality-preserving model only when it has a current `loopVerified` receipt.
   Plawie never changes the selection or resends the message; post-tool
   failures never offer a rerun.
-- Pending physical-device evidence: run the explicit probe against Venice
-  Gemini and Gemma on the signed APK and promote only routes that complete.
-  Until then, GLM 5.2 remains the shipped verified Venice Agent route, Gemini
-  remains schema-accepted but unverified for the complete loop, and Gemma
-  remains chat-only after its observed tool-schema rejection.
+- Complete on the 2026-08-14 physical-device round: the exact Venice Gemini
+  and Gemma routes were tested through the foreground UI on the installed APK.
+  Gemini produced the requested final marker but made zero tool calls, while
+  Gemma was rejected at provider generation before any tool call or result.
+  Both are therefore persisted as exact-route `Chat only` receipts. Venice GLM
+  5.2 remains independently `Agent-ready`; no failure crossed a model boundary.
 
 Plawie must stop treating a provider's generic function-calling flag as proof
 that a model can run the complete mobile Agent loop.
@@ -751,6 +752,41 @@ Suggested initial state from current physical-device evidence:
 7. Restart/update the app and verify valid receipts survive without preserving
    opaque provider state.
 
+#### 2026-08-14 installed-device evidence
+
+The focused compatibility round ran on a Samsung SM-A556E with Plawie 2.3.0
+(`versionCode 13`) installed as an update, preserving user data and secured
+wallet state. The tested debug APK had SHA-256
+`90480E4BF85A268563DA1045A37D6788D97B0597049AAD04131626FC556FCC72`.
+
+- Startup remained native-first. The embedded Node process owned the Gateway;
+  the PRoot repair/start path was skipped. Both SHA-256-pinned app-private
+  plugins were provisioned before the Gateway became ready.
+- `sessions.patch` acknowledged the exact requested model before each probe
+  send. Picker, chat header, Gateway session, and send logs all identified the
+  same namespaced route.
+- `venice/gemini-3-6-flash` accepted generation and returned assistant text,
+  but emitted zero tool calls. The probe rejected the imitation marker and
+  persisted `chatEvidence=verified`, `toolEvidence=incompatible`, source
+  `explicitProbe`, failure `explicitProbeContractFailed`.
+- `venice/gemma-4-uncensored` was rejected during provider generation before
+  any tool call or result. The app displayed the exact route and stage, then
+  persisted `chatEvidence=none`, `toolEvidence=incompatible`, source
+  `explicitProbe`, failure `schemaRejected`.
+- Reopening the catalog showed both failing routes as `Chat only` with their
+  route-specific reason and an explicit retest action. Venice GLM 5.2 still
+  showed `Agent-ready` from its complete physical-device tool-loop receipt.
+- No tool retry, automatic model switch, cross-provider fallback, wallet
+  action, or duplicate send occurred. Stored receipts contained only bounded
+  capability metadata and sanitized deterministic reasons—no prompt, provider
+  response body, tool payload, credential, or opaque Gemini state.
+
+This evidence closes the original incident without claiming that Gemini or
+Gemma lack native function-calling support. It proves only that these exact
+Venice/OpenClaw/mobile route fingerprints do not currently complete Plawie's
+bounded tool contract. They remain available for ordinary chat and can be
+promoted by a later successful explicit probe.
+
 ## 15. Implementation order and commit boundaries
 
 ### Phase 0 — Urgent independent catalog hotfix
@@ -817,9 +853,14 @@ fingerprint.
 - [x] Invalidate old capability receipts by advancing the compatibility profile
   from `provider-tools-v1` to `provider-tools-v2` when the provider plugin
   landed, then to `provider-tools-v3` when the exact probe contract landed.
-- [ ] Diagnose signature presence/loss on a physical-device full-loop probe.
+- [x] Diagnose the current physical-device full-loop behavior: Gemini returned
+  the marker without invoking the tool, so no continuation signature was
+  produced to validate. Keep the exact route Chat-only until a later probe
+  reaches a real signed continuation.
 - [ ] Retain the existing request mapper until direct/Gateway parity passes.
-- Run the Gemma reduction ladder and add only evidence-backed normalization.
+- [x] Run the exact Gemma route through the bounded physical-device probe and
+  preserve its schema-rejected Chat-only quarantine. Add no speculative Gemma
+  normalization without a provider-owned request diff.
 
 **Exit:** Venice Gemini completes the full loop or remains honestly Chat-only;
 Gemma is enabled only if its full loop passes; other providers are unchanged.
@@ -865,20 +906,22 @@ wallet services, Node tools, skill services, setup flow, or local model code.
 
 ## 17. Release acceptance checklist
 
-- [ ] Provider catalog flags are displayed as advertised, not verified.
+- [x] Provider catalog flags are displayed as advertised, not verified.
 - [x] Only a matching full-loop receipt produces `Agent-ready`.
-- [ ] Venice Gemini's exact thought signature is either preserved or the route
+- [x] Venice Gemini's exact thought signature is either preserved or the route
       stays Chat-only.
-- [ ] No opaque signature is logged or persisted.
+- [x] No opaque signature is logged or persisted.
 - [x] Venice compatibility is loaded only from a hash-verified APK-owned path,
       has a Gateway-version ceiling, and cannot be installed by runtime config.
 - [x] Venice compatibility uses official OpenClaw provider hooks and is scoped
       to exact `venice` plus Gemini-family model IDs.
-- [ ] Venice Gemma has exact direct/Gateway evidence before tool enablement.
-- [ ] Venice GLM's known-good path remains green.
+- [x] Venice Gemma has exact Gateway/device evidence before tool enablement and
+      remains Chat-only after schema rejection.
+- [x] Venice GLM's known-good path remains green.
 - [ ] BlockRun approval/payment behavior is unchanged.
 - [ ] Direct BYOK and local/native golden controls pass.
-- [ ] Selected, displayed, configured, and resolved model IDs match.
+- [x] Selected, displayed, configured, and resolved model IDs match in the
+      focused Venice physical-device matrix.
 - [x] Errors report phase and side-effect certainty.
 - [x] No post-tool automatic replay exists.
 - [x] No cross-provider automatic fallback exists.
