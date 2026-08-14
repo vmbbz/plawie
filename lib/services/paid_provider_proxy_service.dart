@@ -420,10 +420,11 @@ class VenicePaidProviderProxyHandler {
 
     final isInference =
         request.route.kind == PaidProviderProxyRouteKind.chatCompletions;
+    PaidProviderTurnLease? turnLease;
     if (isInference) {
       final gatewayModelId = request.gatewayModelId?.trim() ?? '';
       try {
-        _turnAuthorization.consumeForProxy(
+        turnLease = _turnAuthorization.consumeForProxy(
           provider: PaidProviderId.venice,
           gatewayModelId: gatewayModelId,
         );
@@ -439,6 +440,11 @@ class VenicePaidProviderProxyHandler {
     final upstreamUri = _httpClient.upstreamUriFor(request.route);
     late String identity;
     try {
+      if (turnLease != null) {
+        _turnAuthorization.beginTransientProviderOperation(
+          leaseId: turnLease.leaseId,
+        );
+      }
       identity = await _walletAuth.authorize(
         request.route.method,
         upstreamUri,
@@ -449,6 +455,12 @@ class VenicePaidProviderProxyHandler {
         code: error.code,
         statusCode: HttpStatus.serviceUnavailable,
       );
+    } finally {
+      if (turnLease != null) {
+        _turnAuthorization.endTransientProviderOperation(
+          leaseId: turnLease.leaseId,
+        );
+      }
     }
 
     final response = await _httpClient.send(

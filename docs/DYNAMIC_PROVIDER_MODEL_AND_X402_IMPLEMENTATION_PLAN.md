@@ -30,8 +30,12 @@ Current implementation status:
   proxy permits at most eight matching calls for ten minutes and destroys the
   lease when the turn ends or the app leaves the foreground. Each upstream call
   receives a fresh route-bound `X-Sign-In-With-X`; ordinary/SSE/tool-call bytes
-  remain unchanged. Successful terminal responses capture only the documented
-  balance hint and schedule an isolated balance refresh.
+  remain unchanged. Native wallet/device-authentication is fenced as a
+  transient operation: Android `hidden`/`paused` callbacks cannot erase the
+  already-authorized lease while that platform prompt is in flight, but the
+  lease is cleared when the prompt returns without Plawie resuming. Successful
+  terminal responses capture only the documented balance hint and schedule an
+  isolated balance refresh.
 - Venice top-up remains a separate visible-approval x402 flow. A settled,
   redacted receipt is persisted before provider balance refresh, and a refresh
   failure never makes a confirmed payment look retryable.

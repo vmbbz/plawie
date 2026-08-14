@@ -144,6 +144,66 @@ void main() {
     expect(service.activeLease, isNull);
   });
 
+  test('native provider authentication fences lifecycle invalidation', () {
+    final service = PaidProviderTurnAuthorizationService(
+      clock: () => start,
+      leaseIdFactory: () => 'lease-native-auth',
+    )..markAppForeground();
+    final lease = service.authorizeForegroundUserTurn(
+      conversationId: 'conversation-a',
+      provider: PaidProviderId.venice,
+      modelId: 'venice/model-a',
+    );
+
+    service.beginTransientProviderOperation(leaseId: lease.leaseId);
+    service.markAppBackground();
+    expect(service.activeLease?.leaseId, lease.leaseId);
+    expect(service.isAppForeground, isFalse);
+
+    // The native prompt returned to Plawie before the provider request could
+    // continue. The lease is still valid, but only after the app is resumed.
+    service.markAppForeground();
+    service.endTransientProviderOperation(leaseId: lease.leaseId);
+    expect(
+      service
+          .consumeForProxy(
+            provider: PaidProviderId.venice,
+            gatewayModelId: 'venice/model-a',
+          )
+          .remainingProxyCalls,
+      7,
+    );
+    // A tool result/continuation remains on the same exact foreground lease;
+    // it does not need to mint another authorization.
+    expect(
+      service
+          .consumeForProxy(
+            provider: PaidProviderId.venice,
+            gatewayModelId: 'venice/model-a',
+          )
+          .remainingProxyCalls,
+      6,
+    );
+  });
+
+  test('native provider authentication fails closed if the app stays away', () {
+    final service = PaidProviderTurnAuthorizationService(
+      clock: () => start,
+      leaseIdFactory: () => 'lease-native-auth-backgrounded',
+    )..markAppForeground();
+    final lease = service.authorizeForegroundUserTurn(
+      conversationId: 'conversation-a',
+      provider: PaidProviderId.venice,
+      modelId: 'venice/model-a',
+    );
+
+    service.beginTransientProviderOperation(leaseId: lease.leaseId);
+    service.markAppBackground();
+    service.endTransientProviderOperation(leaseId: lease.leaseId);
+
+    expect(service.activeLease, isNull);
+  });
+
   test('eighth proxy call is allowed and ninth is rejected', () {
     final service = PaidProviderTurnAuthorizationService(
       clock: () => start,

@@ -50,12 +50,17 @@ void main() {
   test('maps only the model and signs the exact Venice chat route', () async {
     late http.BaseRequest upstreamRequest;
     late Map<String, dynamic> upstreamBody;
+    final leases = _authorized(now, model);
     final auth = _RecordingAuth(onAuthorize: (method, uri) async {
       expect(method, 'POST');
       expect(uri, Uri.parse('https://api.venice.ai/api/v1/chat/completions'));
+      // Android wallet authentication can emit hidden/paused before returning
+      // to the same activity. The already-authorized lease must survive that
+      // native prompt, but it must not be usable while still backgrounded.
+      leases.markAppBackground();
+      leases.markAppForeground();
       return 'fresh-route-bound-identity';
     });
-    final leases = _authorized(now, model);
     final balances = _RecordingBalances();
     final handler = VenicePaidProviderProxyHandler(
       httpClient: PaidProviderHttpClient(client: _FakeClient((request) async {

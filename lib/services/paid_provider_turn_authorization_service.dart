@@ -90,6 +90,9 @@ class PaidProviderTurnAuthorizationService {
 
   bool _appForeground = false;
   bool _temporarilyObscured = false;
+  int _transientProviderOperationDepth = 0;
+  String? _transientProviderLeaseId;
+  bool _backgroundInvalidationDeferred = false;
   PaidProviderTurnLease? _activeLease;
 
   bool get isAppForeground => _appForeground;
@@ -98,6 +101,7 @@ class PaidProviderTurnAuthorizationService {
   void markAppForeground() {
     _appForeground = true;
     _temporarilyObscured = false;
+    _backgroundInvalidationDeferred = false;
   }
 
   /// Marks the app as temporarily covered by a system-owned surface.
@@ -114,8 +118,57 @@ class PaidProviderTurnAuthorizationService {
 
   void markAppBackground() {
     _appForeground = false;
-    _temporarilyObscured = false;
-    _activeLease = null;
+    if (_transientProviderOperationDepth > 0) {
+      // Android may report hidden/paused while the native wallet or device
+      // credential surface owns the activity. Defer invalidation until that
+      // already-authorized operation returns. If the app does not resume by
+      // then, endTransientProviderOperation clears the lease fail-closed.
+      _temporarilyObscured = true;
+      _backgroundInvalidationDeferred = true;
+      return;
+    }
+    _clearLease();
+  }
+
+  /// Fences an already-authorized provider operation that may open a
+  /// platform-owned authentication surface.
+  ///
+  /// This does not authorize a turn and cannot be called by the Gateway. It
+  /// only prevents Android lifecycle callbacks emitted during the native
+  /// wallet/device-auth prompt from erasing the lease before the same
+  /// foreground request returns. The exact lease, expiry, model binding, and
+  /// proxy-call limit remain enforced by [consumeForProxy].
+  void beginTransientProviderOperation({required String leaseId}) {
+    final lease = _activeLease;
+    if (lease == null || lease.leaseId != leaseId) {
+      throw StateError(
+        'Cannot fence a provider operation without its active turn lease.',
+      );
+    }
+    if (_transientProviderOperationDepth == 0) {
+      _transientProviderLeaseId = leaseId;
+    } else if (_transientProviderLeaseId != leaseId) {
+      throw StateError('Only one provider turn lease may be fenced at a time.');
+    }
+    _transientProviderOperationDepth++;
+  }
+
+  /// Releases a fence created by [beginTransientProviderOperation].
+  ///
+  /// A stale completion cannot affect a newer lease. This makes cancellation
+  /// and app-disposal paths safe even if a platform callback returns late.
+  void endTransientProviderOperation({required String leaseId}) {
+    if (_transientProviderOperationDepth == 0 ||
+        _transientProviderLeaseId != leaseId) {
+      return;
+    }
+    _transientProviderOperationDepth--;
+    if (_transientProviderOperationDepth > 0) return;
+    _transientProviderLeaseId = null;
+    if (_backgroundInvalidationDeferred && !_appForeground) {
+      _clearLease();
+    }
+    _backgroundInvalidationDeferred = false;
   }
 
   PaidProviderTurnLease authorizeForegroundUserTurn({
@@ -238,7 +291,18 @@ class PaidProviderTurnAuthorizationService {
   }
 
   void closeLease(String leaseId) {
-    if (_activeLease?.leaseId == leaseId) _activeLease = null;
+    if (_activeLease?.leaseId != leaseId) return;
+    _clearLease();
+    if (_transientProviderLeaseId == leaseId) {
+      _transientProviderOperationDepth = 0;
+      _transientProviderLeaseId = null;
+    }
+  }
+
+  void _clearLease() {
+    _activeLease = null;
+    _temporarilyObscured = false;
+    _backgroundInvalidationDeferred = false;
   }
 
   static String _secureLeaseId() {

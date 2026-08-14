@@ -121,6 +121,7 @@ class BlockRunPaidProviderProxyHandler {
         modelId: modelId,
         bodyBytes: bodyBytes,
         fingerprint: fingerprint,
+        turnLease: turnLease,
       );
     } finally {
       _inFlightFingerprints.remove(fingerprint);
@@ -133,6 +134,7 @@ class BlockRunPaidProviderProxyHandler {
     required String modelId,
     required List<int> bodyBytes,
     required String fingerprint,
+    required PaidProviderTurnLease turnLease,
   }) async {
     final initial = await _httpClient.send(
       request,
@@ -309,10 +311,19 @@ class BlockRunPaidProviderProxyHandler {
         source: PaymentApprovalSource.visibleUi,
       );
       claimed = _paymentApprovals.claimForSigning(ticket);
-      paymentHeader = await _signPaymentHeader(
-        claimed,
-        walletAddress: walletAddress,
+      _turnAuthorization.beginTransientProviderOperation(
+        leaseId: turnLease.leaseId,
       );
+      try {
+        paymentHeader = await _signPaymentHeader(
+          claimed,
+          walletAddress: walletAddress,
+        );
+      } finally {
+        _turnAuthorization.endTransientProviderOperation(
+          leaseId: turnLease.leaseId,
+        );
+      }
     } catch (error) {
       await _recordTerminalSafely(
         intentId: intent.intentId,
