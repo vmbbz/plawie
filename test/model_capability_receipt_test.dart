@@ -38,9 +38,9 @@ void main() {
     expect(glm.readinessLabel, 'Agent-ready');
     expect(glm.capabilityAssessmentId, isNotNull);
     expect(gemini.agentReady, isFalse);
-    expect(gemini.readinessLabel, 'Tool schema accepted');
-    expect(gemma.readinessLabel, 'Chat only');
-    expect(llama.readinessLabel, 'Provider advertises tools');
+    expect(gemini.readinessLabel, 'Tool schema accepted · loop unverified');
+    expect(gemma.readinessLabel, 'Chat only on this route');
+    expect(llama.readinessLabel, 'Provider says tools supported');
   });
 
   test('load-or-bundled always merges current capability evidence', () async {
@@ -123,7 +123,7 @@ void main() {
 
     expect(gemini.chatReadiness, ModelChatReadiness.verified);
     expect(gemini.toolReadiness, ModelToolReadiness.incompatible);
-    expect(gemini.readinessLabel, 'Chat only');
+    expect(gemini.readinessLabel, 'Chat only on this route');
     expect(glm.agentReady, isTrue);
     expect(receipt?.source, ModelCapabilityReceiptSource.explicitProbe);
     expect(receipt?.sanitizedFailureKind, 'explicitProbeContractFailed');
@@ -154,7 +154,7 @@ void main() {
         .singleWhere((model) => model.id == 'venice/llama-3');
     expect(llama.liveAvailable, isTrue);
     expect(llama.toolReadiness, ModelToolReadiness.incompatible);
-    expect(llama.readinessLabel, 'Chat only');
+    expect(llama.readinessLabel, 'Chat only on this route');
   });
 
   test('newer tool failure overrides an older explicit pass', () async {

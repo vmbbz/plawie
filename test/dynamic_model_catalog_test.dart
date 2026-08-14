@@ -193,11 +193,11 @@ void main() {
     );
 
     expect(shipped.agentReady, isFalse);
-    expect(shipped.readinessLabel, 'Provider advertises tools');
+    expect(shipped.readinessLabel, 'Provider says tools supported');
     expect(verified.agentReady, isTrue);
     expect(verified.readinessLabel, 'Agent-ready');
     expect(advertised.agentReady, isFalse);
-    expect(advertised.readinessLabel, 'Provider advertises tools');
+    expect(advertised.readinessLabel, 'Provider says tools supported');
   });
 
   test('error receipts redact length and never break on an expired cache',

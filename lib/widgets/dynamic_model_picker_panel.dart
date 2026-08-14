@@ -8,6 +8,10 @@ typedef WalletProviderBalanceRefresh
   String providerId,
 );
 
+typedef DynamicModelCatalogRefresh = Future<DynamicCatalogSnapshot> Function(
+  String providerId,
+);
+
 class DynamicModelPickerLocalOption {
   const DynamicModelPickerLocalOption({
     required this.id,
@@ -38,6 +42,7 @@ class DynamicModelPickerPanel extends StatefulWidget {
     this.autofocusSearch = false,
     this.autoRefreshWalletBalances = false,
     this.onRefreshProviderBalance,
+    this.onRefreshModels,
     this.onTestTools,
   });
 
@@ -53,6 +58,7 @@ class DynamicModelPickerPanel extends StatefulWidget {
   final bool autofocusSearch;
   final bool autoRefreshWalletBalances;
   final WalletProviderBalanceRefresh? onRefreshProviderBalance;
+  final DynamicModelCatalogRefresh? onRefreshModels;
   final ValueChanged<DynamicModelRecord>? onTestTools;
 
   @override
@@ -63,15 +69,20 @@ class DynamicModelPickerPanel extends StatefulWidget {
 class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
   String _query = '';
   late final Set<String> _expanded;
+  late DynamicCatalogSnapshot _snapshot;
   late Map<String, WalletFundedProviderReadiness> _walletReadiness;
   final Set<String> _busyProviders = <String>{};
+  final Set<String> _busyCatalogProviders = <String>{};
   String? _balanceStatus;
+  String? _catalogStatus;
+  bool _showAllModels = false;
   bool _autoRefreshScheduled = false;
 
   @override
   void initState() {
     super.initState();
     _expanded = <String>{...widget.initiallyExpandedProviderIds};
+    _snapshot = widget.snapshot;
     _walletReadiness = <String, WalletFundedProviderReadiness>{
       ...widget.walletReadiness,
     };
@@ -86,6 +97,9 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
         ...widget.walletReadiness,
       };
       _scheduleAutomaticBalanceRefresh();
+    }
+    if (oldWidget.snapshot != widget.snapshot) {
+      _snapshot = widget.snapshot;
     }
   }
 
@@ -116,14 +130,20 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final normalizedQuery = _query.trim().toLowerCase();
-    final groups = widget.snapshot.providers
+    final groups = _snapshot.providers
         .map((provider) {
+          final candidateModels = (_showAllModels
+                  ? provider.models
+                  : provider.models
+                      .where((model) => model.supportsToolCalls == true))
+              .toList()
+            ..sort(_compareModels);
           final providerMatches = normalizedQuery.isEmpty ||
               provider.label.toLowerCase().contains(normalizedQuery) ||
               provider.id.toLowerCase().contains(normalizedQuery);
           final models = providerMatches
-              ? provider.models
-              : provider.models
+              ? candidateModels
+              : candidateModels
                   .where((model) =>
                       model.label.toLowerCase().contains(normalizedQuery) ||
                       model.id.toLowerCase().contains(normalizedQuery))
@@ -142,7 +162,7 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
           widget.onLocalSelected?.call(modelId);
           return;
         }
-        for (final provider in widget.snapshot.providers) {
+        for (final provider in _snapshot.providers) {
           for (final model in provider.models) {
             if (model.id == modelId) {
               final readiness = _walletReadiness[provider.id];
@@ -176,13 +196,52 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
           if (_showsStaleWarning) ...[
             const SizedBox(height: 8),
             Text(
-              widget.snapshot.state == DynamicCatalogSnapshotState.stale
+              _snapshot.state == DynamicCatalogSnapshotState.stale
                   ? 'Showing cached provider metadata'
                   : 'Provider refresh failed · showing the last usable catalog',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: Colors.amber,
                 fontWeight: FontWeight.w600,
               ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              FilterChip(
+                key: const Key('model-filter-agent'),
+                label: const Text('Agent candidates'),
+                selected: !_showAllModels,
+                onSelected: (selected) {
+                  if (selected) setState(() => _showAllModels = false);
+                },
+              ),
+              FilterChip(
+                key: const Key('model-filter-all'),
+                label: const Text('All chat models'),
+                selected: _showAllModels,
+                onSelected: (selected) {
+                  if (selected) setState(() => _showAllModels = true);
+                },
+              ),
+              Text(
+                _showAllModels
+                    ? 'Every live chat route'
+                    : 'Routes reporting tool support; verification is separate',
+                style: theme.textTheme.labelSmall,
+              ),
+            ],
+          ),
+          if (_catalogStatus != null) ...[
+            const SizedBox(height: 8),
+            _statusBanner(
+              context,
+              key: const Key('model-catalog-status'),
+              message: _catalogStatus!,
+              busy: _busyCatalogProviders.isNotEmpty,
             ),
           ],
           if (_balanceStatus != null) ...[
@@ -261,8 +320,8 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
   }
 
   bool get _showsStaleWarning =>
-      widget.snapshot.state == DynamicCatalogSnapshotState.stale ||
-      widget.snapshot.state == DynamicCatalogSnapshotState.error;
+      _snapshot.state == DynamicCatalogSnapshotState.stale ||
+      _snapshot.state == DynamicCatalogSnapshotState.error;
 
   Widget _providerGroup(
     BuildContext context,
@@ -301,9 +360,16 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
         ],
       ),
       subtitle: readiness == null
-          ? Text(
-              '${models.length} models · ${_connectionLabel(provider.connectionState)} · ${_catalogLabel(provider.catalogState)}',
-              style: Theme.of(context).textTheme.labelSmall,
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${models.length} models · ${_connectionLabel(provider.connectionState)} · ${_catalogLabel(provider)}',
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+                if (widget.onRefreshModels != null)
+                  _refreshModelsButton(provider),
+              ],
             )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -356,6 +422,8 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
                               )
                             : Text(readiness.primaryActionLabel),
                       ),
+                    if (widget.onRefreshModels != null)
+                      _refreshModelsButton(provider),
                   ],
                 ),
               ],
@@ -411,7 +479,11 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
                   ),
                   onPressed: () => widget.onTestTools!(model),
                   icon: const Icon(Icons.science_outlined, size: 16),
-                  label: const Text('Test tools'),
+                  label: Text(
+                    model.toolReadiness == ModelToolReadiness.incompatible
+                        ? 'Retest tools'
+                        : 'Verify tools',
+                  ),
                 )
               : !model.liveAvailable && model.deprecationDate != null
                   ? const Icon(Icons.event_busy_rounded,
@@ -448,7 +520,7 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
       return;
     }
     var label = providerId;
-    for (final provider in widget.snapshot.providers) {
+    for (final provider in _snapshot.providers) {
       if (provider.id == providerId) {
         label = provider.label;
         break;
@@ -490,6 +562,91 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
         setState(() => _busyProviders.remove(providerId));
       }
     }
+  }
+
+  Widget _refreshModelsButton(DynamicProviderRecord provider) {
+    final busy = _busyCatalogProviders.contains(provider.id);
+    return TextButton.icon(
+      key: Key('provider-refresh-models-${provider.id}'),
+      style: TextButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+      ),
+      onPressed: busy ? null : () => _refreshModels(provider),
+      icon: busy
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.refresh_rounded, size: 15),
+      label: Text(busy ? 'Refreshing…' : 'Refresh live models'),
+    );
+  }
+
+  Future<void> _refreshModels(DynamicProviderRecord provider) async {
+    final callback = widget.onRefreshModels;
+    if (callback == null || _busyCatalogProviders.contains(provider.id)) {
+      return;
+    }
+    setState(() {
+      _busyCatalogProviders.add(provider.id);
+      _catalogStatus = 'Refreshing ${provider.label} model metadata…';
+    });
+    try {
+      final refreshed = await callback(provider.id);
+      if (!mounted) return;
+      setState(() {
+        _snapshot = refreshed;
+        _catalogStatus =
+            '${provider.label} catalog refreshed. Provider metadata is current; verify tools before using Agent mode.';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _catalogStatus =
+            '${provider.label} catalog refresh failed. Showing the last usable catalog.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _busyCatalogProviders.remove(provider.id));
+      }
+    }
+  }
+
+  Widget _statusBanner(
+    BuildContext context, {
+    required Key key,
+    required String message,
+    required bool busy,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      key: key,
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.tealAccent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.tealAccent.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        children: [
+          if (busy) ...[
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+          ] else ...[
+            const Icon(Icons.info_outline_rounded, size: 16),
+            const SizedBox(width: 8),
+          ],
+          Expanded(child: Text(message, style: theme.textTheme.labelSmall)),
+        ],
+      ),
+    );
   }
 
   Widget _walletBadge(BuildContext context) {
@@ -534,10 +691,41 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
         DynamicProviderConnectionState.error => 'Connection error',
       };
 
-  String _catalogLabel(DynamicProviderCatalogState state) => switch (state) {
-        DynamicProviderCatalogState.fresh => 'Live catalog',
-        DynamicProviderCatalogState.stale => 'Cached catalog',
-        DynamicProviderCatalogState.offlineFallback => 'Offline fallback',
-        DynamicProviderCatalogState.unavailable => 'Catalog unavailable',
+  int _compareModels(DynamicModelRecord a, DynamicModelRecord b) {
+    final aCreated = a.providerCreatedAt;
+    final bCreated = b.providerCreatedAt;
+    if (aCreated != null && bCreated != null) {
+      final byDate = bCreated.compareTo(aCreated);
+      if (byDate != 0) return byDate;
+    } else if (aCreated != null) {
+      return -1;
+    } else if (bCreated != null) {
+      return 1;
+    }
+    final byReadiness = _toolReadinessRank(b.toolReadiness)
+        .compareTo(_toolReadinessRank(a.toolReadiness));
+    if (byReadiness != 0) return byReadiness;
+    return a.label.toLowerCase().compareTo(b.label.toLowerCase());
+  }
+
+  int _toolReadinessRank(ModelToolReadiness readiness) => switch (readiness) {
+        ModelToolReadiness.loopVerified => 4,
+        ModelToolReadiness.schemaAccepted => 3,
+        ModelToolReadiness.providerAdvertised => 2,
+        ModelToolReadiness.unknown => 1,
+        ModelToolReadiness.incompatible => 0,
       };
+
+  String _catalogLabel(DynamicProviderRecord provider) {
+    final base = switch (provider.catalogState) {
+      DynamicProviderCatalogState.fresh => 'Live catalog',
+      DynamicProviderCatalogState.stale => 'Cached catalog',
+      DynamicProviderCatalogState.offlineFallback => 'Offline fallback',
+      DynamicProviderCatalogState.unavailable => 'Catalog unavailable',
+    };
+    final refreshed = provider.lastRefreshedAt;
+    if (refreshed == null) return base;
+    final date = refreshed.toLocal().toIso8601String().split('T').first;
+    return '$base · $date';
+  }
 }

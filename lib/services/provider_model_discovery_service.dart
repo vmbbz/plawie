@@ -480,6 +480,9 @@ class ProviderModelDiscoveryService {
       ...uri.queryParameters,
       if (spec.auth == ProviderDiscoveryAuth.googleQueryKey) 'key': apiKey,
       if (pageToken != null) 'pageToken': pageToken,
+      // Venice documents `type=text`; tool support is not a documented server
+      // filter, so supportsFunctionCalling is still evaluated client-side.
+      if (spec.format == ProviderDiscoveryFormat.veniceModels) 'type': 'text',
     };
     return query.isEmpty ? uri : uri.replace(queryParameters: query);
   }
@@ -603,6 +606,7 @@ class ProviderModelDiscoveryService {
         modelSpec['maxOutputTokens'],
         (raw['top_provider'] as Map?)?['max_completion_tokens'],
       ]),
+      providerCreatedAt: _providerCreatedAt(raw, modelSpec),
       deprecationDate: deprecationDate,
       recommended: staticModel?.recommended ?? false,
       liveAvailable: !deprecated,
@@ -630,6 +634,34 @@ class ProviderModelDiscoveryService {
               int.parse(dateOnly.group(3)!),
             );
       if (parsed != null) return parsed.toUtc();
+    }
+    return null;
+  }
+
+  DateTime? _providerCreatedAt(
+    Map<dynamic, dynamic> raw,
+    Map<dynamic, dynamic> modelSpec,
+  ) {
+    for (final value in <dynamic>[
+      raw['created'],
+      raw['created_at'],
+      raw['createdAt'],
+      modelSpec['created'],
+      modelSpec['created_at'],
+    ]) {
+      if (value is num && value > 0) {
+        final milliseconds = value > 100000000000
+            ? value.toInt()
+            : (value * Duration.millisecondsPerSecond).toInt();
+        return DateTime.fromMillisecondsSinceEpoch(
+          milliseconds,
+          isUtc: true,
+        );
+      }
+      if (value is String && value.trim().isNotEmpty) {
+        final parsed = DateTime.tryParse(value.trim());
+        if (parsed != null) return parsed.toUtc();
+      }
     }
     return null;
   }

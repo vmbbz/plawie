@@ -39,6 +39,7 @@ import 'model_capability_receipt.dart';
 import 'native_gateway_plugin_policy.dart';
 import 'model_tool_compatibility_probe.dart';
 import 'provider_compatible_fallback.dart';
+import 'provider_model_discovery_service.dart';
 
 class _FastCloudRoute {
   final String provider;
@@ -225,6 +226,27 @@ class GatewayService {
         _approveNodeCommandPairingViaRpcForNode;
     OpenClawCommandService.registerActiveOwnerReloadHandler(
       applyActiveOwnerConfigChange,
+    );
+  }
+
+  /// Refreshes one provider's live model catalog using the same credential
+  /// source as Gateway configuration. Credentials are passed only to the
+  /// discovery service and are never returned to the picker or persisted by
+  /// this method.
+  Future<DynamicCatalogSnapshot> refreshProviderModelCatalog(
+    String provider,
+  ) async {
+    final providerId = ModelProviderCatalog.normalizeProvider(provider);
+    final spec = ProviderModelDiscoveryService.specs[providerId];
+    if (spec == null) {
+      throw StateError('Model discovery is not available for $providerId.');
+    }
+    final config = await _readConfig();
+    final apiKey =
+        spec.requiresApiKey ? _extractProviderApiKey(config, providerId) : null;
+    return ProviderModelDiscoveryService().refreshProvider(
+      providerId,
+      apiKey: apiKey,
     );
   }
 

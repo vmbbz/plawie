@@ -37,8 +37,9 @@ selection identity, tool-loop validation, phase-aware errors, and safe fallback
   provider hooks. It is exact-provider/model-family scoped, version bounded,
   SHA-256 verified during Android provisioning, and never fabricates opaque
   thought signatures.
-- Complete: the model picker exposes an explicit foreground `Test tools`
-  action for unverified routes. The test uses the existing read-only
+- Complete: the model picker exposes an explicit foreground `Verify tools`
+  action for unverified routes and `Retest tools` for a quarantined route. The
+  test uses the existing read-only
   `session_status` tool, requires exactly one bounded call and result, an exact
   final marker, and a terminal Gateway frame, then stores an exact-route
   `explicitProbe` receipt. It never runs during setup, startup, catalog
@@ -68,7 +69,7 @@ selection identity, tool-loop validation, phase-aware errors, and safe fallback
   and Gemma routes were tested through the foreground UI on the installed APK.
   Gemini produced the requested final marker but made zero tool calls, while
   Gemma was rejected at provider generation before any tool call or result.
-  Both are therefore persisted as exact-route `Chat only` receipts. Venice GLM
+  Both are therefore persisted as exact-route `Chat only on this route` receipts. Venice GLM
   5.2 remains independently `Agent-ready`; no failure crossed a model boundary.
 
 Plawie must stop treating a provider's generic function-calling flag as proof
@@ -172,7 +173,7 @@ logs, preferences, receipts, model context, or analytics.
 Google documents native Gemma 4 function calling and a specific tool-call/tool-
 response chat template. Therefore the honest current label is:
 
-> Provider advertises tools; this Plawie/OpenClaw route has not passed the full
+> Provider says tools supported; this Plawie/OpenClaw route has not passed the full
 > tool loop.
 
 Plawie must not claim that Gemma 4 lacks tool support. It must quarantine the
@@ -240,6 +241,39 @@ Groq schedules both for shutdown on **2026-08-16** for free/developer tiers and
 recommends current GPT-OSS or Qwen replacements. This is not a Venice bug. It
 requires a separate catalog-freshness hotfix and tests so the Venice change does
 not become a broad provider refactor.
+
+### 4.4 Catalog freshness and picker labels
+
+The picker treats a provider `/models` response as the source of truth whenever
+the user explicitly refreshes that provider. The bundled catalog remains an
+offline-safe fallback only; it is not presented as a current provider list.
+The last usable snapshot is retained for a 24-hour freshness window, and the
+picker shows the provider refresh date when one is available. Provider-reported
+model creation timestamps are retained as non-secret metadata and order live
+results newest-first. They never alter context windows, output limits, or
+Gateway request payloads.
+
+The model surface has two explicit views:
+
+- **Agent candidates** (default): live models whose provider metadata reports
+  tool support. This is a narrowing filter, not proof of compatibility.
+- **All chat models**: every live chat route, including routes that failed or
+  do not report tool support.
+
+The status labels are evidence-based:
+
+| Picker label | Meaning |
+| --- | --- |
+| `Agent-ready` | This exact provider/model route completed Plawie's full tool loop. |
+| `Provider says tools supported` | The provider advertised function/tool support; Plawie has not completed the loop. |
+| `Tool schema accepted · loop unverified` | A schema was accepted, but result replay/final response is not proven. |
+| `Chat only on this route` | This exact route failed or explicitly cannot run Plawie tools; ordinary chat may remain usable. |
+| `Tool support not reported` | The live catalog did not provide enough evidence to classify it as a tool candidate. |
+
+`Verify tools` is always a foreground action. It does not run during catalog
+refresh, setup, or background startup, and stores an exact-route receipt only
+after the bounded tool loop succeeds. Refreshing a catalog and verifying a
+model are separate operations and are not conflated in the UI.
 
 ## 5. Current Plawie architecture audit
 
@@ -773,7 +807,7 @@ wallet state. The tested debug APK had SHA-256
   any tool call or result. The app displayed the exact route and stage, then
   persisted `chatEvidence=none`, `toolEvidence=incompatible`, source
   `explicitProbe`, failure `schemaRejected`.
-- Reopening the catalog showed both failing routes as `Chat only` with their
+- Reopening the catalog showed both failing routes as `Chat only on this route` with their
   route-specific reason and an explicit retest action. Venice GLM 5.2 still
   showed `Agent-ready` from its complete physical-device tool-loop receipt.
 - No tool retry, automatic model switch, cross-provider fallback, wallet

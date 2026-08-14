@@ -17,9 +17,9 @@ import '../services/bridge/bridge_models.dart';
 import '../services/dynamic_model_catalog.dart';
 import '../services/native_bridge.dart';
 import '../services/paid_provider_gateway_coordinator.dart';
+import '../services/gateway_service.dart';
 import '../services/preferences_service.dart';
 import '../services/provider_balance_service.dart';
-import '../services/provider_model_discovery_service.dart';
 import '../services/provider_top_up_funding_coordinator.dart';
 import '../services/wallet_funded_provider_readiness.dart';
 import '../services/x402_payment_service.dart';
@@ -983,7 +983,7 @@ class _BaseScreenState extends State<BaseScreen> {
     try {
       if (readiness.primaryAction == WalletFundedProviderAction.refreshModels) {
         final refreshed =
-            await ProviderModelDiscoveryService().refreshProvider(selected.id);
+            await GatewayService().refreshProviderModelCatalog(selected.id);
         _modelCatalog = await DynamicModelCatalogRepository().assess(
           refreshed.withEffectiveState(DateTime.now()),
         );

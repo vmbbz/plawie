@@ -115,7 +115,7 @@ void main() {
     for (final entry in <(String, Uri)>[
       ('POST', Uri.parse('http://api.venice.ai/api/v1/chat/completions')),
       ('POST', Uri.parse('https://evil.example/api/v1/chat/completions')),
-      ('GET', Uri.parse('https://api.venice.ai/api/v1/models?type=text')),
+      ('GET', Uri.parse('https://api.venice.ai/api/v1/models?type=image')),
       ('PUT', Uri.parse('https://api.venice.ai/api/v1/chat/completions')),
     ]) {
       await expectLater(

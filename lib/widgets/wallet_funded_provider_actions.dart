@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/gateway_provider.dart';
 import '../screens/base_screen.dart';
 import '../services/preferences_service.dart';
-import '../services/provider_model_discovery_service.dart';
+import '../services/gateway_service.dart';
 import '../services/wallet_funded_provider_readiness.dart';
 
 /// Executes only an action the user explicitly tapped in a wallet-funded
@@ -22,7 +22,7 @@ Future<void> runWalletFundedProviderAction(
       const SnackBar(content: Text('Refreshing provider models…')),
     );
     try {
-      await ProviderModelDiscoveryService().refreshProvider(providerId);
+      await GatewayService().refreshProviderModelCatalog(providerId);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

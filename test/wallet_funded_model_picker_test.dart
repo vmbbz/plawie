@@ -151,7 +151,8 @@ void main() {
       readiness: const <String, WalletFundedProviderReadiness>{},
     ));
 
-    expect(find.textContaining('Provider advertises tools'), findsOneWidget);
+    expect(
+        find.textContaining('Provider says tools supported'), findsOneWidget);
     expect(find.textContaining('Agent-ready'), findsNothing);
   });
 
@@ -168,6 +169,89 @@ void main() {
         .tap(find.byKey(const Key('model-tool-test-openrouter/model-1')));
     await tester.pump();
     expect(tested, 'openrouter/model-1');
+  });
+
+  testWidgets('agent filter hides chat-only models until all chat is selected',
+      (tester) async {
+    final provider = DynamicProviderRecord(
+      id: 'openrouter',
+      label: 'OpenRouter',
+      authenticationMode: ProviderAuthenticationMode.apiKey,
+      connectionState: DynamicProviderConnectionState.connected,
+      models: <DynamicModelRecord>[
+        const DynamicModelRecord(
+          id: 'openrouter/tool-model',
+          providerId: 'openrouter',
+          label: 'Tool Model',
+          route: ModelRouteKind.cloud,
+          supportsToolCalls: true,
+          toolReadiness: ModelToolReadiness.providerAdvertised,
+        ),
+        const DynamicModelRecord(
+          id: 'openrouter/chat-model',
+          providerId: 'openrouter',
+          label: 'Chat Model',
+          route: ModelRouteKind.cloud,
+          supportsToolCalls: false,
+          toolReadiness: ModelToolReadiness.incompatible,
+        ),
+      ],
+    );
+    await tester.pumpWidget(_host(
+      snapshot: _snapshot(<DynamicProviderRecord>[provider]),
+      readiness: const <String, WalletFundedProviderReadiness>{},
+    ));
+
+    expect(find.byKey(const Key('model-option-openrouter/tool-model')),
+        findsOneWidget);
+    expect(find.byKey(const Key('model-option-openrouter/chat-model')),
+        findsNothing);
+    await tester.tap(find.byKey(const Key('model-filter-all')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('model-option-openrouter/chat-model')),
+        findsOneWidget);
+    expect(find.textContaining('Chat only on this route'), findsOneWidget);
+  });
+
+  testWidgets('provider refresh replaces the displayed catalog',
+      (tester) async {
+    var refreshCount = 0;
+    await tester.pumpWidget(_host(
+      snapshot: _snapshot(<DynamicProviderRecord>[_provider('openrouter')]),
+      readiness: const <String, WalletFundedProviderReadiness>{},
+      onRefreshModels: (providerId) async {
+        refreshCount += 1;
+        expect(providerId, 'openrouter');
+        return _snapshot(<DynamicProviderRecord>[
+          DynamicProviderRecord(
+            id: 'openrouter',
+            label: 'OpenRouter',
+            authenticationMode: ProviderAuthenticationMode.apiKey,
+            connectionState: DynamicProviderConnectionState.connected,
+            catalogState: DynamicProviderCatalogState.fresh,
+            lastRefreshedAt: DateTime.utc(2026, 8, 14),
+            models: const <DynamicModelRecord>[
+              DynamicModelRecord(
+                id: 'openrouter/model-2',
+                providerId: 'openrouter',
+                label: 'Model Two',
+                route: ModelRouteKind.cloud,
+                supportsToolCalls: true,
+                toolReadiness: ModelToolReadiness.providerAdvertised,
+              ),
+            ],
+          ),
+        ]);
+      },
+    ));
+
+    await tester
+        .tap(find.byKey(const Key('provider-refresh-models-openrouter')));
+    await tester.pumpAndSettle();
+    expect(refreshCount, 1);
+    expect(find.byKey(const Key('model-option-openrouter/model-2')),
+        findsOneWidget);
+    expect(find.textContaining('catalog refreshed'), findsOneWidget);
   });
 
   testWidgets('search filters grouped providers and preserves stale warning',
@@ -219,6 +303,8 @@ void main() {
       onSelected: (value) => selected = value.id,
     ));
 
+    await tester.tap(find.byKey(const Key('model-filter-all')));
+    await tester.pump();
     expect(find.text('Current models have not been loaded.'), findsOneWidget);
     await tester
         .tap(find.byKey(const Key('model-option-venice/catalog-unavailable')));
@@ -260,6 +346,7 @@ Widget _host({
   void Function(String, WalletFundedProviderAction)? onAction,
   bool autoRefreshWalletBalances = false,
   WalletProviderBalanceRefresh? onRefreshBalance,
+  DynamicModelCatalogRefresh? onRefreshModels,
   ValueChanged<DynamicModelRecord>? onTestTools,
 }) {
   return MaterialApp(
@@ -277,6 +364,7 @@ Widget _host({
           onProviderAction: onAction ?? (_, __) {},
           autoRefreshWalletBalances: autoRefreshWalletBalances,
           onRefreshProviderBalance: onRefreshBalance,
+          onRefreshModels: onRefreshModels,
           onTestTools: onTestTools,
         ),
       ),

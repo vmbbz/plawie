@@ -101,11 +101,14 @@ class VeniceWalletAuthService {
   }
 
   void _validateRoute(String method, Uri uri, String address) {
+    final modelsTextQuery = uri.path == '/api/v1/models' &&
+        uri.queryParameters.length == 1 &&
+        uri.queryParameters['type'] == 'text';
     if (uri.scheme != 'https' ||
         uri.host != 'api.venice.ai' ||
         (uri.hasPort && uri.port != 443) ||
         uri.userInfo.isNotEmpty ||
-        uri.hasQuery ||
+        (uri.hasQuery && !modelsTextQuery) ||
         uri.hasFragment) {
       throw const VeniceWalletAuthException(
         'route_not_allowed',

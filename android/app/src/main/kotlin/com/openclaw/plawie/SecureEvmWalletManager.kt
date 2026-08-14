@@ -1602,13 +1602,15 @@ internal object VeniceProviderIdentityPolicy {
         val method = arguments["method"]?.toString()?.trim() ?: ""
         val uriText = arguments["uri"]?.toString()?.trim() ?: ""
         val uri = URI(uriText)
+        val modelsTextQuery =
+            uri.rawPath == "/api/v1/models" && uri.rawQuery == "type=text"
         require(
             !uri.isOpaque &&
                 uri.scheme.equals("https", ignoreCase = true) &&
                 uri.host.equals("api.venice.ai", ignoreCase = true) &&
                 (uri.port == -1 || uri.port == 443) &&
                 uri.userInfo == null &&
-                uri.rawQuery == null &&
+                (uri.rawQuery == null || modelsTextQuery) &&
                 uri.rawFragment == null
         ) { "Venice identity URI is not allowlisted." }
 

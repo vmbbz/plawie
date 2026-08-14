@@ -38,6 +38,7 @@ void main() {
           <String, dynamic>{
             'id': 'openai/gpt-5.4',
             'name': 'GPT 5.4',
+            'created': DateTime.utc(2026, 8, 1).millisecondsSinceEpoch ~/ 1000,
             'description': 'Reasoning model',
             'context_length': 128000,
             'top_provider': <String, dynamic>{
@@ -79,6 +80,7 @@ void main() {
     expect(model.supportsVision, isTrue);
     expect(model.advertisedContextWindow, 128000);
     expect(model.advertisedMaxOutputTokens, 16384);
+    expect(model.providerCreatedAt, DateTime.utc(2026, 8, 1));
     expect(provider.connectionState, DynamicProviderConnectionState.connected);
     expect(provider.etag, 'router-v1');
     expect(snapshot.encode(), isNot(contains('test-key')));
@@ -141,7 +143,10 @@ void main() {
       },
     );
     final client = _FakeClient((request) async {
-      expect(request.url, Uri.parse('https://api.venice.ai/api/v1/models'));
+      expect(
+        request.url,
+        Uri.parse('https://api.venice.ai/api/v1/models?type=text'),
+      );
       expect(request.followRedirects, isFalse);
       expect(request.maxRedirects, 0);
       expect(request.headers['x-sign-in-with-x'], isNotEmpty);

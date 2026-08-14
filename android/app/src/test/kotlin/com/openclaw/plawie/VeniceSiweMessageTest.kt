@@ -13,6 +13,7 @@ class VeniceSiweMessageTest {
     fun acceptsOnlyTheClosedVeniceProviderRouteTable() {
         val cases = listOf(
             "GET" to "https://api.venice.ai/api/v1/models",
+            "GET" to "https://api.venice.ai/api/v1/models?type=text",
             "POST" to "https://api.venice.ai/api/v1/chat/completions",
             "GET" to "https://api.venice.ai/api/v1/x402/balance/$wallet",
         )
@@ -77,7 +78,7 @@ Expiration Time: 2026-08-06T12:05:00Z""",
             "GET" to "https://api.venice.ai.evil.example/api/v1/models",
             "GET" to "https://user@api.venice.ai/api/v1/models",
             "GET" to "https://api.venice.ai:444/api/v1/models",
-            "GET" to "https://api.venice.ai/api/v1/models?type=text",
+            "GET" to "https://api.venice.ai/api/v1/models?type=image",
             "GET" to "https://api.venice.ai/api/v1/models#fragment",
             "GET" to "https://api.venice.ai/api/v1/models/extra",
             "POST" to "https://api.venice.ai/api/v1/models",

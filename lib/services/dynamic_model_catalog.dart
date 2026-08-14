@@ -78,6 +78,7 @@ class DynamicModelRecord {
     this.toolReadiness = ModelToolReadiness.unknown,
     this.advertisedContextWindow,
     this.advertisedMaxOutputTokens,
+    this.providerCreatedAt,
     this.deprecationDate,
     this.replacementModelId,
     this.recommended = false,
@@ -102,6 +103,10 @@ class DynamicModelRecord {
   final ModelToolReadiness toolReadiness;
   final int? advertisedContextWindow;
   final int? advertisedMaxOutputTokens;
+
+  /// Provider-reported model creation timestamp. This is display/sort
+  /// metadata only and never changes request context or token budgets.
+  final DateTime? providerCreatedAt;
   final DateTime? deprecationDate;
   final String? replacementModelId;
   final bool recommended;
@@ -123,11 +128,13 @@ class DynamicModelRecord {
     }
     return switch (toolReadiness) {
       ModelToolReadiness.loopVerified => 'Agent-ready',
-      ModelToolReadiness.schemaAccepted => 'Tool schema accepted',
-      ModelToolReadiness.providerAdvertised => 'Provider advertises tools',
-      ModelToolReadiness.incompatible => 'Chat only',
-      ModelToolReadiness.unknown =>
-        supportsToolCalls == false ? 'Chat only' : 'Tool support unknown',
+      ModelToolReadiness.schemaAccepted =>
+        'Tool schema accepted · loop unverified',
+      ModelToolReadiness.providerAdvertised => 'Provider says tools supported',
+      ModelToolReadiness.incompatible => 'Chat only on this route',
+      ModelToolReadiness.unknown => supportsToolCalls == false
+          ? 'Chat only on this route'
+          : 'Tool support not reported',
     };
   }
 
@@ -161,6 +168,7 @@ class DynamicModelRecord {
       toolReadiness: receiptTools,
       advertisedContextWindow: advertisedContextWindow,
       advertisedMaxOutputTokens: advertisedMaxOutputTokens,
+      providerCreatedAt: providerCreatedAt,
       deprecationDate: deprecationDate,
       replacementModelId: replacementModelId,
       recommended: recommended,
@@ -269,6 +277,7 @@ class DynamicModelRecord {
           _optionalPositiveInt(raw, 'advertisedContextWindow'),
       advertisedMaxOutputTokens:
           _optionalPositiveInt(raw, 'advertisedMaxOutputTokens'),
+      providerCreatedAt: _optionalDateTime(raw, 'providerCreatedAt'),
       deprecationDate: _optionalDateTime(raw, 'deprecationDate'),
       replacementModelId: _optionalString(raw, 'replacementModelId'),
       recommended: raw['recommended'] == true,
@@ -296,6 +305,8 @@ class DynamicModelRecord {
           'advertisedContextWindow': advertisedContextWindow,
         if (advertisedMaxOutputTokens != null)
           'advertisedMaxOutputTokens': advertisedMaxOutputTokens,
+        if (providerCreatedAt != null)
+          'providerCreatedAt': providerCreatedAt!.toUtc().toIso8601String(),
         if (deprecationDate != null)
           'deprecationDate': deprecationDate!.toUtc().toIso8601String(),
         if (replacementModelId != null)

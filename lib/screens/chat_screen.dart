@@ -141,9 +141,11 @@ class _ChatScreenState extends State<ChatScreen>
   String? _pendingVideoBase64; // base64 of recorded clip waiting to be sent
   bool _isRecordingVideo = false;
 
-  // Static cloud model list — augmented at runtime with gateway agents
-  final List<String> _availableModels =
-      ModelProviderCatalog.cloudModelIds.toList();
+  // Compact quick-menu projection of the cached live catalog. The full
+  // searchable catalog remains available through Browse provider models.
+  List<DynamicModelRecord> _availableDynamicModels =
+      const <DynamicModelRecord>[];
+  DynamicCatalogSnapshot? _availableDynamicCatalog;
 
   // Dynamic agents fetched from the gateway
   List<AgentInfo> _dynamicAgents = [];
@@ -268,9 +270,9 @@ class _ChatScreenState extends State<ChatScreen>
           return;
         }
         // Trust the persisted model selection. The previous check against
-        // _availableModels caused the user's choice to be silently dropped
-        // when the static list hadn't refreshed — especially after a gateway
-        // restart. Only override for local models that aren't ready.
+        // A stale catalog must never erase the user's persisted selection,
+        // especially after a Gateway restart. Only override local models that
+        // are not ready.
         if (!ModelProviderCatalog.isDirectLocalModelId(canonical) ||
             (ModelProviderCatalog.isDirectLocalModelId(canonical) &&
                 LocalLlmService().state.status == LocalLlmStatus.ready)) {
@@ -643,6 +645,8 @@ class _ChatScreenState extends State<ChatScreen>
   void _loadPreferences() async {
     final prefs = PreferencesService();
     await prefs.init();
+    final cachedCatalog = await DynamicModelCatalogRepository().loadOrBundled();
+    final quickModels = _quickModelsForMenu(cachedCatalog);
     final storedConfigured = prefs.configuredModel;
     final localModeEnabled = prefs.localChatModeEnabled;
     final canonicalConfigured = storedConfigured == null
@@ -656,6 +660,8 @@ class _ChatScreenState extends State<ChatScreen>
     }
     if (mounted) {
       setState(() {
+        _availableDynamicCatalog = cachedCatalog;
+        _availableDynamicModels = quickModels;
         _agentName = prefs.agentName;
         _selectedAvatar = prefs.selectedAvatar;
         _localChatModeEnabled = localModeEnabled;
@@ -684,8 +690,8 @@ class _ChatScreenState extends State<ChatScreen>
 
         // Load the user's configured model (from setup or settings).
         // The persisted configuredModel is the single source of truth —
-        // trust it over the static _availableModels list, which may not be
-        // populated yet during a cold restart.
+        // trust it over the compact catalog menu, which may still be loading
+        // during a cold restart.
         final configured = canonicalConfigured;
         if (configured != null && configured.isNotEmpty) {
           final isLocal = ModelProviderCatalog.isDirectLocalModelId(configured);
@@ -700,8 +706,8 @@ class _ChatScreenState extends State<ChatScreen>
           } else {
             // Trust the persisted model — it was explicitly saved by the
             // user via the settings/chat dropdown. Do not fall back to
-            // _cloudFallbackModel just because _availableModels hasn't
-            // refreshed yet.
+            // _cloudFallbackModel just because the catalog has not refreshed
+            // yet.
             _selectedModelSelection =
                 storedSelection?.matchesModelId(configured) == true
                     ? storedSelection!
@@ -714,6 +720,45 @@ class _ChatScreenState extends State<ChatScreen>
       });
     }
   }
+
+  List<DynamicModelRecord> _quickModelsForMenu(
+    DynamicCatalogSnapshot catalog,
+  ) {
+    final quick = <DynamicModelRecord>[];
+    for (final provider in catalog.providers) {
+      final models = provider.models
+          .where(
+              (model) => model.liveAvailable && model.supportsToolCalls == true)
+          .toList();
+      models.sort((a, b) {
+        if (a.providerCreatedAt != null && b.providerCreatedAt != null) {
+          final byDate = b.providerCreatedAt!.compareTo(a.providerCreatedAt!);
+          if (byDate != 0) return byDate;
+        } else if (a.providerCreatedAt != null) {
+          return -1;
+        } else if (b.providerCreatedAt != null) {
+          return 1;
+        }
+        final readiness = _toolReadinessRank(b.toolReadiness)
+            .compareTo(_toolReadinessRank(a.toolReadiness));
+        if (readiness != 0) return readiness;
+        if (a.recommended != b.recommended) {
+          return a.recommended ? -1 : 1;
+        }
+        return a.label.toLowerCase().compareTo(b.label.toLowerCase());
+      });
+      quick.addAll(models.take(3));
+    }
+    return quick;
+  }
+
+  int _toolReadinessRank(ModelToolReadiness readiness) => switch (readiness) {
+        ModelToolReadiness.loopVerified => 4,
+        ModelToolReadiness.schemaAccepted => 3,
+        ModelToolReadiness.providerAdvertised => 2,
+        ModelToolReadiness.unknown => 1,
+        ModelToolReadiness.incompatible => 0,
+      };
 
   void _addDiagnosticLog(String log) {
     if (!mounted) return;
@@ -2358,9 +2403,9 @@ class _ChatScreenState extends State<ChatScreen>
 
   Future<void> _showDynamicModelPicker() async {
     const toolTestSelectionPrefix = 'plawie-tool-test::';
-    final snapshot = await DynamicModelCatalogRepository().loadOrBundled();
-    final readiness =
-        await WalletFundedProviderReadinessService().inspect(snapshot);
+    var latestSnapshot = await DynamicModelCatalogRepository().loadOrBundled();
+    var latestReadiness =
+        await WalletFundedProviderReadinessService().inspect(latestSnapshot);
     if (!mounted) return;
 
     final selection = await showModalBottomSheet<String>(
@@ -2404,14 +2449,33 @@ class _ChatScreenState extends State<ChatScreen>
                 const SizedBox(height: 10),
                 Expanded(
                   child: DynamicModelPickerPanel(
-                    snapshot: snapshot,
+                    snapshot: latestSnapshot,
                     currentModelId: _selectedModel,
-                    walletReadiness: readiness,
+                    walletReadiness: latestReadiness,
                     autoRefreshWalletBalances: true,
                     onRefreshProviderBalance: (providerId) async {
                       await ProviderBalanceService.instance.refresh(providerId);
-                      return WalletFundedProviderReadinessService()
-                          .inspect(snapshot);
+                      latestReadiness =
+                          await WalletFundedProviderReadinessService()
+                              .inspect(latestSnapshot);
+                      return latestReadiness;
+                    },
+                    onRefreshModels: (providerId) async {
+                      final refreshed = await GatewayService()
+                          .refreshProviderModelCatalog(providerId);
+                      latestSnapshot = await DynamicModelCatalogRepository()
+                          .assess(refreshed.withEffectiveState(DateTime.now()));
+                      latestReadiness =
+                          await WalletFundedProviderReadinessService()
+                              .inspect(latestSnapshot);
+                      if (mounted) {
+                        setState(() {
+                          _availableDynamicCatalog = latestSnapshot;
+                          _availableDynamicModels =
+                              _quickModelsForMenu(latestSnapshot);
+                        });
+                      }
+                      return latestSnapshot;
                     },
                     onSelected: (model) =>
                         Navigator.pop(sheetContext, model.id),
@@ -2443,7 +2507,7 @@ class _ChatScreenState extends State<ChatScreen>
         ? selection.substring(toolTestSelectionPrefix.length)
         : selection;
     final dynamicModel = <DynamicModelRecord>[
-      for (final provider in snapshot.providers) ...provider.models,
+      for (final provider in latestSnapshot.providers) ...provider.models,
     ].firstWhere((model) => model.id == selectedId);
     if (testTools) {
       await _runModelToolCompatibilityTest(dynamicModel);
@@ -2945,16 +3009,16 @@ class _ChatScreenState extends State<ChatScreen>
             ],
           ),
         ),
-        ..._availableModels.map((model) => PopupMenuItem<String>(
-              value: 'model:$model',
+        ..._availableDynamicModels.map((model) => PopupMenuItem<String>(
+              value: 'dynamic:${model.id}',
               height: 44,
               child: Row(
                 children: [
                   Icon(
-                    model == _selectedModel
+                    model.id == _selectedModel
                         ? Icons.check_circle
                         : Icons.circle_outlined,
-                    color: model == _selectedModel
+                    color: model.id == _selectedModel
                         ? Colors.purpleAccent
                         : Colors.white38,
                     size: 18,
@@ -2966,20 +3030,20 @@ class _ChatScreenState extends State<ChatScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          ModelProviderCatalog.labelForModel(model),
+                          model.label,
                           style: TextStyle(
-                            color: model == _selectedModel
+                            color: model.id == _selectedModel
                                 ? Colors.white
                                 : Colors.white70,
                             fontSize: 13,
-                            fontWeight: model == _selectedModel
+                            fontWeight: model.id == _selectedModel
                                 ? FontWeight.bold
                                 : FontWeight.normal,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          ModelProviderCatalog.routeLabelForModel(model),
+                          '${model.providerId} · ${model.readinessLabel}',
                           style: const TextStyle(
                             color: Colors.white38,
                             fontSize: 8,
@@ -3038,6 +3102,33 @@ class _ChatScreenState extends State<ChatScreen>
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const AvatarForgePage(),
         ));
+      } else if (value.toString().startsWith('dynamic:')) {
+        final dynamicId = value.toString().substring('dynamic:'.length);
+        DynamicModelRecord? dynamicModel;
+        for (final candidate in _availableDynamicModels) {
+          if (candidate.id == dynamicId) {
+            dynamicModel = candidate;
+            break;
+          }
+        }
+        if (dynamicModel == null) {
+          await _showDynamicModelPicker();
+          return;
+        }
+        final catalog = _availableDynamicCatalog;
+        if (catalog != null) {
+          final readiness =
+              await WalletFundedProviderReadinessService().inspect(catalog);
+          final providerReadiness = readiness[dynamicModel.providerId];
+          if (providerReadiness != null && !providerReadiness.canSelectModels) {
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(providerReadiness.detail)),
+            );
+            return;
+          }
+        }
+        await _selectDynamicModel(dynamicModel);
       } else if (value.toString().startsWith('model:')) {
         final prefs = PreferencesService();
         await prefs.init();

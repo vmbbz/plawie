@@ -1165,11 +1165,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   String modelRefreshMessage =
                       'Provider key saved. Showing the bundled model list.';
                   try {
-                    final refreshed =
-                        await ProviderModelDiscoveryService().refreshProvider(
-                      selectedProvider,
-                      apiKey: key,
-                    );
+                    final refreshed = await GatewayService()
+                        .refreshProviderModelCatalog(selectedProvider);
                     final count = refreshed.providers
                         .firstWhere(
                             (provider) => provider.id == selectedProvider)
@@ -1207,14 +1204,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showChangeModelDialog(BuildContext context) async {
-    final snapshot = await DynamicModelCatalogRepository().loadOrBundled();
-    final walletReadiness =
-        await WalletFundedProviderReadinessService().inspect(snapshot);
+    var latestSnapshot = await DynamicModelCatalogRepository().loadOrBundled();
+    var latestWalletReadiness =
+        await WalletFundedProviderReadinessService().inspect(latestSnapshot);
     if (!context.mounted) return;
 
-    final dynamicModels = <DynamicModelRecord>[
-      for (final provider in snapshot.providers) ...provider.models,
-    ];
     final llmService = LocalLlmService();
     final llmReady = llmService.state.status == LocalLlmStatus.ready;
     final localModelId = llmReady && llmService.state.activeModelId != null
@@ -1321,17 +1315,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
           width: double.maxFinite,
           height: MediaQuery.sizeOf(context).height * 0.68,
           child: DynamicModelPickerPanel(
-            snapshot: snapshot,
+            snapshot: latestSnapshot,
             currentModelId: current,
-            walletReadiness: walletReadiness,
+            walletReadiness: latestWalletReadiness,
             autoRefreshWalletBalances: true,
             onRefreshProviderBalance: (providerId) async {
               await ProviderBalanceService.instance.refresh(providerId);
-              return WalletFundedProviderReadinessService().inspect(snapshot);
+              latestWalletReadiness =
+                  await WalletFundedProviderReadinessService()
+                      .inspect(latestSnapshot);
+              return latestWalletReadiness;
+            },
+            onRefreshModels: (providerId) async {
+              final refreshed = await GatewayService()
+                  .refreshProviderModelCatalog(providerId);
+              latestSnapshot = await DynamicModelCatalogRepository()
+                  .assess(refreshed.withEffectiveState(DateTime.now()));
+              latestWalletReadiness =
+                  await WalletFundedProviderReadinessService()
+                      .inspect(latestSnapshot);
+              return latestSnapshot;
             },
             localOption: localOption,
             initiallyExpandedProviderIds: {
-              for (final provider in snapshot.providers) provider.id,
+              for (final provider in latestSnapshot.providers) provider.id,
             },
             autofocusSearch: true,
             onSelected: (model) => Navigator.pop(dialogContext, model.id),
@@ -1351,11 +1358,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (selection == null || !context.mounted) return;
 
     DynamicModelRecord? selectedDynamicModel;
-    for (final model in dynamicModels) {
-      if (model.id == selection) {
-        selectedDynamicModel = model;
-        break;
+    for (final provider in latestSnapshot.providers) {
+      for (final model in provider.models) {
+        if (model.id == selection) {
+          selectedDynamicModel = model;
+          break;
+        }
       }
+      if (selectedDynamicModel != null) break;
     }
     await switchModel(selection, selectedDynamicModel);
   }
