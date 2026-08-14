@@ -1,8 +1,8 @@
 # Android Voice Companion: Local-First Implementation Plan
 
-**Branch:** `codex/android-voice-companion-pip`  
-**Worktree:** `C:\dev-shared\openclaw-projects\openclaw_android_voice_proposal`  
-**Remote:** `origin` → `https://github.com/vmbbz/plawie.git`  
+**Branch:** `codex/android-voice-companion-pip`<br>
+**Worktree:** `C:\dev-shared\openclaw-projects\openclaw_android_voice_proposal`<br>
+**Remote:** `origin` → `https://github.com/vmbbz/plawie.git`<br>
 **Checkpoint:** pushed to the branch above before feature changes
 
 ## Why this lane exists
@@ -154,4 +154,3 @@ The sequence is: prove the local interaction, extract the portable design, imple
 - test output for focused voice/PiP tests;
 - before/after screenshots of the compact voice graphic;
 - PR description with scope, non-goals, Android policy limits, and rollback behavior.
-
