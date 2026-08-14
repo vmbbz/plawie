@@ -32,10 +32,13 @@ Current implementation status:
   receives a fresh route-bound `X-Sign-In-With-X`; ordinary/SSE/tool-call bytes
   remain unchanged. Native wallet/device-authentication is fenced as a
   transient operation: Android `hidden`/`paused` callbacks cannot erase the
-  already-authorized lease while that platform prompt is in flight, but the
-  lease is cleared when the prompt returns without Plawie resuming. Successful
-  terminal responses capture only the documented balance hint and schedule an
-  isolated balance refresh.
+  already-authorized lease while that platform prompt is in flight. Exact
+  model-bound continuations remain valid while Plawie is visible but
+  temporarily inactive; hidden/paused transitions still fail closed. Venice
+  identity prompts are serialized and queued continuations revalidate their
+  exact lease at the head of that queue. Successful responses update the UI
+  from the documented balance hint without launching a second
+  wallet-authenticated balance request inside the agent loop.
 - Venice top-up remains a separate visible-approval x402 flow. A settled,
   redacted receipt is persisted before provider balance refresh, and a refresh
   failure never makes a confirmed payment look retryable.

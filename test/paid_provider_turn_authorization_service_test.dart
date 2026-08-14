@@ -105,7 +105,7 @@ void main() {
     );
   });
 
-  test('system authentication obscures but does not erase a bounded turn', () {
+  test('visible system surfaces preserve only the exact bounded turn', () {
     final service = PaidProviderTurnAuthorizationService(
       clock: () => start,
       leaseIdFactory: () => 'lease-biometric',
@@ -119,16 +119,38 @@ void main() {
     service.markAppObscured();
     expect(service.isAppForeground, isFalse);
     expect(service.activeLease?.leaseId, 'lease-biometric');
+    final continuedWhileVisible = service.consumeForProxy(
+      provider: PaidProviderId.venice,
+      gatewayModelId: 'venice/model-a',
+    );
+    expect(continuedWhileVisible.remainingProxyCalls, 7);
+
+    // Losing focus cannot be used to mint a replacement turn or switch the
+    // exact model selected by the foreground user.
     expect(
-      () => service.consumeForProxy(
+      () => service.authorizeForegroundUserTurn(
+        conversationId: 'conversation-a',
         provider: PaidProviderId.venice,
-        gatewayModelId: 'venice/model-a',
+        modelId: 'venice/model-a',
       ),
       throwsA(
         isA<PaidProviderTurnAuthorizationException>().having(
           (error) => error.code,
           'code',
-          'foreground_turn_required',
+          'app_not_foreground',
+        ),
+      ),
+    );
+    expect(
+      () => service.consumeForProxy(
+        provider: PaidProviderId.venice,
+        gatewayModelId: 'venice/model-b',
+      ),
+      throwsA(
+        isA<PaidProviderTurnAuthorizationException>().having(
+          (error) => error.code,
+          'code',
+          'foreground_turn_mismatch',
         ),
       ),
     );
@@ -138,7 +160,7 @@ void main() {
       provider: PaidProviderId.venice,
       gatewayModelId: 'venice/model-a',
     );
-    expect(continued.remainingProxyCalls, 7);
+    expect(continued.remainingProxyCalls, 6);
 
     service.markAppBackground();
     expect(service.activeLease, isNull);
@@ -159,6 +181,19 @@ void main() {
     service.markAppBackground();
     expect(service.activeLease?.leaseId, lease.leaseId);
     expect(service.isAppForeground, isFalse);
+    expect(
+      () => service.consumeForProxy(
+        provider: PaidProviderId.venice,
+        gatewayModelId: 'venice/model-a',
+      ),
+      throwsA(
+        isA<PaidProviderTurnAuthorizationException>().having(
+          (error) => error.code,
+          'code',
+          'foreground_turn_required',
+        ),
+      ),
+    );
 
     // The native prompt returned to Plawie before the provider request could
     // continue. The lease is still valid, but only after the app is resumed.

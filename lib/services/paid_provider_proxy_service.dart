@@ -406,6 +406,7 @@ class VenicePaidProviderProxyHandler {
   final VeniceWalletAuthService _walletAuth;
   final PaidProviderTurnAuthorizationService _turnAuthorization;
   final ProviderBalanceService _balances;
+  Future<void> _identityAuthorizationTail = Future<void>.value();
 
   Future<PaidProviderProxyResponse> call(
     PaidProviderProxyRequest request,
@@ -420,34 +421,47 @@ class VenicePaidProviderProxyHandler {
 
     final isInference =
         request.route.kind == PaidProviderProxyRouteKind.chatCompletions;
-    PaidProviderTurnLease? turnLease;
-    if (isInference) {
-      final gatewayModelId = request.gatewayModelId?.trim() ?? '';
-      try {
-        turnLease = _turnAuthorization.consumeForProxy(
-          provider: PaidProviderId.venice,
-          gatewayModelId: gatewayModelId,
-        );
-      } on PaidProviderTurnAuthorizationException catch (error) {
-        throw PaidProviderProxyException(
-          error.message,
-          code: error.code,
-          statusCode: HttpStatus.forbidden,
-        );
-      }
-    }
+    final gatewayModelId = request.gatewayModelId?.trim() ?? '';
 
     final upstreamUri = _httpClient.upstreamUriFor(request.route);
     late String identity;
     try {
-      if (turnLease != null) {
-        _turnAuthorization.beginTransientProviderOperation(
-          leaseId: turnLease.leaseId,
-        );
-      }
-      identity = await _walletAuth.authorize(
-        request.route.method,
-        upstreamUri,
+      identity = await _serializeIdentityAuthorization(
+        () async {
+          // Consume at the head of the native-auth queue, not when the request
+          // first arrives. A continuation that waited behind another prompt
+          // must revalidate foreground state, model binding, expiry, and the
+          // call budget immediately before it can open its own prompt.
+          final turnLease = isInference
+              ? _turnAuthorization.consumeForProxy(
+                  provider: PaidProviderId.venice,
+                  gatewayModelId: gatewayModelId,
+                )
+              : null;
+          if (turnLease != null) {
+            _turnAuthorization.beginTransientProviderOperation(
+              leaseId: turnLease.leaseId,
+            );
+          }
+          try {
+            return await _walletAuth.authorize(
+              request.route.method,
+              upstreamUri,
+            );
+          } finally {
+            if (turnLease != null) {
+              _turnAuthorization.endTransientProviderOperation(
+                leaseId: turnLease.leaseId,
+              );
+            }
+          }
+        },
+      );
+    } on PaidProviderTurnAuthorizationException catch (error) {
+      throw PaidProviderProxyException(
+        error.message,
+        code: error.code,
+        statusCode: HttpStatus.forbidden,
       );
     } on VeniceWalletAuthException catch (error) {
       throw PaidProviderProxyException(
@@ -455,12 +469,6 @@ class VenicePaidProviderProxyHandler {
         code: error.code,
         statusCode: HttpStatus.serviceUnavailable,
       );
-    } finally {
-      if (turnLease != null) {
-        _turnAuthorization.endTransientProviderOperation(
-          leaseId: turnLease.leaseId,
-        );
-      }
     }
 
     final response = await _httpClient.send(
@@ -483,38 +491,24 @@ class VenicePaidProviderProxyHandler {
       }
     }
 
-    return PaidProviderProxyResponse.stream(
-      statusCode: response.statusCode,
-      headers: response.headers,
-      bodyStream: _observeTerminalResponse(
-        response.openBodyStream(),
-        refreshBalance: success,
-      ),
-    );
+    return response;
   }
 
-  Stream<List<int>> _observeTerminalResponse(
-    Stream<List<int>> source, {
-    required bool refreshBalance,
-  }) async* {
-    var completed = false;
+  /// Android exposes wallet authentication as a system-owned surface. Venice
+  /// requires a fresh route-bound identity for every request, so concurrent
+  /// Gateway continuations must queue instead of opening competing biometric
+  /// prompts or invalidating one another's lifecycle state.
+  Future<T> _serializeIdentityAuthorization<T>(
+    Future<T> Function() authorize,
+  ) async {
+    final previous = _identityAuthorizationTail;
+    final released = Completer<void>();
+    _identityAuthorizationTail = released.future;
     try {
-      await for (final chunk in source) {
-        yield chunk;
-      }
-      completed = true;
+      await previous;
+      return await authorize();
     } finally {
-      if (completed && refreshBalance) {
-        unawaited(_refreshBalanceSafely());
-      }
-    }
-  }
-
-  Future<void> _refreshBalanceSafely() async {
-    try {
-      await _balances.refresh('venice');
-    } catch (_) {
-      // A post-response balance refresh is never part of model delivery.
+      if (!released.isCompleted) released.complete();
     }
   }
 

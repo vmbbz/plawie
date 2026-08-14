@@ -100,11 +100,11 @@ void main() {
     expect(upstreamRequest.headers, isNot(contains('sign-in-with-x')));
     expect(leases.activeLease?.remainingProxyCalls, 7);
     expect(balances.captured, ['7.25']);
-    expect(balances.refreshes, ['venice']);
+    expect(balances.refreshes, isEmpty);
     handler.close();
   });
 
-  test('preserves SSE tool-call bytes and refreshes only at terminal success',
+  test('preserves SSE tool-call bytes without mid-turn balance authentication',
       () async {
     final controller = StreamController<List<int>>();
     addTearDown(controller.close);
@@ -142,7 +142,124 @@ void main() {
       contains('"tool_calls"'),
     );
     expect(utf8.decode(emitted), endsWith('data: [DONE]\n\n'));
-    expect(balances.refreshes, ['venice']);
+    expect(balances.refreshes, isEmpty);
+    handler.close();
+  });
+
+  test('serializes exact continuations while native auth obscures Plawie',
+      () async {
+    final leases = _authorized(now, model);
+    final firstAuthStarted = Completer<void>();
+    final releaseFirstAuth = Completer<void>();
+    var authCalls = 0;
+    var upstreamCalls = 0;
+    final handler = VenicePaidProviderProxyHandler(
+      httpClient: PaidProviderHttpClient(client: _FakeClient((_) async {
+        upstreamCalls++;
+        return http.StreamedResponse(
+          Stream<List<int>>.value(utf8.encode('{"ok":true}')),
+          HttpStatus.ok,
+          headers: {'content-type': 'application/json'},
+        );
+      })),
+      walletAuth: _RecordingAuth(onAuthorize: (_, __) async {
+        authCalls++;
+        if (authCalls == 1) {
+          leases.markAppObscured();
+          firstAuthStarted.complete();
+          await releaseFirstAuth.future;
+        }
+        return 'identity-$authCalls';
+      }),
+      turnAuthorization: leases,
+      balances: _RecordingBalances(),
+    );
+
+    final first = handler(_chatRequest(model));
+    await firstAuthStarted.future;
+    final second = handler(_chatRequest(model));
+    await Future<void>.delayed(Duration.zero);
+
+    // The second continuation waits behind the first prompt without consuming
+    // its lease budget early or opening a competing native signer.
+    expect(authCalls, 1);
+    expect(leases.activeLease?.remainingProxyCalls, 7);
+    leases.markAppForeground();
+    releaseFirstAuth.complete();
+
+    final responses = await Future.wait([first, second]);
+    for (final response in responses) {
+      expect(
+        utf8.decode(await response.openBodyStream().fold<List<int>>(
+          <int>[],
+          (all, chunk) => all..addAll(chunk),
+        )),
+        '{"ok":true}',
+      );
+    }
+    expect(authCalls, 2);
+    expect(upstreamCalls, 2);
+    expect(leases.activeLease?.remainingProxyCalls, 6);
+    handler.close();
+  });
+
+  test('queued continuation revalidates after a real background transition',
+      () async {
+    final leases = _authorized(now, model);
+    final firstAuthStarted = Completer<void>();
+    final releaseFirstAuth = Completer<void>();
+    var authCalls = 0;
+    var upstreamCalls = 0;
+    final handler = VenicePaidProviderProxyHandler(
+      httpClient: PaidProviderHttpClient(client: _FakeClient((_) async {
+        upstreamCalls++;
+        return http.StreamedResponse(
+          Stream<List<int>>.value(utf8.encode('{"ok":true}')),
+          HttpStatus.ok,
+          headers: {'content-type': 'application/json'},
+        );
+      })),
+      walletAuth: _RecordingAuth(onAuthorize: (_, __) async {
+        authCalls++;
+        if (authCalls == 1) {
+          leases.markAppObscured();
+          firstAuthStarted.complete();
+          await releaseFirstAuth.future;
+        }
+        return 'identity-$authCalls';
+      }),
+      turnAuthorization: leases,
+      balances: _RecordingBalances(),
+    );
+
+    final first = handler(_chatRequest(model));
+    await firstAuthStarted.future;
+    final second = handler(_chatRequest(model));
+    final secondExpectation = expectLater(
+      second,
+      throwsA(
+        isA<PaidProviderProxyException>()
+            .having((error) => error.statusCode, 'statusCode', 403)
+            .having(
+              (error) => error.code,
+              'code',
+              'foreground_turn_required',
+            ),
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    // The native prompt is no longer just obscuring Plawie: Android delivered
+    // a true background transition while the first request was fenced.
+    leases.markAppBackground();
+    releaseFirstAuth.complete();
+    final firstResponse = await first;
+    expect(firstResponse.statusCode, HttpStatus.ok);
+
+    await secondExpectation;
+    expect(authCalls, 1);
+    expect(upstreamCalls, 1);
+    expect(leases.activeLease, isNull);
     handler.close();
   });
 
@@ -211,7 +328,8 @@ void main() {
     }
   });
 
-  test('balance refresh failure never changes a completed response', () async {
+  test('missing balance hint never adds a second authenticated request',
+      () async {
     final balances = _RecordingBalances(failRefresh: true);
     final handler = VenicePaidProviderProxyHandler(
       httpClient: PaidProviderHttpClient(client: _FakeClient((_) async {
@@ -235,7 +353,8 @@ void main() {
 
     expect(response.statusCode, HttpStatus.ok);
     expect(utf8.decode(body), '{"ok":true}');
-    expect(balances.refreshes, ['venice']);
+    expect(balances.refreshes, isEmpty);
+    expect(balances.captured, isEmpty);
     handler.close();
   });
 }

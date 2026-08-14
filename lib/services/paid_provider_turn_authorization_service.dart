@@ -108,9 +108,10 @@ class PaidProviderTurnAuthorizationService {
   ///
   /// Android biometric/device-credential prompts report `inactive` before
   /// returning to the same visible activity. The bounded turn lease must not be
-  /// consumed while obscured, but clearing it here would break the model's
-  /// post-tool continuation after a successful authentication. A real
-  /// background transition still calls [markAppBackground] and erases it.
+  /// cleared here: an exact, bounded post-tool continuation can arrive while
+  /// that trusted surface still owns focus. New turns and model changes remain
+  /// forbidden, and a real background transition still calls
+  /// [markAppBackground] and invalidates the lease.
   void markAppObscured() {
     _appForeground = false;
     _temporarilyObscured = true;
@@ -257,14 +258,21 @@ class PaidProviderTurnAuthorizationService {
     required String gatewayModelId,
   }) {
     if (!_appForeground) {
-      // A trusted Android authentication surface can temporarily obscure the
-      // activity while a proxy call is in flight. Keep the expiring lease inert
-      // for that interval; an actual background callback has already erased it.
-      if (!_temporarilyObscured) _activeLease = null;
-      throw const PaidProviderTurnAuthorizationException(
-        'foreground_turn_required',
-        'A foreground user turn is required for this provider.',
-      );
+      // `inactive` means Plawie is still visible but a system-owned surface
+      // (biometric UI, screen recorder controls, notification shade) owns
+      // focus. An exact continuation of the already-authorized turn may keep
+      // running in that state. It cannot create a new lease, change models, or
+      // escape the expiry/call bounds below. A real hidden/paused transition
+      // either erased the lease already or set deferred invalidation while a
+      // native operation finishes, and remains fail-closed here.
+      final visibleSystemSurface =
+          _temporarilyObscured && !_backgroundInvalidationDeferred;
+      if (!visibleSystemSurface) {
+        throw const PaidProviderTurnAuthorizationException(
+          'foreground_turn_required',
+          'A foreground user turn is required for this provider.',
+        );
+      }
     }
     final lease = _activeLease;
     if (lease == null) {
