@@ -46,6 +46,31 @@ The local client already contains:
 
 The risk is coordination: voice state is distributed across the chat screen, TTS callbacks, recorder streams, Gateway events, native PiP callbacks, WebView lifecycle, and several Android services. The first slice should reduce that coordination risk before adding more capability.
 
+## Current implementation checkpoint
+
+The first code slice is now implemented on this branch:
+
+- `VoiceSessionController` owns a small voice phase, capture owner, surface,
+  and generation contract;
+- PiP entry/exit changes the presentation surface without stopping active
+  capture;
+- the native PiP mic action waits for the asynchronous Flutter toggle before
+  refreshing its icon;
+- delayed continuous-mode restarts reject stale generations;
+- recorder/relay startup and stop paths reject stale async completions;
+- disposal invalidates the active generation before resources are released.
+
+Validation completed for this checkpoint:
+
+- targeted Flutter analysis: clean;
+- `voice_session_controller_test.dart`: 4 tests passed;
+- existing avatar gesture, VRM bootstrap, and Gateway TTS policy tests: passed.
+
+The native compact visual, full Activity/PiP lifecycle matrix, and service
+ownership audit remain subsequent phases. The current change deliberately does
+not add another Android service or make background microphone capture
+unrestricted.
+
 ## Proposed state boundary
 
 Introduce a small voice-session model without moving every existing behavior at once:

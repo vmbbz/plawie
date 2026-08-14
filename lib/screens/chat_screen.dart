@@ -16,6 +16,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app.dart';
 import '../services/preferences_service.dart';
+import '../services/voice_session_controller.dart';
 import '../providers/gateway_provider.dart';
 import '../models/gateway_state.dart';
 import '../widgets/vrm_avatar_widget.dart';
@@ -86,6 +87,7 @@ class _ChatScreenState extends State<ChatScreen>
   // Voice Pipeline (Kokoro TTS / Local VITS)
   final TtsService _tts = TtsService();
   final AudioRecorder _audioRecorder = AudioRecorder();
+  final VoiceSessionController _voiceSession = VoiceSessionController();
   bool _isListening = false;
   bool _isTalkRelayCaptureActive = false;
   String? _currentGesture;
@@ -270,26 +272,21 @@ class _ChatScreenState extends State<ChatScreen>
     _pipChannel.setMethodCallHandler((call) async {
       if (call.method == 'onPiPModeChanged') {
         final bool isPip = call.arguments as bool;
-        if (mounted) {
-          // When LEAVING PIP, stop microphone if it was listening
-          if (!isPip && _isListening) {
-            _addDiagnosticLog('Exiting PIP — stopping mic to reset state');
-            await _audioRecorder.stop();
-            setState(() {
-              _isListening = false;
-              _isPipMode = false;
-            });
-            _syncOverlayState();
-          } else {
-            setState(() {
-              _isPipMode = isPip;
-            });
-          }
-        }
+        if (!mounted) return;
+        _voiceSession.updateSurface(
+          isPip
+              ? VoiceSessionSurface.pip
+              : VoiceSessionSurface.fullScreen,
+        );
+        setState(() => _isPipMode = isPip);
+        // Moving between full screen and PiP changes the presentation surface,
+        // not the voice session. Keep an active capture alive and let the
+        // native action reflect the authoritative Flutter state.
+        _updatePipMicIcon();
       } else if (call.method == 'toggleMicFromPip') {
         // Native PIP mic button was tapped — toggle voice listening
         _addDiagnosticLog('PIP Mic button tapped (native RemoteAction)');
-        _toggleListening();
+        await _toggleListeningAsync();
         // Update the native PIP icon to reflect new listening state
         _updatePipMicIcon();
       }
@@ -879,13 +876,9 @@ class _ChatScreenState extends State<ChatScreen>
           });
           _syncOverlayState();
 
-          // Continuous mode: wait 500ms then restart listening automatically
+          // Continuous mode: wait 500ms then restart listening automatically.
           if (PreferencesService().continuousMode && !_isGenerating) {
-            Future.delayed(const Duration(milliseconds: 500), () {
-              if (mounted && !_isGenerating && !_isListening) {
-                _startListening();
-              }
-            });
+            _scheduleContinuousListening();
           }
         }
       }
@@ -1887,18 +1880,33 @@ class _ChatScreenState extends State<ChatScreen>
         PreferencesService().continuousMode &&
         !_tts.isSpeaking &&
         _ttsQueue.isEmpty) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted && !_isGenerating && !_isListening) _startListening();
-      });
+      _scheduleContinuousListening();
     }
   }
 
-  void _toggleListening() async {
+  void _toggleListening() {
+    unawaited(_toggleListeningAsync());
+  }
+
+  Future<void> _toggleListeningAsync() async {
     if (_isListening) {
       await _stopListening();
     } else {
       await _startListening();
     }
+  }
+
+  void _scheduleContinuousListening() {
+    final generation = _voiceSession.state.generation;
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted ||
+          !_voiceSession.isCurrent(generation) ||
+          _isGenerating ||
+          _isListening) {
+        return;
+      }
+      unawaited(_startListening());
+    });
   }
 
   Future<bool> _probeTalkRelaySupport(GatewayProvider gatewayProvider) async {
@@ -2011,10 +2019,13 @@ class _ChatScreenState extends State<ChatScreen>
       final message = payload['message']?.toString() ?? 'unknown';
       _talkRelayReady = false;
       if (_isTalkRelayCaptureActive) {
+        _voiceSession.invalidate(
+          phase: VoiceSessionPhase.error,
+          reason: 'Talk relay error: $message',
+        );
         unawaited(_stopTalkRelayCapture().then((_) {
           if (!mounted) return;
-          setState(() => _isListening = false);
-          _syncOverlayState();
+          _publishListeningState(false);
         }));
       }
       _addDiagnosticLog('Talk relay error: $message');
@@ -2024,10 +2035,13 @@ class _ChatScreenState extends State<ChatScreen>
       final reason = payload['reason']?.toString() ?? 'unknown';
       _talkRelayReady = false;
       if (_isTalkRelayCaptureActive) {
+        _voiceSession.invalidate(
+          phase: VoiceSessionPhase.paused,
+          reason: 'Talk relay closed: $reason',
+        );
         unawaited(_stopTalkRelayCapture().then((_) {
           if (!mounted) return;
-          setState(() => _isListening = false);
-          _syncOverlayState();
+          _publishListeningState(false);
         }));
       }
       _talkRelaySessionId = null;
@@ -2159,17 +2173,32 @@ class _ChatScreenState extends State<ChatScreen>
     }
     if (!mounted) return;
 
+    final generation = _voiceSession.beginCapture(
+      owner: _isPipMode ? VoiceCaptureOwner.pip : VoiceCaptureOwner.chat,
+      surface: _isPipMode
+          ? VoiceSessionSurface.pip
+          : VoiceSessionSurface.fullScreen,
+    );
+    if (generation == null) {
+      _addDiagnosticLog('Voice capture request ignored: session is busy.');
+      return;
+    }
+
     final gatewayProvider =
         Provider.of<GatewayProvider>(context, listen: false);
     try {
       await _startTalkRelayCapture(gatewayProvider);
-      setState(() => _isListening = true);
-      _syncOverlayState();
+      if (!mounted || !_voiceSession.isCurrent(generation)) {
+        if (_isTalkRelayCaptureActive) await _stopTalkRelayCapture();
+        return;
+      }
+      _voiceSession.markListening(generation);
+      _publishListeningState(true);
       _addDiagnosticLog(
           'Voice relay recording started (talk.session realtime).');
       return;
     } catch (e) {
-      _isTalkRelayCaptureActive = false;
+      if (_isTalkRelayCaptureActive) await _stopTalkRelayCapture();
       _addDiagnosticLog(
           'Talk relay capture unavailable, using fallback STT: $e');
     }
@@ -2177,28 +2206,42 @@ class _ChatScreenState extends State<ChatScreen>
     final tempDir = await getTemporaryDirectory();
     final path = '${tempDir.path}/stt_recording.m4a';
     const config = RecordConfig(); // default 44.1kHz, AAC
-    await _audioRecorder.start(config, path: path);
-    setState(() => _isListening = true);
-    _syncOverlayState();
+    try {
+      await _audioRecorder.start(config, path: path);
+      if (!mounted || !_voiceSession.isCurrent(generation)) {
+        await _audioRecorder.stop();
+        return;
+      }
+    } catch (e) {
+      _voiceSession.invalidate(
+        phase: VoiceSessionPhase.error,
+        reason: 'Microphone start failed: $e',
+      );
+      _addDiagnosticLog('Voice recording failed to start: $e');
+      return;
+    }
+    _voiceSession.markListening(generation);
+    _publishListeningState(true);
     _addDiagnosticLog('Voice recording started (fallback STT mode).');
   }
 
   /// Stop recording and transcribe — called when user releases the mic orb.
   Future<void> _stopListening() async {
-    if (!_isListening) return;
+    if (!_isListening && !_voiceSession.state.captureActive) return;
+    _voiceSession.invalidate(reason: 'Voice capture stopped by user.');
 
     if (_isTalkRelayCaptureActive) {
       await _stopTalkRelayCapture();
-      setState(() => _isListening = false);
-      _syncOverlayState();
+      if (!mounted) return;
+      _publishListeningState(false);
       _addDiagnosticLog(
           'Voice relay recording stopped; waiting for transcript...');
       return;
     }
 
     final path = await _audioRecorder.stop();
-    setState(() => _isListening = false);
-    _syncOverlayState();
+    if (!mounted) return;
+    _publishListeningState(false);
     _addDiagnosticLog('Voice recording stopped.');
 
     if (path != null) {
@@ -2212,6 +2255,13 @@ class _ChatScreenState extends State<ChatScreen>
         _addDiagnosticLog('Gateway STT failed or returned empty text.');
       }
     }
+  }
+
+  void _publishListeningState(bool listening) {
+    if (!mounted) return;
+    setState(() => _isListening = listening);
+    _syncOverlayState();
+    _updatePipMicIcon();
   }
 
   /// Tell native Android to update the PiP RemoteAction icon based on listening state.
@@ -3045,6 +3095,10 @@ class _ChatScreenState extends State<ChatScreen>
 
   @override
   void dispose() {
+    _voiceSession.invalidate(
+      phase: VoiceSessionPhase.stopped,
+      reason: 'Voice surface disposed.',
+    );
     final wakeMode = PreferencesService().wakeWordMode;
     if (wakeMode != 'off') NativeBridge.stopHotword();
     WidgetsBinding.instance.removeObserver(this);
