@@ -220,6 +220,7 @@ claim of completion.
 | Item | Result | Evidence reference | Notes |
 | --- | --- | --- | --- |
 | Artifact version / SHA-256 | Hackathon preview installed with wallet data preserved | `439EA31D00F6336CFA4F16BB873081C9495154A61B80330445B8427B9A4FED92` | version `2.3.0` (`13`); original 26 July app data preserved; release `v2.3.0-hackathon-preview.1` |
+| Current debug refresh / SHA-256 | Built, package metadata verified, and APK credential audit passed | `8EB38114FB0EF28FE6A4DF813D866840D7CD8B8AD0387B7994E1509D2904FC39` | version `2.3.0` (`14`); release `v2.3.0-hackathon-preview.2`; debug test artifact, not the Play-signed production build |
 | KeeperHub regression suite | 41 Flutter + 5 Android passed | local test output | 13 Aug 2026; zero failures |
 | Paid-provider biometric continuation suite | 30 focused tests passed | local test output | transient Android `inactive` preserves the inert expiring turn lease; real background still erases it |
 | Live Venice top-up challenge | Parsed, no signature | local live 402 check | 12 Aug 2026; the provider omits `resource`, so Plawie binds only its catalogued Venice HTTPS endpoint before it can display approval |
