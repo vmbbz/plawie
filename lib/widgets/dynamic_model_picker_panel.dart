@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/dynamic_model_catalog.dart';
+import '../services/provider_model_discovery_service.dart';
 import '../services/wallet_funded_provider_readiness.dart';
 
 typedef WalletProviderBalanceRefresh
@@ -135,7 +136,15 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
           final candidateModels = (_showAllModels
                   ? provider.models
                   : provider.models
-                      .where((model) => model.supportsToolCalls == true))
+                      // Keep unknown tool support visible. Several live
+                      // OpenAI-compatible catalogs do not advertise tool
+                      // support even when the route can still be tested. A
+                      // missing capability flag is not evidence that the
+                      // provider or its models disappeared. Explicitly
+                      // chat-only models remain in All chat models.
+                      .where((model) =>
+                          !model.liveAvailable ||
+                          model.supportsToolCalls != false))
               .toList()
             ..sort(_compareModels);
           final providerMatches = normalizedQuery.isEmpty ||
@@ -230,7 +239,7 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
               Text(
                 _showAllModels
                     ? 'Every live chat route'
-                    : 'Routes reporting tool support; verification is separate',
+                    : 'Routes not marked chat-only; verify tools separately',
                 style: theme.textTheme.labelSmall,
               ),
             ],
@@ -601,17 +610,24 @@ class _DynamicModelPickerPanelState extends State<DynamicModelPickerPanel> {
         _catalogStatus =
             '${provider.label} catalog refreshed. Provider metadata is current; verify tools before using Agent mode.';
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _catalogStatus =
-            '${provider.label} catalog refresh failed. Showing the last usable catalog.';
+            '${provider.label} catalog refresh failed: ${_catalogRefreshError(error)} '
+            'Showing the last usable catalog.';
       });
     } finally {
       if (mounted) {
         setState(() => _busyCatalogProviders.remove(provider.id));
       }
     }
+  }
+
+  String _catalogRefreshError(Object error) {
+    if (error is ProviderDiscoveryException) return error.message;
+    if (error is StateError) return error.message;
+    return 'Check the provider configuration and network connection.';
   }
 
   Widget _statusBanner(

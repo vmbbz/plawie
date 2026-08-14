@@ -242,8 +242,9 @@ class GatewayService {
       throw StateError('Model discovery is not available for $providerId.');
     }
     final config = await _readConfig();
-    final apiKey =
-        spec.requiresApiKey ? _extractProviderApiKey(config, providerId) : null;
+    final apiKey = spec.requiresApiKey
+        ? await _resolveProviderApiKey(config, providerId)
+        : null;
     return ProviderModelDiscoveryService().refreshProvider(
       providerId,
       apiKey: apiKey,
@@ -17062,7 +17063,7 @@ ${lines.join('\n')}
 
     try {
       final config = await _readConfig();
-      final apiKey = _extractProviderApiKey(config, provider);
+      final apiKey = await _resolveProviderApiKey(config, provider);
       if (apiKey == null || apiKey.isEmpty) return null;
 
       final providerConfig = config['models']?['providers']?[provider];
@@ -17121,6 +17122,54 @@ ${lines.join('\n')}
     if (envVars is Map && envKey.isNotEmpty) {
       final key = envVars[envKey]?.toString().trim();
       if (key != null && key.isNotEmpty) return key;
+    }
+    return null;
+  }
+
+  /// Resolves a provider key from the same durable surfaces used by the
+  /// Gateway runtime.
+  ///
+  /// The native Gateway keeps BYOK secrets in auth-profiles.json while the
+  /// compatibility config only contains the provider/profile selection. Live
+  /// model discovery is a Dart-side request, so it must resolve that profile
+  /// before calling the provider endpoint. The key remains in memory for the
+  /// request only and is never returned to the picker or written to the model
+  /// catalog cache.
+  Future<String?> _resolveProviderApiKey(
+    Map<String, dynamic> config,
+    String provider,
+  ) async {
+    final configured = _extractProviderApiKey(config, provider);
+    if (configured != null && configured.isNotEmpty) return configured;
+
+    final normalizedProvider = _normalizeProvider(provider);
+    if (normalizedProvider.isEmpty) return null;
+
+    try {
+      for (final authFile in await _authProfilesReadOrder()) {
+        if (!await authFile.exists()) continue;
+        final raw = await authFile.readAsString();
+        if (raw.trim().isEmpty) continue;
+        final decoded = jsonDecode(raw);
+        if (decoded is! Map) continue;
+        final profiles = decoded['profiles'];
+        if (profiles is! Map) continue;
+        final profile = profiles[authProfileIdForProvider(normalizedProvider)];
+        if (profile is! Map) continue;
+
+        // key/token are the concrete credential forms the Gateway can use for
+        // an API-key provider. keyRef/tokenRef are references, not secrets;
+        // passing them to a provider would create a misleading auth failure.
+        for (final field in const <String>['key', 'token']) {
+          final value = profile[field]?.toString().trim();
+          if (value != null && value.isNotEmpty && value != 'null') {
+            return value;
+          }
+        }
+      }
+    } catch (_) {
+      // Discovery should report configuration_required rather than exposing a
+      // file/parser failure or interrupting the main Gateway lifecycle.
     }
     return null;
   }

@@ -727,8 +727,8 @@ class _ChatScreenState extends State<ChatScreen>
     final quick = <DynamicModelRecord>[];
     for (final provider in catalog.providers) {
       final models = provider.models
-          .where(
-              (model) => model.liveAvailable && model.supportsToolCalls == true)
+          .where((model) =>
+              model.liveAvailable && model.supportsToolCalls != false)
           .toList();
       models.sort((a, b) {
         if (a.providerCreatedAt != null && b.providerCreatedAt != null) {

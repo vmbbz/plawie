@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:clawa/services/dynamic_model_catalog.dart';
 import 'package:clawa/services/model_provider_catalog.dart';
+import 'package:clawa/services/provider_model_discovery_service.dart';
 import 'package:clawa/services/wallet_funded_provider_readiness.dart';
 import 'package:clawa/widgets/dynamic_model_picker_panel.dart';
 
@@ -254,6 +255,31 @@ void main() {
     expect(find.textContaining('catalog refreshed'), findsOneWidget);
   });
 
+  testWidgets('provider refresh shows an actionable live failure reason',
+      (tester) async {
+    await tester.pumpWidget(_host(
+      snapshot: _snapshot(<DynamicProviderRecord>[_provider('openrouter')]),
+      readiness: const <String, WalletFundedProviderReadiness>{},
+      onRefreshModels: (providerId) async {
+        throw const ProviderDiscoveryException(
+          providerId: 'openrouter',
+          code: 'configuration_required',
+          message: 'Add the provider API key before refreshing its models.',
+        );
+      },
+    ));
+
+    await tester
+        .tap(find.byKey(const Key('provider-refresh-models-openrouter')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Add the provider API key before refreshing'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('last usable catalog'), findsOneWidget);
+  });
+
   testWidgets('search filters grouped providers and preserves stale warning',
       (tester) async {
     await tester.pumpWidget(_host(
@@ -303,6 +329,10 @@ void main() {
       onSelected: (value) => selected = value.id,
     ));
 
+    expect(
+      find.byKey(const Key('model-option-venice/catalog-unavailable')),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const Key('model-filter-all')));
     await tester.pump();
     expect(find.text('Current models have not been loaded.'), findsOneWidget);
@@ -310,6 +340,30 @@ void main() {
         .tap(find.byKey(const Key('model-option-venice/catalog-unavailable')));
     await tester.pump();
     expect(selected, isNull);
+  });
+
+  testWidgets('unknown live tool support remains visible as an agent candidate',
+      (tester) async {
+    await tester.pumpWidget(_host(
+      snapshot: _snapshot(<DynamicProviderRecord>[
+        _provider('venice', unknownTools: true),
+      ]),
+      readiness: <String, WalletFundedProviderReadiness>{
+        'venice': _readiness(
+          providerId: 'venice',
+          state: WalletFundedProviderState.ready,
+          canSelect: true,
+          title: 'Ready',
+          action: WalletFundedProviderAction.none,
+          actionLabel: '',
+        ),
+      },
+    ));
+
+    expect(find.text('Venice'), findsOneWidget);
+    expect(
+      find.byKey(const Key('model-option-venice/model-1')), findsOneWidget);
+    expect(find.textContaining('Tool support not reported'), findsOneWidget);
   });
 
   testWidgets('BYOK model remains selectable beside wallet-funded groups',
@@ -353,7 +407,7 @@ Widget _host({
     theme: ThemeData.dark(),
     home: Scaffold(
       body: SizedBox(
-        height: 700,
+        height: 1200,
         child: DynamicModelPickerPanel(
           snapshot: snapshot,
           currentModelId: '',
@@ -390,6 +444,7 @@ DynamicProviderRecord _provider(
   String id, {
   bool walletFunded = true,
   bool live = true,
+  bool unknownTools = false,
   DynamicProviderCatalogState catalogState = DynamicProviderCatalogState.fresh,
 }) {
   final label = switch (id) {
@@ -414,13 +469,15 @@ DynamicProviderRecord _provider(
         providerId: id,
         label: live ? 'Model One' : 'Refresh $label models',
         route: ModelRouteKind.cloud,
-        supportsToolCalls: live,
+        supportsToolCalls: unknownTools ? null : live,
         chatReadiness: live
             ? ModelChatReadiness.providerAdvertised
             : ModelChatReadiness.unknown,
-        toolReadiness: live
-            ? ModelToolReadiness.providerAdvertised
-            : ModelToolReadiness.incompatible,
+        toolReadiness: unknownTools
+            ? ModelToolReadiness.unknown
+            : live
+                ? ModelToolReadiness.providerAdvertised
+                : ModelToolReadiness.incompatible,
         liveAvailable: live,
         unavailableReason: live ? null : 'Current models have not been loaded.',
       ),

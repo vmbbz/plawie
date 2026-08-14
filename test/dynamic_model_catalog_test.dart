@@ -112,6 +112,33 @@ void main() {
     expect(preferences.dynamicModelCatalogSnapshotJson, isNotNull);
   });
 
+  test('adds providers introduced after an older cache was persisted',
+      () async {
+    final now = DateTime.utc(2026, 8, 5, 12);
+    final fallback = DynamicCatalogSnapshot.bundledFallback(now: now);
+    final olderCache = DynamicCatalogSnapshot(
+      schemaVersion: DynamicCatalogSnapshot.currentSchemaVersion,
+      snapshotId: 'older-provider-cache',
+      state: DynamicCatalogSnapshotState.fresh,
+      updatedAt: now,
+      expiresAt: now.add(const Duration(hours: 1)),
+      providers: <DynamicProviderRecord>[fallback.providers.first],
+      source: 'provider-api',
+    );
+    await repository.save(olderCache);
+
+    final loaded = await repository.loadOrBundled(now: now);
+    final providerIds = loaded.providers.map((provider) => provider.id).toSet();
+
+    expect(providerIds, contains('venice'));
+    expect(providerIds, contains('blockrun'));
+    expect(
+        providerIds,
+        containsAll(
+          ModelProviderCatalog.providers.map((provider) => provider.id),
+        ));
+  });
+
   test('malformed or unsupported snapshots are rejected safely', () async {
     preferences.dynamicModelCatalogSnapshotJson = '{not-json';
     expect(await repository.load(), isNull);

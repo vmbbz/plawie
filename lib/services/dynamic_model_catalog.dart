@@ -719,7 +719,13 @@ class DynamicModelCatalogRepository {
   Future<DynamicCatalogSnapshot?> loadAssessed({DateTime? now}) async {
     final timestamp = now ?? DateTime.now();
     final snapshot = await load(now: timestamp);
-    return snapshot == null ? null : assess(snapshot, now: timestamp);
+    if (snapshot == null) return null;
+    // A persisted catalog can outlive the provider list shipped by the app.
+    // Merge newly supported providers instead of treating an older snapshot
+    // as authoritative forever (Venice and BlockRun were added after earlier
+    // devices had already cached the original provider set).
+    final current = _mergeBundledProviders(snapshot, now: timestamp);
+    return assess(current, now: timestamp);
   }
 
   Future<DynamicCatalogSnapshot> assess(
@@ -771,6 +777,33 @@ class DynamicModelCatalogRepository {
       errorMessage: _redactError(message),
     );
     await save(error);
+  }
+
+  DynamicCatalogSnapshot _mergeBundledProviders(
+    DynamicCatalogSnapshot snapshot, {
+    required DateTime now,
+  }) {
+    final bundled = DynamicCatalogSnapshot.bundledFallback(now: now);
+    final existingIds =
+        snapshot.providers.map((provider) => provider.id).toSet();
+    final missing = bundled.providers
+        .where((provider) => !existingIds.contains(provider.id))
+        .toList(growable: false);
+    if (missing.isEmpty) return snapshot;
+
+    return DynamicCatalogSnapshot(
+      schemaVersion: snapshot.schemaVersion,
+      snapshotId: snapshot.snapshotId,
+      state: snapshot.state,
+      updatedAt: snapshot.updatedAt,
+      expiresAt: snapshot.expiresAt,
+      providers: <DynamicProviderRecord>[
+        ...snapshot.providers,
+        ...missing,
+      ],
+      source: snapshot.source,
+      errorMessage: snapshot.errorMessage,
+    );
   }
 
   Future<void> clear() async {
