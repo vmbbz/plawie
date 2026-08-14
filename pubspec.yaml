@@ -87,6 +87,7 @@ flutter:
     - assets/openclaw/android_bridge_tools.js
     - assets/openclaw/mobile_gateway_probe.js
     - assets/openclaw/mobile_skill_registry.js
+    - assets/openclaw/plugins/plawie-tool-probe-guard/
     - assets/openclaw/plugins/plawie-venice-compat/
     - assets/openclaw/python-debug-runtime/wheels/
     - assets/openclaw/whisper-runtime/lib/

@@ -74,4 +74,13 @@ void main() {
     expect(native, contains('PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ID'));
     expect(native, contains('provisionVerifiedOpenClawPlugin'));
   });
+
+  test('Flutter packages the guard for native Android provisioning', () async {
+    final pubspec = await File('pubspec.yaml').readAsString();
+
+    expect(
+      pubspec,
+      contains('- assets/openclaw/plugins/plawie-tool-probe-guard/'),
+    );
+  });
 }
