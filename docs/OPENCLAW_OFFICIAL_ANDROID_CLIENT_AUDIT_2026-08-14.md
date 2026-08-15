@@ -461,6 +461,24 @@ The strongest proposals are:
 
 That framing is both more accurate to the official implementation and more useful to maintainers: it recognizes shipped work, identifies user-visible gaps, and points toward changes that improve trust and continuity rather than adding another disconnected surface.
 
+## 12. Real-device validation of the local first slice
+
+On 2026-08-15, the local lifecycle slice was installed as a debug APK on a Samsung SM-A556E (Android 14 / API 34) from the isolated `codex/android-voice-companion-pip-pr` worktree at commit `3b9dd8b`.
+
+Observed results:
+
+- the app launched to the Gateway screen, reached `LIVE`, and rendered the chat screen with the VRM avatar;
+- `NodeForegroundService` started successfully and remained a foreground service while PiP was active;
+- Android reported `mode=pinned`, `mWindowingMode=pinned`, and `mLastReportedPictureInPictureMode=true`;
+- the VRM avatar remained visible inside the 3:4 PiP window;
+- pressing Home left the PiP task pinned, kept the app process alive, and kept `NodeForegroundService` foregrounded;
+- the Samsung expand control returned the same Activity to full screen without a crash or ANR;
+- granting microphone permission started the device AAC encoder and MPEG-4 writer, proving that the local capture path reached the microphone layer;
+- the voice attempt could not produce a transcript because this device had no Gateway token (`STT Exception: No gateway token`), so transcript/reply success is not claimed by this smoke test;
+- Samsung's PiP menu did not expose a clearly labelled `Mic` affordance in the visible controls. The existing native `RemoteAction` bridge therefore needs a separate OEM/device-matrix check before it is described as discoverable voice control.
+
+This validation strengthens the first slice's lifecycle claim, but it does not prove unrestricted background microphone capture, Gateway STT, continuous Talk recovery, or process-death recovery. Those remain explicit follow-up tests with valid credentials and a broader device matrix.
+
 ## Sources and audited files
 
 ### Official OpenClaw snapshot
