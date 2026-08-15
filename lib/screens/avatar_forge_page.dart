@@ -58,7 +58,8 @@ class _AvatarForgePageState extends State<AvatarForgePage>
           backgroundColor: AppColors.statusGreen,
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
     }
@@ -73,7 +74,8 @@ class _AvatarForgePageState extends State<AvatarForgePage>
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: Colors.white70),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
@@ -100,11 +102,13 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                 children: [
                   _buildHeroSection(),
                   const SizedBox(height: 32),
-                  _buildSectionLabel('MY LIBRARY', Icons.grid_view_rounded, AppColors.statusGreen),
+                  _buildSectionLabel('MY LIBRARY', Icons.grid_view_rounded,
+                      AppColors.statusGreen),
                   const SizedBox(height: 12),
                   _buildLibraryGrid(),
                   const SizedBox(height: 32),
-                  _buildSectionLabel('WEB PORTAL', Icons.public_rounded, Colors.purpleAccent),
+                  _buildSectionLabel(
+                      'WEB PORTAL', Icons.public_rounded, Colors.purpleAccent),
                   const SizedBox(height: 12),
                   _buildWebPortalCard(context),
                   const SizedBox(height: 28),
@@ -162,7 +166,8 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                   ),
                 ],
               ),
-              child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 38),
+              child: const Icon(Icons.auto_awesome_rounded,
+                  color: Colors.white, size: 38),
             ),
           ),
           const SizedBox(height: 18),
@@ -177,7 +182,7 @@ class _AvatarForgePageState extends State<AvatarForgePage>
           ),
           const SizedBox(height: 8),
           Text(
-            'Equip local identities or mint on-chain VRM NFTs\nthrough the Avatar Forge web portal.',
+            'Equip local identities today. AvatarForge minting and rentals are\nplanned for a future web portal.',
             textAlign: TextAlign.center,
             style: GoogleFonts.outfit(
               color: Colors.white60,
@@ -254,7 +259,8 @@ class _AvatarForgePageState extends State<AvatarForgePage>
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -269,7 +275,8 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                             colors: isEquipped
                                 ? [
                                     AppColors.statusGreen,
-                                    AppColors.statusGreen.withValues(alpha: 0.5),
+                                    AppColors.statusGreen
+                                        .withValues(alpha: 0.5),
                                   ]
                                 : [
                                     Colors.white12,
@@ -289,7 +296,8 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                         style: GoogleFonts.outfit(
                           color: isEquipped ? Colors.white : Colors.white54,
                           fontSize: 10,
-                          fontWeight: isEquipped ? FontWeight.w800 : FontWeight.w500,
+                          fontWeight:
+                              isEquipped ? FontWeight.w800 : FontWeight.w500,
                           letterSpacing: 1.0,
                         ),
                         textAlign: TextAlign.center,
@@ -302,10 +310,12 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: AppColors.statusGreen.withValues(alpha: 0.08),
+                            color:
+                                AppColors.statusGreen.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                                color: AppColors.statusGreen.withValues(alpha: 0.5),
+                                color: AppColors.statusGreen
+                                    .withValues(alpha: 0.5),
                                 width: 1.2),
                           ),
                           child: Text(
@@ -423,8 +433,8 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                         color: const Color(0xFF7B2FBE).withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                            color: const Color(0xFF7B2FBE)
-                                .withValues(alpha: 0.4)),
+                            color:
+                                const Color(0xFF7B2FBE).withValues(alpha: 0.4)),
                       ),
                       child: const Text(
                         'SOON',
@@ -440,7 +450,7 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Create new 3D avatars from scratch, mint them as Core NFTs on Solana, and browse the ERC-8004 identity rental marketplace.',
+                  'Create and validate 3D avatars in the planned portal. Minting, rentals, and on-chain ownership are not available in this preview.',
                   style: GoogleFonts.outfit(
                     color: Colors.white.withValues(alpha: 0.6),
                     fontSize: 13,
@@ -453,10 +463,10 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _chip('Mint VRM NFT', Icons.auto_fix_high_rounded),
-                    _chip('Rent Identity', Icons.key_rounded),
-                    _chip('Browse Market', Icons.storefront_rounded),
-                    _chip('On-Chain Forge', Icons.link_rounded),
+                    _chip('Planned mint', Icons.auto_fix_high_rounded),
+                    _chip('Planned rental', Icons.key_rounded),
+                    _chip('Portal planned', Icons.storefront_rounded),
+                    _chip('Asset validation', Icons.verified_rounded),
                   ],
                 ),
                 const SizedBox(height: 20),
@@ -466,7 +476,8 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Opening forge.openclaw.com...'),
+                          content: Text(
+                              'AvatarForge is planned and not live in this preview.'),
                           behavior: SnackBarBehavior.floating,
                         ),
                       );
@@ -536,12 +547,11 @@ class _AvatarForgePageState extends State<AvatarForgePage>
   Widget _buildChainBadge() {
     return Center(
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-              color: Colors.purpleAccent.withValues(alpha: 0.25)),
+          border:
+              Border.all(color: Colors.purpleAccent.withValues(alpha: 0.25)),
           color: Colors.purpleAccent.withValues(alpha: 0.07),
         ),
         child: Row(
@@ -551,7 +561,7 @@ class _AvatarForgePageState extends State<AvatarForgePage>
                 color: Colors.purpleAccent.shade100, size: 16),
             const SizedBox(width: 8),
             Text(
-              'Powered by AgentVRM · Solana',
+              'AvatarForge chain integration · planned',
               style: GoogleFonts.outfit(
                 color: Colors.purpleAccent.shade100,
                 fontSize: 11,

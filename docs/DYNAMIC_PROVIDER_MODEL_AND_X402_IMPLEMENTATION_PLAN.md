@@ -276,7 +276,7 @@ extend them rather than duplicate them.
 | First-run provider/key UI | `lib/screens/setup_flow_screen.dart` | Provider selection, temporary API-key collection, agent name, setup handoff |
 | Gateway configuration | `lib/services/gateway_service.dart` | Provider config, auth profiles, native policy, reload/restart, Gateway ownership |
 | Base wallet | `lib/services/base_service.dart` | Managed EVM wallet, Base network selection, balance/history, ordinary transfers |
-| Legacy credit flow | `lib/services/crypto_credits_service.dart` | Legacy OpenRouter/LI.FI flow to quarantine; do not extend as the x402 design |
+| Legacy credit flow | Removed in the crypto-commerce foundation round | Historical OpenRouter/LI.FI/Coinbase prototype is not an active product path; do not recreate it |
 | Existing provider contract | `docs/MODEL_PROVIDER_AND_HELP_ROADMAP.md` | Current static catalog and three-lane product contract until migration is complete |
 | Previous simplification | `docs/PROVIDER_SIMPLIFICATION_OVERHAUL.md` | Static metadata, safe output caps, and cloud Gateway defaults |
 
@@ -1252,7 +1252,7 @@ with the first dynamic catalog commit.
 - Add context snapshot tests around model switching.
 - Record baseline tool payloads, skill capability context, and Gateway lane.
 - Record native-first/PRoot fallback behavior.
-- Mark `crypto_credits_service.dart` as legacy/quarantined in documentation.
+- Remove the unused `crypto_credits_service.dart` prototype after repository-wide import/build verification.
 
 Exit criteria: baseline tests prove a model switch does not mutate context,
 tools, history, or runtime lane.

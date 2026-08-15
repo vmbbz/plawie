@@ -12,6 +12,18 @@ enum AiPaymentHeaderContract {
   x402Payment,
 }
 
+/// How a provider contract could attribute or settle Plawie commission.
+///
+/// `none` is the only active mode in the current catalog. The other values
+/// describe future partner contracts and must not alter a provider's x402
+/// recipient or amount without an independently verified integration.
+enum AiPaymentMonetizationMode {
+  none,
+  referral,
+  providerSplit,
+  firstPartySettlement,
+}
+
 /// Trusted product metadata for providers that can be funded or paid with the
 /// app's Base wallet. Provider behavior is intentionally explicit: a prepaid
 /// balance is not presented as if it were the same thing as per-request x402.
@@ -26,6 +38,7 @@ class AiPaymentProviderOption {
     required this.allowedHosts,
     required this.supportsTopUp,
     required this.paymentHeaderContract,
+    this.monetizationMode = AiPaymentMonetizationMode.none,
     this.topUpEndpoint,
     this.balanceEndpointTemplate,
   });
@@ -39,6 +52,7 @@ class AiPaymentProviderOption {
   final Set<String> allowedHosts;
   final bool supportsTopUp;
   final AiPaymentHeaderContract paymentHeaderContract;
+  final AiPaymentMonetizationMode monetizationMode;
   final Uri? topUpEndpoint;
   final String? balanceEndpointTemplate;
 
@@ -73,6 +87,7 @@ class AiPaymentProviderCatalog {
       allowedHosts: const <String>{'api.venice.ai'},
       supportsTopUp: true,
       paymentHeaderContract: AiPaymentHeaderContract.x402Payment,
+      monetizationMode: AiPaymentMonetizationMode.none,
       topUpEndpoint: Uri.parse('https://api.venice.ai/api/v1/x402/top-up'),
       balanceEndpointTemplate:
           'https://api.venice.ai/api/v1/x402/balance/{walletAddress}',
@@ -88,6 +103,7 @@ class AiPaymentProviderCatalog {
       allowedHosts: <String>{'blockrun.ai'},
       supportsTopUp: false,
       paymentHeaderContract: AiPaymentHeaderContract.paymentSignatureV2,
+      monetizationMode: AiPaymentMonetizationMode.none,
     ),
   ];
 
