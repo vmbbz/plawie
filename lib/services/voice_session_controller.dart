@@ -107,13 +107,14 @@ class VoiceSessionController {
   VoiceSessionState get state => _state;
 
   /// Starts a capture generation, or returns null when a capture is already
-  /// starting/active. The caller must pass the returned generation to every
-  /// async completion that can mutate voice state.
+  /// starting/active or the current turn is still transcribing, thinking,
+  /// speaking, or reconnecting. The caller must pass the returned generation
+  /// to every async completion that can mutate voice state.
   int? beginCapture({
     required VoiceCaptureOwner owner,
     required VoiceSessionSurface surface,
   }) {
-    if (_state.captureActive) return null;
+    if (_state.captureActive || _state.captureStartBlocked) return null;
 
     final generation = _state.generation + 1;
     _state = _state.copyWith(
@@ -218,4 +219,17 @@ class VoiceSessionController {
     );
     return true;
   }
+}
+
+extension VoiceSessionStateGuards on VoiceSessionState {
+  /// A new capture cannot safely take ownership while the previous turn is
+  /// still consuming its transcript, response, audio, or relay connection.
+  bool get captureStartBlocked => switch (phase) {
+        VoiceSessionPhase.transcribing ||
+        VoiceSessionPhase.thinking ||
+        VoiceSessionPhase.speaking ||
+        VoiceSessionPhase.reconnecting =>
+          true,
+        _ => false,
+      };
 }

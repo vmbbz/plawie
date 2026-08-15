@@ -109,6 +109,11 @@ class _ChatScreenState extends State<ChatScreen>
   Timer? _talkRelayFinalizationTimer;
   bool _talkRelayTurnAwaitingTranscript = false;
   Timer? _backgroundVoiceStopTimer;
+  Timer? _continuousListeningTimer;
+  bool _continuousSessionArmed = false;
+  bool _wakeWordActivationInFlight = false;
+  bool _wakeWordSuspendedForVoice = false;
+  AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
   int? _talkAssistantMessageIndex;
   String _talkAssistantTextBuffer = '';
 
@@ -579,6 +584,7 @@ class _ChatScreenState extends State<ChatScreen>
   void _syncChatRuntimeState({bool scrollInstantly = false}) {
     if (!mounted) return;
     final wasGenerating = _isGenerating;
+    final wasTtsSpeaking = _isTtsSpeaking;
     setState(() {
       _messages
         ..clear()
@@ -598,18 +604,32 @@ class _ChatScreenState extends State<ChatScreen>
       _gatewayTtsHealthMessage = _chatRuntime.ttsHealthMessage;
     });
     if (!_isListening) {
+      final currentVoicePhase = _voiceSession.state.phase;
       final nextVoicePhase = _isTtsSpeaking
           ? VoiceSessionPhase.speaking
           : _isThinking
               ? VoiceSessionPhase.thinking
               : !_isGenerating &&
-                      _voiceSession.state.phase == VoiceSessionPhase.thinking
+                      (currentVoicePhase == VoiceSessionPhase.thinking ||
+                          currentVoicePhase == VoiceSessionPhase.speaking)
                   ? VoiceSessionPhase.idle
                   : null;
       if (nextVoicePhase != null &&
           nextVoicePhase != _voiceSession.state.phase) {
         _voiceSession.setPhase(nextVoicePhase);
         _updatePipMicIcon();
+      }
+    }
+    final turnOrPlaybackFinished = (wasGenerating && !_isGenerating) ||
+        (wasTtsSpeaking && !_isTtsSpeaking);
+    if (turnOrPlaybackFinished &&
+        !_isGenerating &&
+        !_isTtsSpeaking &&
+        !_tts.isSpeaking) {
+      if (_continuousModeEnabled && _continuousSessionArmed) {
+        _scheduleContinuousListening();
+      } else {
+        unawaited(_resumeWakeWordIfNeeded());
       }
     }
     if (_chatPinnedToBottom ||
@@ -857,24 +877,122 @@ class _ChatScreenState extends State<ChatScreen>
     return bytes?.buffer.asUint8List();
   }
 
+  bool get _continuousModeEnabled {
+    try {
+      return PreferencesService().continuousMode;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String get _wakeWordMode {
+    try {
+      return PreferencesService().wakeWordMode;
+    } catch (_) {
+      return 'off';
+    }
+  }
+
+  bool get _voiceSurfaceCanCapture =>
+      _isPipMode || _appLifecycleState == AppLifecycleState.resumed;
+
+  Future<void> _handleWakeWordDetected() async {
+    if (!mounted ||
+        _wakeWordActivationInFlight ||
+        _wakeWordMode == 'off' ||
+        _isGenerating ||
+        _chatRuntime.isGenerating ||
+        _isListening ||
+        _voiceSession.state.captureActive ||
+        _voiceSession.state.captureStartBlocked) {
+      return;
+    }
+
+    _wakeWordActivationInFlight = true;
+    try {
+      _addDiagnosticLog('Wake word "Plawie" detected — activating voice turn');
+      await _startListening(owner: VoiceCaptureOwner.wakeWord);
+    } finally {
+      _wakeWordActivationInFlight = false;
+    }
+  }
+
+  /// Release the wake-word recognizer before any foreground/PiP voice capture
+  /// begins. Android exposes one microphone; two native recognizers must never
+  /// race for it. The mode remains persisted so it can be restored after the
+  /// current turn finishes.
+  Future<void> _pauseWakeWordForVoice() async {
+    final prefs = PreferencesService();
+    await prefs.init();
+    if (prefs.wakeWordMode == 'off') return;
+
+    _wakeWordSuspendedForVoice = true;
+    try {
+      if (await NativeBridge.isHotwordRunning()) {
+        await NativeBridge.stopHotword();
+        _addDiagnosticLog('Wake word paused while voice capture owns mic.');
+      }
+    } catch (e) {
+      _addDiagnosticLog('Wake word pause failed: $e');
+    }
+  }
+
+  Future<void> _resumeWakeWordIfNeeded() async {
+    if (!mounted || !_wakeWordSuspendedForVoice) return;
+
+    final prefs = PreferencesService();
+    await prefs.init();
+    final mode = prefs.wakeWordMode;
+    if (mode == 'off') {
+      _wakeWordSuspendedForVoice = false;
+      return;
+    }
+    if (_continuousModeEnabled ||
+        _isListening ||
+        _voiceSession.state.captureActive ||
+        _isGenerating ||
+        _chatRuntime.isGenerating ||
+        _isTtsSpeaking ||
+        _tts.isSpeaking) {
+      return;
+    }
+    if (!_voiceSurfaceCanCapture && mode != 'always') return;
+
+    // Claim the handoff before the await so duplicate runtime/TTS callbacks
+    // cannot start two HotwordService instances.
+    _wakeWordSuspendedForVoice = false;
+    try {
+      final started = await NativeBridge.setHotwordMode(mode);
+      if (!started) {
+        _wakeWordSuspendedForVoice = true;
+        _addDiagnosticLog('Wake word could not resume (mode: $mode).');
+      } else {
+        _addDiagnosticLog('Wake word resumed (mode: $mode).');
+      }
+    } catch (e) {
+      _wakeWordSuspendedForVoice = true;
+      _addDiagnosticLog('Wake word resume failed: $e');
+    }
+  }
+
   Future<void> _initVoiceParams() async {
     // Permission check for recorder is handled at start-time
     _tts.init();
+    final prefs = PreferencesService();
+    await prefs.init();
     // Subscribe to wake word events from HotwordService (no-op if service not running)
     _hotwordSub = NativeBridge.hotwordEvents.listen((event) {
-      if (event == 'wake_word_detected' &&
-          mounted &&
-          !_isGenerating &&
-          !_isListening) {
-        _addDiagnosticLog('Wake word "Plawie" detected — activating mic');
-        _startListening();
-      }
+      if (event == 'wake_word_detected') unawaited(_handleWakeWordDetected());
     }, onError: (_) {/* service not running — ignore */});
 
-    final wakeMode = PreferencesService().wakeWordMode;
+    final wakeMode = prefs.wakeWordMode;
     if (wakeMode != 'off') {
-      NativeBridge.startHotword();
-      _addDiagnosticLog('Wake word service started (mode: $wakeMode)');
+      final started = await NativeBridge.setHotwordMode(wakeMode);
+      _addDiagnosticLog(
+        started
+            ? 'Wake word service started (mode: $wakeMode)'
+            : 'Wake word service failed to start (mode: $wakeMode)',
+      );
     }
 
     _tts.onStart = () {
@@ -906,8 +1024,12 @@ class _ChatScreenState extends State<ChatScreen>
           _updatePipMicIcon();
 
           // Continuous mode: wait 500ms then restart listening automatically.
-          if (PreferencesService().continuousMode && !_isGenerating) {
+          if (_continuousModeEnabled &&
+              _continuousSessionArmed &&
+              !_isGenerating) {
             _scheduleContinuousListening();
+          } else {
+            unawaited(_resumeWakeWordIfNeeded());
           }
         }
       }
@@ -1908,7 +2030,8 @@ class _ChatScreenState extends State<ChatScreen>
     // listening now. When TTS IS active the onComplete / onPlayerComplete
     // callbacks handle the restart once the last audio chunk finishes.
     if (mounted &&
-        PreferencesService().continuousMode &&
+        _continuousModeEnabled &&
+        _continuousSessionArmed &&
         !_tts.isSpeaking &&
         _ttsQueue.isEmpty) {
       _scheduleContinuousListening();
@@ -1943,12 +2066,24 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _scheduleContinuousListening() {
+    if (!mounted || !_continuousModeEnabled || !_continuousSessionArmed) return;
+    if (!_voiceSurfaceCanCapture) return;
+
+    _continuousListeningTimer?.cancel();
     final generation = _voiceSession.state.generation;
-    Future.delayed(const Duration(milliseconds: 500), () {
+    _continuousListeningTimer = Timer(const Duration(milliseconds: 500), () {
+      _continuousListeningTimer = null;
       if (!mounted ||
+          !_continuousModeEnabled ||
+          !_continuousSessionArmed ||
+          !_voiceSurfaceCanCapture ||
           !_voiceSession.isCurrent(generation) ||
           _isGenerating ||
-          _isListening) {
+          _chatRuntime.isGenerating ||
+          _isTtsSpeaking ||
+          _tts.isSpeaking ||
+          _isListening ||
+          _voiceSession.state.captureStartBlocked) {
         return;
       }
       unawaited(_startListening());
@@ -2128,8 +2263,8 @@ class _ChatScreenState extends State<ChatScreen>
         setState(() {
           _messages.add(ChatMessage(text: text.trim(), isUser: true));
           _messages.add(ChatMessage(text: '', isUser: false));
-           _talkAssistantMessageIndex = _messages.length - 1;
-           _talkAssistantTextBuffer = '';
+          _talkAssistantMessageIndex = _messages.length - 1;
+          _talkAssistantTextBuffer = '';
           _isGenerating = true;
           _isThinking = true;
         });
@@ -2163,22 +2298,22 @@ class _ChatScreenState extends State<ChatScreen>
       });
       _scrollToBottom();
 
-        if (isFinal) {
+      if (isFinal) {
         _talkRelayFinalizationTimer?.cancel();
         _talkRelayFinalizationTimer = null;
         _talkRelayTurnAwaitingTranscript = false;
         _flushTtsQueue();
-          setState(() {
-            _isGenerating = false;
-            _isThinking = false;
-          });
-          if (!_tts.isSpeaking && _ttsQueue.isEmpty) {
-            _voiceSession.setPhase(VoiceSessionPhase.idle);
-            setState(() {});
-            _updatePipMicIcon();
-          }
-          _saveChatHistory();
+        setState(() {
+          _isGenerating = false;
+          _isThinking = false;
+        });
+        if (!_tts.isSpeaking && _ttsQueue.isEmpty) {
+          _voiceSession.setPhase(VoiceSessionPhase.idle);
+          setState(() {});
+          _updatePipMicIcon();
         }
+        _saveChatHistory();
+      }
     }
   }
 
@@ -2294,8 +2429,8 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   /// Start recording — called when user begins holding the mic orb (hold-to-record UX).
-  Future<void> _startListening() async {
-    if (_isListening) return;
+  Future<void> _startListening({VoiceCaptureOwner? owner}) async {
+    if (_isListening || _voiceSession.state.captureStartBlocked) return;
 
     if (!await _audioRecorder.hasPermission()) {
       _voiceSession.setPhase(
@@ -2311,15 +2446,24 @@ class _ChatScreenState extends State<ChatScreen>
     }
     if (!mounted) return;
 
+    await _pauseWakeWordForVoice();
+    if (!mounted) return;
+
+    final captureOwner =
+        owner ?? (_isPipMode ? VoiceCaptureOwner.pip : VoiceCaptureOwner.chat);
     final generation = _voiceSession.beginCapture(
-      owner: _isPipMode ? VoiceCaptureOwner.pip : VoiceCaptureOwner.chat,
+      owner: captureOwner,
       surface:
           _isPipMode ? VoiceSessionSurface.pip : VoiceSessionSurface.fullScreen,
     );
     if (generation == null) {
       _addDiagnosticLog('Voice capture request ignored: session is busy.');
+      if (captureOwner == VoiceCaptureOwner.wakeWord) {
+        unawaited(_resumeWakeWordIfNeeded());
+      }
       return;
     }
+    if (_continuousModeEnabled) _continuousSessionArmed = true;
     if (mounted) {
       setState(() {});
       _syncOverlayState();
@@ -2411,6 +2555,7 @@ class _ChatScreenState extends State<ChatScreen>
         _updatePipMicIcon();
       }
       _addDiagnosticLog('Voice recording failed to start: $e');
+      unawaited(_resumeWakeWordIfNeeded());
       return;
     }
     _voiceSession.markListening(generation);
@@ -2421,6 +2566,8 @@ class _ChatScreenState extends State<ChatScreen>
   /// Stop recording and transcribe — called when user releases the mic orb.
   Future<void> _stopListening() async {
     if (!_isListening && !_voiceSession.state.captureActive) return;
+    _continuousListeningTimer?.cancel();
+    _continuousListeningTimer = null;
     final stopGeneration = _voiceSession.invalidate(
       phase: VoiceSessionPhase.transcribing,
       reason: 'Voice capture stopped by user.',
@@ -2520,6 +2667,7 @@ class _ChatScreenState extends State<ChatScreen>
           behavior: SnackBarBehavior.floating,
         ),
       );
+    unawaited(_resumeWakeWordIfNeeded());
   }
 
   void _handleNativeSpeechFinished(String? text, int generation) {
@@ -3487,12 +3635,23 @@ class _ChatScreenState extends State<ChatScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appLifecycleState = state;
     if (state == AppLifecycleState.resumed) {
       _backgroundVoiceStopTimer?.cancel();
       _backgroundVoiceStopTimer = null;
       _scrollToBottom(instant: true);
+      if (_continuousModeEnabled &&
+          _continuousSessionArmed &&
+          !_isGenerating &&
+          !_isListening &&
+          !_voiceSession.state.captureActive &&
+          !_voiceSession.state.captureStartBlocked) {
+        _scheduleContinuousListening();
+      }
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
+      _continuousListeningTimer?.cancel();
+      _continuousListeningTimer = null;
       // Android can report paused/inactive just before the PiP mode callback.
       // Defer the stop briefly so an active PiP voice surface keeps ownership,
       // while ordinary backgrounding still releases the microphone promptly.
@@ -3511,13 +3670,17 @@ class _ChatScreenState extends State<ChatScreen>
       }
     }
 
-    final mode = PreferencesService().wakeWordMode;
+    final mode = _wakeWordMode;
     if (mode == 'off') return;
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       if (mode == 'foreground') NativeBridge.stopHotword();
-    } else if (state == AppLifecycleState.resumed) {
-      NativeBridge.startHotword();
+    } else if (state == AppLifecycleState.resumed &&
+        !_wakeWordSuspendedForVoice &&
+        !_isListening &&
+        !_voiceSession.state.captureActive &&
+        !_isGenerating) {
+      NativeBridge.setHotwordMode(mode);
     }
   }
 
@@ -3551,6 +3714,8 @@ class _ChatScreenState extends State<ChatScreen>
     _talkRelayFinalizationTimer = null;
     _backgroundVoiceStopTimer?.cancel();
     _backgroundVoiceStopTimer = null;
+    _continuousListeningTimer?.cancel();
+    _continuousListeningTimer = null;
     _configurationRequestSub?.cancel();
     _chatRuntime.removeListener(_syncChatRuntimeState);
     _scrollController.removeListener(_handleChatScroll);

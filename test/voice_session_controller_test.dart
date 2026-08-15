@@ -90,4 +90,32 @@ void main() {
     );
     expect(controller.state.phase, VoiceSessionPhase.transcribing);
   });
+
+  test('does not allow a new capture while the previous turn is busy', () {
+    final controller = VoiceSessionController();
+    final generation = controller.beginCapture(
+      owner: VoiceCaptureOwner.chat,
+      surface: VoiceSessionSurface.fullScreen,
+    );
+    expect(generation, isNotNull);
+    controller.markListening(generation!);
+    controller.setPhase(VoiceSessionPhase.thinking);
+
+    expect(
+      controller.beginCapture(
+        owner: VoiceCaptureOwner.pip,
+        surface: VoiceSessionSurface.pip,
+      ),
+      isNull,
+    );
+
+    controller.invalidate();
+    expect(
+      controller.beginCapture(
+        owner: VoiceCaptureOwner.wakeWord,
+        surface: VoiceSessionSurface.fullScreen,
+      ),
+      isNotNull,
+    );
+  });
 }

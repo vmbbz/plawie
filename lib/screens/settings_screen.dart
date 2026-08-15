@@ -480,8 +480,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       SwitchListTile(
                         title: const Text('Continuous Mode'),
-                        subtitle:
-                            const Text('Auto-restart mic after each response'),
+                        subtitle: const Text(
+                            'Hands-free turn chaining; pauses outside app or PiP'),
                         value: _continuousMode,
                         onChanged: (v) {
                           setState(() => _continuousMode = v);
@@ -534,7 +534,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: const Text('Wake Word "Plawie"'),
                         subtitle: Text(_hotwordRunning
                             ? 'Listening · mode: $_wakeWordMode'
-                            : 'Off — say "Plawie" to activate hands-free'),
+                            : 'Off — enable to say "Plawie" and start a voice turn'),
                         trailing: _hotwordRunning
                             ? Container(
                                 padding: const EdgeInsets.symmetric(
@@ -584,11 +584,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 setState(() => _wakeWordMode = v);
                                 _prefs.wakeWordMode = v;
                                 await NativeBridge.setHotwordMode(v);
-                                if (v == 'off') {
-                                  await NativeBridge.stopHotword();
-                                } else {
-                                  await NativeBridge.startHotword();
-                                }
                                 final running =
                                     await NativeBridge.isHotwordRunning();
                                 if (mounted) {

@@ -248,17 +248,18 @@ contracts and proof:
 
 6. **Validation and release evidence**
    - focused unit/widget tests for the state machine and STT contract;
-   - real-device transcript/send proof with a configured provider;
+   - real-device transcript/send proof with a configured provider (now verified
+     manually through Plawie PiP on the connected Samsung handset);
    - full-screen → PiP → full-screen recording/video evidence;
    - background/lock/unlock/process-recreation evidence;
    - no APKs, screenshots, tokens, or temporary device artifacts committed.
 
-The implementation order is therefore: obtain provider-backed transcript/send
-proof, complete the remaining realtime Talk and lifecycle test matrix, then
-add a richer compact visual/accessibility graphic and second-OEM PiP
-validation. The basic status presentation and duplicate-action guard are now
-implemented; Continuous Talk and avatars are not being reimplemented from
-scratch, but are brought under the same reliable session contract.
+The implementation order is therefore: harden Continuous Talk and automatic
+wake-word ownership, complete the remaining realtime Talk and lifecycle test
+matrix, then perform second-OEM PiP validation. The existing Plawie VRM/avatar
+PiP surface is retained; this lane does not add another visual graphic or
+avatar implementation. Continuous Talk and wake word are brought under the
+same reliable session contract.
 
 ### Realtime session and background ownership slice
 
@@ -278,10 +279,12 @@ existing Plawie relay without replacing its renderer or Gateway architecture:
   PiP-transition grace period. An active PiP surface remains an authorized
   voice owner; PiP entry/exit itself does not tear down the session.
 
-This slice has passed analysis and focused session/auth tests. It still needs a
-configured realtime provider for real `ready` → audio → transcript → assistant
-completion evidence; the current handset's provider/network limitation means
-that path is not yet claimed as device-proven.
+This slice has passed analysis and focused session/auth tests. The connected
+Samsung handset has now also provided the missing end-to-end evidence: a user
+spoke in the PiP window, the turn was transcribed, sent to the agent, and the
+agent reply was spoken back in PiP. The earlier `NO_SPEECH_DETECTED` result was
+therefore an environment-specific failed attempt, not the current product
+behavior under a successful provider/device run.
 
 The newly installed debug APK also passed an ordinary-background smoke: native
 recognition opened `AudioRecord`, the Activity was sent Home, and after return
@@ -313,11 +316,13 @@ Device evidence on the Samsung Android 14/API 34 handset:
 - tapping the microphone action correlated with a platform
   `VOICE_RECOGNITION` start/stop pair while the app remained pinned, showing
   that the RemoteAction can reach the voice path;
-- the handset still produced no transcript because its recognizer had no
-  network and no offline `en-ZA` pack; Samsung's overlay did not expose the
-  action's text/content description, so label discoverability is not claimed;
-- a second Android implementation, action-level stop/mute semantics, and a
-  visible compact status graphic remain validation/polish work.
+- the handset's first offline-recognizer attempt produced no transcript, but a
+  later manual PiP run successfully transcribed, sent, and played the agent
+  reply; Samsung's overlay did not expose the action's text/content
+  description, so label discoverability is not claimed;
+- the existing Plawie avatar/voice surface remains the compact visual
+  presentation; a second Android implementation and second-OEM validation
+  remain future work.
 
 ### Voice phase presentation and PiP action-safety slice
 
@@ -348,16 +353,47 @@ Validation for this round:
 - Samsung Android 14/API 34 smoke: the Voice Input menu opened the platform
   recognizer and `AudioRecord`; PiP entered with `mode=pinned`, a 3:4 surface,
   and `hasSetActions=true`, with no crash or ANR;
-- transcript/send is still not claimed: the handset's recognizer reports no
-  offline `en-ZA` language pack and `NO_SPEECH_DETECTED`, so this environment
-  cannot provide spoken text for the final chat-send assertion;
+- transcript/send is now manually verified in PiP: spoken input was
+  transcribed, delivered to the agent, and the spoken reply returned to PiP;
+  the earlier no-pack/`NO_SPEECH_DETECTED` result remains documented as a
+  fallback-environment limitation;
 - the repository-wide Flutter suite still reports seven unrelated failures in
   `skill_provisioning_service_test.dart` around legacy dependency-pack label
   expectations. No changed voice test failed.
 
-This round intentionally does not claim provider-backed transcript/send proof,
-a second-OEM PiP result, or an unrestricted background microphone service. Those
-remain explicit gates for the next validation pass.
+This round intentionally does not claim a second-OEM PiP result or an
+unrestricted background microphone service. Those remain explicit gates for the
+next validation pass.
+
+### Continuous Talk and automatic wake-word ownership slice
+
+The existing Plawie settings already expose Continuous Mode and Wake Word
+`Plawie`; the remaining work is reliability, not adding new switches:
+
+- Continuous Mode uses one cancellable restart timer instead of uncancellable
+  delayed callbacks, and checks the persisted preference again immediately
+  before reopening capture;
+- only a voice-armed session can auto-restart, so a normal typed chat response
+  cannot unexpectedly open the microphone;
+- automatic restart is allowed only while the app is resumed or an active PiP
+  surface owns the interaction; ordinary backgrounding releases capture and
+  waits for a safe foreground/PiP handoff;
+- `VoiceSessionController` rejects new capture while the previous generation
+  is transcribing, thinking, speaking, or reconnecting;
+- manual, PiP, and wake-word capture pause `HotwordService` before claiming the
+  microphone, then restore the selected wake policy after the turn or playback
+  finishes;
+- wake-word events are guarded against duplicate partial/final callbacks, and
+  the native service does not restart itself after it has been stopped;
+- startup now passes the selected foreground/always mode through the native
+  bridge consistently, and the settings copy explains that Continuous Mode
+  pauses outside the app or PiP.
+
+The remaining device gates are: enable and exercise Continuous Mode through at
+least two consecutive turns, exercise Wake Word → one voice turn → wake-word
+resume, and verify foreground-only versus always-on policy across Activity
+pause/resume. The latter must remain subject to Android microphone and battery
+policy; PiP is not treated as unrestricted background capture.
 
 ## Proposed state boundary
 
