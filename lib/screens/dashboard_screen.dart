@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +8,8 @@ import '../constants.dart';
 import '../providers/gateway_provider.dart';
 import '../providers/node_provider.dart';
 import '../services/bootstrap_service.dart';
+import '../services/native_bridge.dart';
+import '../services/preferences_service.dart';
 import '../widgets/gateway_controls.dart';
 import 'node_screen.dart';
 import 'onboarding_screen.dart';
@@ -42,6 +46,80 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  StreamSubscription<String>? _hotwordSub;
+  bool _wakeWordOpeningChat = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _hotwordSub = NativeBridge.hotwordEvents.listen((event) {
+      if (event == 'wake_word_detected') {
+        unawaited(_openChatForWakeWord());
+      }
+    });
+    unawaited(_ensureWakeWordService());
+  }
+
+  Future<void> _ensureWakeWordService() async {
+    final prefs = PreferencesService();
+    await prefs.init();
+    final mode = prefs.wakeWordMode;
+    if (!mounted || mode == 'off') return;
+    if (!await NativeBridge.isHotwordRunning()) {
+      await NativeBridge.setHotwordMode(mode);
+    }
+  }
+
+  Future<void> _openChatForWakeWord() async {
+    if (_wakeWordOpeningChat || !mounted) return;
+    final prefs = PreferencesService();
+    await prefs.init();
+    if (!mounted || prefs.wakeWordMode == 'off') return;
+
+    _wakeWordOpeningChat = true;
+    // The detector has already consumed the wake word. Release its microphone
+    // before the ChatScreen claims it for the command phrase.
+    await NativeBridge.stopHotword();
+    await _hotwordSub?.cancel();
+    _hotwordSub = null;
+    if (!mounted) return;
+
+    await Navigator.of(context).push(
+      _zoomRoute(const ChatScreen(autoStartVoice: true)),
+    );
+
+    if (mounted) {
+      _wakeWordOpeningChat = false;
+      _hotwordSub = NativeBridge.hotwordEvents.listen((event) {
+        if (event == 'wake_word_detected') {
+          unawaited(_openChatForWakeWord());
+        }
+      });
+      unawaited(_ensureWakeWordService());
+    }
+  }
+
+  Future<void> _openChatManually() async {
+    await _hotwordSub?.cancel();
+    _hotwordSub = null;
+    if (!mounted) return;
+    await Navigator.of(context).push(_zoomRoute(const ChatScreen()));
+    if (mounted) {
+      _hotwordSub = NativeBridge.hotwordEvents.listen((event) {
+        if (event == 'wake_word_detected') {
+          unawaited(_openChatForWakeWord());
+        }
+      });
+      unawaited(_ensureWakeWordService());
+    }
+  }
+
+  @override
+  void dispose() {
+    _hotwordSub?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -103,10 +181,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             iconColor: AppColors.statusGreen,
                             widthFactor: 1.0,
                             enabled: gwState.isRunning,
-                            onTap: gwState.isRunning
-                                ? () => Navigator.of(context)
-                                    .push(_zoomRoute(const ChatScreen()))
-                                : null,
+                            onTap: gwState.isRunning ? _openChatManually : null,
                           ),
                           _BlobDashCard(
                             title: 'Bots',

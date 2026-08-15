@@ -46,7 +46,10 @@ dependencies:
   # Natural Scheduling
   cron: ^0.6.2
   
-  # speech_to_text: ^7.3.0  # Removed in favor of Gateway-side STT logic
+  # Android's SpeechRecognizer is the official client's resilient fallback when
+  # a Gateway realtime Talk provider is not configured. Keep Gateway STT as a
+  # compatibility path, but do not make it the only way to submit voice input.
+  speech_to_text: ^7.3.0
   record: ^5.1.0
   
   # Base Chain (EVM) utilities

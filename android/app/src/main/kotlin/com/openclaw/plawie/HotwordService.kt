@@ -53,7 +53,33 @@ class HotwordService : Service(), RecognitionListener {
         private const val MODEL_URL =
             "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
         private const val WATCHDOG_INTERVAL_MS = 5 * 60 * 1000L // 5 minutes
-        private val WAKE_WORDS = listOf("plawie", "hey plawie", "ok plawie", "play we")
+        private const val DUPLICATE_WAKE_WINDOW_MS = 1500L
+        private val WAKE_WORDS =
+            listOf("plawie", "hey play we", "ok play we", "play we")
+
+        /**
+         * Start the detector from a user-visible Activity or another allowed
+         * Android entry point. Keeping this in the service gives native
+         * callers one consistent foreground-service launch path.
+         */
+        fun startForMode(context: Context, mode: String): Boolean {
+            if (mode == "off") return false
+            val intent = Intent(context.applicationContext, HotwordService::class.java).apply {
+                action = ACTION_SET_MODE
+                putExtra("mode", mode)
+            }
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start wake-word service (mode=$mode)", e)
+                false
+            }
+        }
 
         var isRunning = false
             private set
@@ -63,7 +89,14 @@ class HotwordService : Service(), RecognitionListener {
     private var model: Model? = null
     private val handler = Handler(Looper.getMainLooper())
     private var lastEventTime = System.currentTimeMillis()
+    private var lastWakeBroadcastTime = 0L
     private var watchdogActive = false
+
+    private val restartRunnable = object : Runnable {
+        override fun run() {
+            if (isRunning) restartRecognition()
+        }
+    }
 
     // Watchdog: restart SpeechService if silent for WATCHDOG_INTERVAL_MS
     private val watchdogRunnable = object : Runnable {
@@ -83,8 +116,24 @@ class HotwordService : Service(), RecognitionListener {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification("Wake word: listening…"))
+        } catch (e: SecurityException) {
+            // Android 14+ can recreate a sticky microphone service while the
+            // app is backgrounded. That restart is not microphone-FGS
+            // eligible, so fail closed instead of allowing the exception to
+            // terminate the whole Plawie process.
+            isRunning = false
+            Log.e(
+                TAG,
+                "Wake-word service could not enter the foreground; stopping " +
+                    "because the app is not microphone-FGS eligible",
+                e,
+            )
+            stopSelf()
+            return
+        }
         isRunning = true
-        startForeground(NOTIFICATION_ID, buildNotification("Wake word: listening…"))
         // Download model + start recognition in background
         Thread { initModel() }.start()
     }
@@ -100,13 +149,17 @@ class HotwordService : Service(), RecognitionListener {
                 handleModeChange(mode)
             }
         }
-        return START_STICKY
+        // A microphone FGS cannot always be recreated from the background on
+        // Android 14+. The visible Activity restores the persisted policy when
+        // the user returns, while this avoids an illegal restart/crash loop.
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         isRunning = false
         watchdogActive = false
         handler.removeCallbacks(watchdogRunnable)
+        handler.removeCallbacks(restartRunnable)
         stopRecognition()
         model?.close()
         model = null
@@ -128,7 +181,14 @@ class HotwordService : Service(), RecognitionListener {
         try {
             Log.i(TAG, "Loading Vosk model from ${modelDir.absolutePath}")
             model = Model(modelDir.absolutePath)
-            handler.post { startRecognition() }
+            if (!isRunning) {
+                model?.close()
+                model = null
+                return
+            }
+            handler.post {
+                if (isRunning) startRecognition()
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load Vosk model", e)
             updateNotification("Wake word: model load failed")
@@ -179,7 +239,10 @@ class HotwordService : Service(), RecognitionListener {
         try {
             // Grammar-based recognizer: only listens for known wake words + [unk]
             // This dramatically reduces false positives compared to full speech recognition
-            val grammar = """["plawie", "hey plawie", "ok plawie", "play we", "[unk]"]"""
+            // The small English model does not contain the brand spelling
+            // "plawie". It decodes the spoken word phonetically as "play we",
+            // so retain that supported alias while documenting the limitation.
+            val grammar = """["hey play we", "ok play we", "play we", "[unk]"]"""
             val recognizer = Recognizer(m, 16000.0f, grammar)
             speechService = SpeechService(recognizer, 16000.0f)
             speechService!!.startListening(this)
@@ -249,7 +312,8 @@ class HotwordService : Service(), RecognitionListener {
     override fun onError(exception: Exception?) {
         Log.e(TAG, "Vosk recognition error: ${exception?.message}")
         updateNotification("Wake word: recognition error — restarting…")
-        handler.postDelayed({ restartRecognition() }, 2000)
+        handler.removeCallbacks(restartRunnable)
+        handler.postDelayed(restartRunnable, 2000)
     }
 
     override fun onTimeout() {
@@ -273,6 +337,12 @@ class HotwordService : Service(), RecognitionListener {
         WAKE_WORDS.any { text.contains(it) }
 
     private fun broadcastWakeWord() {
+        val now = System.currentTimeMillis()
+        if (now - lastWakeBroadcastTime < DUPLICATE_WAKE_WINDOW_MS) {
+            Log.d(TAG, "Ignoring duplicate wake-word callback")
+            return
+        }
+        lastWakeBroadcastTime = now
         val intent = Intent(ACTION_WAKE_WORD_DETECTED).apply {
             setPackage(packageName)
         }

@@ -67,6 +67,8 @@ class MainActivity : FlutterActivity() {
         const val NOTIFICATION_PERMISSION_REQUEST = 1001
         const val SCREEN_CAPTURE_REQUEST = 1002
         const val GIF_IMPORT_REQUEST = 1003
+        const val FLUTTER_PREFS = "FlutterSharedPreferences"
+        const val WAKE_WORD_PREF = "flutter.wake_word_mode"
     }
 
     private lateinit var bootstrapManager: BootstrapManager
@@ -187,7 +189,7 @@ class MainActivity : FlutterActivity() {
                         try {
                             val params = android.app.PictureInPictureParams.Builder()
                                 .setAspectRatio(android.util.Rational(3, 4))
-                                .setActions(buildPipActions(false))
+                                .setActions(buildPipActions(pipVoiceState))
                                 .build()
                             val success = enterPictureInPictureMode(params)
                             result.success(success)
@@ -198,13 +200,39 @@ class MainActivity : FlutterActivity() {
                         result.error("UNSUPPORTED", "PiP requires Android O+", null)
                     }
                 }
-                "updatePipMicState" -> {
-                    val isListening = call.arguments as? Boolean ?: false
+                "updatePipVoiceState" -> {
+                    val state = PipVoiceState.from(call.arguments)
+                    pipVoiceState = state
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         try {
                             val params = android.app.PictureInPictureParams.Builder()
                                 .setAspectRatio(android.util.Rational(3, 4))
-                                .setActions(buildPipActions(isListening))
+                                .setActions(buildPipActions(state))
+                                .build()
+                            setPictureInPictureParams(params)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.w("MainActivity", "Failed to update PiP voice state", e)
+                            result.success(false)
+                        }
+                    } else {
+                        result.success(false)
+                    }
+                }
+                "updatePipMicState" -> {
+                    // Keep the old boolean method for already-installed Flutter
+                    // shells while the typed state bridge rolls out.
+                    val isListening = call.arguments as? Boolean ?: false
+                    pipVoiceState = PipVoiceState(
+                        phase = if (isListening) "listening" else "idle",
+                        isListening = isListening,
+                        label = if (isListening) "Listening" else "Voice ready",
+                    )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            val params = android.app.PictureInPictureParams.Builder()
+                                .setAspectRatio(android.util.Rational(3, 4))
+                                .setActions(buildPipActions(pipVoiceState))
                                 .build()
                             setPictureInPictureParams(params)
                             result.success(true)
@@ -1062,6 +1090,12 @@ class MainActivity : FlutterActivity() {
             registerReceiver(wakeWordReceiver, wakeFilter)
         }
 
+        // Restore a persisted Always-on detector after a process recreation.
+        // Android only permits microphone foreground-service startup while the
+        // Activity is visible, so this is deliberately done here rather than
+        // from BootReceiver.
+        startPersistedAlwaysOnHotword()
+
         // EventChannel: Flutter subscribes to receive wake word events
         EventChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -1082,17 +1116,7 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "startHotword" -> {
-                    val intent = Intent(applicationContext, HotwordService::class.java)
-                    try {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(intent)
-                        } else {
-                            startService(intent)
-                        }
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("HOTWORD_ERROR", e.message, null)
-                    }
+                    result.success(HotwordService.startForMode(applicationContext, "foreground"))
                 }
                 "stopHotword" -> {
                     stopService(Intent(applicationContext, HotwordService::class.java))
@@ -1100,23 +1124,13 @@ class MainActivity : FlutterActivity() {
                 }
                 "setHotwordMode" -> {
                     val mode = call.argument<String>("mode") ?: "foreground"
-                    val intent = Intent(applicationContext, HotwordService::class.java).apply {
-                        action = HotwordService.ACTION_SET_MODE
-                        putExtra("mode", mode)
-                    }
                     if (mode == "off") {
                         stopService(Intent(applicationContext, HotwordService::class.java))
                     } else {
-                        try {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                startForegroundService(intent)
-                            } else {
-                                startService(intent)
-                            }
-                        } catch (e: Exception) {
-                            result.error("HOTWORD_ERROR", e.message, null)
-                            return@setMethodCallHandler
-                        }
+                        result.success(
+                            HotwordService.startForMode(applicationContext, mode),
+                        )
+                        return@setMethodCallHandler
                     }
                     result.success(true)
                 }
@@ -1619,27 +1633,84 @@ class MainActivity : FlutterActivity() {
         pipMethodChannel?.invokeMethod("onPiPModeChanged", isInPictureInPictureMode)
     }
 
-    private fun buildPipActions(isListening: Boolean): List<RemoteAction> {
+    private data class PipVoiceState(
+        val phase: String,
+        val isListening: Boolean,
+        val label: String,
+    ) {
+        companion object {
+            fun from(arguments: Any?): PipVoiceState {
+                val map = arguments as? Map<*, *> ?: return PipVoiceState(
+                    phase = "idle",
+                    isListening = false,
+                    label = "Voice ready",
+                )
+                val phase = map["phase"]?.toString()?.trim()?.lowercase()
+                    ?.takeIf { it.isNotEmpty() } ?: "idle"
+                val listening = map["listening"] as? Boolean ?: phase == "listening"
+                val label = map["label"]?.toString()?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: if (listening) "Listening" else "Voice ready"
+                return PipVoiceState(phase, listening, label)
+            }
+        }
+    }
+
+    private fun startPersistedAlwaysOnHotword() {
+        val mode = getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE)
+            .getString(WAKE_WORD_PREF, "off")
+        if (mode != "always") return
+
+        val started = HotwordService.startForMode(applicationContext, mode)
+        Log.i("MainActivity", "Restoring persisted wake-word mode=$mode started=$started")
+    }
+
+    private var pipVoiceState = PipVoiceState(
+        phase = "idle",
+        isListening = false,
+        label = "Voice ready",
+    )
+
+    private fun buildPipActions(state: PipVoiceState): List<RemoteAction> {
         val micIntent = Intent(ACTION_PIP_MIC).setPackage(packageName)
         val micPendingIntent = PendingIntent.getBroadcast(
             this, 0, micIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Using standard Android icons. 
-        // ic_btn_speak_now (outline) for idle
-        // ic_lock_idle_lock (filled/different) for listening - or just a different title
-        val iconRes = if (isListening) android.R.drawable.ic_lock_idle_lock else android.R.drawable.ic_btn_speak_now
-        val title = if (isListening) "Listening..." else "Mic"
+        // The RemoteAction is also the native fallback indicator when Flutter
+        // rendering is paused: the icon and explicit label communicate the
+        // current voice phase without relying on the WebView/avatar.
+        val isBusy = state.phase == "transcribing" ||
+            state.phase == "thinking" ||
+            state.phase == "speaking" ||
+            state.phase == "reconnecting"
+        val iconRes = when {
+            state.isListening -> android.R.drawable.ic_menu_close_clear_cancel
+            isBusy -> android.R.drawable.ic_popup_sync
+            else -> android.R.drawable.ic_btn_speak_now
+        }
+        val title = when {
+            state.isListening -> "Stop listening"
+            isBusy -> state.label
+            else -> "Start voice input"
+        }
+        val description = when {
+            state.isListening -> "Stop Plawie voice input (${state.label})"
+            isBusy -> "Voice input is busy: ${state.label}"
+            else -> "Start Plawie voice input (${state.label})"
+        }
         
         val micAction = RemoteAction(
             Icon.createWithResource(this, iconRes),
             title,
-            "Toggle microphone",
+            description,
             micPendingIntent
         )
-        // We can't easily tint RemoteAction icons dynamically in PiP without custom icons, 
-        // but changing the icon resource and title provides clear feedback.
+        // A disabled RemoteAction remains a native status indicator but cannot
+        // create a second capture while the current turn is transcribing or
+        // delivering its response.
+        micAction.isEnabled = !isBusy
         return listOf(micAction)
     }
 
