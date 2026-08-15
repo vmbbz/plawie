@@ -1,6 +1,6 @@
 # Plawie launch-site deployment and release-channel runbook
 
-**Updated:** 2026-08-08
+**Updated:** 2026-08-10
 
 **Branch:** `codex/plawie-landing-site`
 
@@ -18,6 +18,13 @@ does not make a claim the Android release cannot support.
 The website is static semantic HTML, CSS, and dependency-free JavaScript. It
 does not depend on the Flutter web shell, does not contain wallet or provider
 credentials, does not set marketing cookies, and does not collect email.
+
+The dedicated landing branch excluded the app-only `fllama` gitlink because
+Netlify attempted to resolve it during repository preparation even though the
+site build never runs Flutter. The canonical native application branch must
+retain that reviewed local-LLM dependency. Deploy the landing site from the
+site-only branch or an exported `site/` artifact; never delete `fllama` from
+the combined Android branch to work around a hosting checkout limitation.
 
 ## Local preview
 
@@ -70,7 +77,10 @@ look for or invent a fixed web-server IP.
 2. Select `codex/plawie-landing-site` for the first deploy preview. Change the
    production branch only after the landing work is merged into the chosen
    release branch.
-3. Leave the build command empty and set the publish directory to `site`.
+3. Keep the repository's `netlify.toml` settings: build command
+   `node scripts/build_landing_site.mjs` and publish directory `site`. The build
+   materializes the reviewed VRM and limb-animation assets; do not replace it
+   with a Flutter build or an npm dependency-install step.
 4. Review the generated `*.netlify.app` URL before assigning the custom domain.
 5. In **Domain management**, assign `plawie.app` as the primary domain and add
    `www.plawie.app` as a domain alias.
