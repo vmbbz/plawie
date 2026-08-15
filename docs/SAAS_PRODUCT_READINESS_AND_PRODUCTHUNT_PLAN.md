@@ -305,6 +305,8 @@ Read the [Product Hunt Launch Guide](https://www.producthunt.com/launch), [prepa
 ### Phase 1 — measurement foundation
 
 - Define event schemas and redaction tests.
+- The local `ProductTelemetryEvent` contract and consent gate are now defined
+  and tested; no analytics SDK or network sender is wired yet.
 - Add consent-aware PostHog web/Flutter events.
 - Add stable random installation IDs, never hardware identifiers.
 - Create the activation, reliability, and transaction-volume dashboards.

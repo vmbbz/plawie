@@ -24,6 +24,10 @@
 - Added `CommerceReceipt` and `CommerceReceiptStore` as a redacted local
   projection. Existing x402 provider settlements are mirrored into it with a
   zero Plawie fee; local receipts never become proof of platform revenue.
+- Added `ProductTelemetryEvent` and `ProductTelemetryRecorder` as a strict,
+  consent-aware analytics boundary. It accepts only bounded operational fields
+  and rejects prompts, transcripts, wallet data, signatures, credentials, and
+  arbitrary payloads.
 
 ## Deliberately not enabled
 

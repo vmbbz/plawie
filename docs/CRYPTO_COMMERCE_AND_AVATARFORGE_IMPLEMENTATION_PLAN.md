@@ -60,6 +60,12 @@ Ensure the app cannot accidentally route users toward OpenRouter crypto credits,
 
 ## Phase 2 — transaction and commission domain
 
+The first local foundation now exists: `commerce_fee_policy.dart` performs
+integer-safe, fail-closed fee arithmetic, and `commerce_receipt.dart` projects
+redacted provider settlements without treating them as Plawie revenue. The
+remaining commission quote, partner settlement, and reconciliation adapters
+stay disabled until their external contracts exist.
+
 ### Domain types
 
 Create a small domain layer independent of Flutter widgets:
