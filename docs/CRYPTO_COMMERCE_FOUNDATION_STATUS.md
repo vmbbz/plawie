@@ -38,6 +38,9 @@
 - Added `CommerceCommissionQuote`, which requires fee schedule timing, asset,
   recipient reference, disclosure, partner cost, expiry, and reconciled net
   received before it can exist. It is not connected to a live payment path.
+- Added [the AvatarForge smart-contract stub](AVATARFORGE_SMART_CONTRACT_STUB.md)
+  to make the non-live boundary explicit: no chain, contract/program,
+  addresses, ABI, minting, renting, or custody code exists yet.
 
 ## Deliberately not enabled
 
