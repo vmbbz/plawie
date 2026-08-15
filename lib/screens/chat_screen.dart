@@ -980,29 +980,15 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   /// Return ownership to the idle wake-word service when a voice capture did
-  /// not produce a turn. Continuous Mode remains armed so a transient native
-  /// recognizer timeout does not strand the user at the end of the first turn.
-  /// When continuous mode is off, ownership returns to the wake-word service.
+  /// not produce a turn. Silence is a normal boundary, not a reason to start
+  /// an unbounded recognizer retry loop. Continuous Mode is re-armed after a
+  /// successful turn, but an empty capture returns to wake-word standby (or
+  /// an idle mic when wake-word mode is off) so a quiet room stays quiet.
   Future<void> _recoverVoiceInputToWakeWord({required String reason}) async {
     _addDiagnosticLog(reason);
     if (_isTalkRelayCaptureActive) {
       await _stopTalkRelayCapture();
       if (mounted) _publishListeningState(false);
-    }
-
-    if (_continuousModeEnabled && _voiceSurfaceCanCapture) {
-      _continuousSessionArmed = true;
-      _voiceSession.setPhase(
-        VoiceSessionPhase.idle,
-        reason: 'Ready for the next continuous voice turn.',
-      );
-      if (mounted) {
-        setState(() {});
-        _syncOverlayState();
-        _updatePipMicIcon();
-      }
-      _scheduleContinuousListening();
-      return;
     }
 
     _continuousSessionArmed = false;
@@ -2652,27 +2638,32 @@ class _ChatScreenState extends State<ChatScreen>
       return;
     }
 
+    final expectedSilence = source == 'Native SpeechRecognizer';
     _voiceSession.setPhase(
-      VoiceSessionPhase.noTranscript,
-      reason: '$source returned no text.',
+      expectedSilence ? VoiceSessionPhase.idle : VoiceSessionPhase.noTranscript,
+      reason: expectedSilence
+          ? 'No speech detected; voice returned to standby.'
+          : '$source returned no text.',
     );
     _addDiagnosticLog('$source returned no text.');
     setState(() {});
     _updatePipMicIcon();
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            source == 'Native SpeechRecognizer'
-                ? 'No speech was recognized. Try again and speak clearly.'
-                : 'Voice input was not transcribed. Check Gateway STT/Talk setup and try again.',
+    if (!expectedSilence) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Voice input was not transcribed. Check Gateway STT/Talk setup and try again.',
+            ),
+            behavior: SnackBarBehavior.floating,
           ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+        );
+    }
     unawaited(_recoverVoiceInputToWakeWord(
-        reason: 'Wake word recovery after no transcript.'));
+        reason: expectedSilence
+            ? 'Voice ended in silence; returned to wake-word standby.'
+            : 'Wake word recovery after no transcript.'));
   }
 
   void _handleNativeSpeechFinished(String? text, int generation) {
