@@ -92,6 +92,115 @@ SM-A556E running Android 14 / API 34:
 The APK and copied native runtime prerequisites were local build artifacts only
 and were not committed or pushed.
 
+## Voice-send defect reproduced on device
+
+On 2026-08-15 the debug APK was exercised on the connected Samsung Android 14
+device using the actual chat flow: `Show menu` → `Voice Input`, several seconds
+of capture, then `Stop Listening`.
+
+The microphone path is working. Android opened `AudioRecord`, the recorder
+produced an AAC file, and the recorder stopped cleanly. No user message was
+created because the fallback STT path logged:
+
+```text
+STT Exception: Exception: No gateway token
+```
+
+The failure had two independent causes in `GatewayService.transcribeAudio()`:
+
+- it refused to POST to `/talk/stt` when the embedded/native Gateway had no
+  HTTP token, even though a local Gateway may intentionally be unauthenticated;
+- when a token did exist, the code read only the URL query while OpenClaw's
+  dashboard auth URL normally stores it in the `#token=...` fragment.
+
+The current fix makes the Authorization header optional for an intentionally
+unauthenticated local Gateway, supports both token URL forms, accepts any
+successful 2xx response, and shows a user-visible retry/configuration message
+when transcription returns no text. It does not claim that an STT provider is
+configured; the rebuilt APK must still prove the complete audio → transcript →
+chat-send path against the device's actual Gateway configuration.
+
+## Official-client parity audit and adoption backlog
+
+The official OpenClaw Android client was audited separately as a reference
+implementation. Its useful lessons are behavioral contracts, not code to copy:
+
+- its `TalkModeManager`/Talk session path treats realtime conversation as a
+  session with explicit capture ownership, transcript events, TTS state, and
+  continuous-turn transitions;
+- its full-screen voice surfaces expose voice state separately from the visual
+  renderer, and its foreground node runtime/notification owns process presence;
+- its background policy deliberately distinguishes a visible active voice
+  session from ordinary Activity backgrounding, rather than silently granting
+  unrestricted microphone capture;
+- it already has voice wake, background presence, Wear Talk, waveform/mascot
+  visuals, and focused lifecycle/auth tests;
+- it does not currently provide Android PiP, so Plawie's native PiP work remains
+  a local product differentiator rather than an upstream feature already proven
+  in the official app.
+
+Plawie already has the complementary pieces—VRM rendering, PiP entry, a native
+PiP mic action, Gateway Talk relay/fallback STT, continuous-mode restart,
+foreground services, and wake-word support—but they need the same explicit
+contracts and proof:
+
+1. **Voice transport reliability — current round**
+   - optional local-Gateway auth plus correct query/fragment token parsing;
+   - visible `Listening` → `Transcribing` → `Sent`/`No transcript`/`Error`
+     states;
+   - bounded transcription timeout, retry, and a diagnostic correlation id;
+   - tests for unauthenticated local STT, authenticated STT, non-2xx responses,
+     empty transcripts, and exactly-once chat submission.
+
+2. **Realtime Talk parity**
+   - verify relay `ready`, `transcript`, `error`, and `close` events are matched
+     to the active session without relying on a stale or missing session id;
+   - expose relay connection and transcript-finalization state in the UI;
+   - ensure stopping capture closes/finalizes the current turn and never leaves
+     the user waiting indefinitely for an event that will not arrive.
+
+3. **Lifecycle and foreground policy**
+   - preserve capture only while the Activity is in PiP or another explicitly
+     authorized voice surface;
+   - stop/invalidate capture on ordinary backgrounding, permission loss,
+     Gateway disconnect, navigation, and disposal;
+   - audit `NodeForegroundService`, `PlawieForegroundService`, wake-word, and
+     voice ownership so there is one documented owner for each microphone and
+     process-presence responsibility;
+   - add tests for Activity stop/start, PiP expand/return, process recreation,
+     Gateway reconnect, and stale native/TTS callbacks.
+
+4. **PiP companion hardening**
+   - replace boolean-only native updates with a typed state payload;
+   - keep a native status/graphic fallback when Flutter/WebView rendering is
+     paused or unavailable;
+   - expose safe, idempotent actions for mute/resume, stop, and expand;
+   - validate RemoteAction discoverability on Samsung and at least one other
+     Android implementation, since the first Samsung smoke did not clearly
+     label the microphone action.
+
+5. **Voice visuals and accessibility**
+   - map input/output levels and session phase to the existing VRM/orb without
+     making the renderer authoritative for audio state;
+   - show `Listening`, `Thinking`, `Speaking`, `Transcribing`, `Paused`, and
+     `Reconnecting` semantics;
+   - add content descriptions, a large unambiguous stop action, reduced-motion
+     behavior, and a visible recording/privacy indicator;
+   - make the full-screen and PiP surfaces use the same state owner.
+
+6. **Validation and release evidence**
+   - focused unit/widget tests for the state machine and STT contract;
+   - real-device transcript/send proof with a configured provider;
+   - full-screen → PiP → full-screen recording/video evidence;
+   - background/lock/unlock/process-recreation evidence;
+   - no APKs, screenshots, tokens, or temporary device artifacts committed.
+
+The implementation order is therefore: finish the voice-send fix and prove it,
+then harden realtime Talk and lifecycle ownership, then add typed PiP state and
+visual/accessibility polish. Continuous Talk and avatars are not being
+reimplemented from scratch; they are being brought under the same reliable
+session contract.
+
 ## Proposed state boundary
 
 Introduce a small voice-session model without moving every existing behavior at once:

@@ -2247,12 +2247,23 @@ class _ChatScreenState extends State<ChatScreen>
     if (path != null) {
       _addDiagnosticLog('Transcribing audio at $path...');
       final text = await GatewayService().transcribeAudio(File(path));
+      if (!mounted) return;
       if (text != null && text.isNotEmpty) {
         _textController.text = text;
         _addDiagnosticLog('Gateway STT recognized: $text');
         _handleSubmit(text);
       } else {
         _addDiagnosticLog('Gateway STT failed or returned empty text.');
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Voice input was not transcribed. Check Gateway STT/Talk setup and try again.',
+              ),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
       }
     }
   }

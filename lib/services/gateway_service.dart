@@ -680,31 +680,67 @@ class GatewayService {
     _updateState(_state.copyWith(logs: logs));
   }
 
-  /// Send an audio file to the gateway for transcription (STT)
+  /// Extract a Gateway token from either a query or dashboard URL fragment.
+  ///
+  /// OpenClaw dashboard URLs normally use `#token=...`, while a few local
+  /// integrations expose the same value as `?token=...`. Keep this parsing
+  /// independent from the HTTP transcription path so an unauthenticated local
+  /// Gateway can still be probed without inventing a token.
+  static String? extractGatewayTokenFromDashboardUrl(String? dashboardUrl) {
+    final raw = dashboardUrl?.trim() ?? '';
+    if (raw.isEmpty) return null;
+
+    try {
+      final uri = Uri.parse(raw);
+      final queryToken = uri.queryParameters['token']?.trim();
+      if (queryToken != null && queryToken.isNotEmpty) return queryToken;
+
+      var fragment = uri.fragment.trim();
+      if (fragment.startsWith('/')) {
+        final queryStart = fragment.indexOf('?');
+        fragment = queryStart >= 0
+            ? fragment.substring(queryStart + 1)
+            : fragment.substring(1);
+      }
+      if (fragment.startsWith('?')) fragment = fragment.substring(1);
+      if (fragment.isEmpty) return null;
+
+      final fragmentToken = Uri.splitQueryString(fragment)['token']?.trim();
+      return fragmentToken == null || fragmentToken.isEmpty
+          ? null
+          : fragmentToken;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Send an audio file to the gateway for transcription (STT).
+  ///
+  /// The embedded/native Gateway may intentionally run without HTTP auth, so
+  /// a missing token is not a reason to discard the recording before trying
+  /// `/talk/stt`. When auth is enabled, attach the token discovered from the
+  /// config or the dashboard URL.
   Future<String?> transcribeAudio(File audioFile) async {
     try {
-      final dashboardUrl = await fetchAuthenticatedDashboardUrl();
-      if (dashboardUrl == null) throw Exception('No gateway dashboard URL');
-
-      final uri = Uri.parse(dashboardUrl);
-      final token = uri.queryParameters['token'];
-      if (token == null) throw Exception('No gateway token');
+      final token = await retrieveTokenFromConfig();
 
       final request = http.MultipartRequest(
         'POST',
         Uri.parse('${AppConstants.gatewayUrl}/talk/stt'),
       );
-      request.headers['Authorization'] = 'Bearer $token';
+      if (token != null && token.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
       request.files
           .add(await http.MultipartFile.fromPath('audio', audioFile.path));
 
       final response = await request.send();
-      if (response.statusCode == 200) {
-        final body = await response.stream.bytesToString();
+      final body = await response.stream.bytesToString();
+      if (response.statusCode >= 200 && response.statusCode < 300) {
         final data = jsonDecode(body);
-        return data['text']?.toString();
+        return data is Map ? data['text']?.toString() : null;
       } else {
-        debugPrint('STT Error: ${response.statusCode}');
+        debugPrint('STT Error: ${response.statusCode} ${body.trim()}');
         return null;
       }
     } catch (e) {
