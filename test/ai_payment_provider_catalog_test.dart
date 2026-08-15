@@ -26,6 +26,7 @@ void main() {
     expect(venice.topUpEndpoint?.host, 'api.venice.ai');
     expect(venice.allowedHosts, <String>{'api.venice.ai'});
     expect(venice.paymentHeaderName, 'X-402-Payment');
+    expect(venice.monetizationMode, AiPaymentMonetizationMode.none);
   });
 
   test('BlockRun is modeled as per-request payment without top-up', () {
@@ -37,6 +38,7 @@ void main() {
     expect(blockRun.supportsTopUp, isFalse);
     expect(blockRun.topUpEndpoint, isNull);
     expect(blockRun.allowedHosts, <String>{'blockrun.ai'});
+    expect(blockRun.monetizationMode, AiPaymentMonetizationMode.none);
   });
 
   test('unknown provider metadata is not accepted', () {

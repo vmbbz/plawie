@@ -28,6 +28,9 @@
   consent-aware analytics boundary. It accepts only bounded operational fields
   and rejects prompts, transcripts, wallet data, signatures, credentials, and
   arbitrary payloads.
+- Added explicit provider monetization metadata; Venice and BlockRun are both
+  currently `none`, so no referral, split, or first-party settlement behavior
+  is implied by the catalog.
 
 ## Deliberately not enabled
 
