@@ -17,6 +17,7 @@ import 'package:provider/provider.dart';
 import '../app.dart';
 import '../services/preferences_service.dart';
 import '../services/voice_session_controller.dart';
+import '../services/native_speech_input_service.dart';
 import '../providers/gateway_provider.dart';
 import '../models/gateway_state.dart';
 import '../widgets/vrm_avatar_widget.dart';
@@ -87,8 +88,14 @@ class _ChatScreenState extends State<ChatScreen>
   // Voice Pipeline (Kokoro TTS / Local VITS)
   final TtsService _tts = TtsService();
   final AudioRecorder _audioRecorder = AudioRecorder();
+  final NativeSpeechInputService _nativeSpeechInput =
+      NativeSpeechInputService();
   final VoiceSessionController _voiceSession = VoiceSessionController();
   bool _isListening = false;
+  bool _usingNativeSpeechFallback = false;
+  bool _nativeSpeechStopRequested = false;
+  bool _nativeSpeechFinishedBeforeUiState = false;
+  String? _nativeSpeechPendingText;
   bool _isTalkRelayCaptureActive = false;
   String? _currentGesture;
   String? _currentGestureMode;
@@ -2203,6 +2210,50 @@ class _ChatScreenState extends State<ChatScreen>
           'Talk relay capture unavailable, using fallback STT: $e');
     }
 
+    // Match the official Android client's fallback contract: when realtime
+    // Talk is not configured, use the platform SpeechRecognizer and send its
+    // text through the existing chat pipeline. The file upload route below is
+    // retained only for runtimes that have neither native recognition nor
+    // realtime Talk available.
+    _nativeSpeechStopRequested = false;
+    _nativeSpeechFinishedBeforeUiState = false;
+    _nativeSpeechPendingText = null;
+    try {
+      final nativeStarted = await _nativeSpeechInput.start(
+        onStatus: (status) => _addDiagnosticLog('Native speech status: $status'),
+        onError: (message) => _addDiagnosticLog('Native speech error: $message'),
+        onFinished: (text) => _handleNativeSpeechFinished(text, generation),
+      );
+      if (nativeStarted) {
+        if (!mounted || !_voiceSession.isCurrent(generation)) {
+          await _nativeSpeechInput.cancel();
+          return;
+        }
+        if (_nativeSpeechFinishedBeforeUiState) {
+          _finalizeNativeSpeechSession(
+            _nativeSpeechPendingText,
+            reason: 'Native speech ended during startup.',
+          );
+          return;
+        }
+        _usingNativeSpeechFallback = true;
+        _voiceSession.markListening(generation);
+        _publishListeningState(true);
+        _addDiagnosticLog(
+            'Voice recording started (native SpeechRecognizer fallback).');
+        return;
+      }
+      _nativeSpeechStopRequested = false;
+      _nativeSpeechFinishedBeforeUiState = false;
+      _nativeSpeechPendingText = null;
+      _addDiagnosticLog('Native SpeechRecognizer is unavailable.');
+    } catch (e) {
+      _nativeSpeechStopRequested = false;
+      _nativeSpeechFinishedBeforeUiState = false;
+      _nativeSpeechPendingText = null;
+      _addDiagnosticLog('Native SpeechRecognizer fallback failed: $e');
+    }
+
     final tempDir = await getTemporaryDirectory();
     final path = '${tempDir.path}/stt_recording.m4a';
     const config = RecordConfig(); // default 44.1kHz, AAC
@@ -2239,6 +2290,17 @@ class _ChatScreenState extends State<ChatScreen>
       return;
     }
 
+    if (_usingNativeSpeechFallback) {
+      _nativeSpeechStopRequested = true;
+      final text = await _nativeSpeechInput.stop();
+      if (!mounted) return;
+      _finalizeNativeSpeechSession(
+        text,
+        reason: 'Native speech recording stopped by user.',
+      );
+      return;
+    }
+
     final path = await _audioRecorder.stop();
     if (!mounted) return;
     _publishListeningState(false);
@@ -2247,25 +2309,61 @@ class _ChatScreenState extends State<ChatScreen>
     if (path != null) {
       _addDiagnosticLog('Transcribing audio at $path...');
       final text = await GatewayService().transcribeAudio(File(path));
-      if (!mounted) return;
-      if (text != null && text.isNotEmpty) {
-        _textController.text = text;
-        _addDiagnosticLog('Gateway STT recognized: $text');
-        _handleSubmit(text);
-      } else {
-        _addDiagnosticLog('Gateway STT failed or returned empty text.');
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Voice input was not transcribed. Check Gateway STT/Talk setup and try again.',
-              ),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-      }
+      _submitVoiceTranscript(text, source: 'Gateway STT');
     }
+  }
+
+  void _submitVoiceTranscript(String? rawText, {required String source}) {
+    if (!mounted) return;
+    final text = rawText?.trim() ?? '';
+    if (text.isNotEmpty) {
+      _textController.text = text;
+      _addDiagnosticLog('$source recognized: $text');
+      _handleSubmit(text);
+      return;
+    }
+
+    _addDiagnosticLog('$source returned no text.');
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            source == 'Native SpeechRecognizer'
+                ? 'No speech was recognized. Try again and speak clearly.'
+                : 'Voice input was not transcribed. Check Gateway STT/Talk setup and try again.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  void _handleNativeSpeechFinished(String? text, int generation) {
+    if (!mounted || !_voiceSession.isCurrent(generation)) return;
+    if (_nativeSpeechStopRequested) return;
+    if (!_usingNativeSpeechFallback) {
+      _nativeSpeechFinishedBeforeUiState = true;
+      _nativeSpeechPendingText = text;
+      return;
+    }
+    _finalizeNativeSpeechSession(
+      text,
+      reason: 'Native speech session ended by the platform.',
+    );
+  }
+
+  void _finalizeNativeSpeechSession(String? text, {required String reason}) {
+    if (!mounted || _nativeSpeechStopRequested && !_usingNativeSpeechFallback) {
+      return;
+    }
+    _nativeSpeechStopRequested = true;
+    _usingNativeSpeechFallback = false;
+    _nativeSpeechFinishedBeforeUiState = false;
+    _nativeSpeechPendingText = null;
+    _voiceSession.invalidate(reason: reason);
+    _publishListeningState(false);
+    _addDiagnosticLog(reason);
+    _submitVoiceTranscript(text, source: 'Native SpeechRecognizer');
   }
 
   void _publishListeningState(bool listening) {
@@ -3139,6 +3237,7 @@ class _ChatScreenState extends State<ChatScreen>
           GatewayService().closeTalkSession(talkSessionId).catchError((_) {}));
     }
     _glowController.dispose();
+    unawaited(_nativeSpeechInput.dispose());
     _audioRecorder.dispose();
     _textController.dispose();
     _scrollController.dispose();

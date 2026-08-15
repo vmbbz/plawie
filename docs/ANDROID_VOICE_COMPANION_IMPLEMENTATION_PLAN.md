@@ -120,6 +120,46 @@ when transcription returns no text. It does not claim that an STT provider is
 configured; the rebuilt APK must still prove the complete audio → transcript →
 chat-send path against the device's actual Gateway configuration.
 
+### Native recognizer fallback implemented
+
+The next validation pass found that the authentication defect was not the only
+problem. With the rebuilt APK installed, the embedded Gateway returned
+`404 Not Found` for `/talk/stt`; that optional HTTP route is not present in this
+Gateway/runtime. Treating that route as the only fallback would therefore keep
+voice input broken even after auth was corrected.
+
+The local client now follows the official Android client's fallback shape:
+
+- realtime `talk.session.*` remains preferred when a configured realtime
+  provider is advertised by `talk.catalog`;
+- Android's platform `SpeechRecognizer` is used when realtime Talk is not
+  configured, and its recognized text enters the existing chat submission
+  path;
+- the AAC file plus `/talk/stt` route remains only as a compatibility fallback
+  for devices where native recognition is unavailable;
+- `speech_to_text.stop()` is allowed to deliver its final callback before the
+  text is submitted, with a bounded timeout returning the latest partial text;
+- platform `done`, `notListening`, and error callbacks finalize the voice
+  session idempotently, so Android silence timeouts cannot leave a stale
+  `Stop Listening` state or finalize twice;
+- the Android manifest declares the recognition-service query required for
+  Android 11+ package visibility.
+
+Device evidence after this change, on the same Samsung Android 14/API 34
+handset:
+
+- Google online and offline SpeechRecognizer services started and Android
+  opened `AudioRecord` for both an automatic-silence run and a manual-stop run;
+- the device reported `NO_SPEECH_DETECTED` because it had no network and no
+  installed offline `en-ZA` language pack (`Soda ... error 12`);
+- after the automatic timeout, reopening the app menu showed `Voice Input`
+  rather than `Stop Listening`, proving that the Flutter session was finalized;
+- no `/talk/stt` request or `404` appeared during the native-recognition runs;
+- a spoken transcript and chat send remain unproven on this handset until a
+  recognition provider/network or the required offline language pack is
+  available. This is an environment limitation, not evidence that the
+  end-to-end send path is complete.
+
 ## Official-client parity audit and adoption backlog
 
 The official OpenClaw Android client was audited separately as a reference
@@ -144,8 +184,12 @@ PiP mic action, Gateway Talk relay/fallback STT, continuous-mode restart,
 foreground services, and wake-word support—but they need the same explicit
 contracts and proof:
 
-1. **Voice transport reliability — current round**
+1. **Voice transport reliability — current round substantially advanced**
    - optional local-Gateway auth plus correct query/fragment token parsing;
+   - platform SpeechRecognizer fallback when realtime Talk/provider setup is
+     absent;
+   - terminal callback handling and bounded finalization for native capture;
+   - honest detection of a missing `/talk/stt` compatibility route;
    - visible `Listening` → `Transcribing` → `Sent`/`No transcript`/`Error`
      states;
    - bounded transcription timeout, retry, and a diagnostic correlation id;
@@ -195,11 +239,11 @@ contracts and proof:
    - background/lock/unlock/process-recreation evidence;
    - no APKs, screenshots, tokens, or temporary device artifacts committed.
 
-The implementation order is therefore: finish the voice-send fix and prove it,
-then harden realtime Talk and lifecycle ownership, then add typed PiP state and
-visual/accessibility polish. Continuous Talk and avatars are not being
-reimplemented from scratch; they are being brought under the same reliable
-session contract.
+The implementation order is therefore: finish the native voice-send fix and
+provider-backed transcript proof, then harden realtime Talk and lifecycle
+ownership, then add typed PiP state and visual/accessibility polish.
+Continuous Talk and avatars are not being reimplemented from scratch; they are
+being brought under the same reliable session contract.
 
 ## Proposed state boundary
 
