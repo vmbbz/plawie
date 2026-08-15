@@ -16,6 +16,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app.dart';
 import '../services/preferences_service.dart';
+import '../services/speech_text_normalizer.dart';
 import '../services/voice_session_controller.dart';
 import '../services/native_speech_input_service.dart';
 import '../providers/gateway_provider.dart';
@@ -57,7 +58,9 @@ enum _GatewayTtsHealth {
 }
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  final bool autoStartVoice;
+
+  const ChatScreen({super.key, this.autoStartVoice = false});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -121,6 +124,7 @@ class _ChatScreenState extends State<ChatScreen>
   String _ttsSentenceBuffer = '';
   bool _isTtsSpeaking = false;
   final List<String> _ttsQueue = [];
+  final Set<String> _queuedTtsKeys = <String>{};
   _GatewayTtsHealth _gatewayTtsHealth = _GatewayTtsHealth.normal;
   String? _gatewayTtsHealthMessage;
   DateTime? _lastGatewayTtsNoticeAt;
@@ -937,7 +941,7 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
-  Future<void> _resumeWakeWordIfNeeded() async {
+  Future<void> _resumeWakeWordIfNeeded({bool force = false}) async {
     if (!mounted || !_wakeWordSuspendedForVoice) return;
 
     final prefs = PreferencesService();
@@ -947,7 +951,7 @@ class _ChatScreenState extends State<ChatScreen>
       _wakeWordSuspendedForVoice = false;
       return;
     }
-    if (_continuousModeEnabled ||
+    if ((!force && _continuousModeEnabled) ||
         _isListening ||
         _voiceSession.state.captureActive ||
         _isGenerating ||
@@ -975,6 +979,20 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  /// Return ownership to the idle wake-word service when a voice capture did
+  /// not produce a turn. Continuous Mode is intentionally disarmed here: it
+  /// chains completed turns, but must not strand the app in a silent capture
+  /// handoff after an empty/error result.
+  Future<void> _recoverVoiceInputToWakeWord({required String reason}) async {
+    _continuousSessionArmed = false;
+    _addDiagnosticLog(reason);
+    if (_isTalkRelayCaptureActive) {
+      await _stopTalkRelayCapture();
+      if (mounted) _publishListeningState(false);
+    }
+    await _resumeWakeWordIfNeeded(force: true);
+  }
+
   Future<void> _initVoiceParams() async {
     // Permission check for recorder is handled at start-time
     _tts.init();
@@ -986,13 +1004,25 @@ class _ChatScreenState extends State<ChatScreen>
     }, onError: (_) {/* service not running — ignore */});
 
     final wakeMode = prefs.wakeWordMode;
-    if (wakeMode != 'off') {
+    if (wakeMode != 'off' && !widget.autoStartVoice) {
       final started = await NativeBridge.setHotwordMode(wakeMode);
       _addDiagnosticLog(
         started
             ? 'Wake word service started (mode: $wakeMode)'
             : 'Wake word service failed to start (mode: $wakeMode)',
       );
+    }
+
+    if (widget.autoStartVoice && wakeMode != 'off') {
+      // The Dashboard consumed the wake event and stopped the detector before
+      // opening this route. Start the actual command capture once Flutter has
+      // a mounted voice surface, so the spoken command is not lost during the
+      // route transition.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_startListening(owner: VoiceCaptureOwner.wakeWord));
+        }
+      });
     }
 
     _tts.onStart = () {
@@ -1059,68 +1089,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   String _sanitizeForTts(String text) {
-    var t = _stripAssistantControlMarkers(text);
-    // Think blocks (internal reasoning — never read aloud)
-    t = t.replaceAll(
-        RegExp(r'<think>[\s\S]*?<\/think>', caseSensitive: false), '');
-    // Gesture/action tags
-    t = t.replaceAll(RegExp(r'\(gesture:\s*[^)]+\)\s*'), '');
-    // Code blocks → label only (don't read source code verbatim)
-    t = t.replaceAll(RegExp(r'```[\s\S]*?```'), 'code block. ');
-    // Inline code → content only (strip backticks)
-    t = t.replaceAll(RegExp(r'`([^`]+)`'), r'$1');
-    // Images → strip entirely
-    t = t.replaceAll(RegExp(r'!\[[^\]]*\]\([^)]*\)'), '');
-    // Links → anchor text only
-    t = t.replaceAll(RegExp(r'\[([^\]]+)\]\([^)]*\)'), r'$1');
-    // Headings → text only (strip leading # symbols)
-    t = t.replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '');
-    // Bold/italic — triple then double then single (order matters)
-    t = t.replaceAll(RegExp(r'\*{3}([^*\n]+)\*{3}'), r'$1');
-    t = t.replaceAll(RegExp(r'\*{2}([^*\n]+)\*{2}'), r'$1');
-    t = t.replaceAll(RegExp(r'\*([^*\n]+)\*'), r'$1');
-    t = t.replaceAll(RegExp(r'_{2}([^_\n]+)_{2}'), r'$1');
-    t = t.replaceAll(RegExp(r'_([^_\n]+)_'), r'$1');
-    // Strikethrough
-    t = t.replaceAll(RegExp(r'~~([^~]+)~~'), r'$1');
-    // Horizontal rules
-    t = t.replaceAll(RegExp(r'^[-*_]{3,}\s*$', multiLine: true), '');
-    // Table rows (lines bounded by |) and stray pipes
-    t = t.replaceAll(RegExp(r'^\|.*\|$', multiLine: true), '');
-    t = t.replaceAll('|', ' ');
-    // URLs — unreadable when spoken
-    t = t.replaceAll(RegExp(r'https?://\S+'), 'link');
-    // Bracket labels used in error messages
-    t = t.replaceAll('[Error]', 'Error:');
-    t = t.replaceAll('[Warning]', 'Warning:');
-    // HTML tags
-    t = t.replaceAll(RegExp(r'<[^>]+>'), '');
-    // Common emoji → spoken equivalent or strip
-    t = t.replaceAll('⚠️', 'Warning:');
-    t = t.replaceAll('✅', '');
-    t = t.replaceAll('❌', '');
-    t = t.replaceAll('💡', '');
-    t = t.replaceAll('🔑', '');
-    t = t.replaceAll('📝', '');
-    // Strip remaining emoji (Miscellaneous + Supplemental)
-    t = t.replaceAll(RegExp(r'[\u{1F300}-\u{1FAFF}]', unicode: true), '');
-    t = t.replaceAll(RegExp(r'[\u{2600}-\u{27BF}]', unicode: true), '');
-    // Symbol → spoken equivalent
-    t = t.replaceAll('→', ' to ');
-    t = t.replaceAll('←', '');
-    t = t.replaceAll('↑', '');
-    t = t.replaceAll('↓', '');
-    t = t.replaceAll('—', ', ');
-    t = t.replaceAll('–', ', ');
-    t = t.replaceAll('•', '');
-    t = t.replaceAll('·', '');
-    t = t.replaceAll('©', '');
-    t = t.replaceAll('®', '');
-    t = t.replaceAll('™', '');
-    // Normalise whitespace
-    t = t.replaceAll(RegExp(r'\n{3,}'), '\n\n');
-    t = t.replaceAll(RegExp(r'[ \t]{2,}'), ' ');
-    return t.trim();
+    return SpeechTextNormalizer.normalize(text);
   }
 
   void _enqueueTtsFromStream(String chunk) {
@@ -1134,7 +1103,8 @@ class _ChatScreenState extends State<ChatScreen>
       _ttsSentenceBuffer = _ttsSentenceBuffer.substring(match.end);
 
       final clean = _sanitizeForTts(sentence);
-      if (clean.isNotEmpty) {
+      final key = SpeechTextNormalizer.dedupeKey(clean);
+      if (clean.isNotEmpty && key.isNotEmpty && _queuedTtsKeys.add(key)) {
         _ttsQueue.add(clean);
         _processNextTtsInQueue();
       }
@@ -1320,7 +1290,8 @@ class _ChatScreenState extends State<ChatScreen>
 
   Future<void> _flushTtsQueue() async {
     final clean = _sanitizeForTts(_ttsSentenceBuffer);
-    if (clean.isNotEmpty) {
+    final key = SpeechTextNormalizer.dedupeKey(clean);
+    if (clean.isNotEmpty && key.isNotEmpty && _queuedTtsKeys.add(key)) {
       _ttsQueue.add(clean);
       _processNextTtsInQueue();
     }
@@ -1626,6 +1597,7 @@ class _ChatScreenState extends State<ChatScreen>
     // doesn't keep playing while the user has already sent a new message.
     _tts.stop();
     _ttsQueue.clear();
+    _queuedTtsKeys.clear();
     _ttsSentenceBuffer = '';
     _setTtsProcessing(false);
     // Also stop unified TTS (handles both local and gateway audio)
@@ -2215,13 +2187,9 @@ class _ChatScreenState extends State<ChatScreen>
         _syncOverlayState();
         _updatePipMicIcon();
       }
-      if (_isTalkRelayCaptureActive) {
-        unawaited(_stopTalkRelayCapture().then((_) {
-          if (!mounted) return;
-          _publishListeningState(false);
-        }));
-      }
       _addDiagnosticLog('Talk relay error: $message');
+      unawaited(_recoverVoiceInputToWakeWord(
+          reason: 'Wake word recovery after Talk relay error.'));
       return;
     }
     if (eventType == 'close') {
@@ -2239,16 +2207,12 @@ class _ChatScreenState extends State<ChatScreen>
         _syncOverlayState();
         _updatePipMicIcon();
       }
-      if (_isTalkRelayCaptureActive) {
-        unawaited(_stopTalkRelayCapture().then((_) {
-          if (!mounted) return;
-          _publishListeningState(false);
-        }));
-      }
       _talkRelaySessionId = null;
       _talkAssistantMessageIndex = null;
       _talkAssistantTextBuffer = '';
       _addDiagnosticLog('Talk relay closed ($reason).');
+      unawaited(_recoverVoiceInputToWakeWord(
+          reason: 'Wake word recovery after Talk relay close.'));
       return;
     }
     if (eventType != 'transcript') return;
@@ -2259,6 +2223,19 @@ class _ChatScreenState extends State<ChatScreen>
 
     if (role == 'user') {
       if (isFinal && text.trim().isNotEmpty) {
+        // A new Talk turn gets a fresh duplicate window. Keep any currently
+        // playing prior audio intact, but allow the same words in a later
+        // user turn to be spoken legitimately.
+        _queuedTtsKeys.clear();
+        // A final user transcript is the relay's VAD boundary. Release the
+        // microphone before the assistant speaks so Continuous Mode can
+        // safely schedule the next turn and cannot capture TTS echo.
+        if (_isTalkRelayCaptureActive) {
+          unawaited(_stopTalkRelayCapture().then((_) {
+            if (!mounted) return;
+            _publishListeningState(false);
+          }));
+        }
         _voiceSession.setPhase(VoiceSessionPhase.thinking);
         setState(() {
           _messages.add(ChatMessage(text: text.trim(), isUser: true));
@@ -2311,6 +2288,11 @@ class _ChatScreenState extends State<ChatScreen>
           _voiceSession.setPhase(VoiceSessionPhase.idle);
           setState(() {});
           _updatePipMicIcon();
+          if (_continuousModeEnabled && _continuousSessionArmed) {
+            _scheduleContinuousListening();
+          } else {
+            unawaited(_resumeWakeWordIfNeeded());
+          }
         }
         _saveChatHistory();
       }
@@ -2425,6 +2407,8 @@ class _ChatScreenState extends State<ChatScreen>
       _syncOverlayState();
       _updatePipMicIcon();
       _addDiagnosticLog('Talk relay session closed after transcript timeout.');
+      unawaited(_recoverVoiceInputToWakeWord(
+          reason: 'Wake word recovery after Talk relay timeout.'));
     }
   }
 
@@ -2459,7 +2443,8 @@ class _ChatScreenState extends State<ChatScreen>
     if (generation == null) {
       _addDiagnosticLog('Voice capture request ignored: session is busy.');
       if (captureOwner == VoiceCaptureOwner.wakeWord) {
-        unawaited(_resumeWakeWordIfNeeded());
+        unawaited(_recoverVoiceInputToWakeWord(
+            reason: 'Wake word recovery after a busy voice handoff.'));
       }
       return;
     }
@@ -2555,7 +2540,8 @@ class _ChatScreenState extends State<ChatScreen>
         _updatePipMicIcon();
       }
       _addDiagnosticLog('Voice recording failed to start: $e');
-      unawaited(_resumeWakeWordIfNeeded());
+      unawaited(_recoverVoiceInputToWakeWord(
+          reason: 'Wake word recovery after microphone start failure.'));
       return;
     }
     _voiceSession.markListening(generation);
@@ -2623,6 +2609,8 @@ class _ChatScreenState extends State<ChatScreen>
       );
       setState(() {});
       _updatePipMicIcon();
+      unawaited(_recoverVoiceInputToWakeWord(
+          reason: 'Wake word recovery after an empty audio recording.'));
     }
   }
 
@@ -2667,7 +2655,8 @@ class _ChatScreenState extends State<ChatScreen>
           behavior: SnackBarBehavior.floating,
         ),
       );
-    unawaited(_resumeWakeWordIfNeeded());
+    unawaited(_recoverVoiceInputToWakeWord(
+        reason: 'Wake word recovery after no transcript.'));
   }
 
   void _handleNativeSpeechFinished(String? text, int generation) {
@@ -3691,7 +3680,10 @@ class _ChatScreenState extends State<ChatScreen>
       reason: 'Voice surface disposed.',
     );
     final wakeMode = PreferencesService().wakeWordMode;
-    if (wakeMode != 'off') NativeBridge.stopHotword();
+    // An always-on wake policy belongs to the Android foreground service, not
+    // to this particular Flutter route. Stopping it during route disposal
+    // creates a silent gap when ChatScreen is recreated or replaced.
+    if (wakeMode == 'foreground') NativeBridge.stopHotword();
     WidgetsBinding.instance.removeObserver(this);
     AgentSkillServer.instance.onAvatarChanged = null;
     AgentSkillServer.instance.onAvatarGestureRequested = null;

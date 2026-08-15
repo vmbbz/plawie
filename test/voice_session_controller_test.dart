@@ -118,4 +118,28 @@ void main() {
       isNotNull,
     );
   });
+
+  test('a no-transcript wake turn releases ownership for the next wake turn', () {
+    final controller = VoiceSessionController();
+    final first = controller.beginCapture(
+      owner: VoiceCaptureOwner.wakeWord,
+      surface: VoiceSessionSurface.fullScreen,
+    )!;
+    controller.markListening(first);
+
+    controller.invalidate(
+      phase: VoiceSessionPhase.noTranscript,
+      reason: 'Fallback recognizer returned no text',
+    );
+
+    expect(controller.state.captureActive, isFalse);
+    expect(controller.state.captureOwner, VoiceCaptureOwner.none);
+    expect(
+      controller.beginCapture(
+        owner: VoiceCaptureOwner.wakeWord,
+        surface: VoiceSessionSurface.fullScreen,
+      ),
+      isNotNull,
+    );
+  });
 }

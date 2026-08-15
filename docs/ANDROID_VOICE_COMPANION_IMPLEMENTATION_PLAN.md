@@ -455,6 +455,24 @@ persisted `always` policy when the user visibly returns to Plawie. This is an
 Android platform constraint, not a permission omission; the manifest already
 declares `RECORD_AUDIO` and `FOREGROUND_SERVICE_MICROPHONE`.
 
+### 2026-08-15 TTS speech cleanup and replay guard
+
+Device testing also exposed that assistant Markdown was not being converted to
+speech safely. The former sanitizer used Dart `replaceAll` with replacements
+such as `r'$1'`; unlike a mapped replacement, that leaves the literal `$1` in
+the output. The subsequent currency handling then turned it into “one dollar”,
+which explained the spoken bullet artifact. The old implementation also only
+removed one bullet glyph and had no per-turn duplicate guard.
+
+`SpeechTextNormalizer` is now shared by normal `ChatRuntimeService` replies and
+the realtime Talk/PiP queue. It removes list markers, headings, Markdown
+wrappers, code/media controls, URLs, emoji, and residual formatting symbols,
+while preserving useful prose such as amounts and percentages. Each queue uses
+a normalized per-turn key so cumulative/replayed Gateway chunks cannot cause an
+identical sentence to be synthesized twice. Focused tests cover bullet cleanup,
+capture-group expansion, natural currency/percentage speech, and duplicate-key
+stability.
+
 ## Proposed state boundary
 
 Introduce a small voice-session model without moving every existing behavior at once:

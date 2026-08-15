@@ -16,6 +16,7 @@ class NativeSpeechInputService {
   bool _listening = false;
   String _latestText = '';
   Completer<String?>? _stopCompleter;
+  Timer? _safetyTimer;
   void Function(String status)? _onStatus;
   void Function(String message)? _onError;
   void Function(String? text)? _onFinished;
@@ -51,22 +52,42 @@ class NativeSpeechInputService {
     _finishedNotified = false;
     _latestText = '';
     _stopCompleter = null;
-    await _speech.listen(
-      onResult: (result) {
-        _latestText = result.recognizedWords.trim();
-      },
-      listenOptions: SpeechListenOptions(partialResults: true),
-    );
+    try {
+      await _speech.listen(
+        onResult: (result) {
+          _latestText = result.recognizedWords.trim();
+        },
+        listenOptions: SpeechListenOptions(
+          partialResults: true,
+          // A fallback command ends after a short silence. Without this,
+          // Samsung's recognizer can remain in "listening" forever after a
+          // wake-word handoff and never return the captured phrase.
+          pauseFor: Duration(seconds: 2),
+          listenFor: Duration(seconds: 30),
+        ),
+      );
+    } catch (_) {
+      _listening = false;
+      rethrow;
+    }
     // The plugin receives the platform `listening` status asynchronously, so
     // checking SpeechToText.isListening immediately can report false even
     // though Android has accepted the recognition request.
     _listening = true;
+    _safetyTimer?.cancel();
+    _safetyTimer = Timer(const Duration(seconds: 32), () {
+      if (!_listening) return;
+      _onStatus?.call('timeout');
+      unawaited(stop(timeout: const Duration(seconds: 1)));
+    });
     return true;
   }
 
   Future<String?> stop({
     Duration timeout = const Duration(seconds: 3),
   }) async {
+    _safetyTimer?.cancel();
+    _safetyTimer = null;
     if (!_listening && !_speech.isListening) {
       return _latestText.isEmpty ? null : _latestText;
     }
@@ -101,6 +122,8 @@ class NativeSpeechInputService {
   }
 
   Future<void> cancel() async {
+    _safetyTimer?.cancel();
+    _safetyTimer = null;
     _stopCompleter = null;
     _latestText = '';
     _listening = false;
@@ -124,6 +147,8 @@ class NativeSpeechInputService {
     _listening = _speech.isListening || status == 'listening';
     _onStatus?.call(status);
     if (status == 'done' || status == 'notListening') {
+      _safetyTimer?.cancel();
+      _safetyTimer = null;
       _listening = false;
       _completeStopIfNeeded();
       _notifyFinished();
@@ -131,6 +156,8 @@ class NativeSpeechInputService {
   }
 
   void _handleError(String message) {
+    _safetyTimer?.cancel();
+    _safetyTimer = null;
     _listening = false;
     _onError?.call(message);
     _completeStopIfNeeded();

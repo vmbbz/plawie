@@ -67,6 +67,8 @@ class MainActivity : FlutterActivity() {
         const val NOTIFICATION_PERMISSION_REQUEST = 1001
         const val SCREEN_CAPTURE_REQUEST = 1002
         const val GIF_IMPORT_REQUEST = 1003
+        const val FLUTTER_PREFS = "FlutterSharedPreferences"
+        const val WAKE_WORD_PREF = "flutter.wake_word_mode"
     }
 
     private lateinit var bootstrapManager: BootstrapManager
@@ -1088,6 +1090,12 @@ class MainActivity : FlutterActivity() {
             registerReceiver(wakeWordReceiver, wakeFilter)
         }
 
+        // Restore a persisted Always-on detector after a process recreation.
+        // Android only permits microphone foreground-service startup while the
+        // Activity is visible, so this is deliberately done here rather than
+        // from BootReceiver.
+        startPersistedAlwaysOnHotword()
+
         // EventChannel: Flutter subscribes to receive wake word events
         EventChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -1108,17 +1116,7 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "startHotword" -> {
-                    val intent = Intent(applicationContext, HotwordService::class.java)
-                    try {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(intent)
-                        } else {
-                            startService(intent)
-                        }
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("HOTWORD_ERROR", e.message, null)
-                    }
+                    result.success(HotwordService.startForMode(applicationContext, "foreground"))
                 }
                 "stopHotword" -> {
                     stopService(Intent(applicationContext, HotwordService::class.java))
@@ -1126,23 +1124,13 @@ class MainActivity : FlutterActivity() {
                 }
                 "setHotwordMode" -> {
                     val mode = call.argument<String>("mode") ?: "foreground"
-                    val intent = Intent(applicationContext, HotwordService::class.java).apply {
-                        action = HotwordService.ACTION_SET_MODE
-                        putExtra("mode", mode)
-                    }
                     if (mode == "off") {
                         stopService(Intent(applicationContext, HotwordService::class.java))
                     } else {
-                        try {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                startForegroundService(intent)
-                            } else {
-                                startService(intent)
-                            }
-                        } catch (e: Exception) {
-                            result.error("HOTWORD_ERROR", e.message, null)
-                            return@setMethodCallHandler
-                        }
+                        result.success(
+                            HotwordService.startForMode(applicationContext, mode),
+                        )
+                        return@setMethodCallHandler
                     }
                     result.success(true)
                 }
@@ -1666,6 +1654,15 @@ class MainActivity : FlutterActivity() {
                 return PipVoiceState(phase, listening, label)
             }
         }
+    }
+
+    private fun startPersistedAlwaysOnHotword() {
+        val mode = getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE)
+            .getString(WAKE_WORD_PREF, "off")
+        if (mode != "always") return
+
+        val started = HotwordService.startForMode(applicationContext, mode)
+        Log.i("MainActivity", "Restoring persisted wake-word mode=$mode started=$started")
     }
 
     private var pipVoiceState = PipVoiceState(

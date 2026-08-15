@@ -11,6 +11,7 @@ import 'gateway_service.dart';
 import 'local_llm_service.dart';
 import 'model_provider_catalog.dart';
 import 'preferences_service.dart';
+import 'speech_text_normalizer.dart';
 import 'tool_media_event_bus.dart';
 import 'tts_service.dart';
 
@@ -52,6 +53,7 @@ class ChatRuntimeService extends ChangeNotifier {
   final List<ChatMessage> _messages = [];
   final List<String> _diagnostics = [];
   final List<String> _ttsQueue = [];
+  final Set<String> _queuedTtsKeys = <String>{};
   final StreamController<ChatConfigurationRequest>
       _configurationRequestController =
       StreamController<ChatConfigurationRequest>.broadcast();
@@ -229,6 +231,7 @@ class ChatRuntimeService extends ChangeNotifier {
 
     await _tts.stop();
     _ttsQueue.clear();
+    _queuedTtsKeys.clear();
     _ttsSentenceBuffer = '';
     _isTtsSpeaking = false;
     _setTtsHealth(ChatRuntimeTtsHealth.normal, notify: false);
@@ -806,41 +809,7 @@ class ChatRuntimeService extends ChangeNotifier {
   }
 
   String _sanitizeForTts(String text) {
-    var t = _stripAssistantControlMarkers(text);
-    t = t.replaceAll(
-        RegExp(r'<think>[\s\S]*?<\/think>', caseSensitive: false), '');
-    t = t.replaceAll(RegExp(r'```[\s\S]*?```'), 'code block. ');
-    t = t.replaceAll(RegExp(r'`([^`]+)`'), r'$1');
-    t = t.replaceAll(RegExp(r'!\[[^\]]*\]\([^)]*\)'), '');
-    t = t.replaceAll(RegExp(r'\[([^\]]+)\]\([^)]*\)'), r'$1');
-    t = t.replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '');
-    t = t.replaceAll(RegExp(r'\*{3}([^*\n]+)\*{3}'), r'$1');
-    t = t.replaceAll(RegExp(r'\*{2}([^*\n]+)\*{2}'), r'$1');
-    t = t.replaceAll(RegExp(r'\*([^*\n]+)\*'), r'$1');
-    t = t.replaceAll(RegExp(r'_{2}([^_\n]+)_{2}'), r'$1');
-    t = t.replaceAll(RegExp(r'_([^_\n]+)_'), r'$1');
-    t = t.replaceAll(RegExp(r'~~([^~]+)~~'), r'$1');
-    t = t.replaceAll(RegExp(r'^[-*_]{3,}\s*$', multiLine: true), '');
-    t = t.replaceAll(RegExp(r'^\|.*\|$', multiLine: true), '');
-    t = t.replaceAll('|', ' ');
-    t = t.replaceAll(RegExp(r'https?://\S+'), 'link');
-    t = t.replaceAll('[Error]', 'Error:');
-    t = t.replaceAll('[Warning]', 'Warning:');
-    t = t.replaceAll(RegExp(r'<[^>]+>'), '');
-    t = t.replaceAll('Warning:', 'Warning:');
-    t = t.replaceAll(RegExp(r'[\u{1F300}-\u{1FAFF}]', unicode: true), '');
-    t = t.replaceAll(RegExp(r'[\u{2600}-\u{27BF}]', unicode: true), '');
-    t = t.replaceAll('→', ' to ');
-    t = t.replaceAll('←', '');
-    t = t.replaceAll('↑', '');
-    t = t.replaceAll('↓', '');
-    t = t.replaceAll('—', ', ');
-    t = t.replaceAll('–', ', ');
-    t = t.replaceAll('•', '');
-    t = t.replaceAll('·', '');
-    t = t.replaceAll(RegExp(r'\n{3,}'), '\n\n');
-    t = t.replaceAll(RegExp(r'[ \t]{2,}'), ' ');
-    return t.trim();
+    return SpeechTextNormalizer.normalize(text);
   }
 
   String _stripAssistantControlMarkers(String text) {
@@ -893,7 +862,8 @@ class ChatRuntimeService extends ChangeNotifier {
       final sentence = _ttsSentenceBuffer.substring(0, match.end);
       _ttsSentenceBuffer = _ttsSentenceBuffer.substring(match.end);
       final clean = _sanitizeForTts(sentence);
-      if (clean.isNotEmpty) {
+      final key = SpeechTextNormalizer.dedupeKey(clean);
+      if (clean.isNotEmpty && key.isNotEmpty && _queuedTtsKeys.add(key)) {
         _ttsQueue.add(clean);
         _processNextTtsInQueue();
       }
@@ -902,7 +872,8 @@ class ChatRuntimeService extends ChangeNotifier {
 
   void _flushTtsQueue() {
     final clean = _sanitizeForTts(_ttsSentenceBuffer);
-    if (clean.isNotEmpty) {
+    final key = SpeechTextNormalizer.dedupeKey(clean);
+    if (clean.isNotEmpty && key.isNotEmpty && _queuedTtsKeys.add(key)) {
       _ttsQueue.add(clean);
       _processNextTtsInQueue();
     }
