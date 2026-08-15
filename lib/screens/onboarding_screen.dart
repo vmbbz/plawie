@@ -89,10 +89,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       'name': 'Groq',
       'icon': 'speed',
       'models': [
-        {'id': 'llama-3.3-70b-versatile', 'name': 'Llama 3.3 70B'},
-        {'id': 'llama-3.1-8b-instant', 'name': 'Llama 3.1 8B Instant'},
+        {'id': 'openai/gpt-oss-120b', 'name': 'GPT-OSS 120B'},
+        {'id': 'openai/gpt-oss-20b', 'name': 'GPT-OSS 20B'},
       ],
-      'defaultModel': 'llama-3.3-70b-versatile',
+      'defaultModel': 'openai/gpt-oss-120b',
     },
     {
       'id': 'zenmux',
@@ -262,8 +262,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           modelName = 'GPT-4o';
           break;
         case 'groq':
-          modelId = 'llama-3.1-405b';
-          modelName = 'Llama 3.1 405B';
+          modelId = 'openai/gpt-oss-120b';
+          modelName = 'GPT-OSS 120B';
           break;
         case 'zenmux':
           modelId = 'z-ai/glm-5.2-free';

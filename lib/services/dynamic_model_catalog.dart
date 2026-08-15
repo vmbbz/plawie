@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'model_execution_policy.dart';
+import 'model_capability_receipt.dart';
 import 'model_provider_catalog.dart';
 import 'preferences_service.dart';
 
@@ -8,8 +9,20 @@ import 'preferences_service.dart';
 enum DynamicCatalogSnapshotState {
   fresh,
   stale,
+  offlineFallback,
+  unavailable,
   empty,
   error,
+}
+
+/// Per-provider catalog truth inside a mixed snapshot. A snapshot can contain
+/// one freshly refreshed provider alongside bundled or stale records for the
+/// others, so the snapshot-level state is not sufficient for readiness UI.
+enum DynamicProviderCatalogState {
+  fresh,
+  stale,
+  offlineFallback,
+  unavailable,
 }
 
 /// Connection information is deliberately separate from model discovery.
@@ -20,6 +33,27 @@ enum DynamicProviderConnectionState {
   needsConfiguration,
   unavailable,
   error,
+}
+
+/// Evidence that a model can complete an ordinary chat turn through the exact
+/// provider route Plawie will use. A catalog listing is only an advertisement;
+/// it is not a successful inference receipt.
+enum ModelChatReadiness {
+  unknown,
+  providerAdvertised,
+  verified,
+  failed,
+}
+
+/// Evidence accumulated across the complete tool lifecycle. In particular,
+/// accepting a tool schema does not prove that the provider can replay a tool
+/// result and produce the final assistant response.
+enum ModelToolReadiness {
+  unknown,
+  providerAdvertised,
+  schemaAccepted,
+  loopVerified,
+  incompatible,
 }
 
 /// A model record used by dynamic discovery and the future grouped picker.
@@ -40,9 +74,18 @@ class DynamicModelRecord {
     this.supportsToolCalls,
     this.supportsVision,
     this.toolPolicy = ModelToolPolicy.variable,
+    this.chatReadiness = ModelChatReadiness.unknown,
+    this.toolReadiness = ModelToolReadiness.unknown,
     this.advertisedContextWindow,
     this.advertisedMaxOutputTokens,
+    this.providerCreatedAt,
+    this.deprecationDate,
+    this.replacementModelId,
     this.recommended = false,
+    this.liveAvailable = true,
+    this.unavailableReason,
+    this.capabilityAssessmentId,
+    this.capabilityDetail,
   });
 
   final String id;
@@ -56,12 +99,89 @@ class DynamicModelRecord {
   final bool? supportsToolCalls;
   final bool? supportsVision;
   final ModelToolPolicy toolPolicy;
+  final ModelChatReadiness chatReadiness;
+  final ModelToolReadiness toolReadiness;
   final int? advertisedContextWindow;
   final int? advertisedMaxOutputTokens;
+
+  /// Provider-reported model creation timestamp. This is display/sort
+  /// metadata only and never changes request context or token budgets.
+  final DateTime? providerCreatedAt;
+  final DateTime? deprecationDate;
+  final String? replacementModelId;
   final bool recommended;
+  final bool liveAvailable;
+  final String? unavailableReason;
+  final String? capabilityAssessmentId;
+  final String? capabilityDetail;
 
   bool get agentReady =>
-      supportsToolCalls == true && toolPolicy != ModelToolPolicy.disabled;
+      liveAvailable &&
+      chatReadiness == ModelChatReadiness.verified &&
+      toolReadiness == ModelToolReadiness.loopVerified &&
+      supportsToolCalls == true &&
+      toolPolicy != ModelToolPolicy.disabled;
+
+  String get readinessLabel {
+    if (chatReadiness == ModelChatReadiness.failed) {
+      return 'Chat verification failed';
+    }
+    return switch (toolReadiness) {
+      ModelToolReadiness.loopVerified => 'Agent-ready',
+      ModelToolReadiness.schemaAccepted =>
+        'Tool schema accepted · loop unverified',
+      ModelToolReadiness.providerAdvertised => 'Provider says tools supported',
+      ModelToolReadiness.incompatible => 'Chat only on this route',
+      ModelToolReadiness.unknown => supportsToolCalls == false
+          ? 'Chat only on this route'
+          : 'Tool support not reported',
+    };
+  }
+
+  DynamicModelRecord withCapabilityReceipt(ModelCapabilityReceipt receipt) {
+    final chat = switch (receipt.chatEvidence) {
+      ModelChatEvidence.none => chatReadiness,
+      ModelChatEvidence.verified => ModelChatReadiness.verified,
+      ModelChatEvidence.failed => ModelChatReadiness.failed,
+    };
+    final receiptTools = switch (receipt.toolEvidence) {
+      ModelToolEvidence.none => toolReadiness,
+      ModelToolEvidence.schemaAccepted => ModelToolReadiness.schemaAccepted,
+      ModelToolEvidence.loopVerified => ModelToolReadiness.loopVerified,
+      ModelToolEvidence.incompatible => ModelToolReadiness.incompatible,
+    };
+    final ownsToolAssessment = receipt.toolEvidence != ModelToolEvidence.none ||
+        capabilityAssessmentId == null;
+    return DynamicModelRecord(
+      id: id,
+      providerId: providerId,
+      label: label,
+      route: route,
+      providerModelId: providerModelId,
+      description: description,
+      sourceModelId: sourceModelId,
+      capabilities: capabilities,
+      supportsToolCalls: supportsToolCalls,
+      supportsVision: supportsVision,
+      toolPolicy: toolPolicy,
+      chatReadiness: chat,
+      toolReadiness: receiptTools,
+      advertisedContextWindow: advertisedContextWindow,
+      advertisedMaxOutputTokens: advertisedMaxOutputTokens,
+      providerCreatedAt: providerCreatedAt,
+      deprecationDate: deprecationDate,
+      replacementModelId: replacementModelId,
+      recommended: recommended,
+      liveAvailable: liveAvailable,
+      unavailableReason: unavailableReason,
+      capabilityAssessmentId:
+          ownsToolAssessment ? receipt.assessmentId : capabilityAssessmentId,
+      capabilityDetail: ownsToolAssessment ? receipt.detail : capabilityDetail,
+    );
+  }
+
+  bool isDeprecatedAt(DateTime now) =>
+      deprecationDate != null && !deprecationDate!.isAfter(now.toUtc());
 
   String get shortId => id.contains('/') ? id.split('/').last : id;
 
@@ -77,10 +197,17 @@ class DynamicModelRecord {
     return id.startsWith(prefix) ? id.substring(prefix.length) : shortId;
   }
 
-  Map<String, dynamic> get gatewayModelConfig => <String, dynamic>{
-        'id': gatewayModelId,
-        'name': label,
-      };
+  Map<String, dynamic> get gatewayModelConfig {
+    if (!liveAvailable) {
+      throw StateError(
+        unavailableReason ?? 'This model is not available from a live catalog.',
+      );
+    }
+    return <String, dynamic>{
+      'id': gatewayModelId,
+      'name': label,
+    };
+  }
 
   factory DynamicModelRecord.fromStatic(ModelOption model) {
     return DynamicModelRecord(
@@ -97,9 +224,17 @@ class DynamicModelRecord {
       supportsToolCalls: model.supportsToolCalls,
       supportsVision: model.supportsVision,
       toolPolicy: model.toolPolicy,
+      chatReadiness: ModelChatReadiness.providerAdvertised,
+      toolReadiness: !model.supportsToolCalls ||
+              model.toolPolicy == ModelToolPolicy.disabled
+          ? ModelToolReadiness.incompatible
+          : ModelToolReadiness.providerAdvertised,
       advertisedContextWindow: model.contextWindow,
       advertisedMaxOutputTokens: model.maxTokens,
+      deprecationDate: model.deprecationDate,
+      replacementModelId: model.replacementModelId,
       recommended: model.recommended,
+      liveAvailable: true,
     );
   }
 
@@ -132,11 +267,22 @@ class DynamicModelRecord {
       supportsToolCalls: _optionalBool(raw, 'supportsToolCalls'),
       supportsVision: _optionalBool(raw, 'supportsVision'),
       toolPolicy: _toolPolicyFromJson(raw['toolPolicy']),
+      chatReadiness: _chatReadinessFromJson(raw['chatReadiness']),
+      toolReadiness: _toolReadinessFromJson(
+        raw['toolReadiness'],
+        supportsToolCalls: _optionalBool(raw, 'supportsToolCalls'),
+        toolPolicy: _toolPolicyFromJson(raw['toolPolicy']),
+      ),
       advertisedContextWindow:
           _optionalPositiveInt(raw, 'advertisedContextWindow'),
       advertisedMaxOutputTokens:
           _optionalPositiveInt(raw, 'advertisedMaxOutputTokens'),
+      providerCreatedAt: _optionalDateTime(raw, 'providerCreatedAt'),
+      deprecationDate: _optionalDateTime(raw, 'deprecationDate'),
+      replacementModelId: _optionalString(raw, 'replacementModelId'),
       recommended: raw['recommended'] == true,
+      liveAvailable: raw['liveAvailable'] != false,
+      unavailableReason: _optionalString(raw, 'unavailableReason'),
     );
   }
 
@@ -153,11 +299,21 @@ class DynamicModelRecord {
         if (supportsToolCalls != null) 'supportsToolCalls': supportsToolCalls,
         if (supportsVision != null) 'supportsVision': supportsVision,
         'toolPolicy': toolPolicy.name,
+        'chatReadiness': chatReadiness.name,
+        'toolReadiness': toolReadiness.name,
         if (advertisedContextWindow != null)
           'advertisedContextWindow': advertisedContextWindow,
         if (advertisedMaxOutputTokens != null)
           'advertisedMaxOutputTokens': advertisedMaxOutputTokens,
+        if (providerCreatedAt != null)
+          'providerCreatedAt': providerCreatedAt!.toUtc().toIso8601String(),
+        if (deprecationDate != null)
+          'deprecationDate': deprecationDate!.toUtc().toIso8601String(),
+        if (replacementModelId != null)
+          'replacementModelId': replacementModelId,
         if (recommended) 'recommended': true,
+        'liveAvailable': liveAvailable,
+        if (unavailableReason != null) 'unavailableReason': unavailableReason,
       };
 }
 
@@ -169,9 +325,10 @@ class DynamicProviderRecord {
     required this.models,
     this.subtitle = '',
     this.description = '',
-    this.requiresApiKey = true,
+    this.authenticationMode = ProviderAuthenticationMode.apiKey,
     this.defaultModelId,
     this.connectionState = DynamicProviderConnectionState.unknown,
+    this.catalogState = DynamicProviderCatalogState.offlineFallback,
     this.source = 'unknown',
     this.etag,
     this.lastRefreshedAt,
@@ -182,27 +339,57 @@ class DynamicProviderRecord {
   final String label;
   final String subtitle;
   final String description;
-  final bool requiresApiKey;
+  final ProviderAuthenticationMode authenticationMode;
   final String? defaultModelId;
   final DynamicProviderConnectionState connectionState;
+  final DynamicProviderCatalogState catalogState;
   final String source;
   final String? etag;
   final DateTime? lastRefreshedAt;
   final String? errorMessage;
   final List<DynamicModelRecord> models;
 
+  bool get requiresApiKey =>
+      authenticationMode == ProviderAuthenticationMode.apiKey;
+
   factory DynamicProviderRecord.fromStatic(ProviderOption provider) {
-    final models = ModelProviderCatalog.cloudModels
+    var models = ModelProviderCatalog.cloudModels
         .where((model) => model.providerId == provider.id)
         .map(DynamicModelRecord.fromStatic)
         .toList(growable: false);
+    if (models.isEmpty &&
+        provider.authenticationMode ==
+            ProviderAuthenticationMode.walletIdentity) {
+      models = <DynamicModelRecord>[
+        DynamicModelRecord(
+          id: '${provider.id}/catalog-unavailable',
+          providerId: provider.id,
+          label: 'Refresh ${provider.label} models',
+          route: ModelRouteKind.cloud,
+          description:
+              'Connect the secure Base wallet and refresh to load current models.',
+          supportsToolCalls: false,
+          supportsVision: false,
+          toolPolicy: ModelToolPolicy.disabled,
+          liveAvailable: false,
+          unavailableReason:
+              'Current ${provider.label} models have not been loaded on this device.',
+        ),
+      ];
+    }
+    final defaultModelId = models.any(
+      (model) => model.id == provider.defaultModel && model.liveAvailable,
+    )
+        ? provider.defaultModel
+        : null;
     return DynamicProviderRecord(
       id: provider.id,
       label: provider.label,
       subtitle: provider.subtitle,
       description: provider.description,
-      requiresApiKey: provider.requiresApiKey,
-      defaultModelId: provider.defaultModel,
+      authenticationMode: provider.authenticationMode,
+      defaultModelId: defaultModelId,
+      catalogState: DynamicProviderCatalogState.offlineFallback,
       source: 'bundled-static',
       models: models,
     );
@@ -229,15 +416,23 @@ class DynamicProviderRecord {
       );
     }
 
+    final source = _optionalString(raw, 'source') ?? 'unknown';
     return DynamicProviderRecord(
       id: providerId,
       label: _requiredString(raw, 'label'),
       subtitle: _optionalString(raw, 'subtitle') ?? '',
       description: _optionalString(raw, 'description') ?? '',
-      requiresApiKey: raw['requiresApiKey'] != false,
+      authenticationMode: _providerAuthenticationModeFromJson(
+        raw['authenticationMode'],
+        legacyRequiresApiKey: raw['requiresApiKey'] != false,
+      ),
       defaultModelId: _optionalString(raw, 'defaultModelId'),
       connectionState: _providerStateFromJson(raw['connectionState']),
-      source: _optionalString(raw, 'source') ?? 'unknown',
+      catalogState: _providerCatalogStateFromJson(
+        raw['catalogState'],
+        source: source,
+      ),
+      source: source,
       etag: _optionalString(raw, 'etag'),
       lastRefreshedAt: _optionalDateTime(raw, 'lastRefreshedAt'),
       errorMessage: _optionalString(raw, 'errorMessage'),
@@ -250,9 +445,11 @@ class DynamicProviderRecord {
         'label': label,
         'subtitle': subtitle,
         'description': description,
+        'authenticationMode': authenticationMode.name,
         'requiresApiKey': requiresApiKey,
         if (defaultModelId != null) 'defaultModelId': defaultModelId,
         'connectionState': connectionState.name,
+        'catalogState': catalogState.name,
         'source': source,
         if (etag != null) 'etag': etag,
         if (lastRefreshedAt != null)
@@ -288,7 +485,10 @@ class DynamicCatalogSnapshot {
 
   bool get hasModels => providers.any((provider) => provider.models.isNotEmpty);
 
-  bool get isUsable => state != DynamicCatalogSnapshotState.error && hasModels;
+  bool get isUsable =>
+      state != DynamicCatalogSnapshotState.error &&
+      state != DynamicCatalogSnapshotState.unavailable &&
+      hasModels;
 
   DynamicCatalogSnapshotState effectiveState(DateTime now) {
     if (state == DynamicCatalogSnapshotState.fresh &&
@@ -301,15 +501,78 @@ class DynamicCatalogSnapshot {
   DynamicCatalogSnapshot withEffectiveState(DateTime now) {
     final effective = effectiveState(now);
     if (effective == state) return this;
+    final staleProviders = <DynamicProviderRecord>[
+      for (final provider in providers)
+        if (provider.catalogState == DynamicProviderCatalogState.fresh)
+          DynamicProviderRecord(
+            id: provider.id,
+            label: provider.label,
+            subtitle: provider.subtitle,
+            description: provider.description,
+            authenticationMode: provider.authenticationMode,
+            defaultModelId: provider.defaultModelId,
+            connectionState: provider.connectionState,
+            catalogState: DynamicProviderCatalogState.stale,
+            source: provider.source,
+            etag: provider.etag,
+            lastRefreshedAt: provider.lastRefreshedAt,
+            errorMessage: provider.errorMessage,
+            models: provider.models,
+          )
+        else
+          provider,
+    ];
     return DynamicCatalogSnapshot(
       schemaVersion: schemaVersion,
       snapshotId: snapshotId,
       state: effective,
       updatedAt: updatedAt,
       expiresAt: expiresAt,
-      providers: providers,
+      providers: staleProviders,
       source: source,
       errorMessage: errorMessage,
+    );
+  }
+
+  DynamicCatalogSnapshot withCapabilityReceipts(
+    Iterable<ModelCapabilityReceipt> receipts, {
+    DateTime? now,
+  }) {
+    final timestamp = (now ?? DateTime.now()).toUtc();
+    final current = receipts.where((receipt) => receipt.isCurrentAt(timestamp));
+    return DynamicCatalogSnapshot(
+      schemaVersion: schemaVersion,
+      snapshotId: snapshotId,
+      state: state,
+      updatedAt: updatedAt,
+      expiresAt: expiresAt,
+      source: source,
+      errorMessage: errorMessage,
+      providers: <DynamicProviderRecord>[
+        for (final provider in providers)
+          DynamicProviderRecord(
+            id: provider.id,
+            label: provider.label,
+            subtitle: provider.subtitle,
+            description: provider.description,
+            authenticationMode: provider.authenticationMode,
+            defaultModelId: provider.defaultModelId,
+            connectionState: provider.connectionState,
+            catalogState: provider.catalogState,
+            source: provider.source,
+            etag: provider.etag,
+            lastRefreshedAt: provider.lastRefreshedAt,
+            errorMessage: provider.errorMessage,
+            models: <DynamicModelRecord>[
+              for (final model in provider.models)
+                _applyNewestMatchingReceipt(
+                  model,
+                  current,
+                  now: timestamp,
+                ),
+            ],
+          ),
+      ],
     );
   }
 
@@ -387,12 +650,18 @@ class DynamicCatalogSnapshot {
             'Invalid or duplicate model ${model.id} in ${provider.id}.',
           );
         }
+        if (!model.liveAvailable &&
+            (model.unavailableReason?.trim().isEmpty ?? true)) {
+          throw StateError(
+            'Unavailable model ${model.id} must explain why it is unavailable.',
+          );
+        }
       }
       if (provider.defaultModelId != null &&
-          !provider.models
-              .any((model) => model.id == provider.defaultModelId)) {
+          !provider.models.any((model) =>
+              model.id == provider.defaultModelId && model.liveAvailable)) {
         throw StateError(
-          'Provider ${provider.id} default model is not in its snapshot.',
+          'Provider ${provider.id} default model is not live in its snapshot.',
         );
       }
     }
@@ -409,7 +678,7 @@ class DynamicCatalogSnapshot {
     return DynamicCatalogSnapshot(
       schemaVersion: currentSchemaVersion,
       snapshotId: 'bundled-static-v1',
-      state: DynamicCatalogSnapshotState.fresh,
+      state: DynamicCatalogSnapshotState.offlineFallback,
       updatedAt: timestamp,
       expiresAt: timestamp.add(ttl),
       providers: providers,
@@ -434,9 +703,10 @@ class DynamicModelCatalogRepository {
     try {
       final decoded = jsonDecode(encoded);
       if (decoded is! Map) return null;
-      return DynamicCatalogSnapshot.fromJson(decoded).withEffectiveState(
-        now ?? DateTime.now(),
-      );
+      final timestamp = now ?? DateTime.now();
+      final snapshot = DynamicCatalogSnapshot.fromJson(decoded)
+          .withEffectiveState(timestamp);
+      return snapshot;
     } on FormatException {
       return null;
     } on StateError {
@@ -444,6 +714,39 @@ class DynamicModelCatalogRepository {
     } on TypeError {
       return null;
     }
+  }
+
+  Future<DynamicCatalogSnapshot?> loadAssessed({DateTime? now}) async {
+    final timestamp = now ?? DateTime.now();
+    final snapshot = await load(now: timestamp);
+    if (snapshot == null) return null;
+    // A persisted catalog can outlive the provider list shipped by the app.
+    // Merge newly supported providers instead of treating an older snapshot
+    // as authoritative forever (Venice and BlockRun were added after earlier
+    // devices had already cached the original provider set).
+    final current = _mergeBundledProviders(snapshot, now: timestamp);
+    return assess(current, now: timestamp);
+  }
+
+  Future<DynamicCatalogSnapshot> assess(
+    DynamicCatalogSnapshot snapshot, {
+    DateTime? now,
+  }) async {
+    final timestamp = now ?? DateTime.now();
+    final receipts = await ModelCapabilityReceiptRepository(
+      preferences: _preferences,
+    ).readCurrent(now: timestamp);
+    return snapshot.withCapabilityReceipts(receipts, now: timestamp);
+  }
+
+  Future<DynamicCatalogSnapshot> loadOrBundled({DateTime? now}) async {
+    final timestamp = now ?? DateTime.now();
+    final cached = await loadAssessed(now: timestamp);
+    if (cached != null && cached.hasModels) return cached;
+    return assess(
+      DynamicCatalogSnapshot.bundledFallback(now: timestamp),
+      now: timestamp,
+    );
   }
 
   Future<void> save(DynamicCatalogSnapshot snapshot) async {
@@ -474,6 +777,33 @@ class DynamicModelCatalogRepository {
       errorMessage: _redactError(message),
     );
     await save(error);
+  }
+
+  DynamicCatalogSnapshot _mergeBundledProviders(
+    DynamicCatalogSnapshot snapshot, {
+    required DateTime now,
+  }) {
+    final bundled = DynamicCatalogSnapshot.bundledFallback(now: now);
+    final existingIds =
+        snapshot.providers.map((provider) => provider.id).toSet();
+    final missing = bundled.providers
+        .where((provider) => !existingIds.contains(provider.id))
+        .toList(growable: false);
+    if (missing.isEmpty) return snapshot;
+
+    return DynamicCatalogSnapshot(
+      schemaVersion: snapshot.schemaVersion,
+      snapshotId: snapshot.snapshotId,
+      state: snapshot.state,
+      updatedAt: snapshot.updatedAt,
+      expiresAt: snapshot.expiresAt,
+      providers: <DynamicProviderRecord>[
+        ...snapshot.providers,
+        ...missing,
+      ],
+      source: snapshot.source,
+      errorMessage: snapshot.errorMessage,
+    );
   }
 
   Future<void> clear() async {
@@ -559,6 +889,38 @@ DynamicProviderConnectionState _providerStateFromJson(dynamic value) {
   );
 }
 
+DynamicProviderCatalogState _providerCatalogStateFromJson(
+  dynamic value, {
+  required String source,
+}) {
+  if (value is! String) {
+    return source == 'provider-api'
+        ? DynamicProviderCatalogState.fresh
+        : DynamicProviderCatalogState.offlineFallback;
+  }
+  return DynamicProviderCatalogState.values.firstWhere(
+    (state) => state.name == value,
+    orElse: () => DynamicProviderCatalogState.offlineFallback,
+  );
+}
+
+ProviderAuthenticationMode _providerAuthenticationModeFromJson(
+  dynamic value, {
+  required bool legacyRequiresApiKey,
+}) {
+  if (value is String) {
+    return ProviderAuthenticationMode.values.firstWhere(
+      (mode) => mode.name == value,
+      orElse: () => legacyRequiresApiKey
+          ? ProviderAuthenticationMode.apiKey
+          : ProviderAuthenticationMode.none,
+    );
+  }
+  return legacyRequiresApiKey
+      ? ProviderAuthenticationMode.apiKey
+      : ProviderAuthenticationMode.none;
+}
+
 ModelRouteKind _modelRouteFromJson(dynamic value) {
   if (value is! String) return ModelRouteKind.cloud;
   return ModelRouteKind.values.firstWhere(
@@ -573,6 +935,36 @@ ModelToolPolicy _toolPolicyFromJson(dynamic value) {
     (policy) => policy.name == value,
     orElse: () => ModelToolPolicy.variable,
   );
+}
+
+ModelChatReadiness _chatReadinessFromJson(dynamic value) {
+  if (value is! String) return ModelChatReadiness.providerAdvertised;
+  return ModelChatReadiness.values.firstWhere(
+    (readiness) => readiness.name == value,
+    orElse: () => ModelChatReadiness.unknown,
+  );
+}
+
+ModelToolReadiness _toolReadinessFromJson(
+  dynamic value, {
+  required bool? supportsToolCalls,
+  required ModelToolPolicy toolPolicy,
+}) {
+  if (value is String) {
+    return ModelToolReadiness.values.firstWhere(
+      (readiness) => readiness.name == value,
+      orElse: () => ModelToolReadiness.unknown,
+    );
+  }
+  // Legacy dynamic snapshots must not inherit the old overclaim where a
+  // provider advertisement was serialized as a reliable tool route.
+  if (supportsToolCalls == false || toolPolicy == ModelToolPolicy.disabled) {
+    return ModelToolReadiness.incompatible;
+  }
+  if (supportsToolCalls == true) {
+    return ModelToolReadiness.providerAdvertised;
+  }
+  return ModelToolReadiness.unknown;
 }
 
 bool _isSafeId(String value) {
@@ -593,4 +985,32 @@ String _redactError(String message) {
   );
   if (compact.isEmpty) return 'Provider model discovery failed.';
   return compact.length <= 240 ? compact : '${compact.substring(0, 239)}…';
+}
+
+DynamicModelRecord _applyNewestMatchingReceipt(
+  DynamicModelRecord model,
+  Iterable<ModelCapabilityReceipt> receipts, {
+  required DateTime now,
+}) {
+  final matching = receipts
+      .where((receipt) => receipt.matchesModel(
+            providerId: model.providerId,
+            namespacedModelId: model.id,
+            upstreamModelId: model.gatewayModelId,
+            now: now,
+          ))
+      .toList(growable: false)
+    ..sort((a, b) {
+      final aShipped = a.source == ModelCapabilityReceiptSource.shipped;
+      final bShipped = b.source == ModelCapabilityReceiptSource.shipped;
+      if (aShipped != bShipped) return aShipped ? -1 : 1;
+      final observedOrder = a.observedAt.compareTo(b.observedAt);
+      if (observedOrder != 0) return observedOrder;
+      return a.source.index.compareTo(b.source.index);
+    });
+  var assessed = model;
+  for (final receipt in matching) {
+    assessed = assessed.withCapabilityReceipt(receipt);
+  }
+  return assessed;
 }

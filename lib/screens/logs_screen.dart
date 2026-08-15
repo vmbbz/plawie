@@ -148,7 +148,7 @@ class _LogsScreenState extends State<LogsScreen> {
 
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 76,
+      expandedHeight: AppLayout.standardSliverHeaderHeight,
       floating: false,
       pinned: true,
       elevation: 0,

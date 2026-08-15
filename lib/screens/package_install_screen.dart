@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../constants.dart';
 import '../models/optional_package.dart';
 import '../services/native_bridge.dart';
 import '../services/terminal_service.dart';
@@ -264,7 +265,7 @@ class _PackageInstallScreenState extends State<PackageInstallScreen> {
 
   Widget _buildAppBar(BuildContext context, String action) {
     return SliverAppBar(
-      expandedHeight: 100,
+      expandedHeight: AppLayout.standardSliverHeaderHeight,
       floating: false,
       pinned: true,
       elevation: 0,

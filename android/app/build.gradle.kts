@@ -12,6 +12,19 @@ val internalNoProotProof =
     (project.findProperty("plawieInternalNoProotProof") as String?)
         ?.toBooleanStrictOrNull() == true
 
+val releaseStoreFile = providers.environmentVariable("PLAWIE_UPLOAD_STORE_FILE").orNull
+val releaseStorePassword =
+    providers.environmentVariable("PLAWIE_UPLOAD_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("PLAWIE_UPLOAD_KEY_ALIAS").orNull
+val releaseKeyPassword =
+    providers.environmentVariable("PLAWIE_UPLOAD_KEY_PASSWORD").orNull
+val releaseSigningConfigured = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+
 val embeddedNodeRuntime =
     layout.projectDirectory.file("src/main/jniLibs/arm64-v8a/libnode.so")
 val embeddedNodeManifest =
@@ -131,12 +144,28 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("debug")
         }
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            // Never publish an artifact carrying Android's universally known
+            // debug certificate. Release packaging fails below unless the
+            // upload keystore is supplied through the build environment.
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             isShrinkResources = false
         }
@@ -164,6 +193,13 @@ android {
         }
     }
 
+    lint {
+        // Flutter rewrites the ignored, machine-local android/local.properties
+        // during every build. Its Windows path escaping is valid for Gradle but
+        // triggers PropertyEscape, so suppress only that generated-file check.
+        disable += "PropertyEscape"
+    }
+
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
@@ -184,7 +220,10 @@ chaquopy {
             // incompatible with the Chaquopy 17.0 ABI on Android.
             install("numpy")
             install("pandas<2.2")
-            install("yfinance")
+            // `pandas<2.2` excludes the newer yfinance releases. Pin the last
+            // resolver-compatible release rather than letting a clean Android
+            // build backtrack across the whole yfinance history.
+            install("yfinance==0.2.57")
             install("python-dateutil")
             install("requests")
             install("six")
@@ -226,5 +265,17 @@ dependencies {
     implementation("org.web3j:rlp:4.12.3-android")
     implementation("org.web3j:utils:4.12.3-android")
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation("com.solanamobile:mobile-wallet-adapter-clientlib-ktx:2.1.0")
     testImplementation("junit:junit:4.13.2")
+}
+
+gradle.taskGraph.whenReady {
+    val releasePackagingRequested = allTasks.any {
+        it.name in setOf("assembleRelease", "bundleRelease")
+    }
+    check(!releasePackagingRequested || releaseSigningConfigured) {
+        "Release signing is not configured. Set PLAWIE_UPLOAD_STORE_FILE, " +
+            "PLAWIE_UPLOAD_STORE_PASSWORD, PLAWIE_UPLOAD_KEY_ALIAS, and " +
+            "PLAWIE_UPLOAD_KEY_PASSWORD. Debug signing is forbidden for release artifacts."
+    }
 }

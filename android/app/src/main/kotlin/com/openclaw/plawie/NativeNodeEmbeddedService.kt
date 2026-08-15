@@ -51,6 +51,11 @@ class NativeNodeEmbeddedService : Service() {
         val androidTmpPatchCount: Int
     )
 
+    private data class VerifiedPluginAsset(
+        val relativePath: String,
+        val sha256: String
+    )
+
     companion object {
         private const val TAG = "NativeNodeEmbedded"
         private const val FULL_GATEWAY_BOOTSTRAP_MODE = "full-gateway-bootstrap"
@@ -70,6 +75,46 @@ class NativeNodeEmbeddedService : Service() {
             "flutter_assets/assets/openclaw/node-executable-pack/bin"
         private const val AGENT_CLI_BIN_ASSET_DIR =
             "flutter_assets/assets/openclaw/agent-cli-pack/bin"
+        private const val PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ID =
+            "plawie-tool-probe-guard"
+        private const val PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ASSET_DIR =
+            "flutter_assets/assets/openclaw/plugins/plawie-tool-probe-guard"
+        private val PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ASSETS = listOf(
+            VerifiedPluginAsset(
+                "index.js",
+                "b595a5b46571f3baa4f06d6609ac0a5f7382f8203ba8715d5c6de3f7e9fb8cff"
+            ),
+            VerifiedPluginAsset(
+                "openclaw.plugin.json",
+                "7f31fdca4b7c77657650c2c916dbb6067ac02273190b95ca91e63f6008499fc1"
+            ),
+            VerifiedPluginAsset(
+                "package.json",
+                "86e03343a5a006031c68ead9eb09de8e47d7cfb93031bcb171fd8629e61fe2da"
+            )
+        )
+        private const val PLAWIE_VENICE_COMPAT_PLUGIN_ID =
+            "plawie-venice-compat"
+        private const val PLAWIE_VENICE_COMPAT_PLUGIN_ASSET_DIR =
+            "flutter_assets/assets/openclaw/plugins/plawie-venice-compat"
+        private const val PLAWIE_VENICE_COMPAT_PLUGIN_MIN_GATEWAY_VERSION =
+            "2026.7.1"
+        private const val PLAWIE_VENICE_COMPAT_PLUGIN_MAX_GATEWAY_VERSION =
+            "2026.7.99"
+        private val PLAWIE_VENICE_COMPAT_PLUGIN_ASSETS = listOf(
+            VerifiedPluginAsset(
+                "index.js",
+                "290a4799e0f49b8ac5e09b242ad49c1cf63c6913816b2a954b0071597ca15c79"
+            ),
+            VerifiedPluginAsset(
+                "openclaw.plugin.json",
+                "857e401bf1e06c59012cd9813abadfdbab3a7b14ad24b85f2d49f4153f0184da"
+            ),
+            VerifiedPluginAsset(
+                "package.json",
+                "442ef60872a3c5df3adc568cac0ad02b5ed477370c1380f07eed6ca53f5d686c"
+            )
+        )
         internal const val GATEWAY_NOTIFICATION_CHANNEL_ID = "openclaw_gateway"
         internal const val GATEWAY_NOTIFICATION_ID = 7
         private const val ACTION_START = "com.openclaw.plawie.native_node.START"
@@ -543,6 +588,10 @@ class NativeNodeEmbeddedService : Service() {
         )
         val nodeBinCount = copyNodeExecutableBinAssets(provisioningBin)
         val agentBinCount = copyAgentCliBinAssets(provisioningBin)
+        val verifiedPluginPaths = provisionVerifiedOpenClawPlugins(
+            packageDir,
+            File(dir, "verified-plugins")
+        )
 
         if (!launcher.exists()) {
             throw IllegalStateException("OpenClaw launcher missing after extraction: ${launcher.absolutePath}")
@@ -584,6 +633,7 @@ class NativeNodeEmbeddedService : Service() {
                 .put("agentCliBinAssetDir", AGENT_CLI_BIN_ASSET_DIR)
                 .put("agentCliBinCount", agentBinCount)
                 .put("androidTmpPatchCount", androidTmpPatchCount)
+                .put("verifiedPluginPaths", JSONArray(verifiedPluginPaths))
                 .put(
                     "androidStartupCompatibilityPatchCount",
                     androidStartupCompatibilityPatchCount
@@ -604,6 +654,144 @@ class NativeNodeEmbeddedService : Service() {
             requiredFileCount = requiredFiles.size,
             androidTmpPatchCount = androidTmpPatchCount
         )
+    }
+
+    private fun provisionVerifiedOpenClawPlugins(
+        packageDir: File,
+        pluginRoot: File
+    ): List<String> {
+        val gatewayVersion = try {
+            JSONObject(File(packageDir, "package.json").readText()).optString("version")
+        } catch (error: Exception) {
+            throw IllegalStateException(
+                "Could not verify the official OpenClaw version for bundled plugins.",
+                error
+            )
+        }
+        if (!versionInClosedRange(
+                gatewayVersion,
+                PLAWIE_VENICE_COMPAT_PLUGIN_MIN_GATEWAY_VERSION,
+                PLAWIE_VENICE_COMPAT_PLUGIN_MAX_GATEWAY_VERSION
+            )
+        ) {
+            appendLog(
+                "verified plugin skipped id=$PLAWIE_VENICE_COMPAT_PLUGIN_ID " +
+                    "gatewayVersion=$gatewayVersion supported=" +
+                    "$PLAWIE_VENICE_COMPAT_PLUGIN_MIN_GATEWAY_VERSION.." +
+                    PLAWIE_VENICE_COMPAT_PLUGIN_MAX_GATEWAY_VERSION
+            )
+            return emptyList()
+        }
+
+        val provisioned = mutableListOf<String>()
+        provisioned += provisionVerifiedOpenClawPlugin(
+            pluginRoot = pluginRoot,
+            pluginId = PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ID,
+            assetDir = PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ASSET_DIR,
+            pluginAssets = PLAWIE_TOOL_PROBE_GUARD_PLUGIN_ASSETS,
+            gatewayVersion = gatewayVersion
+        )
+        provisioned += provisionVerifiedOpenClawPlugin(
+            pluginRoot = pluginRoot,
+            pluginId = PLAWIE_VENICE_COMPAT_PLUGIN_ID,
+            assetDir = PLAWIE_VENICE_COMPAT_PLUGIN_ASSET_DIR,
+            pluginAssets = PLAWIE_VENICE_COMPAT_PLUGIN_ASSETS,
+            gatewayVersion = gatewayVersion
+        )
+        return provisioned
+    }
+
+    private fun provisionVerifiedOpenClawPlugin(
+        pluginRoot: File,
+        pluginId: String,
+        assetDir: String,
+        pluginAssets: List<VerifiedPluginAsset>,
+        gatewayVersion: String
+    ): String {
+        val target = File(pluginRoot, pluginId)
+        val staging = File(pluginRoot, ".$pluginId.staging")
+        if (staging.exists()) staging.deleteRecursively()
+        staging.mkdirs()
+
+        try {
+            for (asset in pluginAssets) {
+                val destination = File(staging, asset.relativePath)
+                destination.parentFile?.mkdirs()
+                assets.open(
+                    "$assetDir/${asset.relativePath}"
+                ).use { input ->
+                    destination.outputStream().use { output -> input.copyTo(output) }
+                }
+                val actual = sha256File(destination)
+                if (!actual.equals(asset.sha256, ignoreCase = true)) {
+                    throw IllegalStateException(
+                        "Bundled plugin hash mismatch for ${asset.relativePath}."
+                    )
+                }
+            }
+
+            val pluginManifest = JSONObject(File(staging, "openclaw.plugin.json").readText())
+            if (pluginManifest.optString("id") != pluginId) {
+                throw IllegalStateException("Bundled plugin manifest id is invalid.")
+            }
+            val packageJson = JSONObject(File(staging, "package.json").readText())
+            val declaredExtension = packageJson
+                .optJSONObject("openclaw")
+                ?.optJSONArray("extensions")
+                ?.optString(0)
+            if (declaredExtension != "./index.js") {
+                throw IllegalStateException("Bundled plugin entrypoint is invalid.")
+            }
+
+            if (target.exists()) target.deleteRecursively()
+            if (!staging.renameTo(target)) {
+                throw IllegalStateException("Could not activate the verified bundled plugin.")
+            }
+            appendLog(
+                "verified plugin provisioned id=$pluginId " +
+                    "gatewayVersion=$gatewayVersion files=${pluginAssets.size}"
+            )
+            return target.absolutePath
+        } catch (error: Exception) {
+            staging.deleteRecursively()
+            target.deleteRecursively()
+            throw error
+        }
+    }
+
+    private fun versionInClosedRange(actual: String, minimum: String, maximum: String): Boolean {
+        fun components(value: String): List<Int> = value
+            .trim()
+            .removePrefix("v")
+            .substringBefore('-')
+            .split('.')
+            .map { it.toIntOrNull() ?: 0 }
+
+        fun compare(left: String, right: String): Int {
+            val a = components(left)
+            val b = components(right)
+            for (index in 0 until maxOf(a.size, b.size)) {
+                val difference = (a.getOrNull(index) ?: 0) - (b.getOrNull(index) ?: 0)
+                if (difference != 0) return difference
+            }
+            return 0
+        }
+        return compare(actual, minimum) >= 0 && compare(actual, maximum) <= 0
+    }
+
+    private fun sha256File(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (read > 0) digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { byte ->
+            "%02x".format(byte.toInt() and 0xff)
+        }
     }
 
     private fun patchOpenClawAndroidTmpDirs(packageDir: File, nativeTmpDir: File): Int {

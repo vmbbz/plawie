@@ -1,7 +1,8 @@
 # Dynamic Providers, Models, Accounts, and Human-Approved x402
 
-Status: Phases 1-9 and inbound Base bridge quoting implemented; wallet,
-external-wallet execution, and paid-provider completion approved but pending
+Status: Phases 1-10B and wallet-funded provider Gateway/UI integration
+implemented behind release gates; legal bundle and controlled Base Mainnet
+release proof remain pending
 
 Date: 2026-08-05
 
@@ -14,12 +15,53 @@ Current implementation status:
   implemented.
 - Dynamic model metadata is not allowed to overwrite the app's local context or
   tool policy limits.
+- Venice and BlockRun are registered as wallet-identity providers with no
+  fabricated API key. Their dynamic model IDs stay under `venice/` and
+  `blockrun/`, while Gateway configuration points only at the authenticated
+  app-private loopback proxy.
+- Venice model discovery uses a fresh route-bound `X-Sign-In-With-X` identity
+  for the exact models URL, matching the official
+  [Venice x402 client](https://github.com/veniceai/x402-client). BlockRun model
+  discovery uses its documented public
+  [models endpoint](https://blockrun.ai/docs/api-reference/models) without a
+  payment or authorization header.
+- Venice inference now has a bounded foreground-turn contract: only the visible
+  Chat Send path can create an in-memory, conversation/model-bound lease; the
+  proxy permits at most eight matching calls for ten minutes and destroys the
+  lease when the turn ends or the app leaves the foreground. Each upstream call
+  receives a fresh route-bound `X-Sign-In-With-X`; ordinary/SSE/tool-call bytes
+  remain unchanged. Native wallet/device-authentication is fenced as a
+  transient operation: Android `hidden`/`paused` callbacks cannot erase the
+  already-authorized lease while that platform prompt is in flight. Exact
+  model-bound continuations remain valid while Plawie is visible but
+  temporarily inactive; hidden/paused transitions still fail closed. Venice
+  identity prompts are serialized and queued continuations revalidate their
+  exact lease at the head of that queue. Successful responses update the UI
+  from the documented balance hint without launching a second
+  wallet-authenticated balance request inside the agent loop.
+- Venice top-up remains a separate visible-approval x402 flow. A settled,
+  redacted receipt is persisted before provider balance refresh, and a refresh
+  failure never makes a confirmed payment look retryable.
+- Venice and BlockRun run through the shared authenticated loopback lifecycle
+  owned by native Gateway startup. Venice uses its bounded foreground lease and
+  BlockRun uses the app-scoped exact-payment approval broker; ordinary and SSE
+  response bytes return through the same OpenClaw conversation.
+- Catalog truth is separate from provider/payment readiness. Each provider now
+  records fresh, stale, offline-fallback, or unavailable metadata, and shipped
+  wallet-provider explanations are explicitly non-live and cannot become a
+  Gateway model config.
 - x402 v2 challenge parsing, exact-request binding, single-use approval state,
   expiry, Base Mainnet USDC allowlisting, and redacted receipts are implemented
   as a pre-signing boundary.
 - First setup distinguishes BYOK providers from wallet-funded providers. The Base
   page owns wallet funding, prepaid provider top-ups, per-request payment
   explanations, and receipts; Chat and Settings link to that management surface.
+- Chat, Settings, and Base now derive wallet-funded model status from one
+  read-only readiness service. It keeps live/stale catalog truth, secure-wallet
+  state, Base network, cached Venice balance freshness, and authenticated proxy
+  health separate. Opening the picker never signs or spends; non-live fallback
+  entries are disabled, Venice is not ready from wallet existence alone, and
+  BlockRun is always labeled payment-per-request rather than funded.
 - Ordinary Base ETH/USDC transfers now require a short-lived exact-request
   visible-UI approval capability and a second confirmation step. This does not
   enable x402 spending.
@@ -37,15 +79,15 @@ Current implementation status:
   receipts, visible approval, and exact-request retry are implemented. The
   release gate remains one controlled, user-approved on-device Base Mainnet
   settlement proof.
-- The Base page and read-only agent capability can request inbound Base USDC
-  quotes from Ethereum, Solana, and Robinhood Chain through LI.FI runtime
-  discovery. Source-chain execution remains in an external wallet; transaction
-  calldata is discarded and never enters the internal Base signer.
-- The approved production continuation is defined in
-  [`Native Wallet, Bridge, and Wallet-Funded Provider Completion Design`](superpowers/specs/2026-08-05-native-wallet-bridge-paid-provider-design.md).
-  It preserves the quote-only behavior as the shipped fallback while adding a
-  separate foreground coordinator for exact external-wallet handoff, LI.FI
-  status receipts, and context-preserving Venice/BlockRun Gateway transport.
+- The Wallet page and read-only agent capability discover inbound Base USDC
+  routes from Ethereum, Solana, Robinhood Chain, and live-supported sources.
+  Connected LI.FI execution, strict Relay deposit addresses, status recovery,
+  and an honest Jumper fallback are implemented behind independent gates.
+  Source-chain execution remains in an external wallet and transaction calldata
+  never enters the internal Base signer or agent output.
+- The approved production contract is
+  [`Hybrid External-Wallet to Base Funding Design`](superpowers/specs/2026-08-07-hybrid-base-funding-design.md).
+  The earlier 2026-08-05 connected-only plan remains superseded.
 
 ## 1. Purpose
 
@@ -352,6 +394,12 @@ provider change, failure cleanup, or expiry.
 ## 5. Phase 0: context and tool compatibility baseline
 
 This phase must be completed before changing the production model picker.
+
+The post-live-testing protocol audit and concern-separated remediation design
+are documented in
+[`Provider Tool Compatibility, Model Truth, and Safe Failover Design`](superpowers/specs/2026-08-13-provider-tool-compatibility-and-failover-design.md).
+That document supersedes any interpretation that a provider's generic function-
+calling flag alone is sufficient to label a model Agent-ready.
 
 ### 5.1 Context audit result
 
@@ -1352,14 +1400,20 @@ Exit criteria: a payment signature cannot be produced without an approved intent
 and a fresh device-authenticated cryptographic unlock; the Gateway and agent
 cannot access raw key material.
 
-### Phase 8 — x402 v2 intent and approval on Base Mainnet (implemented;
-device settlement proof pending)
+### Phase 8 — x402 v2 intent and approval on Base Mainnet (transport core
+implemented; app integration and device settlement proof pending)
 
 - Add v2 `PAYMENT-REQUIRED` parsing and provider
   host/network/token/facilitator allowlists.
 - Add `PendingPaymentIntent` and receipt records.
-- Add the explicit approval screen and cancellation/expiry behavior.
-- Add the Gateway-compatible provider transport and approval bridge.
+- The foreground-only approval broker and cancellation/expiry behavior are
+  implemented. One app-scoped listener now owns the canonical visible approval
+  dialog and both paid-provider foreground lifecycles. Listenerless,
+  backgrounded, expired, concurrent, and unsecured-surface requests fail
+  closed.
+- The Gateway-compatible BlockRun transport handler and approval bridge are
+  implemented. Proxy startup and Gateway configuration injection are owned by
+  the selected Gateway lifecycle.
 - Add `exact/eip3009` EIP-712 construction and the approval-bound signer; do not
   call generic `sendUsdc`.
 - Retry the byte-identical method/URL/body once with the provider's documented
@@ -1377,10 +1431,41 @@ Exit criteria: reject/cancel/expiry paths are safe, approval is required, exact
 payment details are displayed and validated, and the provider accepts one
 approved payment in a controlled test with no automatic second attempt.
 
-Code-level parsing, approval, exact-retry, terminal receipt, redirect, and
-single-attempt tests pass. The remaining release gate is one user-approved
-Base Mainnet settlement against the current live provider challenge on a
-hardware-backed connected Android device.
+Code-level parsing, foreground-broker, exact immutable-body retry, terminal
+receipt, redirect, recovery, single-attempt, canonical approval UI, background
+cancellation, and Android secure-surface contract tests pass. The remaining
+payment release gate is one user-approved Base Mainnet settlement against the
+current live provider challenge on a hardware-backed connected Android device.
+
+The approval dialog is an explicitly owned, non-dismissible route showing the
+exact amount, provider/model, Base Mainnet, purpose, host, expiry, recipient,
+and redacted fingerprint. `FLAG_SECURE`, obscured-touch filtering, and Android
+12+ overlay hiding are active before it is presented. Failure to apply that
+policy cancels without displaying an approvable control. Backgrounding resolves
+the broker as cancelled-by-lifecycle and removes the exact route before the app
+can resume; approval still leads to a separate Android device-authenticated
+signer policy check.
+
+The paid-provider proxy is now owned by `GatewayService`: it starts and passes
+an authenticated loopback health check before the selected native Gateway is
+started, and it stops only after the Gateway process is confirmed stopped. The
+same lifecycle applies to an explicitly selected PRoot rollback owner without
+ever selecting PRoot automatically. On Flutter process recreation, the proxy
+may restore its capability only from the exact paid-provider block in the
+app-private OpenClaw config; it never reads a capability from chat, preferences,
+receipts, logs, or an arbitrary endpoint. Port collisions attach only when the
+existing loopback listener answers authenticated Plawie health.
+On an orderly stop, the app persists removal of those Gateway capabilities
+after Gateway shutdown and before proxy shutdown or capability rotation. A
+failed scrub leaves the authenticated loopback owner running and reports an
+error instead of rotating into a stale recoverable configuration.
+
+Current official OpenClaw sends the provider-local `model.id` in its
+OpenAI-compatible request body. The fixed `/venice/v1` or `/blockrun/v1` route
+therefore supplies provider identity; the proxy preserves that local model ID
+upstream and reconstructs the namespaced ID only as process-local authorization
+metadata. System prompts, message history, tools, tool results, session
+metadata, and SSE tool-call bytes remain unchanged.
 
 ### Phase 9 — Provider-specific live validation (balance/read-only agent
 contract implemented; live provider proof pending)
@@ -1397,7 +1482,7 @@ contract implemented; live provider proof pending)
 Exit criteria: each enabled provider has a documented capability/payment matrix
 and a rollback switch.
 
-### Phase 10 — Inbound Base bridge planning (implemented quote-only baseline)
+### Phase 10 — Inbound Base funding planning and execution (implemented behind gates)
 
 - Treat bridging as wallet funding, not as an x402 payment or provider-credit
   settlement. The destination is always the app's displayed internal Base
@@ -1420,14 +1505,14 @@ and a rollback switch.
 - Show source amount, minimum Base USDC received, route tool, estimated route
   plus gas cost, estimated duration, 0.5% slippage, and a short quote lifetime.
   Quotes are estimates, not receipts or guarantees.
-- The currently shipped quote-only path discards LI.FI `transactionRequest` and
-  all bridge calldata. The agent may inspect capabilities and request a quote,
-  but cannot approve, sign, submit, broadcast, or claim completion. The internal
-  Base signer exposes no arbitrary message or bridge-calldata operation.
-- Send the user to an external source wallet/LI.FI surface for a fresh route and
-  final human review. Future execution integration must return with a source
-  transaction hash before status polling can begin; a quote ID alone is never a
-  completion receipt.
+- Agent quote output discards LI.FI `transactionRequest` and all bridge calldata.
+  Only the foreground Wallet coordinator can hold a fresh validated executable
+  route, and the internal Base signer still exposes no arbitrary message or
+  bridge-calldata operation.
+- Connected execution requires an exact Plawie review and the external wallet's
+  own confirmation. A source hash/signature is persisted before polling; a quote
+  ID alone is never a completion receipt. Relay strict deposits persist before
+  reveal and remain self-custody-only.
 - Treat runtime route discovery as authoritative. If LI.FI no longer advertises
   Robinhood-to-Base, fail honestly. Robinhood's canonical L2 withdrawal path is
   a separate Ethereum route with an approximately seven-day challenge period,
@@ -1439,10 +1524,10 @@ support disappears safely when runtime discovery removes it; and one external
 wallet handoff is verified per source ecosystem without claiming the app
 executed or tracked the transfer.
 
-### Phase 10B — External-wallet execution and paid-provider completion
+### Phase 10B — External-wallet execution and paid-provider completion (implemented behind gates)
 
-The approved successor to the quote-only baseline is specified in
-[`Native Wallet, Bridge, and Wallet-Funded Provider Completion Design`](superpowers/specs/2026-08-05-native-wallet-bridge-paid-provider-design.md).
+The approved successor contract is specified in
+[`Hybrid External-Wallet to Base Funding Design`](superpowers/specs/2026-08-07-hybrid-base-funding-design.md).
 
 It adds a foreground-only execution coordinator that may hold one fresh,
 strictly validated LI.FI transaction for handoff to Phantom or a connected EVM
@@ -1451,9 +1536,11 @@ agent capability. It also connects Venice and BlockRun to OpenClaw through a
 payment-aware loopback provider proxy so provider changes do not bypass Gateway
 context, tools, or skills.
 
-This continuation is not implemented until its wallet-reliability, callback,
-replay, exact-approval, receipt-recovery, and context-invariance tests pass. The
-quote-only path remains the rollback behavior.
+The paid-provider proxy, bounded wallet identity, exact BlockRun approval,
+receipt handling, context-invariance tests, connected LI.FI execution, strict
+Relay deposits, settlement recovery, and canonical funding UI are implemented.
+Production enablement still requires the legal/attribution bundle and controlled
+on-device Mainnet settlement proofs in the release plan.
 
 References:
 
@@ -1604,8 +1691,9 @@ PRoot fallback all pass the release checklist.
 - absent/malformed fees display as unknown, not zero;
 - `transactionRequest`, calldata, approvals, and signatures never enter agent
   output, app persistence, or the internal signer;
-- incomplete chat requests explain supported lanes; complete requests can only
-  call `bridge.quote`;
+- incomplete chat requests explain supported lanes; explicit estimate requests
+  can call `bridge.quote`; execute-like requests return foreground Wallet-page
+  guidance; `bridge.status` and `bridge.receipts` remain redacted local reads;
 - external-wallet completion is described as a new final quote and approval,
   never as execution of the app's earlier quote;
 - route removal, rate limit, provider outage, malformed response, and expired

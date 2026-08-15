@@ -177,7 +177,7 @@ class _PackagesScreenState extends State<PackagesScreen> {
 
   Widget _buildAppBar(BuildContext context, int installedCount) {
     return SliverAppBar(
-      expandedHeight: 90,
+      expandedHeight: AppLayout.standardSliverHeaderHeight,
       floating: false,
       pinned: true,
       elevation: 0,

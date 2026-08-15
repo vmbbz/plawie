@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:clawa/services/capabilities/ai_payments_capability.dart';
+import 'package:clawa/services/capabilities/keeperhub_capability.dart';
 import 'package:clawa/services/gateway_tool_catalog.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -74,6 +75,8 @@ void main() {
         'payments_receipts',
         'bridge.capabilities',
         'bridge.quote',
+        'bridge.status',
+        'bridge.receipts',
       }),
     );
     expect(
@@ -85,11 +88,63 @@ void main() {
       'payments.sign',
       'payments.submit',
       'bridge.execute',
+      'bridge.connect',
+      'bridge.approve',
+      'bridge.sign',
+      'bridge.submit',
+      'bridge.broadcast',
+      'bridge.deposit.create',
     ]) {
+      expect(declaredCommands, isNot(contains(forbiddenCommand)));
       expect(
         GatewayToolCatalog.mobileNodeAllowCommands,
         isNot(contains(forbiddenCommand)),
       );
     }
+  });
+
+  test('KeeperHub exposes only bounded inspect and inert prepare commands', () {
+    final capability = KeeperHubCapability();
+    final declaredCommands = <String>{};
+
+    for (final command in capability.commands) {
+      declaredCommands.add('${capability.name}.$command');
+      declaredCommands.add('${capability.name}_$command');
+    }
+
+    expect(
+      declaredCommands,
+      equals(const <String>{
+        'keeperhub.capabilities',
+        'keeperhub.status',
+        'keeperhub.receipts',
+        'keeperhub.prepare',
+        'keeperhub_capabilities',
+        'keeperhub_status',
+        'keeperhub_receipts',
+        'keeperhub_prepare',
+      }),
+    );
+    expect(
+      GatewayToolCatalog.mobileNodeAllowCommands,
+      containsAll(declaredCommands),
+    );
+    for (final forbiddenCommand in const <String>[
+      'keeperhub.approve',
+      'keeperhub.authenticate',
+      'keeperhub.sign',
+      'keeperhub.submit',
+      'keeperhub.retry',
+      'keeperhub.revoke',
+      'keeperhub.execute',
+      'keeperhub.execute_workflow',
+    ]) {
+      expect(declaredCommands, isNot(contains(forbiddenCommand)));
+      expect(
+        GatewayToolCatalog.mobileNodeAllowCommands,
+        isNot(contains(forbiddenCommand)),
+      );
+    }
+    capability.close();
   });
 }

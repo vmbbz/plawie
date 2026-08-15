@@ -2,7 +2,7 @@
   <img src="assets/images/release_banner_v2.jpg" alt="Plawie v2.0" width="800"/>
 </p>
 
-# Plawie v2.2.1 — "The Unified Agent Milestone"
+# Plawie v2.3.0 — "Human-Governed Mobile Agent"
 
 > [!IMPORTANT]
 > This release marks the transition of Plawie from an engineering prototype into a **hardened, production-ready autonomous agent platform**. We have focused on **Industrial-Grade Stability**, **Granular Security**, and a **World-Class User Experience**.
@@ -10,14 +10,14 @@
 ---
 
 ## 🛰️ The Next Evolution in mainstream OpenClaw adoption.
-This release re-engineers the core of Plawie, the OpenClaw gateway for Android devices. We've moved away from experimental configurations to a refined, automatic environment that manages itself. Whether you are running complex tool-calling agents or seamless local chat, Plawie v2.2.1 provides the most stable Linux-on-Android gateway available.
+This release advances Plawie into a native-first OpenClaw control surface for Android. It combines the official, independently updated Gateway with dynamic model providers, visible skill readiness, wallet-funded inference, bridge receipts, and a human-governed KeeperHub Agent Execution Wallet.
 
 ---
 
 ## 🚀 Key Improvements
 
 ### 0. Unified Tools, Skills, Models, and Avatar Gestures
-This v2.2.1 cut is the first release where the cloud lane, NDK/local lane, Gateway tools, native Android skills, and VRMA avatar controls work together as one agent surface.
+This v2.3.0 cut is the first release where the native Gateway lane, cloud and local models, Android skills, personal wallet, paid-provider flows, and KeeperHub execution proof work together as one governed mobile agent surface.
 - **Shared model execution policy**: Cloud models keep the full Gateway context while local NDK/HTTP models receive compact tool-aware context suited to their limits.
 - **Reliable tool invocation**: Phone tools now route through the Android node with explicit provider/model behavior and clearer unavailable-state handling.
 - **Renderer-acknowledged gestures**: Avatar gestures now queue, start, complete, and report status through the VRM renderer instead of fire-and-forget callbacks.
@@ -60,7 +60,7 @@ We've optimized the disk footprint to keep your phone lean.
 ## 📄 Installation & Migration
 1. **Download**: Grab the `app-release.apk` from the GitHub Releases page.
 2. **Launch**: Plawie will automatically detect your existing environment.
-3. **Migrate**: The **Auto-Repair Engine** will automatically sanitize your legacy configurations for v2.2.1 compatibility.
+3. **Migrate**: The **Auto-Repair Engine** will automatically sanitize supported legacy configurations for v2.3.0 compatibility.
 
 ---
 

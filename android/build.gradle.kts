@@ -23,12 +23,15 @@ subprojects {
 subprojects {
     project.evaluationDependsOn(":app")
 }
-// Lift any Flutter plugin that ships with compileSdk < 36 to avoid AAR metadata
-// version-check failures (e.g. solana_mobile_client still targets API 31).
+// Lift Flutter plugins that still declare an old compileSdk. finalizeDsl runs
+// after each plugin's own android block, so a later compileSdkVersion call
+// cannot undo the compatibility floor. This does not alter minSdk or targetSdk.
 subprojects {
     pluginManager.withPlugin("com.android.library") {
-        extensions.configure<com.android.build.gradle.LibraryExtension> {
-            compileSdk = maxOf(compileSdk ?: 0, 36)
+        extensions.configure<com.android.build.api.variant.LibraryAndroidComponentsExtension> {
+            finalizeDsl { library ->
+                library.compileSdk = maxOf(library.compileSdk ?: 0, 36)
+            }
         }
     }
 }

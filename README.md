@@ -27,6 +27,26 @@
 
 ---
 
+## KeeperHub Agents Onchain submission
+
+Plawie's hackathon vertical slice is a **Human-Governed Agent Wallet**: the
+local OpenClaw agent can prepare a bounded zero-value Base Mainnet intent,
+KeeperHub simulates and executes, and only the foreground Android Wallet can
+review, authenticate, and authorize submission.
+
+- [Submission dossier](docs/submissions/2026-08-13-plawie-keeperhub-agents-onchain-submission.md)
+- [Evidence-backed engineering article](docs/articles/2026-08-11-plawie-human-governed-keeperhub-agent-wallet.md)
+- [Canonical agent-originated KeeperHub transaction](https://basescan.org/tx/0x6b18c0e5475a97996f5a9654392050bf7cc754aa1b31c6f2492645750991430a)
+
+The recorded physical-device path begins with GLM-5 invoking
+`keeperhub.prepare`, stops at the foreground Wallet boundary, and continues
+only after human review and Android authentication. The agent has no approve,
+authenticate, sign, submit, retry, generic-write, or non-zero-transfer command.
+The dossier distinguishes completed receipt persistence from the
+still-unrecorded in-flight interruption stress test.
+
+---
+
 ## 🚀 Project Aegis: Phase 1 (v2.1.0-beta.2)
 
 <p align="center">

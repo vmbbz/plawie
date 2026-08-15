@@ -45,7 +45,8 @@ import android.net.NetworkRequest
 import android.app.AlarmManager
 import android.os.BatteryManager
 import android.os.SystemClock
-import io.flutter.embedding.android.FlutterActivity
+import android.view.WindowManager
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
@@ -54,7 +55,7 @@ import com.chaquo.python.android.AndroidPlatform
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     private val CHANNEL = "com.openclaw.plawie/native"
     private val EVENT_CHANNEL = "com.openclaw.plawie/gateway_logs"
     companion object {
@@ -75,6 +76,8 @@ class MainActivity : FlutterActivity() {
     private lateinit var processManager: ProcessManager
     private lateinit var nativeNodeSmokeProcess: NativeNodeSmokeProcess
     private lateinit var secureEvmWalletManager: SecureEvmWalletManager
+    private var walletLinkBridge: WalletLinkBridge? = null
+    private var solanaMwaBridge: SolanaMwaBridge? = null
     private var screenCaptureResult: MethodChannel.Result? = null
     private var gifImportResult: MethodChannel.Result? = null
     private var screenCaptureDurationMs: Long = 5000L
@@ -154,6 +157,12 @@ class MainActivity : FlutterActivity() {
         bootstrapManager = BootstrapManager(applicationContext, filesDir, nativeLibDir, processManager)
         nativeNodeSmokeProcess = NativeNodeSmokeProcess(applicationContext, nativeLibDir)
         secureEvmWalletManager = SecureEvmWalletManager(this)
+        walletLinkBridge = WalletLinkBridge(
+            flutterEngine.dartExecutor.binaryMessenger
+        ).also { it.captureInitialIntent(intent) }
+        solanaMwaBridge = SolanaMwaBridge(this).also {
+            it.attach(flutterEngine.dartExecutor.binaryMessenger)
+        }
         handleDebugNativeFullGatewayBootstrapIntent(intent)
 
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vrm/pip_mode")
@@ -176,11 +185,12 @@ class MainActivity : FlutterActivity() {
         }
 
         // Register the PIP mic broadcast receiver
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(pipMicReceiver, IntentFilter(ACTION_PIP_MIC), Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(pipMicReceiver, IntentFilter(ACTION_PIP_MIC))
-        }
+        ContextCompat.registerReceiver(
+            this,
+            pipMicReceiver,
+            IntentFilter(ACTION_PIP_MIC),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         pipMethodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -277,6 +287,70 @@ class MainActivity : FlutterActivity() {
                 }
                 "signSecureVeniceBalanceIdentity" -> {
                     secureEvmWalletManager.signVeniceBalanceIdentity(
+                        call.arguments as? Map<*, *>,
+                        result,
+                    )
+                }
+                "signSecureKeeperHubSiwe" -> {
+                    secureEvmWalletManager.signKeeperHubSiwe(
+                        call.arguments as? Map<*, *>,
+                        result,
+                    )
+                }
+                "signSecureKeeperHubKeyChallenge" -> {
+                    secureEvmWalletManager.signKeeperHubKeyChallenge(
+                        call.arguments as? Map<*, *>,
+                        result,
+                    )
+                }
+                "attestSecureKeeperHubExecution" -> {
+                    secureEvmWalletManager.attestKeeperHubExecution(
+                        call.arguments as? Map<*, *>,
+                        result,
+                    )
+                }
+                "authorizeSecureKeeperHubRevocation" -> {
+                    secureEvmWalletManager.authorizeKeeperHubRevocation(
+                        call.arguments as? Map<*, *>,
+                        result,
+                    )
+                }
+                "setSensitiveUiVisible" -> {
+                    val visible = call.arguments as? Boolean
+                    if (visible == null) {
+                        result.error("SENSITIVE_UI_ERROR", "Sensitive UI state is missing.", null)
+                    } else {
+                        runOnUiThread {
+                            try {
+                                if (visible) {
+                                    window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                                } else {
+                                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                                }
+                                window.decorView.filterTouchesWhenObscured = visible
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    window.setHideOverlayWindows(visible)
+                                }
+                                result.success(true)
+                            } catch (error: Exception) {
+                                if (visible) {
+                                    // Avoid leaving the whole app permanently capture-blocked
+                                    // when an OEM rejects a later protection in this bundle.
+                                    try {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                            window.setHideOverlayWindows(false)
+                                        }
+                                        window.decorView.filterTouchesWhenObscured = false
+                                        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                                    } catch (_: Exception) {}
+                                }
+                                result.error("SENSITIVE_UI_ERROR", error.message, null)
+                            }
+                        }
+                    }
+                }
+                "signSecureVeniceProviderIdentity" -> {
+                    secureEvmWalletManager.signVeniceProviderIdentity(
                         call.arguments as? Map<*, *>,
                         result,
                     )
@@ -438,24 +512,11 @@ class MainActivity : FlutterActivity() {
                                 val output = processManager.runInProotSync(command, timeout)
                                 runOnUiThread { result.success(output) }
                             } catch (e: Exception) {
-                                Log.e("MainActivity", "runInProot failed: command=$command", e)
+                                // Commands can contain provider credentials supplied through
+                                // short-lived environment exports. Never place command text in
+                                // Logcat, including on exceptional paths.
+                                Log.e("MainActivity", "runInProot failed", e)
                                 runOnUiThread { result.error("PROOT_ERROR", e.message, null) }
-                            }
-                        }.start()
-                    } else {
-                        result.error("INVALID_ARGS", "command required", null)
-                    }
-                }
-                "executeInShell" -> {
-                    val command = call.argument<String>("command")
-                    val timeoutMs = call.argument<Int>("timeoutMs")?.toLong() ?: 30000L
-                    if (command != null) {
-                        Thread {
-                            try {
-                                val output = processManager.executeInShell(command, timeoutMs)
-                                runOnUiThread { result.success(output) }
-                            } catch (e: Exception) {
-                                runOnUiThread { result.error("SHELL_ERROR", e.message, null) }
                             }
                         }.start()
                     } else {
@@ -513,10 +574,6 @@ class MainActivity : FlutterActivity() {
                             }
                         }
                     }.start()
-                }
-                "destroyShell" -> {
-                    processManager.destroyShell()
-                    result.success(true)
                 }
                 "startGateway" -> {
                     try {
@@ -1084,11 +1141,12 @@ class MainActivity : FlutterActivity() {
 
         // Register wake word broadcast receiver
         val wakeFilter = IntentFilter(HotwordService.ACTION_WAKE_WORD_DETECTED)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(wakeWordReceiver, wakeFilter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(wakeWordReceiver, wakeFilter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            wakeWordReceiver,
+            wakeFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         // Restore a persisted Always-on detector after a process recreation.
         // Android only permits microphone foreground-service startup while the
@@ -1143,6 +1201,7 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        walletLinkBridge?.onNewIntent(intent)
         handleDebugNativeFullGatewayBootstrapIntent(intent)
     }
 
@@ -1627,7 +1686,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onPictureInPictureModeChanged(
         isInPictureInPictureMode: Boolean,
-        newConfig: android.content.res.Configuration?
+        newConfig: android.content.res.Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         pipMethodChannel?.invokeMethod("onPiPModeChanged", isInPictureInPictureMode)
@@ -1762,6 +1821,10 @@ class MainActivity : FlutterActivity() {
         nativeTts = null
         nativeTtsReady = false
         hotwordEventSink = null
+        walletLinkBridge?.dispose()
+        walletLinkBridge = null
+        solanaMwaBridge?.dispose()
+        solanaMwaBridge = null
         super.onDestroy()
     }
 }

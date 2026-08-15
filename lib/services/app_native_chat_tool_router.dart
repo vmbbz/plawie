@@ -270,7 +270,11 @@ class AppNativeChatToolRouter {
       'payments.status' ||
       'payments.receipts' =>
         true,
-      'bridge.capabilities' || 'bridge.quote' => true,
+      'bridge.capabilities' ||
+      'bridge.quote' ||
+      'bridge.status' ||
+      'bridge.receipts' =>
+        true,
       _ => false,
     };
   }
@@ -737,6 +741,8 @@ class AppNativeChatToolRouter {
           ));
         case 'bridge.capabilities':
         case 'bridge.quote':
+        case 'bridge.status':
+        case 'bridge.receipts':
           return _frameToMap(await _aiPayments.handle(
             plan.command,
             plan.input,
@@ -1005,7 +1011,11 @@ class AppNativeChatToolRouter {
       case 'bridge.capabilities':
         return 'Inbound Base bridge options retrieved. Quotes are read-only and every source transaction must be reviewed and signed in an external wallet.';
       case 'bridge.quote':
-        return 'A live inbound Base bridge estimate was retrieved. It is not an approval or executable transaction; open the Base page and review again in the external source wallet.';
+        return 'A live inbound Base bridge estimate was retrieved. It is not an approval or executable transaction; open the Wallet page and review again in the external source wallet.';
+      case 'bridge.status':
+        return 'Read-only bridge status retrieved from the persisted receipt. No wallet action or network submission was performed.';
+      case 'bridge.receipts':
+        return 'Redacted bridge receipt history retrieved. Wallet transports, reviewed payloads, and full addresses are not included.';
       case 'camera.list':
         return 'Camera list retrieved.';
       case 'camera.snap':
@@ -2070,6 +2080,23 @@ class AppNativeChatToolRouter {
       );
     }
 
+    final mentionsBridge = lower.contains('bridg');
+    if (mentionsBridge && _containsAny(lower, const ['receipt', 'history'])) {
+      return const _AppNativeToolPlan(
+        toolName: 'ai-payments',
+        command: 'bridge.receipts',
+        input: <String, dynamic>{},
+      );
+    }
+    if (mentionsBridge &&
+        _containsAny(lower, const ['status', 'progress', 'pending'])) {
+      return const _AppNativeToolPlan(
+        toolName: 'ai-payments',
+        command: 'bridge.status',
+        input: <String, dynamic>{},
+      );
+    }
+
     final mentionsBridgeSource = _containsAny(lower, const [
       'ethereum',
       'solana',
@@ -2078,8 +2105,7 @@ class AppNativeChatToolRouter {
     ]);
     final requestsInboundBaseBridge = lower.contains('base') &&
         mentionsBridgeSource &&
-        (lower.contains('bridge') ||
-            (lower.contains('fund') && lower.contains('from')));
+        (mentionsBridge || (lower.contains('fund') && lower.contains('from')));
     if (requestsInboundBaseBridge) {
       final source = lower.contains('solana')
           ? BridgeQuoteService.sourceChains.singleWhere(
@@ -2105,7 +2131,14 @@ class AppNativeChatToolRouter {
           solanaAddresses.isEmpty ? null : solanaAddresses.first;
       final sourceAddress =
           source.type == BridgeChainType.svm ? solanaAddress : evmAddress;
-      if (amountMatch != null && sourceAddress != null) {
+      final requestsEstimate = _containsAny(lower, const [
+        'quote',
+        'estimate',
+        'how much',
+        'cost',
+        'rate',
+      ]);
+      if (requestsEstimate && amountMatch != null && sourceAddress != null) {
         return _AppNativeToolPlan(
           toolName: 'ai-payments',
           command: 'bridge.quote',
@@ -2117,10 +2150,17 @@ class AppNativeChatToolRouter {
           },
         );
       }
-      return const _AppNativeToolPlan(
+      final requestsExecution =
+          amountMatch != null && sourceAddress != null && !requestsEstimate;
+      return _AppNativeToolPlan(
         toolName: 'ai-payments',
         command: 'bridge.capabilities',
-        input: <String, dynamic>{},
+        input: <String, dynamic>{
+          if (requestsExecution) ...const <String, dynamic>{
+            'foregroundApprovalRequired': true,
+            'requestedAction': 'execute',
+          },
+        },
       );
     }
 
@@ -2157,6 +2197,10 @@ class AppNativeChatToolRouter {
       'base chain',
       'base wallet',
       'base balance',
+      'robinhood chain',
+      'robinhood wallet',
+      'robinhood balance',
+      'usdg balance',
       'usdc balance',
       'eth balance',
       'wallet address',
@@ -2165,7 +2209,9 @@ class AppNativeChatToolRouter {
           ? 'get_history'
           : lower.contains('address')
               ? 'get_address'
-              : lower.contains('sepolia') || lower.contains('mainnet')
+              : lower.contains('sepolia') ||
+                      lower.contains('mainnet') ||
+                      lower.contains('robinhood')
                   ? 'switch_network'
                   : 'get_balance';
       return _AppNativeToolPlan(
@@ -2174,7 +2220,11 @@ class AppNativeChatToolRouter {
         input: {
           'action': action,
           if (action == 'switch_network')
-            'network': lower.contains('sepolia') ? 'sepolia' : 'mainnet',
+            'network': lower.contains('robinhood')
+                ? 'robinhood'
+                : lower.contains('sepolia')
+                    ? 'sepolia'
+                    : 'mainnet',
         },
       );
     }
@@ -2191,7 +2241,7 @@ class AppNativeChatToolRouter {
 
   List<String> _cryptoTokens(String lower) {
     final tokens = <String>[];
-    for (final token in const ['BTC', 'ETH', 'SOL', 'USDC', 'BASE']) {
+    for (final token in const ['BTC', 'ETH', 'SOL', 'USDC', 'USDG', 'BASE']) {
       if (lower.contains(token.toLowerCase())) tokens.add(token);
     }
     return tokens.isEmpty ? const ['ETH', 'BTC', 'SOL', 'USDC'] : tokens;

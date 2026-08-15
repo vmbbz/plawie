@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:clawa/services/ai_payment_provider_catalog.dart';
+import 'package:clawa/services/native_bridge.dart';
 import 'package:clawa/services/provider_balance_service.dart';
 
 void main() {
@@ -89,6 +90,51 @@ void main() {
     expect(signerCalled, isFalse);
   });
 
+  test('refresh resolves the current secure Venice wallet at call time',
+      () async {
+    var statusCalls = 0;
+    final service = ProviderBalanceService(
+      clock: () => now,
+      walletStatus: () async {
+        statusCalls++;
+        return _healthy(address);
+      },
+      veniceSigner: (_) async => <String, dynamic>{
+        'payer': address,
+        'signature': '0x${'a' * 130}',
+        'message': 'bounded EIP-4361 message',
+      },
+      client: MockClient((_) async => http.Response(
+            jsonEncode(<String, dynamic>{
+              'canConsume': true,
+              'balanceUsd': '8.50',
+            }),
+            200,
+          )),
+    );
+
+    final snapshot = await service.refresh('venice');
+
+    expect(statusCalls, 1);
+    expect(snapshot.remainingUsd, 8.5);
+  });
+
+  test('captures only a finite non-negative Venice balance header', () {
+    final service = ProviderBalanceService(
+      clock: () => now,
+      client: MockClient((_) async => http.Response('', 500)),
+    );
+
+    expect(service.captureVeniceRemainingBalance('-1'), isNull);
+    expect(service.captureVeniceRemainingBalance('NaN'), isNull);
+    expect(service.captureVeniceRemainingBalance('1e30'), isNull);
+    final snapshot = service.captureVeniceRemainingBalance('0.75');
+
+    expect(snapshot?.remainingUsd, 0.75);
+    expect(snapshot?.state, ProviderBalanceState.low);
+    expect(service.cached('venice')?.remainingUsd, 0.75);
+  });
+
   test('documents admin and dashboard-only balance boundaries', () {
     final statuses = ProviderBalanceService(
       client: MockClient((_) async => http.Response('', 500)),
@@ -104,3 +150,16 @@ void main() {
     );
   });
 }
+
+SecureWalletStatus _healthy(String address) => SecureWalletStatus(
+      state: SecureWalletState.healthy,
+      address: address,
+      securityLevel: 'device-authenticated',
+      authenticationMode: 'biometric-or-credential',
+      errorCode: '',
+      envelopeIntegrity: 'verified',
+      authenticationAvailable: true,
+      hardwareBacked: true,
+      verificationPending: false,
+      verificationCode: '',
+    );

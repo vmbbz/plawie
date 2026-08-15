@@ -48,8 +48,9 @@ class BootstrapManager(
     private fun setupLibtalloc() {
         val source = File("$nativeLibDir/libtalloc.so")
         val target = File("$libDir/libtalloc.so.2")
-        if (source.exists() && !target.exists()) {
-            source.copyTo(target)
+        if (source.exists() &&
+            (!target.exists() || target.length() != source.length())) {
+            source.copyTo(target, overwrite = true)
             target.setExecutable(true)
         }
     }

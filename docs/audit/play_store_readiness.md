@@ -1,5 +1,13 @@
 # Audit: Google Play Store Readiness
 
+> **Superseded (2026-08-10):** This early audit describes the former PRoot-first
+> bootstrap and recommends bundling or remotely extracting runtime payloads.
+> Plawie is now native-first, PRoot is user-demand fallback, and current Google
+> Play policy requires a separate code-delivery and payments design. Use
+> `docs/superpowers/plans/2026-08-10-google-play-wallet-keeperhub-release-plan.md`
+> as the authoritative release plan. This file remains only as historical
+> context and must not drive implementation.
+
 This document evaluates the current bootstrap process against the requirements for a successful Google Play Store release.
 
 ## Key Challenges

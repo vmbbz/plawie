@@ -5,6 +5,15 @@ enum ModelRouteKind {
   cloud,
 }
 
+/// How a provider authenticates requests. This is intentionally independent
+/// from model discovery and billing readiness: a wallet identity can exist
+/// while its proxy, balance, or per-request payment path is still unavailable.
+enum ProviderAuthenticationMode {
+  apiKey,
+  walletIdentity,
+  none,
+}
+
 class ModelOption {
   final String id;
   final String label;
@@ -20,6 +29,8 @@ class ModelOption {
 
   /// Safe per-request output cap written to the gateway config.
   final int? maxTokens;
+  final DateTime? deprecationDate;
+  final String? replacementModelId;
 
   const ModelOption({
     required this.id,
@@ -34,6 +45,8 @@ class ModelOption {
     this.toolPolicy = ModelToolPolicy.reliable,
     this.contextWindow,
     this.maxTokens,
+    this.deprecationDate,
+    this.replacementModelId,
   });
 
   String get shortId => id.contains('/') ? id.split('/').last : id;
@@ -66,6 +79,9 @@ class ModelOption {
     if (toolPolicy == ModelToolPolicy.variable) return 'VARIABLE TOOLS';
     return 'FULL TOOLS';
   }
+
+  bool isDeprecatedAt(DateTime now) =>
+      deprecationDate != null && !deprecationDate!.isAfter(now.toUtc());
 }
 
 class ProviderOption {
@@ -77,7 +93,7 @@ class ProviderOption {
   final String keyPrefix;
   final String defaultModel;
   final String description;
-  final bool requiresApiKey;
+  final ProviderAuthenticationMode authenticationMode;
 
   const ProviderOption({
     required this.id,
@@ -88,8 +104,11 @@ class ProviderOption {
     required this.keyPrefix,
     required this.defaultModel,
     required this.description,
-    this.requiresApiKey = true,
+    this.authenticationMode = ProviderAuthenticationMode.apiKey,
   });
+
+  bool get requiresApiKey =>
+      authenticationMode == ProviderAuthenticationMode.apiKey;
 }
 
 class ModelProviderCatalog {
@@ -158,7 +177,7 @@ class ModelProviderCatalog {
       envKey: 'GROQ_API_KEY',
       keyHint: 'gsk_...',
       keyPrefix: 'gsk_',
-      defaultModel: 'groq/llama-3.3-70b-versatile',
+      defaultModel: 'groq/openai/gpt-oss-120b',
       description: 'Very fast hosted inference for responsive chat.',
     ),
     ProviderOption(
@@ -170,6 +189,30 @@ class ModelProviderCatalog {
       keyPrefix: 'zm-',
       defaultModel: 'zenmux/z-ai/glm-5.2-free',
       description: 'OpenAI-compatible API gateway with free community models.',
+    ),
+    ProviderOption(
+      id: 'venice',
+      label: 'Venice',
+      subtitle: 'Base wallet · prepaid balance',
+      envKey: '',
+      keyHint: '',
+      keyPrefix: '',
+      defaultModel: '',
+      description:
+          'Wallet-funded inference using a Venice balance linked to your Base wallet.',
+      authenticationMode: ProviderAuthenticationMode.walletIdentity,
+    ),
+    ProviderOption(
+      id: 'blockrun',
+      label: 'BlockRun',
+      subtitle: 'Base wallet · pay per request',
+      envKey: '',
+      keyHint: '',
+      keyPrefix: '',
+      defaultModel: '',
+      description:
+          'Wallet-funded inference with explicit Base USDC approval per request.',
+      authenticationMode: ProviderAuthenticationMode.walletIdentity,
     ),
   ];
 
@@ -187,6 +230,10 @@ class ModelProviderCatalog {
     'openrouter',
     // Zenmux uses the core OpenAI-compatible provider configuration.
     'zenmux',
+    // Wallet-funded providers use the bounded app-owned OpenAI-compatible
+    // loopback proxy and require no external Gateway plugin.
+    'venice',
+    'blockrun',
   };
 
   /// Bundled upstream plugins that are safe to activate in the stock Android
@@ -214,6 +261,27 @@ class ModelProviderCatalog {
     'talk-voice',
     'video-generation-core',
     'xai',
+  };
+
+  /// App-owned OpenClaw plugins whose exact source bytes are bundled in the
+  /// APK, SHA-256 verified during native bootstrap, and loaded only from the
+  /// app-private verified-plugin directory. These are deliberately separate
+  /// from upstream bundled plugins and arbitrary writable extension paths.
+  static const Set<String> nativeGatewayVerifiedPluginIds = <String>{
+    'plawie-tool-probe-guard',
+    'plawie-venice-compat',
+  };
+
+  /// Verified policy plugins required for every native Gateway regardless of
+  /// which cloud provider is selected. They are app-private and hash checked
+  /// by Android before the Gateway can load them.
+  static const Set<String> nativeGatewayCoreVerifiedPluginIds = <String>{
+    'plawie-tool-probe-guard',
+  };
+
+  static const Map<String, String> nativeGatewayVerifiedPluginByProvider =
+      <String, String>{
+    'venice': 'plawie-venice-compat',
   };
 
   /// Upstream provider packages which must be delivered through an explicit,
@@ -369,12 +437,12 @@ class ModelProviderCatalog {
       maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
     ModelOption(
-      id: 'groq/llama-3.3-70b-versatile',
-      label: 'Llama 3.3 70B Versatile',
+      id: 'groq/openai/gpt-oss-120b',
+      label: 'GPT-OSS 120B via Groq',
       providerId: 'groq',
       route: ModelRouteKind.cloud,
       description:
-          'Low-latency hosted model; full Gateway tools need enough Groq TPM.',
+          'Production Groq model for capable, low-latency cloud reasoning.',
       category: 'Fast',
       recommended: true,
       toolPolicy: ModelToolPolicy.variable,
@@ -382,12 +450,12 @@ class ModelProviderCatalog {
       maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),
     ModelOption(
-      id: 'groq/llama-3.1-8b-instant',
-      label: 'Llama 3.1 8B Instant',
+      id: 'groq/openai/gpt-oss-20b',
+      label: 'GPT-OSS 20B via Groq',
       providerId: 'groq',
       route: ModelRouteKind.cloud,
       description:
-          'Very fast lightweight Groq route; best for short cloud turns.',
+          'Production lightweight Groq route for fast, economical turns.',
       category: 'Fast',
       toolPolicy: ModelToolPolicy.variable,
       contextWindow: ModelExecutionPolicy.groqLlamaContextWindow,
@@ -464,6 +532,8 @@ class ModelProviderCatalog {
     if (p.contains('gemini') || p.contains('google')) return 'google';
     if (p.contains('groq')) return 'groq';
     if (p.contains('zenmux')) return 'zenmux';
+    if (p.contains('venice')) return 'venice';
+    if (p.contains('blockrun') || p.contains('block run')) return 'blockrun';
     if (p.endsWith('_api_key')) return normalizeProvider(p.split('_').first);
     return p;
   }
@@ -483,6 +553,10 @@ class ModelProviderCatalog {
         .map((model) => model.providerConfig)
         .toList(growable: false);
     if (models.isNotEmpty) return models;
+    if (providerById(normalized)?.authenticationMode ==
+        ProviderAuthenticationMode.walletIdentity) {
+      return const <Map<String, dynamic>>[];
+    }
     return const [
       {'id': 'default', 'name': 'Default Model'}
     ];
@@ -498,8 +572,11 @@ class ModelProviderCatalog {
         return 'anthropic/claude-sonnet-4-6';
       case 'xai/grok-4.3':
         return 'xai/grok-4';
+      case 'groq/llama-3.3-70b-versatile':
       case 'groq/llama-3.1-405b':
-        return 'groq/llama-3.3-70b-versatile';
+        return 'groq/openai/gpt-oss-120b';
+      case 'groq/llama-3.1-8b-instant':
+        return 'groq/openai/gpt-oss-20b';
       default:
         return trimmed;
     }
@@ -594,6 +671,18 @@ class ModelProviderCatalog {
       case 'openrouter':
         return {
           'baseUrl': 'https://openrouter.ai/api/v1',
+          'models': models,
+        };
+      case 'venice':
+        return {
+          'api': 'openai-completions',
+          'baseUrl': 'http://127.0.0.1:11436/venice/v1',
+          'models': models,
+        };
+      case 'blockrun':
+        return {
+          'api': 'openai-completions',
+          'baseUrl': 'http://127.0.0.1:11436/blockrun/v1',
           'models': models,
         };
       case 'plawie_ndk':

@@ -1,0 +1,528 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'paid_provider_loopback_credential_service.dart';
+import 'paid_provider_http_client.dart';
+import 'paid_provider_proxy_models.dart';
+import 'paid_provider_turn_authorization_service.dart';
+import 'paid_provider_tool_route_policy.dart';
+import 'provider_balance_service.dart';
+import 'venice_wallet_auth_service.dart';
+
+abstract interface class PaidProviderProxyController {
+  bool get isRunning;
+  bool get ownsServer;
+  bool get attachedToExisting;
+  int get port;
+  Uri get uri;
+
+  Future<Uri> start();
+  Future<bool> verifyHealth();
+  Future<void> stop();
+}
+
+class PaidProviderProxyService implements PaidProviderProxyController {
+  PaidProviderProxyService({
+    required PaidProviderLoopbackCredentialService credentialService,
+    required PaidProviderProxyHandler handler,
+    InternetAddress? bindAddress,
+    this.port = 11436,
+    this.maxRequestBodyBytes = 4 * 1024 * 1024,
+    Set<PaidProviderId> Function()? readyProviders,
+    PaidProviderToolRoutePolicy? toolRoutePolicy,
+  })  : _credentialService = credentialService,
+        _handler = handler,
+        _bindAddress = bindAddress ?? InternetAddress.loopbackIPv4,
+        _readyProviders = readyProviders ?? _noReadyProviders,
+        _toolRoutePolicy = toolRoutePolicy;
+
+  final PaidProviderLoopbackCredentialService _credentialService;
+  final PaidProviderProxyHandler _handler;
+  final Set<PaidProviderId> Function() _readyProviders;
+  final InternetAddress _bindAddress;
+  final PaidProviderToolRoutePolicy? _toolRoutePolicy;
+  @override
+  final int port;
+  final int maxRequestBodyBytes;
+
+  HttpServer? _server;
+  Uri? _attachedUri;
+  Future<Uri>? _startFuture;
+
+  @override
+  bool get isRunning => _server != null || _attachedUri != null;
+
+  @override
+  bool get ownsServer => _server != null;
+
+  @override
+  bool get attachedToExisting => _attachedUri != null;
+
+  @override
+  Uri get uri {
+    final server = _server;
+    if (server != null) {
+      return Uri.parse('http://${server.address.address}:${server.port}/');
+    }
+    final attached = _attachedUri;
+    if (attached != null) return attached;
+    throw StateError('Paid-provider proxy is not running.');
+  }
+
+  @override
+  Future<Uri> start() {
+    if (isRunning) return Future<Uri>.value(uri);
+    return _startFuture ??= _start();
+  }
+
+  Future<Uri> _start() async {
+    if (_bindAddress.type != InternetAddressType.IPv4 ||
+        _bindAddress.address != InternetAddress.loopbackIPv4.address) {
+      _startFuture = null;
+      throw StateError('Paid-provider proxy must bind to IPv4 loopback only.');
+    }
+    if (maxRequestBodyBytes <= 0) {
+      _startFuture = null;
+      throw StateError('Paid-provider proxy body limit must be positive.');
+    }
+
+    try {
+      final server = await HttpServer.bind(
+        _bindAddress,
+        port,
+        shared: false,
+      );
+      _server = server;
+      server.listen(
+        _handleRequest,
+        onError: (_) {},
+        cancelOnError: false,
+      );
+      return uri;
+    } catch (_) {
+      _server = null;
+      _startFuture = null;
+      if (port != 0) {
+        final candidate = Uri.parse(
+          'http://${InternetAddress.loopbackIPv4.address}:$port/',
+        );
+        if (await _verifyHealthAt(candidate)) {
+          _attachedUri = candidate;
+          return candidate;
+        }
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> stop() async {
+    final server = _server;
+    _server = null;
+    _attachedUri = null;
+    _startFuture = null;
+    await server?.close(force: true);
+  }
+
+  @override
+  Future<bool> verifyHealth() async {
+    if (!isRunning) return false;
+    return _verifyHealthAt(uri);
+  }
+
+  Future<bool> _verifyHealthAt(Uri baseUri) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
+    try {
+      final request = await client
+          .getUrl(baseUri.resolve('/health'))
+          .timeout(const Duration(seconds: 2));
+      request.followRedirects = false;
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer ${_credentialService.credentialForGatewayConfiguration()}',
+      );
+      final response =
+          await request.close().timeout(const Duration(seconds: 2));
+      if (response.statusCode != HttpStatus.ok ||
+          (response.contentLength > 16 * 1024)) {
+        return false;
+      }
+      final bodyBytes = BytesBuilder(copy: false);
+      await for (final chunk in response.timeout(const Duration(seconds: 2))) {
+        bodyBytes.add(chunk);
+        if (bodyBytes.length > 16 * 1024) return false;
+      }
+      final body = utf8.decode(bodyBytes.takeBytes());
+      final decoded = jsonDecode(body);
+      return decoded is Map &&
+          decoded['status'] == 'ok' &&
+          decoded['scope'] == 'paid_provider_proxy';
+    } catch (_) {
+      return false;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<void> _handleRequest(HttpRequest request) async {
+    try {
+      if (!_credentialService.matchesAuthorizationHeader(
+        request.headers.value(HttpHeaders.authorizationHeader),
+      )) {
+        await _writeError(
+          request.response,
+          HttpStatus.unauthorized,
+          'unauthorized',
+          'A valid local gateway capability is required.',
+        );
+        return;
+      }
+
+      final path = request.uri.path;
+      if (request.method == 'GET' && path == '/health') {
+        final readyProviders = _readyProviders();
+        await _writeResponse(
+          request.response,
+          PaidProviderProxyResponse.json(
+            body: {
+              'status': 'ok',
+              'scope': 'paid_provider_proxy',
+              'readyProviders': [
+                for (final provider in PaidProviderId.values)
+                  if (readyProviders.contains(provider)) provider.wireName,
+              ],
+              'providers': {
+                for (final provider in PaidProviderId.values)
+                  provider.wireName: {
+                    'ready': readyProviders.contains(provider),
+                    'errorCode': readyProviders.contains(provider)
+                        ? null
+                        : 'provider_not_ready',
+                  },
+              },
+            },
+          ),
+        );
+        return;
+      }
+
+      final route = PaidProviderProxyRoute.match(request.method, path);
+      if (route == null) {
+        final pathMatches = PaidProviderProxyRoute.matchingPath(path);
+        if (pathMatches.isNotEmpty) {
+          request.response.headers.set(
+            HttpHeaders.allowHeader,
+            pathMatches.map((candidate) => candidate.method).toSet().join(', '),
+          );
+          await _writeError(
+            request.response,
+            HttpStatus.methodNotAllowed,
+            'method_not_allowed',
+            'HTTP method is not allowed for this route.',
+          );
+        } else {
+          await _writeError(
+            request.response,
+            HttpStatus.notFound,
+            'route_not_found',
+            'Route not found.',
+          );
+        }
+        return;
+      }
+
+      if (!route.enabled) {
+        await _writeError(
+          request.response,
+          HttpStatus.notImplemented,
+          'route_not_enabled',
+          'This paid-provider route is not enabled.',
+        );
+        return;
+      }
+
+      Map<String, dynamic>? jsonBody;
+      String? gatewayModelId;
+      if (route.method == 'POST') {
+        jsonBody = await _readJsonObject(request);
+        if (route.kind == PaidProviderProxyRouteKind.chatCompletions) {
+          final policy = _toolRoutePolicy;
+          if (policy != null) {
+            jsonBody = await policy.apply(jsonBody, provider: route.provider);
+          }
+          jsonBody = PaidProviderRequestMapper.mapChatRequest(
+            jsonBody,
+            provider: route.provider,
+          );
+          gatewayModelId =
+              '${route.provider.wireName}/${jsonBody['model']?.toString() ?? ''}';
+        }
+      }
+
+      final response = await _handler(PaidProviderProxyRequest(
+        provider: route.provider,
+        route: route,
+        gatewayModelId: gatewayModelId,
+        exactJsonBodyBytes: jsonBody == null
+            ? null
+            : List<int>.unmodifiable(utf8.encode(jsonEncode(jsonBody))),
+        jsonBody: jsonBody,
+      ));
+      await _writeResponse(request.response, response);
+    } on _RequestBodyTooLargeException {
+      await _safeWriteError(
+        request.response,
+        HttpStatus.requestEntityTooLarge,
+        'request_too_large',
+        'Request body exceeds the local proxy limit.',
+      );
+    } on PaidProviderProxyException catch (error) {
+      await _safeWriteError(
+        request.response,
+        error.statusCode,
+        error.code,
+        error.message,
+      );
+    } on FormatException {
+      await _safeWriteError(
+        request.response,
+        HttpStatus.badRequest,
+        'invalid_json',
+        'Expected a valid JSON object.',
+      );
+    } catch (_) {
+      await _safeWriteError(
+        request.response,
+        HttpStatus.internalServerError,
+        'proxy_error',
+        'Paid-provider proxy request failed.',
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>> _readJsonObject(HttpRequest request) async {
+    final contentLength = request.contentLength;
+    if (contentLength > maxRequestBodyBytes) {
+      throw const _RequestBodyTooLargeException();
+    }
+    final contentType = request.headers.contentType;
+    if (contentType == null ||
+        contentType.mimeType != ContentType.json.mimeType) {
+      throw const PaidProviderProxyException(
+        'Expected application/json.',
+        code: 'invalid_content_type',
+        statusCode: HttpStatus.unsupportedMediaType,
+      );
+    }
+
+    final builder = BytesBuilder(copy: false);
+    var length = 0;
+    await for (final chunk in request) {
+      length += chunk.length;
+      if (length > maxRequestBodyBytes) {
+        throw const _RequestBodyTooLargeException();
+      }
+      builder.add(chunk);
+    }
+    final decoded = jsonDecode(utf8.decode(builder.takeBytes()));
+    if (decoded is! Map<String, dynamic>) {
+      throw const PaidProviderProxyException(
+        'Expected a JSON object.',
+        code: 'invalid_request',
+      );
+    }
+    return decoded;
+  }
+
+  Future<void> _writeError(
+    HttpResponse response,
+    int statusCode,
+    String code,
+    String message,
+  ) {
+    return _writeResponse(
+      response,
+      PaidProviderProxyResponse.json(
+        statusCode: statusCode,
+        body: {
+          'error': {'code': code, 'message': message},
+        },
+      ),
+    );
+  }
+
+  Future<void> _safeWriteError(
+    HttpResponse response,
+    int statusCode,
+    String code,
+    String message,
+  ) async {
+    try {
+      await _writeError(response, statusCode, code, message);
+    } catch (_) {
+      try {
+        await response.close();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _writeResponse(
+    HttpResponse response,
+    PaidProviderProxyResponse proxyResponse,
+  ) async {
+    response.statusCode = proxyResponse.statusCode;
+    proxyResponse.headers.forEach(response.headers.set);
+    response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
+    final bodyBytes = proxyResponse.bodyBytes;
+    if (bodyBytes != null) response.contentLength = bodyBytes.length;
+    await for (final chunk in proxyResponse.openBodyStream()) {
+      response.add(chunk);
+      await response.flush();
+    }
+    await response.close();
+  }
+
+  static Set<PaidProviderId> _noReadyProviders() => const {};
+}
+
+/// Venice-specific policy for the generic loopback proxy. Model payloads have
+/// already been semantically mapped by [PaidProviderProxyService]; this layer
+/// adds only bounded wallet identity and terminal balance bookkeeping.
+class VenicePaidProviderProxyHandler {
+  VenicePaidProviderProxyHandler({
+    required PaidProviderHttpClient httpClient,
+    VeniceWalletAuthService? walletAuth,
+    PaidProviderTurnAuthorizationService? turnAuthorization,
+    ProviderBalanceService? balances,
+  })  : _httpClient = httpClient,
+        _walletAuth = walletAuth ?? VeniceWalletAuthService(),
+        _turnAuthorization =
+            turnAuthorization ?? PaidProviderTurnAuthorizationService.instance,
+        _balances = balances ?? ProviderBalanceService.instance;
+
+  final PaidProviderHttpClient _httpClient;
+  final VeniceWalletAuthService _walletAuth;
+  final PaidProviderTurnAuthorizationService _turnAuthorization;
+  final ProviderBalanceService _balances;
+  Future<void> _identityAuthorizationTail = Future<void>.value();
+
+  Future<PaidProviderProxyResponse> call(
+    PaidProviderProxyRequest request,
+  ) async {
+    if (request.provider != PaidProviderId.venice ||
+        request.route.provider != PaidProviderId.venice) {
+      throw const PaidProviderProxyException(
+        'The Venice handler received another provider.',
+        code: 'provider_route_mismatch',
+      );
+    }
+
+    final isInference =
+        request.route.kind == PaidProviderProxyRouteKind.chatCompletions;
+    final gatewayModelId = request.gatewayModelId?.trim() ?? '';
+
+    final upstreamUri = _httpClient.upstreamUriFor(request.route);
+    late String identity;
+    try {
+      identity = await _serializeIdentityAuthorization(
+        () async {
+          // Consume at the head of the native-auth queue, not when the request
+          // first arrives. A continuation that waited behind another prompt
+          // must revalidate foreground state, model binding, expiry, and the
+          // call budget immediately before it can open its own prompt.
+          final turnLease = isInference
+              ? _turnAuthorization.consumeForProxy(
+                  provider: PaidProviderId.venice,
+                  gatewayModelId: gatewayModelId,
+                )
+              : null;
+          if (turnLease != null) {
+            _turnAuthorization.beginTransientProviderOperation(
+              leaseId: turnLease.leaseId,
+            );
+          }
+          try {
+            return await _walletAuth.authorize(
+              request.route.method,
+              upstreamUri,
+            );
+          } finally {
+            if (turnLease != null) {
+              _turnAuthorization.endTransientProviderOperation(
+                leaseId: turnLease.leaseId,
+              );
+            }
+          }
+        },
+      );
+    } on PaidProviderTurnAuthorizationException catch (error) {
+      throw PaidProviderProxyException(
+        error.message,
+        code: error.code,
+        statusCode: HttpStatus.forbidden,
+      );
+    } on VeniceWalletAuthException catch (error) {
+      throw PaidProviderProxyException(
+        error.message,
+        code: error.code,
+        statusCode: HttpStatus.serviceUnavailable,
+      );
+    }
+
+    final response = await _httpClient.send(
+      request,
+      upstreamHeaders: <String, String>{
+        'X-Sign-In-With-X': identity,
+      },
+    );
+    if (!isInference) return response;
+
+    final success = response.statusCode >= 200 && response.statusCode < 300;
+    if (success) {
+      final remaining = _header(response.headers, 'x-balance-remaining');
+      if (remaining != null) {
+        try {
+          _balances.captureVeniceRemainingBalance(remaining);
+        } catch (_) {
+          // Provider metadata is advisory and cannot change chat delivery.
+        }
+      }
+    }
+
+    return response;
+  }
+
+  /// Android exposes wallet authentication as a system-owned surface. Venice
+  /// requires a fresh route-bound identity for every request, so concurrent
+  /// Gateway continuations must queue instead of opening competing biometric
+  /// prompts or invalidating one another's lifecycle state.
+  Future<T> _serializeIdentityAuthorization<T>(
+    Future<T> Function() authorize,
+  ) async {
+    final previous = _identityAuthorizationTail;
+    final released = Completer<void>();
+    _identityAuthorizationTail = released.future;
+    try {
+      await previous;
+      return await authorize();
+    } finally {
+      if (!released.isCompleted) released.complete();
+    }
+  }
+
+  String? _header(Map<String, String> headers, String name) {
+    final target = name.toLowerCase();
+    for (final entry in headers.entries) {
+      if (entry.key.toLowerCase() == target) return entry.value;
+    }
+    return null;
+  }
+
+  void close() => _httpClient.close();
+}
+
+class _RequestBodyTooLargeException implements Exception {
+  const _RequestBodyTooLargeException();
+}

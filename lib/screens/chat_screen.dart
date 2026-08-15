@@ -16,6 +16,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app.dart';
 import '../services/preferences_service.dart';
+import '../services/paid_provider_proxy_models.dart';
+import '../services/paid_provider_turn_authorization_service.dart';
 import '../services/speech_text_normalizer.dart';
 import '../services/voice_session_controller.dart';
 import '../services/native_speech_input_service.dart';
@@ -31,7 +33,14 @@ import 'avatar_forge_page.dart';
 import '../services/skills_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/model_provider_catalog.dart';
+import '../services/model_tool_compatibility_probe.dart';
+import '../services/paid_provider_tool_probe_authorization.dart';
+import '../services/canonical_model_selection.dart';
 import '../services/dynamic_model_catalog.dart';
+import '../services/wallet_funded_provider_readiness.dart';
+import '../services/provider_balance_service.dart';
+import '../widgets/dynamic_model_picker_panel.dart';
+import '../widgets/wallet_funded_provider_actions.dart';
 import '../widgets/aura_dot.dart';
 import '../services/gateway_service.dart';
 import '../services/agent_skill_server.dart';
@@ -50,12 +59,7 @@ import 'web_dashboard_screen.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 
-enum _GatewayTtsHealth {
-  normal,
-  processing,
-  degraded,
-  failed,
-}
+enum _GatewayTtsHealth { normal, processing, degraded, failed }
 
 class ChatScreen extends StatefulWidget {
   final bool autoStartVoice;
@@ -132,7 +136,15 @@ class _ChatScreenState extends State<ChatScreen>
 
   String _selectedAvatar = 'gemini.vrm';
   String _agentName = 'Plawie';
-  String _selectedModel = ModelProviderCatalog.defaultCloudFallbackModel;
+  CanonicalModelSelection _selectedModelSelection =
+      CanonicalModelSelection.fromModelId(
+        ModelProviderCatalog.defaultCloudFallbackModel,
+      );
+  String get _selectedModel => _selectedModelSelection.namespacedModelId;
+  set _selectedModel(String value) {
+    _selectedModelSelection = CanonicalModelSelection.fromModelId(value);
+  }
+
   // Cloud model to fall back to when a local NDK model stops.
   // Set at load time from onboarding provider; updated when user picks a cloud model.
   String _cloudFallbackModel = ModelProviderCatalog.defaultCloudFallbackModel;
@@ -145,16 +157,16 @@ class _ChatScreenState extends State<ChatScreen>
   String? _pendingVideoBase64; // base64 of recorded clip waiting to be sent
   bool _isRecordingVideo = false;
 
-  // Static cloud model list — augmented at runtime with gateway agents
-  final List<String> _availableModels =
-      ModelProviderCatalog.cloudModelIds.toList();
+  // Compact quick-menu projection of the cached live catalog. The full
+  // searchable catalog remains available through Browse provider models.
+  List<DynamicModelRecord> _availableDynamicModels =
+      const <DynamicModelRecord>[];
+  DynamicCatalogSnapshot? _availableDynamicCatalog;
 
   // Dynamic agents fetched from the gateway
   List<AgentInfo> _dynamicAgents = [];
 
-  final List<String> _availableAvatars = [
-    'gemini.vrm',
-  ];
+  final List<String> _availableAvatars = ['gemini.vrm'];
 
   // Wake word subscription
   StreamSubscription<String>? _hotwordSub;
@@ -192,8 +204,9 @@ class _ChatScreenState extends State<ChatScreen>
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_handleChatScroll);
     _chatRuntime.addListener(_syncChatRuntimeState);
-    _configurationRequestSub =
-        _chatRuntime.configurationRequests.listen(_handleConfigurationRequest);
+    _configurationRequestSub = _chatRuntime.configurationRequests.listen(
+      _handleConfigurationRequest,
+    );
     unawaited(GifgrepMediaStore.initialize());
     // Wire AgentSkillServer callbacks so agent-controlled avatar changes
     // reflect immediately in the live chat UI (singleton shares state with main()).
@@ -272,13 +285,19 @@ class _ChatScreenState extends State<ChatScreen>
           return;
         }
         // Trust the persisted model selection. The previous check against
-        // _availableModels caused the user's choice to be silently dropped
-        // when the static list hadn't refreshed — especially after a gateway
-        // restart. Only override for local models that aren't ready.
+        // A stale catalog must never erase the user's persisted selection,
+        // especially after a Gateway restart. Only override local models that
+        // are not ready.
         if (!ModelProviderCatalog.isDirectLocalModelId(canonical) ||
             (ModelProviderCatalog.isDirectLocalModelId(canonical) &&
                 LocalLlmService().state.status == LocalLlmStatus.ready)) {
-          setState(() => _selectedModel = canonical);
+          final storedSelection = PreferencesService().configuredModelSelection;
+          setState(
+            () => _selectedModelSelection =
+                storedSelection?.matchesModelId(canonical) == true
+                ? storedSelection!
+                : CanonicalModelSelection.fromModelId(canonical),
+          );
         }
       }
     });
@@ -328,21 +347,24 @@ class _ChatScreenState extends State<ChatScreen>
         });
       } else if (event.type == SkillsEventType.toggled) {
         _addDiagnosticLog(
-            'Skill toggled: ${event.skillId} — pushing updated catalog to gateway');
+          'Skill toggled: ${event.skillId} — pushing updated catalog to gateway',
+        );
         GatewayService().reregisterSkills();
       }
     });
   }
 
   Future<Map<String, dynamic>> _handleAvatarGestureRequest(
-      Map<String, dynamic> request) async {
+    Map<String, dynamic> request,
+  ) async {
     final command = Map<String, dynamic>.from(request);
     if (command['steps'] is List ||
         command['action']?.toString().toLowerCase() == 'sequence') {
       return _handleAvatarSequenceRequest(command);
     }
 
-    final gesture = command['gesture'] ??
+    final gesture =
+        command['gesture'] ??
         command['name'] ??
         command['value'] ??
         command['text'];
@@ -362,7 +384,8 @@ class _ChatScreenState extends State<ChatScreen>
     command['source'] ??= 'chat-screen-avatar-control';
     final normalizedGesture = command['gesture'].toString().toLowerCase();
     final normalizedPath = command['assetPath'].toString().toLowerCase();
-    final hasDuration = command['durationMs'] != null ||
+    final hasDuration =
+        command['durationMs'] != null ||
         command['duration_ms'] != null ||
         command['duration'] != null;
     if (!hasDuration) {
@@ -383,15 +406,18 @@ class _ChatScreenState extends State<ChatScreen>
 
     final started = await _avatarController
         .playGestureCommand(command)
-        .timeout(const Duration(seconds: 8), onTimeout: () {
-      return {
-        'status': 'queued',
-        'gesture': command['gesture'],
-        'path': command['assetPath'],
-        'reason':
-            'Avatar renderer accepted the request but has not started it yet.',
-      };
-    });
+        .timeout(
+          const Duration(seconds: 8),
+          onTimeout: () {
+            return {
+              'status': 'queued',
+              'gesture': command['gesture'],
+              'path': command['assetPath'],
+              'reason':
+                  'Avatar renderer accepted the request but has not started it yet.',
+            };
+          },
+        );
 
     _addDiagnosticLog(
       'Avatar gesture ${started['status']}: ${started['gesture'] ?? command['gesture']} path=${started['path'] ?? command['assetPath']} bones=${started['humanBoneCount'] ?? '-'} tracks=${started['trackCount'] ?? '-'}',
@@ -417,7 +443,8 @@ class _ChatScreenState extends State<ChatScreen>
       final step = raw is Map
           ? Map<String, dynamic>.from(raw)
           : <String, dynamic>{'gesture': raw.toString()};
-      final gesture = step['gesture'] ??
+      final gesture =
+          step['gesture'] ??
           step['name'] ??
           step['value'] ??
           step['text'] ??
@@ -447,7 +474,8 @@ class _ChatScreenState extends State<ChatScreen>
 
       final normalizedGesture = step['gesture'].toString().toLowerCase();
       final normalizedPath = step['assetPath'].toString().toLowerCase();
-      final hasDuration = step['durationMs'] != null ||
+      final hasDuration =
+          step['durationMs'] != null ||
           step['duration_ms'] != null ||
           step['duration'] != null;
       if (!hasDuration) {
@@ -540,7 +568,8 @@ class _ChatScreenState extends State<ChatScreen>
     Map<String, dynamic> step,
     Map<String, dynamic> result,
   ) {
-    final value = _intFromAvatarMap(step, const [
+    final value =
+        _intFromAvatarMap(step, const [
           'durationMs',
           'duration_ms',
           'duration',
@@ -612,19 +641,20 @@ class _ChatScreenState extends State<ChatScreen>
       final nextVoicePhase = _isTtsSpeaking
           ? VoiceSessionPhase.speaking
           : _isThinking
-              ? VoiceSessionPhase.thinking
-              : !_isGenerating &&
-                      (currentVoicePhase == VoiceSessionPhase.thinking ||
-                          currentVoicePhase == VoiceSessionPhase.speaking)
-                  ? VoiceSessionPhase.idle
-                  : null;
+          ? VoiceSessionPhase.thinking
+          : !_isGenerating &&
+                (currentVoicePhase == VoiceSessionPhase.thinking ||
+                    currentVoicePhase == VoiceSessionPhase.speaking)
+          ? VoiceSessionPhase.idle
+          : null;
       if (nextVoicePhase != null &&
           nextVoicePhase != _voiceSession.state.phase) {
         _voiceSession.setPhase(nextVoicePhase);
         _updatePipMicIcon();
       }
     }
-    final turnOrPlaybackFinished = (wasGenerating && !_isGenerating) ||
+    final turnOrPlaybackFinished =
+        (wasGenerating && !_isGenerating) ||
         (wasTtsSpeaking && !_isTtsSpeaking);
     if (turnOrPlaybackFinished &&
         !_isGenerating &&
@@ -666,11 +696,14 @@ class _ChatScreenState extends State<ChatScreen>
   void _loadPreferences() async {
     final prefs = PreferencesService();
     await prefs.init();
+    final cachedCatalog = await DynamicModelCatalogRepository().loadOrBundled();
+    final quickModels = _quickModelsForMenu(cachedCatalog);
     final storedConfigured = prefs.configuredModel;
     final localModeEnabled = prefs.localChatModeEnabled;
     final canonicalConfigured = storedConfigured == null
         ? null
         : ModelProviderCatalog.canonicalizeModelId(storedConfigured);
+    final storedSelection = prefs.configuredModelSelection;
     if (storedConfigured != null &&
         canonicalConfigured != null &&
         canonicalConfigured != storedConfigured) {
@@ -678,6 +711,8 @@ class _ChatScreenState extends State<ChatScreen>
     }
     if (mounted) {
       setState(() {
+        _availableDynamicCatalog = cachedCatalog;
+        _availableDynamicModels = quickModels;
         _agentName = prefs.agentName;
         _selectedAvatar = prefs.selectedAvatar;
         _localChatModeEnabled = localModeEnabled;
@@ -699,15 +734,16 @@ class _ChatScreenState extends State<ChatScreen>
           if (provider != null &&
               provider.isNotEmpty &&
               !provider.startsWith('local')) {
-            _cloudFallbackModel =
-                GatewayService().getModelForProvider(provider);
+            _cloudFallbackModel = GatewayService().getModelForProvider(
+              provider,
+            );
           }
         }
 
         // Load the user's configured model (from setup or settings).
         // The persisted configuredModel is the single source of truth —
-        // trust it over the static _availableModels list, which may not be
-        // populated yet during a cold restart.
+        // trust it over the compact catalog menu, which may still be loading
+        // during a cold restart.
         final configured = canonicalConfigured;
         if (configured != null && configured.isNotEmpty) {
           final isLocal = ModelProviderCatalog.isDirectLocalModelId(configured);
@@ -722,9 +758,12 @@ class _ChatScreenState extends State<ChatScreen>
           } else {
             // Trust the persisted model — it was explicitly saved by the
             // user via the settings/chat dropdown. Do not fall back to
-            // _cloudFallbackModel just because _availableModels hasn't
-            // refreshed yet.
-            _selectedModel = configured;
+            // _cloudFallbackModel just because the catalog has not refreshed
+            // yet.
+            _selectedModelSelection =
+                storedSelection?.matchesModelId(configured) == true
+                ? storedSelection!
+                : CanonicalModelSelection.fromModelId(configured);
             if (!isLocal) {
               prefs.lastCloudModel = configured;
             }
@@ -734,11 +773,51 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  List<DynamicModelRecord> _quickModelsForMenu(DynamicCatalogSnapshot catalog) {
+    final quick = <DynamicModelRecord>[];
+    for (final provider in catalog.providers) {
+      final models = provider.models
+          .where(
+            (model) => model.liveAvailable && model.supportsToolCalls != false,
+          )
+          .toList();
+      models.sort((a, b) {
+        if (a.providerCreatedAt != null && b.providerCreatedAt != null) {
+          final byDate = b.providerCreatedAt!.compareTo(a.providerCreatedAt!);
+          if (byDate != 0) return byDate;
+        } else if (a.providerCreatedAt != null) {
+          return -1;
+        } else if (b.providerCreatedAt != null) {
+          return 1;
+        }
+        final readiness = _toolReadinessRank(
+          b.toolReadiness,
+        ).compareTo(_toolReadinessRank(a.toolReadiness));
+        if (readiness != 0) return readiness;
+        if (a.recommended != b.recommended) {
+          return a.recommended ? -1 : 1;
+        }
+        return a.label.toLowerCase().compareTo(b.label.toLowerCase());
+      });
+      quick.addAll(models.take(3));
+    }
+    return quick;
+  }
+
+  int _toolReadinessRank(ModelToolReadiness readiness) => switch (readiness) {
+    ModelToolReadiness.loopVerified => 4,
+    ModelToolReadiness.schemaAccepted => 3,
+    ModelToolReadiness.providerAdvertised => 2,
+    ModelToolReadiness.unknown => 1,
+    ModelToolReadiness.incompatible => 0,
+  };
+
   void _addDiagnosticLog(String log) {
     if (!mounted) return;
     setState(() {
-      _diagnosticLogs
-          .add('[${DateTime.now().toLocal().toString().split(' ')[1]}] $log');
+      _diagnosticLogs.add(
+        '[${DateTime.now().toLocal().toString().split(' ')[1]}] $log',
+      );
       if (_diagnosticLogs.length > 200) {
         _diagnosticLogs.removeRange(0, _diagnosticLogs.length - 200);
       }
@@ -867,7 +946,8 @@ class _ChatScreenState extends State<ChatScreen>
     _canvasController = controller;
     CanvasCapability().setController(controller);
     CanvasCapability().setViewId(
-        0); // signal canvas ready; native side finds WebView by hierarchy
+      0,
+    ); // signal canvas ready; native side finds WebView by hierarchy
     await controller.loadRequest(Uri.parse('about:blank'));
     if (mounted) setState(() {});
     return controller;
@@ -1001,9 +1081,14 @@ class _ChatScreenState extends State<ChatScreen>
     final prefs = PreferencesService();
     await prefs.init();
     // Subscribe to wake word events from HotwordService (no-op if service not running)
-    _hotwordSub = NativeBridge.hotwordEvents.listen((event) {
-      if (event == 'wake_word_detected') unawaited(_handleWakeWordDetected());
-    }, onError: (_) {/* service not running — ignore */});
+    _hotwordSub = NativeBridge.hotwordEvents.listen(
+      (event) {
+        if (event == 'wake_word_detected') unawaited(_handleWakeWordDetected());
+      },
+      onError: (_) {
+        /* service not running — ignore */
+      },
+    );
 
     final wakeMode = prefs.wakeWordMode;
     if (wakeMode != 'off' && !widget.autoStartVoice) {
@@ -1240,8 +1325,10 @@ class _ChatScreenState extends State<ChatScreen>
         await _tts.speak(sentence);
         return;
       }
-      final gatewayProvider =
-          Provider.of<GatewayProvider>(context, listen: false);
+      final gatewayProvider = Provider.of<GatewayProvider>(
+        context,
+        listen: false,
+      );
       final playback = await gatewayProvider.speakTextViaTalk(sentence);
       if (playback.played) {
         _setGatewayTtsHealth(_GatewayTtsHealth.normal, notify: false);
@@ -1250,7 +1337,8 @@ class _ChatScreenState extends State<ChatScreen>
         // Resilient fallback path for unavailable or transient Gateway Talk.
         _setGatewayTtsHealth(
           _GatewayTtsHealth.degraded,
-          message: playback.displayMessage ??
+          message:
+              playback.displayMessage ??
               'Gateway voice is unavailable on this runtime; using local system TTS.',
         );
         await _tts.speak(sentence);
@@ -1260,7 +1348,8 @@ class _ChatScreenState extends State<ChatScreen>
         }
       } else if (!playback.played && playback.displayMessage != null) {
         _addDiagnosticLog(
-            'Gateway Talk voice ${playback.status}: ${playback.displayMessage}');
+          'Gateway Talk voice ${playback.status}: ${playback.displayMessage}',
+        );
         final degraded = playback.status.contains('backoff');
         _setGatewayTtsHealth(
           degraded ? _GatewayTtsHealth.degraded : _GatewayTtsHealth.failed,
@@ -1305,15 +1394,18 @@ class _ChatScreenState extends State<ChatScreen>
     // assistant placeholder before building history. Exclude both here, then
     // pass the current text separately to avoid duplicating the latest user turn
     // and burning local context twice as fast.
-    final endExclusive =
-        _messages.length >= 2 ? _messages.length - 2 : _messages.length;
+    final endExclusive = _messages.length >= 2
+        ? _messages.length - 2
+        : _messages.length;
     return _messages
         .take(endExclusive)
         .where((m) => m.text.trim().isNotEmpty)
-        .map((m) => <String, dynamic>{
-              'role': m.isUser ? 'user' : 'assistant',
-              'content': m.text,
-            })
+        .map(
+          (m) => <String, dynamic>{
+            'role': m.isUser ? 'user' : 'assistant',
+            'content': m.text,
+          },
+        )
         .toList();
   }
 
@@ -1332,7 +1424,9 @@ class _ChatScreenState extends State<ChatScreen>
         if (!_scrollController.hasClients) {
           if (remainingAttempts > 0) {
             _scheduleScrollToBottom(
-                instant: instant, remainingAttempts: remainingAttempts - 1);
+              instant: instant,
+              remainingAttempts: remainingAttempts - 1,
+            );
           }
           return;
         }
@@ -1346,17 +1440,21 @@ class _ChatScreenState extends State<ChatScreen>
           if (instant || remainingAttempts > 4) {
             _scrollController.jumpTo(target);
           } else {
-            unawaited(_scrollController.animateTo(
-              target,
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-            ));
+            unawaited(
+              _scrollController.animateTo(
+                target,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+              ),
+            );
           }
         }
 
         if (remainingAttempts > 0) {
           _scheduleScrollToBottom(
-              instant: instant, remainingAttempts: remainingAttempts - 1);
+            instant: instant,
+            remainingAttempts: remainingAttempts - 1,
+          );
         }
       });
     });
@@ -1389,13 +1487,16 @@ class _ChatScreenState extends State<ChatScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content: Text('No camera available on this device.')),
+              content: Text('No camera available on this device.'),
+            ),
           );
         }
         return;
       }
-      final controller =
-          CameraController(cameras.first, ResolutionPreset.medium);
+      final controller = CameraController(
+        cameras.first,
+        ResolutionPreset.medium,
+      );
       await controller.initialize();
       final file = await controller.takePicture();
       await controller.dispose();
@@ -1408,9 +1509,9 @@ class _ChatScreenState extends State<ChatScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Camera error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Camera error: $e')));
       }
     } finally {
       if (mounted) setState(() => _isTakingPhoto = false);
@@ -1425,14 +1526,15 @@ class _ChatScreenState extends State<ChatScreen>
     if (_isRecordingVideo) return;
     setState(() => _isRecordingVideo = true);
     try {
-      final bytes =
-          await VideoCaptureService.recordClip(durationMs: durationMs);
+      final bytes = await VideoCaptureService.recordClip(
+        durationMs: durationMs,
+      );
       if (bytes == null || bytes.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content:
-                    Text('Video capture failed. Check camera permissions.')),
+              content: Text('Video capture failed. Check camera permissions.'),
+            ),
           );
         }
         return;
@@ -1442,9 +1544,9 @@ class _ChatScreenState extends State<ChatScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Video error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Video error: $e')));
       }
     } finally {
       if (mounted) setState(() => _isRecordingVideo = false);
@@ -1465,17 +1567,21 @@ class _ChatScreenState extends State<ChatScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Video Duration',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold)),
+            const Text(
+              'Video Duration',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 12),
-            ...options.entries.map((e) => ListTile(
-                  title:
-                      Text(e.key, style: const TextStyle(color: Colors.white)),
-                  onTap: () => Navigator.pop(ctx, e.value),
-                )),
+            ...options.entries.map(
+              (e) => ListTile(
+                title: Text(e.key, style: const TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(ctx, e.value),
+              ),
+            ),
           ],
         ),
       ),
@@ -1516,12 +1622,65 @@ class _ChatScreenState extends State<ChatScreen>
         lower.contains('agent cleanup timed out');
   }
 
-  Future<void> _handleSubmit(String text) async {
+  Future<void> _handleSubmit(
+    String text, {
+    bool explicitToolCompatibilityProbe = false,
+  }) async {
+    if (explicitToolCompatibilityProbe &&
+        !ModelToolCompatibilityProbe.isProbe(text)) {
+      throw StateError(
+        'Only the app-owned compatibility prompt can enter probe mode.',
+      );
+    }
+    if (explicitToolCompatibilityProbe &&
+        (_pendingImageBase64 != null || _pendingVideoBase64 != null)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Remove the pending photo or video before running the read-only tool test.',
+          ),
+        ),
+      );
+      return;
+    }
     if ((text.trim().isEmpty &&
             _pendingImageBase64 == null &&
             _pendingVideoBase64 == null) ||
         _chatRuntime.isGenerating) {
       return;
+    }
+
+    PaidProviderTurnLease? paidProviderTurnLease;
+    PaidProviderId? paidProvider;
+    for (final candidate in PaidProviderId.values) {
+      if (_selectedModel.startsWith('${candidate.wireName}/')) {
+        paidProvider = candidate;
+        break;
+      }
+    }
+    if (paidProvider != null) {
+      try {
+        final conversationId = _persistence.activeSessionId?.trim() ?? '';
+        paidProviderTurnLease = PaidProviderTurnAuthorizationService.instance
+            .authorizeForegroundUserTurn(
+              conversationId: conversationId,
+              provider: paidProvider,
+              modelId: _selectedModel,
+            );
+      } on PaidProviderTurnAuthorizationException catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+        return;
+      }
+      if (explicitToolCompatibilityProbe) {
+        PaidProviderToolProbeAuthorization.instance.authorize(
+          provider: paidProvider,
+          modelId: _selectedModel,
+        );
+      }
     }
 
     _voiceSession.setPhase(VoiceSessionPhase.thinking);
@@ -1538,12 +1697,16 @@ class _ChatScreenState extends State<ChatScreen>
     _updatePipMicIcon();
     _scrollToBottom();
 
-    unawaited(_chatRuntime.sendMessage(
-      text: text,
-      model: _selectedModel,
-      imageBase64: imageBase64,
-      videoBase64: videoBase64,
-    ));
+    unawaited(
+      _chatRuntime.sendMessage(
+        text: text,
+        model: _selectedModel,
+        imageBase64: imageBase64,
+        videoBase64: videoBase64,
+        paidProviderTurnLease: paidProviderTurnLease,
+        explicitToolCompatibilityProbe: explicitToolCompatibilityProbe,
+      ),
+    );
   }
 
   bool _gifgrepConfigSheetOpen = false;
@@ -1568,11 +1731,14 @@ class _ChatScreenState extends State<ChatScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(path == null
-              ? 'GIF import cancelled.'
-              : 'GIF imported. Ask gifgrep for a still or contact sheet.'),
-          backgroundColor:
-              path == null ? AppColors.statusAmber : AppColors.statusGreen,
+          content: Text(
+            path == null
+                ? 'GIF import cancelled.'
+                : 'GIF imported. Ask gifgrep for a still or contact sheet.',
+          ),
+          backgroundColor: path == null
+              ? AppColors.statusAmber
+              : AppColors.statusGreen,
         ),
       );
     } catch (error) {
@@ -1613,13 +1779,16 @@ class _ChatScreenState extends State<ChatScreen>
     setState(() {
       _pendingImageBase64 = null;
       _pendingVideoBase64 = null;
-      _messages.add(ChatMessage(
-        text:
-            text.trim().isEmpty && videoBase64 != null ? '🎬 Video clip' : text,
-        isUser: true,
-        imageBase64: imageBase64,
-        imageMimeType: imageBase64 != null ? 'image/jpeg' : null,
-      ));
+      _messages.add(
+        ChatMessage(
+          text: text.trim().isEmpty && videoBase64 != null
+              ? '🎬 Video clip'
+              : text,
+          isUser: true,
+          imageBase64: imageBase64,
+          imageMimeType: imageBase64 != null ? 'image/jpeg' : null,
+        ),
+      );
       _isThinking = true;
       _isGenerating = true;
     });
@@ -1671,14 +1840,17 @@ class _ChatScreenState extends State<ChatScreen>
     }
 
     try {
-      final gatewayProvider =
-          Provider.of<GatewayProvider>(context, listen: false);
+      final gatewayProvider = Provider.of<GatewayProvider>(
+        context,
+        listen: false,
+      );
       final localLlm = LocalLlmService();
 
       // Route based on attachment type & model
       final Stream<String> stream;
-      final isLocalModelSelected =
-          ModelProviderCatalog.isLocalModelId(_selectedModel);
+      final isLocalModelSelected = ModelProviderCatalog.isLocalModelId(
+        _selectedModel,
+      );
       String? streamSessionKey = _isUnsafeGatewaySessionKey(_gatewaySessionKey)
           ? null
           : _gatewaySessionKey;
@@ -1699,19 +1871,21 @@ class _ChatScreenState extends State<ChatScreen>
       if (bindGatewaySession) {
         final localSessionId = _persistence.activeSessionId;
         if (localSessionId != null && localSessionId.isNotEmpty) {
-          final resolvedSessionKey =
-              await gatewayProvider.resolveOrCreateGatewaySessionKey(
-            localSessionId: localSessionId,
-            existingSessionKey: _isUnsafeGatewaySessionKey(_gatewaySessionKey)
-                ? null
-                : _gatewaySessionKey,
-          );
+          final resolvedSessionKey = await gatewayProvider
+              .resolveOrCreateGatewaySessionKey(
+                localSessionId: localSessionId,
+                existingSessionKey:
+                    _isUnsafeGatewaySessionKey(_gatewaySessionKey)
+                    ? null
+                    : _gatewaySessionKey,
+              );
           if (resolvedSessionKey.isNotEmpty &&
               resolvedSessionKey != _gatewaySessionKey) {
             _gatewaySessionKey = resolvedSessionKey;
             await _persistence.setActiveGatewaySessionKey(resolvedSessionKey);
             _addDiagnosticLog(
-                'Bound chat to gateway session: $resolvedSessionKey');
+              'Bound chat to gateway session: $resolvedSessionKey',
+            );
           }
           streamSessionKey = resolvedSessionKey;
         }
@@ -1725,24 +1899,30 @@ class _ChatScreenState extends State<ChatScreen>
             stream = () async* {
               yield 'Extracting video frames…';
               final mp4Bytes = base64Decode(videoBase64);
-              final frames = await VideoFrameExtractor.extractFrames(mp4Bytes,
-                  fps: 1, maxFrames: 8);
+              final frames = await VideoFrameExtractor.extractFrames(
+                mp4Bytes,
+                fps: 1,
+                maxFrames: 8,
+              );
               if (frames.isEmpty) {
                 yield '⚠️ Could not extract frames. Provision android-vision-media-runtime so Native ffmpeg is available.';
                 return;
               }
-              yield* localLlm.analyseVideoFrames(frames,
-                  text.trim().isEmpty ? 'Describe what is happening.' : text);
-            }()
-                .cast<String>();
+              yield* localLlm.analyseVideoFrames(
+                frames,
+                text.trim().isEmpty ? 'Describe what is happening.' : text,
+              );
+            }().cast<String>();
           } else {
             stream = Stream.value(
-                '🎥 Video captured, but no local vision model is active. Please start a multimodal model like Qwen2-VL.');
+              '🎥 Video captured, but no local vision model is active. Please start a multimodal model like Qwen2-VL.',
+            );
           }
         } else if (imageBase64 != null) {
           if (localLlm.isVisionReady) {
             _addDiagnosticLog(
-                'Local Vision path: local multimodal model active');
+              'Local Vision path: local multimodal model active',
+            );
             stream = gatewayProvider.sendVisionMessage(text, imageBase64);
           } else {
             stream = Stream.value(
@@ -1755,10 +1935,12 @@ class _ChatScreenState extends State<ChatScreen>
         } else {
           // Local Text
           final conversationHistory = _conversationHistoryBeforePendingReply();
-          stream = gatewayProvider.sendMessage(text,
-              model: _selectedModel,
-              conversationHistory: conversationHistory,
-              sessionKey: streamSessionKey);
+          stream = gatewayProvider.sendMessage(
+            text,
+            model: _selectedModel,
+            conversationHistory: conversationHistory,
+            sessionKey: streamSessionKey,
+          );
         }
       } else {
         // --- PATH B: Cloud / Integrated Node Gateway ---
@@ -1778,10 +1960,12 @@ class _ChatScreenState extends State<ChatScreen>
           );
         } else {
           final conversationHistory = _conversationHistoryBeforePendingReply();
-          stream = gatewayProvider.sendMessage(text,
-              model: _selectedModel,
-              conversationHistory: conversationHistory,
-              sessionKey: streamSessionKey);
+          stream = gatewayProvider.sendMessage(
+            text,
+            model: _selectedModel,
+            conversationHistory: conversationHistory,
+            sessionKey: streamSessionKey,
+          );
         }
       }
       void applyChatUpdate(
@@ -1808,7 +1992,8 @@ class _ChatScreenState extends State<ChatScreen>
             !chunk.startsWith('\x00TOOL_')) {
           loggedFirstAssistantChunk = true;
           _addDiagnosticLog(
-              'First assistant chunk after ${sendStopwatch.elapsedMilliseconds}ms');
+            'First assistant chunk after ${sendStopwatch.elapsedMilliseconds}ms',
+          );
         }
         _addDiagnosticLog('Chunk received: "$chunk"');
 
@@ -1822,7 +2007,8 @@ class _ChatScreenState extends State<ChatScreen>
             try {
               final input = jsonDecode(inputJson) as Map<String, dynamic>?;
               toolEvents.add(
-                  ChatToolEvent(type: 'tool_use', name: name, input: input));
+                ChatToolEvent(type: 'tool_use', name: name, input: input),
+              );
             } catch (_) {
               toolEvents.add(ChatToolEvent(type: 'tool_use', name: name));
             }
@@ -1850,8 +2036,13 @@ class _ChatScreenState extends State<ChatScreen>
           if (colonIdx != -1) {
             final name = inner.substring(0, colonIdx);
             final resultJson = inner.substring(colonIdx + 1);
-            toolEvents.add(ChatToolEvent(
-                type: 'tool_result', name: name, result: resultJson));
+            toolEvents.add(
+              ChatToolEvent(
+                type: 'tool_result',
+                name: name,
+                result: resultJson,
+              ),
+            );
             // Reset streaming buffers on tool_result as well — the gateway
             // resets assistantSnapshot here too.
             rawBuffer = '';
@@ -1880,7 +2071,8 @@ class _ChatScreenState extends State<ChatScreen>
             errorMsg =
                 'Gateway session became stale and was reset. Please resend this message.';
             _addDiagnosticLog(
-                'Cleared stale gateway session binding after gateway error.');
+              'Cleared stale gateway session binding after gateway error.',
+            );
           }
           applyChatUpdate(() {
             _isThinking = false;
@@ -1915,14 +2107,18 @@ class _ChatScreenState extends State<ChatScreen>
             if (chunk.contains('(gesture:')) {
               final match = RegExp(r'\(gesture:\s*([^)]+)\)').firstMatch(chunk);
               if (match != null) {
-                final requestedGesture =
-                    (match.group(1) ?? '').split(',').first.trim();
+                final requestedGesture = (match.group(1) ?? '')
+                    .split(',')
+                    .first
+                    .trim();
                 if (requestedGesture.isNotEmpty) {
                   _currentGesture = requestedGesture;
-                  unawaited(_handleAvatarGestureRequest({
-                    'gesture': requestedGesture,
-                    'source': 'assistant-inline-marker',
-                  }));
+                  unawaited(
+                    _handleAvatarGestureRequest({
+                      'gesture': requestedGesture,
+                      'source': 'assistant-inline-marker',
+                    }),
+                  );
                 }
               }
             }
@@ -1931,8 +2127,9 @@ class _ChatScreenState extends State<ChatScreen>
               text: fullResponse,
               isUser: false,
               thinkContent: thinkBuffer.isNotEmpty ? thinkBuffer : null,
-              toolEvents:
-                  toolEvents.isNotEmpty ? List.unmodifiable(toolEvents) : null,
+              toolEvents: toolEvents.isNotEmpty
+                  ? List.unmodifiable(toolEvents)
+                  : null,
             );
           },
           syncOverlay: true,
@@ -1990,7 +2187,8 @@ class _ChatScreenState extends State<ChatScreen>
       setState(finishTurnState);
       _syncOverlayState();
       _addDiagnosticLog(
-          'Generation completed. Total length: ${fullResponse.length}');
+        'Generation completed. Total length: ${fullResponse.length}',
+      );
     } else {
       finishTurnState();
     }
@@ -2032,7 +2230,8 @@ class _ChatScreenState extends State<ChatScreen>
         voiceState.phase == VoiceSessionPhase.speaking ||
         voiceState.phase == VoiceSessionPhase.reconnecting) {
       _addDiagnosticLog(
-          'Voice toggle ignored while phase=${voiceState.phase.name}.');
+        'Voice toggle ignored while phase=${voiceState.phase.name}.',
+      );
       return;
     }
 
@@ -2098,18 +2297,22 @@ class _ChatScreenState extends State<ChatScreen>
         activeProvider = (realtime['activeProvider'] ?? '').toString().trim();
         final providers = realtime['providers'];
         if (providers is List) {
-          anyConfigured = providers.any((p) =>
-              p is Map &&
-              (p['configured'] == true || p['configured'] == 'true'));
+          anyConfigured = providers.any(
+            (p) =>
+                p is Map &&
+                (p['configured'] == true || p['configured'] == 'true'),
+          );
         }
       }
       _talkRelaySupported = activeProvider.isNotEmpty || anyConfigured;
       if (_talkRelaySupported) {
         _addDiagnosticLog(
-            'Talk relay available (provider=${activeProvider.isEmpty ? 'auto' : activeProvider}).');
+          'Talk relay available (provider=${activeProvider.isEmpty ? 'auto' : activeProvider}).',
+        );
       } else {
         _addDiagnosticLog(
-            'Talk relay unsupported: no configured realtime provider; using native talk fallback.');
+          'Talk relay unsupported: no configured realtime provider; using native talk fallback.',
+        );
       }
       return _talkRelaySupported;
     } catch (e) {
@@ -2132,10 +2335,11 @@ class _ChatScreenState extends State<ChatScreen>
       final session = await gatewayProvider.createTalkRealtimeRelaySession(
         language: language.isEmpty ? null : language,
       );
-      final sessionId = (session['sessionId'] ??
-              session['relaySessionId'] ??
-              session['transcriptionSessionId'])
-          ?.toString();
+      final sessionId =
+          (session['sessionId'] ??
+                  session['relaySessionId'] ??
+                  session['transcriptionSessionId'])
+              ?.toString();
       if (sessionId == null || sessionId.isEmpty) {
         _addDiagnosticLog('Talk relay create returned no session id.');
         return false;
@@ -2162,10 +2366,11 @@ class _ChatScreenState extends State<ChatScreen>
     final payloadRaw = frame['payload'];
     if (payloadRaw is! Map) return;
     final payload = Map<String, dynamic>.from(payloadRaw);
-    final relayId = (payload['relaySessionId'] ??
-            payload['sessionId'] ??
-            payload['transcriptionSessionId'])
-        ?.toString();
+    final relayId =
+        (payload['relaySessionId'] ??
+                payload['sessionId'] ??
+                payload['transcriptionSessionId'])
+            ?.toString();
     if (_talkRelaySessionId == null || relayId != _talkRelaySessionId) return;
 
     final eventType = payload['type']?.toString() ?? '';
@@ -2190,8 +2395,11 @@ class _ChatScreenState extends State<ChatScreen>
         _updatePipMicIcon();
       }
       _addDiagnosticLog('Talk relay error: $message');
-      unawaited(_recoverVoiceInputToWakeWord(
-          reason: 'Wake word recovery after Talk relay error.'));
+      unawaited(
+        _recoverVoiceInputToWakeWord(
+          reason: 'Wake word recovery after Talk relay error.',
+        ),
+      );
       return;
     }
     if (eventType == 'close') {
@@ -2213,8 +2421,11 @@ class _ChatScreenState extends State<ChatScreen>
       _talkAssistantMessageIndex = null;
       _talkAssistantTextBuffer = '';
       _addDiagnosticLog('Talk relay closed ($reason).');
-      unawaited(_recoverVoiceInputToWakeWord(
-          reason: 'Wake word recovery after Talk relay close.'));
+      unawaited(
+        _recoverVoiceInputToWakeWord(
+          reason: 'Wake word recovery after Talk relay close.',
+        ),
+      );
       return;
     }
     if (eventType != 'transcript') return;
@@ -2233,10 +2444,12 @@ class _ChatScreenState extends State<ChatScreen>
         // microphone before the assistant speaks so Continuous Mode can
         // safely schedule the next turn and cannot capture TTS echo.
         if (_isTalkRelayCaptureActive) {
-          unawaited(_stopTalkRelayCapture().then((_) {
-            if (!mounted) return;
-            _publishListeningState(false);
-          }));
+          unawaited(
+            _stopTalkRelayCapture().then((_) {
+              if (!mounted) return;
+              _publishListeningState(false);
+            }),
+          );
         }
         _voiceSession.setPhase(VoiceSessionPhase.thinking);
         setState(() {
@@ -2270,8 +2483,9 @@ class _ChatScreenState extends State<ChatScreen>
             isUser: false,
           );
         } else if (_talkAssistantTextBuffer.isNotEmpty) {
-          _messages
-              .add(ChatMessage(text: _talkAssistantTextBuffer, isUser: false));
+          _messages.add(
+            ChatMessage(text: _talkAssistantTextBuffer, isUser: false),
+          );
           _talkAssistantMessageIndex = _messages.length - 1;
         }
       });
@@ -2310,18 +2524,22 @@ class _ChatScreenState extends State<ChatScreen>
         !mounted) {
       return;
     }
-    final gatewayProvider =
-        Provider.of<GatewayProvider>(context, listen: false);
+    final gatewayProvider = Provider.of<GatewayProvider>(
+      context,
+      listen: false,
+    );
     final audioBase64 = base64Encode(chunk);
-    _talkAudioSendChain = _talkAudioSendChain.then((_) async {
-      await gatewayProvider.appendTalkSessionAudio(
-        sessionId: sessionId,
-        audioBase64: audioBase64,
-        timestamp: DateTime.now().millisecondsSinceEpoch.toDouble(),
-      );
-    }).catchError((e) {
-      _addDiagnosticLog('Talk relay appendAudio failed: $e');
-    });
+    _talkAudioSendChain = _talkAudioSendChain
+        .then((_) async {
+          await gatewayProvider.appendTalkSessionAudio(
+            sessionId: sessionId,
+            audioBase64: audioBase64,
+            timestamp: DateTime.now().millisecondsSinceEpoch.toDouble(),
+          );
+        })
+        .catchError((e) {
+          _addDiagnosticLog('Talk relay appendAudio failed: $e');
+        });
     await _talkAudioSendChain;
   }
 
@@ -2379,9 +2597,12 @@ class _ChatScreenState extends State<ChatScreen>
     _talkRelayFinalizationTimer = null;
     _talkRelayReady = false;
     _addDiagnosticLog(
-        'Talk relay transcript timed out; closing session $sessionId.');
-    final gatewayProvider =
-        Provider.of<GatewayProvider>(context, listen: false);
+      'Talk relay transcript timed out; closing session $sessionId.',
+    );
+    final gatewayProvider = Provider.of<GatewayProvider>(
+      context,
+      listen: false,
+    );
     try {
       await gatewayProvider.cancelTalkSessionTurn(
         sessionId,
@@ -2409,8 +2630,11 @@ class _ChatScreenState extends State<ChatScreen>
       _syncOverlayState();
       _updatePipMicIcon();
       _addDiagnosticLog('Talk relay session closed after transcript timeout.');
-      unawaited(_recoverVoiceInputToWakeWord(
-          reason: 'Wake word recovery after Talk relay timeout.'));
+      unawaited(
+        _recoverVoiceInputToWakeWord(
+          reason: 'Wake word recovery after Talk relay timeout.',
+        ),
+      );
     }
   }
 
@@ -2439,14 +2663,18 @@ class _ChatScreenState extends State<ChatScreen>
         owner ?? (_isPipMode ? VoiceCaptureOwner.pip : VoiceCaptureOwner.chat);
     final generation = _voiceSession.beginCapture(
       owner: captureOwner,
-      surface:
-          _isPipMode ? VoiceSessionSurface.pip : VoiceSessionSurface.fullScreen,
+      surface: _isPipMode
+          ? VoiceSessionSurface.pip
+          : VoiceSessionSurface.fullScreen,
     );
     if (generation == null) {
       _addDiagnosticLog('Voice capture request ignored: session is busy.');
       if (captureOwner == VoiceCaptureOwner.wakeWord) {
-        unawaited(_recoverVoiceInputToWakeWord(
-            reason: 'Wake word recovery after a busy voice handoff.'));
+        unawaited(
+          _recoverVoiceInputToWakeWord(
+            reason: 'Wake word recovery after a busy voice handoff.',
+          ),
+        );
       }
       return;
     }
@@ -2457,8 +2685,10 @@ class _ChatScreenState extends State<ChatScreen>
     }
     _updatePipMicIcon();
 
-    final gatewayProvider =
-        Provider.of<GatewayProvider>(context, listen: false);
+    final gatewayProvider = Provider.of<GatewayProvider>(
+      context,
+      listen: false,
+    );
     try {
       await _startTalkRelayCapture(gatewayProvider);
       if (!mounted || !_voiceSession.isCurrent(generation)) {
@@ -2468,12 +2698,14 @@ class _ChatScreenState extends State<ChatScreen>
       _voiceSession.markListening(generation);
       _publishListeningState(true);
       _addDiagnosticLog(
-          'Voice relay recording started (talk.session realtime).');
+        'Voice relay recording started (talk.session realtime).',
+      );
       return;
     } catch (e) {
       if (_isTalkRelayCaptureActive) await _stopTalkRelayCapture();
       _addDiagnosticLog(
-          'Talk relay capture unavailable, using fallback STT: $e');
+        'Talk relay capture unavailable, using fallback STT: $e',
+      );
     }
 
     // Match the official Android client's fallback contract: when realtime
@@ -2508,7 +2740,8 @@ class _ChatScreenState extends State<ChatScreen>
         _voiceSession.markListening(generation);
         _publishListeningState(true);
         _addDiagnosticLog(
-            'Voice recording started (native SpeechRecognizer fallback).');
+          'Voice recording started (native SpeechRecognizer fallback).',
+        );
         return;
       }
       _nativeSpeechStopRequested = false;
@@ -2542,8 +2775,11 @@ class _ChatScreenState extends State<ChatScreen>
         _updatePipMicIcon();
       }
       _addDiagnosticLog('Voice recording failed to start: $e');
-      unawaited(_recoverVoiceInputToWakeWord(
-          reason: 'Wake word recovery after microphone start failure.'));
+      unawaited(
+        _recoverVoiceInputToWakeWord(
+          reason: 'Wake word recovery after microphone start failure.',
+        ),
+      );
       return;
     }
     _voiceSession.markListening(generation);
@@ -2572,9 +2808,11 @@ class _ChatScreenState extends State<ChatScreen>
       if (!mounted || !_voiceSession.isCurrent(stopGeneration)) return;
       _publishListeningState(false);
       _armTalkRelayFinalizationTimeout(sessionId);
-      _addDiagnosticLog(sessionId == null
-          ? 'Voice relay recording stopped without a session id.'
-          : 'Voice relay recording stopped; waiting for transcript...');
+      _addDiagnosticLog(
+        sessionId == null
+            ? 'Voice relay recording stopped without a session id.'
+            : 'Voice relay recording stopped; waiting for transcript...',
+      );
       return;
     }
 
@@ -2611,8 +2849,11 @@ class _ChatScreenState extends State<ChatScreen>
       );
       setState(() {});
       _updatePipMicIcon();
-      unawaited(_recoverVoiceInputToWakeWord(
-          reason: 'Wake word recovery after an empty audio recording.'));
+      unawaited(
+        _recoverVoiceInputToWakeWord(
+          reason: 'Wake word recovery after an empty audio recording.',
+        ),
+      );
     }
   }
 
@@ -2660,10 +2901,13 @@ class _ChatScreenState extends State<ChatScreen>
           ),
         );
     }
-    unawaited(_recoverVoiceInputToWakeWord(
+    unawaited(
+      _recoverVoiceInputToWakeWord(
         reason: expectedSilence
             ? 'Voice ended in silence; returned to wake-word standby.'
-            : 'Wake word recovery after no transcript.'));
+            : 'Wake word recovery after no transcript.',
+      ),
+    );
   }
 
   void _handleNativeSpeechFinished(String? text, int generation) {
@@ -2700,11 +2944,11 @@ class _ChatScreenState extends State<ChatScreen>
     _nativeSpeechPendingText = null;
     final finalizationGeneration =
         _voiceSession.state.phase == VoiceSessionPhase.transcribing
-            ? _voiceSession.state.generation
-            : _voiceSession.invalidate(
-                phase: VoiceSessionPhase.transcribing,
-                reason: reason,
-              );
+        ? _voiceSession.state.generation
+        : _voiceSession.invalidate(
+            phase: VoiceSessionPhase.transcribing,
+            reason: reason,
+          );
     _publishListeningState(false);
     _addDiagnosticLog(reason);
     _submitVoiceTranscript(
@@ -2726,14 +2970,18 @@ class _ChatScreenState extends State<ChatScreen>
     final state = _voiceSession.state;
     final phase = state.phase.name;
     final label = state.phase.userLabel;
-    unawaited(_pipChannel.invokeMethod('updatePipVoiceState', {
-      'phase': phase,
-      'listening': state.captureActive,
-      'label': label,
-    }).catchError((_) {
-      // The native bridge keeps the legacy boolean method for older builds;
-      // no UI state depends on a PiP action refresh succeeding.
-    }));
+    unawaited(
+      _pipChannel
+          .invokeMethod('updatePipVoiceState', {
+            'phase': phase,
+            'listening': state.captureActive,
+            'label': label,
+          })
+          .catchError((_) {
+            // The native bridge keeps the legacy boolean method for older builds;
+            // no UI state depends on a PiP action refresh succeeding.
+          }),
+    );
   }
 
   String get _voiceStatusLabel => _voiceSession.state.phase.userLabel;
@@ -2779,9 +3027,9 @@ class _ChatScreenState extends State<ChatScreen>
     final color = active
         ? AppColors.statusGreen
         : _voiceSession.state.phase == VoiceSessionPhase.error ||
-                _voiceSession.state.phase == VoiceSessionPhase.noTranscript
-            ? AppColors.statusRed
-            : Colors.white70;
+              _voiceSession.state.phase == VoiceSessionPhase.noTranscript
+        ? AppColors.statusRed
+        : Colors.white70;
     return Semantics(
       liveRegion: true,
       label: 'Voice status: $_voiceStatusLabel',
@@ -2833,8 +3081,10 @@ class _ChatScreenState extends State<ChatScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A2E),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title:
-            const Text('Rename Agent', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Rename Agent',
+          style: TextStyle(color: Colors.white),
+        ),
         content: TextField(
           controller: controller,
           style: const TextStyle(color: Colors.white),
@@ -2842,10 +3092,13 @@ class _ChatScreenState extends State<ChatScreen>
             hintText: 'Enter new name...',
             hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
             enabledBorder: UnderlineInputBorder(
-                borderSide:
-                    BorderSide(color: Colors.white.withValues(alpha: 0.2))),
+              borderSide: BorderSide(
+                color: Colors.white.withValues(alpha: 0.2),
+              ),
+            ),
             focusedBorder: const UnderlineInputBorder(
-                borderSide: BorderSide(color: AppColors.statusGreen)),
+              borderSide: BorderSide(color: AppColors.statusGreen),
+            ),
           ),
           autofocus: true,
           textCapitalization: TextCapitalization.words,
@@ -2853,8 +3106,10 @@ class _ChatScreenState extends State<ChatScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -2869,7 +3124,8 @@ class _ChatScreenState extends State<ChatScreen>
               backgroundColor: AppColors.statusGreen,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: const Text('Save'),
           ),
@@ -2879,11 +3135,11 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _showDynamicModelPicker() async {
-    final cached = await DynamicModelCatalogRepository().load();
-    final snapshot = cached != null &&
-            cached.providers.any((provider) => provider.models.isNotEmpty)
-        ? cached
-        : DynamicCatalogSnapshot.bundledFallback();
+    const toolTestSelectionPrefix = 'plawie-tool-test::';
+    var latestSnapshot = await DynamicModelCatalogRepository().loadOrBundled();
+    var latestReadiness = await WalletFundedProviderReadinessService().inspect(
+      latestSnapshot,
+    );
     if (!mounted) return;
 
     final selection = await showModalBottomSheet<String>(
@@ -2891,159 +3147,139 @@ class _ChatScreenState extends State<ChatScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        var query = '';
-        final expanded = <String>{};
-        return StatefulBuilder(
-          builder: (sheetContext, setSheetState) {
-            final normalizedQuery = query.trim().toLowerCase();
-            final groups = snapshot.providers
-                .map((provider) {
-                  final providerMatches =
-                      provider.label.toLowerCase().contains(normalizedQuery);
-                  final models = normalizedQuery.isEmpty || providerMatches
-                      ? provider.models
-                      : provider.models
-                          .where((model) =>
-                              model.label
-                                  .toLowerCase()
-                                  .contains(normalizedQuery) ||
-                              model.id.toLowerCase().contains(normalizedQuery))
-                          .toList(growable: false);
-                  return (provider: provider, models: models);
-                })
-                .where((group) => group.models.isNotEmpty)
-                .toList(growable: false);
-            return SafeArea(
-              child: Container(
-                height: MediaQuery.sizeOf(context).height * 0.78,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF101216),
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(24)),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                ),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: RadioGroup<String>(
-                  groupValue: _selectedModel,
-                  onChanged: (value) => Navigator.pop(sheetContext, value),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 42,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.white24,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text('CLOUD MODEL CATALOG',
-                          style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.2)),
-                      if (snapshot.state == DynamicCatalogSnapshotState.stale)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 4),
-                          child: Text(
-                              'Showing cached metadata · refresh from Settings',
-                              style:
-                                  TextStyle(color: Colors.amber, fontSize: 11)),
-                        ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search_rounded),
-                          hintText: 'Search models or providers',
-                        ),
-                        onChanged: (value) =>
-                            setSheetState(() => query = value),
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: ListView(
-                          children: [
-                            ...groups.map((group) {
-                              final provider = group.provider;
-                              final isExpanded = normalizedQuery.isNotEmpty ||
-                                  expanded.contains(provider.id);
-                              return ExpansionTile(
-                                key: PageStorageKey<String>(
-                                    'chat-${provider.id}'),
-                                initiallyExpanded: isExpanded,
-                                onExpansionChanged: (value) {
-                                  if (value) {
-                                    expanded.add(provider.id);
-                                  } else {
-                                    expanded.remove(provider.id);
-                                  }
-                                  setSheetState(() {});
-                                },
-                                tilePadding: EdgeInsets.zero,
-                                title: Text(provider.label,
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700)),
-                                subtitle: Text(
-                                    '${group.models.length} models · ${provider.connectionState.name}',
-                                    style: const TextStyle(
-                                        color: Colors.white38, fontSize: 11)),
-                                children: isExpanded
-                                    ? group.models
-                                        .map((model) => RadioListTile<String>(
-                                              dense: true,
-                                              title: Text(model.label,
-                                                  overflow:
-                                                      TextOverflow.ellipsis),
-                                              subtitle: Text(
-                                                '${model.agentReady ? 'Agent-ready' : 'Tool support unknown'} · ${model.id}',
-                                                style: const TextStyle(
-                                                    color: Colors.white38,
-                                                    fontSize: 10),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              value: model.id,
-                                            ))
-                                        .toList(growable: false)
-                                    : const <Widget>[],
-                              );
-                            }),
-                            if (groups.isEmpty)
-                              const Padding(
-                                padding: EdgeInsets.all(24),
-                                child:
-                                    Text('No cached models match that search.'),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
+        return SafeArea(
+          child: Container(
+            height: MediaQuery.sizeOf(context).height * 0.82,
+            decoration: BoxDecoration(
+              color: const Color(0xFF101216),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
+                const SizedBox(height: 12),
+                const Text(
+                  'CLOUD MODEL CATALOG',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: DynamicModelPickerPanel(
+                    snapshot: latestSnapshot,
+                    currentModelId: _selectedModel,
+                    walletReadiness: latestReadiness,
+                    autoRefreshWalletBalances: true,
+                    onRefreshProviderBalance: (providerId) async {
+                      await ProviderBalanceService.instance.refresh(providerId);
+                      latestReadiness =
+                          await WalletFundedProviderReadinessService().inspect(
+                            latestSnapshot,
+                          );
+                      return latestReadiness;
+                    },
+                    onRefreshModels: (providerId) async {
+                      final refreshed = await GatewayService()
+                          .refreshProviderModelCatalog(providerId);
+                      latestSnapshot = await DynamicModelCatalogRepository()
+                          .assess(refreshed.withEffectiveState(DateTime.now()));
+                      latestReadiness =
+                          await WalletFundedProviderReadinessService().inspect(
+                            latestSnapshot,
+                          );
+                      if (mounted) {
+                        setState(() {
+                          _availableDynamicCatalog = latestSnapshot;
+                          _availableDynamicModels = _quickModelsForMenu(
+                            latestSnapshot,
+                          );
+                        });
+                      }
+                      return latestSnapshot;
+                    },
+                    onSelected: (model) =>
+                        Navigator.pop(sheetContext, model.id),
+                    onTestTools: (model) {
+                      Navigator.pop(
+                        sheetContext,
+                        '$toolTestSelectionPrefix${model.id}',
+                      );
+                    },
+                    onProviderAction: (providerId, action) {
+                      Navigator.pop(sheetContext);
+                      unawaited(
+                        runWalletFundedProviderAction(
+                          context,
+                          providerId: providerId,
+                          action: action,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
     if (selection == null || !mounted) return;
+    final testTools = selection.startsWith(toolTestSelectionPrefix);
+    final selectedId = testTools
+        ? selection.substring(toolTestSelectionPrefix.length)
+        : selection;
     final dynamicModel = <DynamicModelRecord>[
-      for (final provider in snapshot.providers) ...provider.models,
-    ].firstWhere((model) => model.id == selection);
-    await _selectDynamicModel(dynamicModel);
+      for (final provider in latestSnapshot.providers) ...provider.models,
+    ].firstWhere((model) => model.id == selectedId);
+    if (testTools) {
+      await _runModelToolCompatibilityTest(dynamicModel);
+    } else {
+      await _selectDynamicModel(dynamicModel);
+    }
   }
 
   Future<void> _selectDynamicModel(DynamicModelRecord model) async {
-    final provider = model.providerId;
-    if (!await GatewayService().hasProviderCredential(provider)) {
+    if (!model.liveAvailable) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Add a $provider API key in Settings first.')),
+        SnackBar(
+          content: Text(
+            model.unavailableReason ??
+                'This model is not available from a live catalog.',
+          ),
+        ),
+      );
+      return;
+    }
+    final provider = model.providerId;
+    final providerOption = ModelProviderCatalog.providerById(provider);
+    if (providerOption?.requiresApiKey == true &&
+        !await GatewayService().hasProviderCredential(provider)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Add a ${providerOption?.label ?? provider} API key in Settings first.',
+          ),
+        ),
       );
       return;
     }
@@ -3052,20 +3288,74 @@ class _ChatScreenState extends State<ChatScreen>
       if (!mounted) return;
       final prefs = PreferencesService();
       await prefs.init();
+      final selection = CanonicalModelSelection.fromDynamic(model);
       setState(() {
-        _selectedModel = model.id;
+        _selectedModelSelection = selection;
         _cloudFallbackModel = model.id;
       });
-      prefs.configuredModel = model.id;
+      prefs.setConfiguredModelSelection(selection);
       prefs.lastCloudModel = model.id;
+      if (providerOption?.requiresApiKey == false) {
+        prefs.aiPaymentProvider = provider;
+      }
       GatewayService().disconnectWebSocket();
       _addDiagnosticLog('Selected dynamic provider model: ${model.id}');
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Model selection failed: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Model selection failed: $error')));
     }
+  }
+
+  Future<void> _runModelToolCompatibilityTest(DynamicModelRecord model) async {
+    final paid = model.providerId == 'venice' || model.providerId == 'blockrun';
+    final approved =
+        await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text('Test tools with ${model.label}?'),
+            content: Text(
+              'Plawie will select this exact model and run one short, '
+              'read-only OpenClaw session-status turn. It cannot access '
+              'files, device controls, apps, notifications, camera, or your '
+              'wallet.${paid ? ' This provider may charge its normal model usage.' : ''}\n\n'
+              'The model must call the tool once, accept its result, and '
+              'finish the response before it is marked Agent-ready.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                icon: const Icon(Icons.science_outlined),
+                label: const Text('Run test'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!approved || !mounted) return;
+
+    await _selectDynamicModel(model);
+    if (!mounted || _selectedModel != model.id) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'The exact model could not be selected, so no test was sent.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    await _handleSubmit(
+      ModelToolCompatibilityProbe.prompt,
+      explicitToolCompatibilityProbe: true,
+    );
   }
 
   void _showUnifiedMenu(BuildContext context) {
@@ -3108,28 +3398,37 @@ class _ChatScreenState extends State<ChatScreen>
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
                             Colors.white.withValues(alpha: 0.1),
-                            Colors.white.withValues(alpha: 0.05)
+                            Colors.white.withValues(alpha: 0.05),
                           ],
                         ),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.1)),
+                          color: Colors.white.withValues(alpha: 0.1),
+                        ),
                       ),
                       child: const Row(
                         children: [
-                          Icon(Icons.edit_note,
-                              color: Colors.white70, size: 14),
+                          Icon(
+                            Icons.edit_note,
+                            color: Colors.white70,
+                            size: 14,
+                          ),
                           SizedBox(width: 4),
-                          Text('EDIT',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.bold)),
+                          Text(
+                            'EDIT',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -3146,7 +3445,8 @@ class _ChatScreenState extends State<ChatScreen>
                       color: Colors.white.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                       border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.15)),
+                        color: Colors.white.withValues(alpha: 0.15),
+                      ),
                     ),
                     child: Center(
                       child: SvgPicture.asset(
@@ -3154,7 +3454,9 @@ class _ChatScreenState extends State<ChatScreen>
                         width: 18,
                         height: 18,
                         colorFilter: const ColorFilter.mode(
-                            Colors.white, BlendMode.srcIn),
+                          Colors.white,
+                          BlendMode.srcIn,
+                        ),
                       ),
                     ),
                   ),
@@ -3180,11 +3482,13 @@ class _ChatScreenState extends State<ChatScreen>
                           ModelProviderCatalog.isLocalModelId(_selectedModel)
                               ? 'LOCAL · ON-DEVICE'
                               : ModelProviderCatalog.labelForModel(
-                                      _selectedModel)
-                                  .toUpperCase(),
+                                  _selectedModel,
+                                ).toUpperCase(),
                           style: TextStyle(
-                            color: ModelProviderCatalog.isLocalModelId(
-                                    _selectedModel)
+                            color:
+                                ModelProviderCatalog.isLocalModelId(
+                                  _selectedModel,
+                                )
                                 ? const Color(0xFF00E5AA)
                                 : Colors.white.withValues(alpha: 0.4),
                             fontSize: 10,
@@ -3219,35 +3523,37 @@ class _ChatScreenState extends State<ChatScreen>
             ),
           ),
         ),
-        ..._availableAvatars.map((avatar) => PopupMenuItem<String>(
-              value: 'avatar:$avatar',
-              height: 36,
-              child: Row(
-                children: [
-                  Icon(
-                    avatar == _selectedAvatar
-                        ? Icons.check_circle
-                        : Icons.circle_outlined,
+        ..._availableAvatars.map(
+          (avatar) => PopupMenuItem<String>(
+            value: 'avatar:$avatar',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(
+                  avatar == _selectedAvatar
+                      ? Icons.check_circle
+                      : Icons.circle_outlined,
+                  color: avatar == _selectedAvatar
+                      ? AppColors.statusGreen
+                      : Colors.white38,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  avatar.split('.').first,
+                  style: TextStyle(
                     color: avatar == _selectedAvatar
-                        ? AppColors.statusGreen
-                        : Colors.white38,
-                    size: 18,
+                        ? Colors.white
+                        : Colors.white70,
+                    fontWeight: avatar == _selectedAvatar
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    avatar.split('.').first,
-                    style: TextStyle(
-                      color: avatar == _selectedAvatar
-                          ? Colors.white
-                          : Colors.white70,
-                      fontWeight: avatar == _selectedAvatar
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                    ),
-                  ),
-                ],
-              ),
-            )),
+                ),
+              ],
+            ),
+          ),
+        ),
 
         const PopupMenuDivider(),
         PopupMenuItem<String>(
@@ -3255,16 +3561,25 @@ class _ChatScreenState extends State<ChatScreen>
           height: 36,
           child: Row(
             children: [
-              Icon(Icons.auto_awesome_rounded,
-                  color: Colors.purpleAccent.shade100, size: 18),
+              Icon(
+                Icons.auto_awesome_rounded,
+                color: Colors.purpleAccent.shade100,
+                size: 18,
+              ),
               const SizedBox(width: 10),
-              Text('Avatar Forge',
-                  style: TextStyle(
-                      color: Colors.purpleAccent.shade100,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                'Avatar Forge',
+                style: TextStyle(
+                  color: Colors.purpleAccent.shade100,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const Spacer(),
-              const Icon(Icons.arrow_forward_ios,
-                  color: Colors.white38, size: 12),
+              const Icon(
+                Icons.arrow_forward_ios,
+                color: Colors.white38,
+                size: 12,
+              ),
             ],
           ),
         ),
@@ -3287,7 +3602,8 @@ class _ChatScreenState extends State<ChatScreen>
         ),
         // --- INTELLIGENT LOCAL LLM ENTRY ---
         PopupMenuItem<String>(
-          value: _localLlmState.status == LocalLlmStatus.idle ||
+          value:
+              _localLlmState.status == LocalLlmStatus.idle ||
                   !_localChatModeEnabled
               ? 'setup_local_llm'
               : 'model:local-llm/${_localLlmState.activeModelId ?? 'llama-server'}',
@@ -3298,19 +3614,19 @@ class _ChatScreenState extends State<ChatScreen>
                 _localLlmState.status == LocalLlmStatus.idle
                     ? Icons.install_mobile
                     : (!_localChatModeEnabled
-                        ? Icons.lock_outline_rounded
-                        : (ModelProviderCatalog.isLocalModelId(_selectedModel)
-                            ? Icons.memory_rounded
-                            : Icons.phone_android)),
+                          ? Icons.lock_outline_rounded
+                          : (ModelProviderCatalog.isLocalModelId(_selectedModel)
+                                ? Icons.memory_rounded
+                                : Icons.phone_android)),
                 color: ModelProviderCatalog.isLocalModelId(_selectedModel)
                     ? const Color(0xFF00E5AA)
                     : (!_localChatModeEnabled
-                        ? AppColors.statusAmber
-                        : (_localLlmState.status == LocalLlmStatus.starting
-                            ? Colors.amber
-                            : (_localLlmState.status == LocalLlmStatus.idle
-                                ? AppColors.statusAmber
-                                : Colors.white38))),
+                          ? AppColors.statusAmber
+                          : (_localLlmState.status == LocalLlmStatus.starting
+                                ? Colors.amber
+                                : (_localLlmState.status == LocalLlmStatus.idle
+                                      ? AppColors.statusAmber
+                                      : Colors.white38))),
                 size: 18,
               ),
               const SizedBox(width: 10),
@@ -3326,44 +3642,46 @@ class _ChatScreenState extends State<ChatScreen>
                       style: TextStyle(
                         color:
                             ModelProviderCatalog.isLocalModelId(_selectedModel)
-                                ? Colors.white
-                                : (_localLlmState.status == LocalLlmStatus.idle
-                                    ? AppColors.statusAmber
-                                    : Colors.white70),
+                            ? Colors.white
+                            : (_localLlmState.status == LocalLlmStatus.idle
+                                  ? AppColors.statusAmber
+                                  : Colors.white70),
                         fontSize: 13,
                         fontWeight:
                             ModelProviderCatalog.isLocalModelId(_selectedModel)
-                                ? FontWeight.bold
-                                : FontWeight.normal,
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                     ),
                     Text(
                       _localLlmState.status == LocalLlmStatus.starting
                           ? 'WAKING UP...'
                           : (_localLlmState.status == LocalLlmStatus.error
-                              ? 'ERROR: CHECK SETUP'
-                              : (!_localChatModeEnabled
-                                  ? 'NDK READY · CHAT MODE OFF'
-                                  : (_localLlmState.status ==
-                                          LocalLlmStatus.idle
-                                      ? 'Download free model'
-                                      : (ModelProviderCatalog.isLocalModelId(
-                                              _selectedModel)
-                                          ? 'ACTIVE · ON-DEVICE'
-                                          : 'ON-DEVICE (READY)')))),
+                                ? 'ERROR: CHECK SETUP'
+                                : (!_localChatModeEnabled
+                                      ? 'NDK READY · CHAT MODE OFF'
+                                      : (_localLlmState.status ==
+                                                LocalLlmStatus.idle
+                                            ? 'Download free model'
+                                            : (ModelProviderCatalog.isLocalModelId(
+                                                    _selectedModel,
+                                                  )
+                                                  ? 'ACTIVE · ON-DEVICE'
+                                                  : 'ON-DEVICE (READY)')))),
                       style: TextStyle(
                         color: _localLlmState.status == LocalLlmStatus.starting
                             ? Colors.amber
                             : (!_localChatModeEnabled
-                                ? AppColors.statusAmber
-                                : (ModelProviderCatalog.isLocalModelId(
-                                        _selectedModel)
-                                    ? const Color(0xFF00E5AA)
-                                    : (_localLlmState.status ==
-                                            LocalLlmStatus.idle
-                                        ? AppColors.statusAmber
-                                            .withValues(alpha: 0.6)
-                                        : Colors.white38))),
+                                  ? AppColors.statusAmber
+                                  : (ModelProviderCatalog.isLocalModelId(
+                                          _selectedModel,
+                                        )
+                                        ? const Color(0xFF00E5AA)
+                                        : (_localLlmState.status ==
+                                                  LocalLlmStatus.idle
+                                              ? AppColors.statusAmber
+                                                    .withValues(alpha: 0.6)
+                                              : Colors.white38))),
                         fontSize: 8,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.5,
@@ -3374,10 +3692,13 @@ class _ChatScreenState extends State<ChatScreen>
               ),
               if (_localLlmState.status == LocalLlmStatus.starting)
                 const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.amber))
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.amber,
+                  ),
+                )
               else if (ModelProviderCatalog.isLocalModelId(_selectedModel))
                 const Icon(Icons.check, color: Color(0xFF00E5AA), size: 18),
             ],
@@ -3389,48 +3710,51 @@ class _ChatScreenState extends State<ChatScreen>
           PopupMenuItem<void>(
             enabled: false,
             height: 20,
-            child: const Text('AGENTS',
-                style: TextStyle(
-                    color: Colors.white38,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.5)),
+            child: const Text(
+              'AGENTS',
+              style: TextStyle(
+                color: Colors.white38,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.5,
+              ),
+            ),
           ),
-          ..._dynamicAgents.map((agent) => PopupMenuItem<String>(
-                value: 'model:${agent.modelKey}',
-                height: 36,
-                child: Row(
-                  children: [
-                    Icon(
-                      agent.modelKey == _selectedModel
-                          ? Icons.check_circle
-                          : Icons.smart_toy_outlined,
-                      color: agent.modelKey == _selectedModel
-                          ? Colors.tealAccent
-                          : Colors.white38,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        agent.isDefault
-                            ? '${agent.name} (default)'
-                            : agent.name,
-                        style: TextStyle(
-                          color: agent.modelKey == _selectedModel
-                              ? Colors.white
-                              : Colors.white70,
-                          fontSize: 13,
-                          fontWeight: agent.modelKey == _selectedModel
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+          ..._dynamicAgents.map(
+            (agent) => PopupMenuItem<String>(
+              value: 'model:${agent.modelKey}',
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(
+                    agent.modelKey == _selectedModel
+                        ? Icons.check_circle
+                        : Icons.smart_toy_outlined,
+                    color: agent.modelKey == _selectedModel
+                        ? Colors.tealAccent
+                        : Colors.white38,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      agent.isDefault ? '${agent.name} (default)' : agent.name,
+                      style: TextStyle(
+                        color: agent.modelKey == _selectedModel
+                            ? Colors.white
+                            : Colors.white70,
+                        fontSize: 13,
+                        fontWeight: agent.modelKey == _selectedModel
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ],
-                ),
-              )),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
         // ── CLOUD section (gateway cloud providers) ────────────────────────
         const PopupMenuDivider(),
@@ -3441,12 +3765,15 @@ class _ChatScreenState extends State<ChatScreen>
             children: [
               const Icon(Icons.cloud_outlined, color: Colors.white38, size: 12),
               const SizedBox(width: 6),
-              const Text('CLOUD',
-                  style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.5)),
+              const Text(
+                'CLOUD',
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5,
+                ),
+              ),
             ],
           ),
         ),
@@ -3457,59 +3784,63 @@ class _ChatScreenState extends State<ChatScreen>
             children: [
               Icon(Icons.search_rounded, color: Colors.purpleAccent, size: 18),
               SizedBox(width: 10),
-              Text('Browse provider models',
-                  style: TextStyle(color: Colors.white70)),
+              Text(
+                'Browse provider models',
+                style: TextStyle(color: Colors.white70),
+              ),
             ],
           ),
         ),
-        ..._availableModels.map((model) => PopupMenuItem<String>(
-              value: 'model:$model',
-              height: 44,
-              child: Row(
-                children: [
-                  Icon(
-                    model == _selectedModel
-                        ? Icons.check_circle
-                        : Icons.circle_outlined,
-                    color: model == _selectedModel
-                        ? Colors.purpleAccent
-                        : Colors.white38,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          ModelProviderCatalog.labelForModel(model),
-                          style: TextStyle(
-                            color: model == _selectedModel
-                                ? Colors.white
-                                : Colors.white70,
-                            fontSize: 13,
-                            fontWeight: model == _selectedModel
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
-                          overflow: TextOverflow.ellipsis,
+        ..._availableDynamicModels.map(
+          (model) => PopupMenuItem<String>(
+            value: 'dynamic:${model.id}',
+            height: 44,
+            child: Row(
+              children: [
+                Icon(
+                  model.id == _selectedModel
+                      ? Icons.check_circle
+                      : Icons.circle_outlined,
+                  color: model.id == _selectedModel
+                      ? Colors.purpleAccent
+                      : Colors.white38,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        model.label,
+                        style: TextStyle(
+                          color: model.id == _selectedModel
+                              ? Colors.white
+                              : Colors.white70,
+                          fontSize: 13,
+                          fontWeight: model.id == _selectedModel
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
-                        Text(
-                          ModelProviderCatalog.routeLabelForModel(model),
-                          style: const TextStyle(
-                            color: Colors.white38,
-                            fontSize: 8,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
-                          ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '${model.providerId} · ${model.readinessLabel}',
+                        style: const TextStyle(
+                          color: Colors.white38,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            )),
+                ),
+              ],
+            ),
+          ),
+        ),
 
         const PopupMenuDivider(),
         PopupMenuItem<void>(
@@ -3533,8 +3864,10 @@ class _ChatScreenState extends State<ChatScreen>
               children: [
                 Icon(Icons.memory, color: Colors.cyanAccent, size: 20),
                 SizedBox(width: 12),
-                Text('Agent Intelligence',
-                    style: TextStyle(color: Colors.white, fontSize: 14)),
+                Text(
+                  'Agent Intelligence',
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
               ],
             ),
           ),
@@ -3547,19 +3880,47 @@ class _ChatScreenState extends State<ChatScreen>
       if (value == 'browse_models') {
         await _showDynamicModelPicker();
       } else if (value == 'setup_local_llm') {
-        await Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => const LocalLlmScreen(),
-        ));
+        await Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const LocalLlmScreen()));
         _loadPreferences();
       } else if (value == 'avatar_forge') {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => const AvatarForgePage(),
-        ));
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AvatarForgePage()));
+      } else if (value.toString().startsWith('dynamic:')) {
+        final dynamicId = value.toString().substring('dynamic:'.length);
+        DynamicModelRecord? dynamicModel;
+        for (final candidate in _availableDynamicModels) {
+          if (candidate.id == dynamicId) {
+            dynamicModel = candidate;
+            break;
+          }
+        }
+        if (dynamicModel == null) {
+          await _showDynamicModelPicker();
+          return;
+        }
+        final catalog = _availableDynamicCatalog;
+        if (catalog != null) {
+          final readiness = await WalletFundedProviderReadinessService()
+              .inspect(catalog);
+          final providerReadiness = readiness[dynamicModel.providerId];
+          if (providerReadiness != null && !providerReadiness.canSelectModels) {
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(providerReadiness.detail)));
+            return;
+          }
+        }
+        await _selectDynamicModel(dynamicModel);
       } else if (value.toString().startsWith('model:')) {
         final prefs = PreferencesService();
         await prefs.init();
         final model = ModelProviderCatalog.canonicalizeModelId(
-            value.toString().substring(6));
+          value.toString().substring(6),
+        );
         if (ModelProviderCatalog.isDirectLocalModelId(model) &&
             !prefs.localChatModeEnabled) {
           if (!context.mounted) return;
@@ -3570,25 +3931,29 @@ class _ChatScreenState extends State<ChatScreen>
               ),
             ),
           );
-          await Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => const LocalLlmScreen(),
-          ));
+          await Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const LocalLlmScreen()));
           _loadPreferences();
           return;
         }
         final isNowCloud = !ModelProviderCatalog.isDirectLocalModelId(model);
         final catalogModel = ModelProviderCatalog.modelById(model);
-        if (isNowCloud && catalogModel != null) {
-          final hasCredential = await GatewayService()
-              .hasProviderCredential(catalogModel.providerId);
+        final catalogProvider = catalogModel == null
+            ? null
+            : ModelProviderCatalog.providerById(catalogModel.providerId);
+        if (isNowCloud &&
+            catalogModel != null &&
+            catalogProvider?.requiresApiKey == true) {
+          final hasCredential = await GatewayService().hasProviderCredential(
+            catalogModel.providerId,
+          );
           if (!context.mounted) return;
           if (!hasCredential) {
-            final provider =
-                ModelProviderCatalog.providerById(catalogModel.providerId);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'Add a ${provider?.label ?? catalogModel.providerId} API key in Settings before using ${catalogModel.label}.',
+                  'Add a ${catalogProvider?.label ?? catalogModel.providerId} API key in Settings before using ${catalogModel.label}.',
                 ),
               ),
             );
@@ -3601,7 +3966,9 @@ class _ChatScreenState extends State<ChatScreen>
             _cloudFallbackModel = model;
           }
         });
-        prefs.configuredModel = model;
+        prefs.setConfiguredModelSelection(
+          CanonicalModelSelection.fromModelId(model),
+        );
         if (!ModelProviderCatalog.isDirectLocalModelId(model)) {
           prefs.lastCloudModel = model;
         }
@@ -3609,8 +3976,9 @@ class _ChatScreenState extends State<ChatScreen>
         final needsReload = ModelProviderCatalog.isDirectLocalModelId(model);
         if (needsReload) {
           final modelId = model.split('/').last;
-          final localModel =
-              LocalLlmService().catalog.firstWhere((m) => m.id == modelId);
+          final localModel = LocalLlmService().catalog.firstWhere(
+            (m) => m.id == modelId,
+          );
           LocalLlmService().activateModel(localModel);
         } else {
           await GatewayService().persistModel(model);
@@ -3653,13 +4021,13 @@ class _ChatScreenState extends State<ChatScreen>
       // while ordinary backgrounding still releases the microphone promptly.
       if (!_isPipMode && (_isListening || _voiceSession.state.captureActive)) {
         _backgroundVoiceStopTimer?.cancel();
-        _backgroundVoiceStopTimer =
-            Timer(const Duration(milliseconds: 350), () {
+        _backgroundVoiceStopTimer = Timer(const Duration(milliseconds: 350), () {
           _backgroundVoiceStopTimer = null;
           if (!mounted || _isPipMode) return;
           if (_isListening || _voiceSession.state.captureActive) {
             _addDiagnosticLog(
-                'Voice capture stopped because the Activity entered background.');
+              'Voice capture stopped because the Activity entered background.',
+            );
             unawaited(_stopListening());
           }
         });
@@ -3721,7 +4089,8 @@ class _ChatScreenState extends State<ChatScreen>
     final talkSessionId = _talkRelaySessionId;
     if (talkSessionId != null && talkSessionId.isNotEmpty) {
       unawaited(
-          GatewayService().closeTalkSession(talkSessionId).catchError((_) {}));
+        GatewayService().closeTalkSession(talkSessionId).catchError((_) {}),
+      );
     }
     _glowController.dispose();
     unawaited(_nativeSpeechInput.dispose());
@@ -3784,8 +4153,9 @@ class _ChatScreenState extends State<ChatScreen>
                       session.title,
                       style: TextStyle(
                         color: isActive ? Colors.white : Colors.white70,
-                        fontWeight:
-                            isActive ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isActive
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                         fontSize: 14,
                       ),
                       maxLines: 1,
@@ -3793,12 +4163,17 @@ class _ChatScreenState extends State<ChatScreen>
                     ),
                     subtitle: Text(
                       _formatDate(session.updatedAt),
-                      style:
-                          const TextStyle(color: Colors.white38, fontSize: 10),
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 10,
+                      ),
                     ),
                     trailing: PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert,
-                          color: Colors.white38, size: 18),
+                      icon: const Icon(
+                        Icons.more_vert,
+                        color: Colors.white38,
+                        size: 18,
+                      ),
                       onSelected: (action) async {
                         if (action == 'delete') {
                           await _persistence.deleteSession(session.id);
@@ -3809,9 +4184,13 @@ class _ChatScreenState extends State<ChatScreen>
                       },
                       itemBuilder: (ctx) => [
                         const PopupMenuItem(
-                            value: 'rename', child: Text('Rename')),
+                          value: 'rename',
+                          child: Text('Rename'),
+                        ),
                         const PopupMenuItem(
-                            value: 'delete', child: Text('Delete')),
+                          value: 'delete',
+                          child: Text('Delete'),
+                        ),
                       ],
                     ),
                     selected: isActive,
@@ -3844,7 +4223,9 @@ class _ChatScreenState extends State<ChatScreen>
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () async {
               final name = controller.text.trim();
@@ -3939,9 +4320,9 @@ class _ChatScreenState extends State<ChatScreen>
     final gateway = context.read<GatewayProvider>();
     final url = await gateway.refreshDashboardUrl();
     if (!context.mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => WebDashboardScreen(url: url)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => WebDashboardScreen(url: url)));
   }
 
   Widget _agentControlCard({
@@ -4004,15 +4385,19 @@ class _ChatScreenState extends State<ChatScreen>
     final gateway = context.read<GatewayProvider>();
     final supported = gateway.supportedMethods.toSet();
     final cronReady = supported.any((method) => method.startsWith('cron.'));
-    final dreamingReady = supported.any((method) =>
-        method.startsWith('dream') ||
-        method.startsWith('memory.') ||
-        method == 'doctor.memory');
-    final instancesReady = supported.any((method) =>
-        method == 'system-presence' ||
-        method.startsWith('instances.') ||
-        method.startsWith('presence.') ||
-        method.startsWith('clients.'));
+    final dreamingReady = supported.any(
+      (method) =>
+          method.startsWith('dream') ||
+          method.startsWith('memory.') ||
+          method == 'doctor.memory',
+    );
+    final instancesReady = supported.any(
+      (method) =>
+          method == 'system-presence' ||
+          method.startsWith('instances.') ||
+          method.startsWith('presence.') ||
+          method.startsWith('clients.'),
+    );
 
     showModalBottomSheet<void>(
       context: context,
@@ -4034,8 +4419,10 @@ class _ChatScreenState extends State<ChatScreen>
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.tune_rounded,
-                          color: AppColors.statusGreen),
+                      const Icon(
+                        Icons.tune_rounded,
+                        color: AppColors.statusGreen,
+                      ),
                       const SizedBox(width: 10),
                       const Expanded(
                         child: Text(
@@ -4160,32 +4547,39 @@ class _ChatScreenState extends State<ChatScreen>
     // --- Dynamic Sizing for Floating Mic ---
     const double collapsedSize = 96.0;
     // Adaptive height: Capped to avoid keyboard overflow on small screens
-    final keyboardHeight = MediaQuery.of(context)
-        .viewInsets
-        .bottom
-        .clamp(0.0, viewportHeight * 0.7)
-        .toDouble();
+    final keyboardHeight = MediaQuery.of(
+      context,
+    ).viewInsets.bottom.clamp(0.0, viewportHeight * 0.7).toDouble();
     final keyboardVisible = keyboardHeight > 0;
     final rawMaxExpandedHeight =
         viewportHeight - keyboardHeight - (keyboardVisible ? 78.0 : 190.0);
     final isTinyViewport =
         _isPipMode || viewportWidth < 320.0 || viewportHeight < 420.0;
-    final maxExpandedHeight =
-        math.max(isTinyViewport ? 96.0 : 260.0, rawMaxExpandedHeight);
-    final minExpandedHeight =
-        math.min(isTinyViewport ? 96.0 : 260.0, maxExpandedHeight);
+    final maxExpandedHeight = math.max(
+      isTinyViewport ? 96.0 : 260.0,
+      rawMaxExpandedHeight,
+    );
+    final minExpandedHeight = math.min(
+      isTinyViewport ? 96.0 : 260.0,
+      maxExpandedHeight,
+    );
     final targetExpandedHeight =
         viewportHeight * (keyboardVisible ? 0.52 : 0.46);
     final expandedHorizontalMargin = viewportWidth < 340.0 ? 0.0 : 10.0;
     final expandedWidth = math.min(
-        620.0, math.max(1.0, viewportWidth - expandedHorizontalMargin * 2));
+      620.0,
+      math.max(1.0, viewportWidth - expandedHorizontalMargin * 2),
+    );
     final double barWidth = _isChatCollapsed
         ? math.min(collapsedSize, viewportWidth)
         : expandedWidth;
     final double barHeight = _isChatCollapsed
         ? collapsedSize
         : orderedClamp(
-            targetExpandedHeight, minExpandedHeight, maxExpandedHeight);
+            targetExpandedHeight,
+            minExpandedHeight,
+            maxExpandedHeight,
+          );
     final chatTrayBottomMargin = _isChatCollapsed ? 40.0 : 10.0;
     final chatTrayTopY =
         viewportHeight - keyboardHeight - chatTrayBottomMargin - barHeight;
@@ -4193,7 +4587,8 @@ class _ChatScreenState extends State<ChatScreen>
         ? orderedClamp(
             viewportHeight - keyboardHeight - chatTrayBottomMargin - 132.0,
             viewportHeight * 0.46,
-            viewportHeight - keyboardHeight - 118.0)
+            viewportHeight - keyboardHeight - 118.0,
+          )
         : orderedClamp(chatTrayTopY - 18.0, 112.0, viewportHeight - 96.0);
     final canvasBottom = barHeight + (_isChatCollapsed ? 40.0 : 0.0) + 16.0;
     final canvasMaxHeight = math.max(
@@ -4245,7 +4640,8 @@ class _ChatScreenState extends State<ChatScreen>
                   sigmaY: 12.0,
                   child: Container(
                     color: Colors.black.withValues(
-                        alpha: 0.05), // Reduced alpha for more transparency
+                      alpha: 0.05,
+                    ), // Reduced alpha for more transparency
                   ),
                 ),
               ),
@@ -4260,12 +4656,15 @@ class _ChatScreenState extends State<ChatScreen>
                   onTap: () => _showUnifiedMenu(context),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6), // Reduced padding
+                      horizontal: 10,
+                      vertical: 6,
+                    ), // Reduced padding
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.12)),
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -4275,7 +4674,9 @@ class _ChatScreenState extends State<ChatScreen>
                           width: 14,
                           height: 14,
                           colorFilter: const ColorFilter.mode(
-                              Colors.white, BlendMode.srcIn),
+                            Colors.white,
+                            BlendMode.srcIn,
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Flexible(
@@ -4297,16 +4698,19 @@ class _ChatScreenState extends State<ChatScreen>
                               ),
                               Text(
                                 ModelProviderCatalog.isLocalModelId(
-                                        _selectedModel)
+                                      _selectedModel,
+                                    )
                                     ? '${_selectedAvatar.split('.').first.toUpperCase()} · ${_localLlmState.status == LocalLlmStatus.starting ? 'STARTING...' : 'LOCAL ON-DEVICE'}'
-                                    : '${_selectedAvatar.split('.').first.toUpperCase()} · ${ModelProviderCatalog.labelForModel(_selectedModel).toUpperCase()}',
+                                    : '${_selectedAvatar.split('.').first.toUpperCase()} · ${_selectedModelSelection.displayLabel.toUpperCase()}',
                                 style: TextStyle(
-                                  color: ModelProviderCatalog.isLocalModelId(
-                                          _selectedModel)
+                                  color:
+                                      ModelProviderCatalog.isLocalModelId(
+                                        _selectedModel,
+                                      )
                                       ? (_localLlmState.status ==
-                                              LocalLlmStatus.starting
-                                          ? Colors.amber
-                                          : const Color(0xFF00E5AA))
+                                                LocalLlmStatus.starting
+                                            ? Colors.amber
+                                            : const Color(0xFF00E5AA))
                                       : Colors.white.withValues(alpha: 0.5),
                                   fontSize: 8,
                                   fontWeight: FontWeight.w600,
@@ -4319,8 +4723,11 @@ class _ChatScreenState extends State<ChatScreen>
                           ),
                         ),
                         const SizedBox(width: 10),
-                        const Icon(Icons.expand_more_rounded,
-                            color: Colors.white38, size: 16),
+                        const Icon(
+                          Icons.expand_more_rounded,
+                          color: Colors.white38,
+                          size: 16,
+                        ),
                       ],
                     ),
                   ),
@@ -4329,8 +4736,10 @@ class _ChatScreenState extends State<ChatScreen>
               centerTitle: true,
               actions: [
                 IconButton(
-                  icon: const Icon(Icons.add_comment_outlined,
-                      color: Colors.white70),
+                  icon: const Icon(
+                    Icons.add_comment_outlined,
+                    color: Colors.white70,
+                  ),
                   onPressed: () async {
                     await _persistence.createSession();
                     _loadChatHistory();
@@ -4338,22 +4747,27 @@ class _ChatScreenState extends State<ChatScreen>
                   tooltip: 'New Chat',
                 ),
                 PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert_rounded,
-                      color: Colors.white70),
+                  icon: const Icon(
+                    Icons.more_vert_rounded,
+                    color: Colors.white70,
+                  ),
                   tooltip: 'More',
-                  color: Colors.black
-                      .withValues(alpha: 0.7), // Deeper frosted alpha
+                  color: Colors.black.withValues(
+                    alpha: 0.7,
+                  ), // Deeper frosted alpha
                   constraints: const BoxConstraints(maxWidth: 210),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
-                    side:
-                        BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
                   ),
                   onSelected: (value) async {
                     if (value == 'pip') {
                       try {
-                        await const MethodChannel('vrm/pip_mode')
-                            .invokeMethod('enterPictureInPictureMode');
+                        await const MethodChannel(
+                          'vrm/pip_mode',
+                        ).invokeMethod('enterPictureInPictureMode');
                       } catch (e) {
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -4373,12 +4787,19 @@ class _ChatScreenState extends State<ChatScreen>
                       value: 'agent_controls',
                       child: Row(
                         children: const [
-                          Icon(Icons.tune_rounded,
-                              color: Colors.white70, size: 20),
+                          Icon(
+                            Icons.tune_rounded,
+                            color: Colors.white70,
+                            size: 20,
+                          ),
                           SizedBox(width: 10),
-                          Text('Agent Controls',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 13)),
+                          Text(
+                            'Agent Controls',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -4386,12 +4807,19 @@ class _ChatScreenState extends State<ChatScreen>
                       value: 'ai_payments',
                       child: Row(
                         children: [
-                          Icon(Icons.payments_outlined,
-                              color: Colors.white70, size: 20),
+                          Icon(
+                            Icons.payments_outlined,
+                            color: Colors.white70,
+                            size: 20,
+                          ),
                           SizedBox(width: 10),
-                          Text('AI Payments & Wallet',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 13)),
+                          Text(
+                            'AI Payments & Wallet',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -4401,21 +4829,28 @@ class _ChatScreenState extends State<ChatScreen>
                       child: Builder(
                         builder: (ctx2) => ListTile(
                           dense: true,
-                          visualDensity:
-                              const VisualDensity(horizontal: -4, vertical: -4),
+                          visualDensity: const VisualDensity(
+                            horizontal: -4,
+                            vertical: -4,
+                          ),
                           leading: Icon(
                             Icons.picture_in_picture_alt,
                             color: Colors.white70,
                             size: 20,
                           ),
-                          title: const Text('Picture in Picture',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 13)),
+                          title: const Text(
+                            'Picture in Picture',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
                           onTap: () async {
                             Navigator.pop(ctx2);
                             try {
-                              await const MethodChannel('vrm/pip_mode')
-                                  .invokeMethod('enterPictureInPictureMode');
+                              await const MethodChannel(
+                                'vrm/pip_mode',
+                              ).invokeMethod('enterPictureInPictureMode');
                             } catch (_) {}
                           },
                         ),
@@ -4426,13 +4861,22 @@ class _ChatScreenState extends State<ChatScreen>
                       child: Builder(
                         builder: (ctx2) => ListTile(
                           dense: true,
-                          visualDensity:
-                              const VisualDensity(horizontal: -4, vertical: -4),
-                          leading: const Icon(Icons.history,
-                              color: Colors.white70, size: 20),
-                          title: const Text('Chat Sessions',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 13)),
+                          visualDensity: const VisualDensity(
+                            horizontal: -4,
+                            vertical: -4,
+                          ),
+                          leading: const Icon(
+                            Icons.history,
+                            color: Colors.white70,
+                            size: 20,
+                          ),
+                          title: const Text(
+                            'Chat Sessions',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
                           onTap: () {
                             Navigator.pop(ctx2);
                             // Use scaffoldKey to avoid Scaffold.of() resolving against
@@ -4461,12 +4905,15 @@ class _ChatScreenState extends State<ChatScreen>
                                 ? 'Hide Diagnostics'
                                 : 'Show Diagnostics',
                             style: const TextStyle(
-                                color: Colors.white70, fontSize: 13),
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
                           ),
                           onTap: () {
                             Navigator.pop(ctx2);
                             setState(
-                                () => _showDiagnostics = !_showDiagnostics);
+                              () => _showDiagnostics = !_showDiagnostics,
+                            );
                           },
                         ),
                       ),
@@ -4484,10 +4931,7 @@ class _ChatScreenState extends State<ChatScreen>
                 gradient: RadialGradient(
                   center: const Alignment(0, -0.2),
                   radius: 1.2,
-                  colors: [
-                    const Color(0xFF0D1B2A),
-                    Colors.black,
-                  ],
+                  colors: [const Color(0xFF0D1B2A), Colors.black],
                   stops: const [0.0, 1.0],
                 ),
               ),
@@ -4583,12 +5027,12 @@ class _ChatScreenState extends State<ChatScreen>
             Positioned.fill(
               child: Padding(
                 padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).viewInsets.bottom),
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     // 5. Epic Floating Chat/Mic Bar
-
                     if (!_isChatCollapsed) const Spacer(flex: 3),
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 280),
@@ -4619,7 +5063,8 @@ class _ChatScreenState extends State<ChatScreen>
                             ? Colors.white.withValues(alpha: 0.08)
                             : null,
                         borderRadius: BorderRadius.circular(
-                            _isChatCollapsed ? collapsedSize / 2 : 30),
+                          _isChatCollapsed ? collapsedSize / 2 : 30,
+                        ),
                         border: Border.all(
                           color: _isChatCollapsed
                               ? Colors.white.withValues(alpha: 0.2)
@@ -4644,7 +5089,8 @@ class _ChatScreenState extends State<ChatScreen>
                           if (_isListening && _isChatCollapsed)
                             BoxShadow(
                               color: AppColors.statusGreen.withValues(
-                                  alpha: 0.1 * _glowController.value),
+                                alpha: 0.1 * _glowController.value,
+                              ),
                               blurRadius: 20 * _glowController.value,
                               spreadRadius: 10 * _glowController.value,
                             ),
@@ -4652,7 +5098,8 @@ class _ChatScreenState extends State<ChatScreen>
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(
-                            _isChatCollapsed ? collapsedSize / 2 : 30),
+                          _isChatCollapsed ? collapsedSize / 2 : 30,
+                        ),
                         child: avatarSafeBackdrop(
                           sigmaX: 15,
                           sigmaY: 15,
@@ -4684,16 +5131,20 @@ class _ChatScreenState extends State<ChatScreen>
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(
                                           colors: [
-                                            Colors.white
-                                                .withValues(alpha: 0.18),
-                                            AppColors.statusGreen
-                                                .withValues(alpha: 0.46),
-                                            Colors.white
-                                                .withValues(alpha: 0.18),
+                                            Colors.white.withValues(
+                                              alpha: 0.18,
+                                            ),
+                                            AppColors.statusGreen.withValues(
+                                              alpha: 0.46,
+                                            ),
+                                            Colors.white.withValues(
+                                              alpha: 0.18,
+                                            ),
                                           ],
                                         ),
-                                        borderRadius:
-                                            BorderRadius.circular(999),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
                                         boxShadow: [
                                           BoxShadow(
                                             color: AppColors.statusGreen
@@ -4711,21 +5162,25 @@ class _ChatScreenState extends State<ChatScreen>
                                   child: ShaderMask(
                                     shaderCallback: (bounds) =>
                                         const LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Colors.transparent,
-                                        Colors.white,
-                                        Colors.white,
-                                        Colors.transparent
-                                      ],
-                                      stops: [0.0, 0.05, 0.95, 1.0],
-                                    ).createShader(bounds),
+                                          begin: Alignment.topCenter,
+                                          end: Alignment.bottomCenter,
+                                          colors: [
+                                            Colors.transparent,
+                                            Colors.white,
+                                            Colors.white,
+                                            Colors.transparent,
+                                          ],
+                                          stops: [0.0, 0.05, 0.95, 1.0],
+                                        ).createShader(bounds),
                                     blendMode: BlendMode.dstIn,
                                     child: ListView.builder(
                                       controller: _scrollController,
                                       padding: const EdgeInsets.fromLTRB(
-                                          16, 4, 16, 12),
+                                        16,
+                                        4,
+                                        16,
+                                        12,
+                                      ),
                                       itemCount: _messages.length,
                                       itemBuilder: (context, i) {
                                         final msg = _messages[i];
@@ -4733,7 +5188,7 @@ class _ChatScreenState extends State<ChatScreen>
                                           message: msg,
                                           isThinking:
                                               i == _messages.length - 1 &&
-                                                  _isThinking,
+                                              _isThinking,
                                         );
                                       },
                                     ),
@@ -4741,11 +5196,11 @@ class _ChatScreenState extends State<ChatScreen>
                                 ),
 
                               // Voice persona chips removed — accessible via the AuraDot orb above the avatar.
-
                               Container(
                                 padding: EdgeInsets.symmetric(
-                                    horizontal: _isChatCollapsed ? 0 : 12,
-                                    vertical: _isChatCollapsed ? 0 : 10),
+                                  horizontal: _isChatCollapsed ? 0 : 12,
+                                  vertical: _isChatCollapsed ? 0 : 10,
+                                ),
                                 decoration: BoxDecoration(
                                   color: _isChatCollapsed
                                       ? Colors.transparent
@@ -4754,8 +5209,10 @@ class _ChatScreenState extends State<ChatScreen>
                                       ? null
                                       : Border(
                                           top: BorderSide(
-                                              color: AppColors.statusGreen
-                                                  .withValues(alpha: 0.10))),
+                                            color: AppColors.statusGreen
+                                                .withValues(alpha: 0.10),
+                                          ),
+                                        ),
                                 ),
                                 child: SafeArea(
                                   top: false,
@@ -4788,40 +5245,45 @@ class _ChatScreenState extends State<ChatScreen>
                                                     HitTestBehavior.opaque,
                                                 onTap: () {
                                                   // Tap on collapsed orb = show hint
-                                                  ScaffoldMessenger.of(context)
-                                                      .clearSnackBars();
-                                                  ScaffoldMessenger.of(context)
-                                                      .showSnackBar(
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).clearSnackBars();
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
                                                     SnackBar(
                                                       content: const Row(
                                                         children: [
                                                           Icon(
-                                                              Icons
-                                                                  .info_outline,
-                                                              color: Colors
-                                                                  .white70,
-                                                              size: 16),
+                                                            Icons.info_outline,
+                                                            color:
+                                                                Colors.white70,
+                                                            size: 16,
+                                                          ),
                                                           SizedBox(width: 8),
                                                           Text(
-                                                              'Hold to talk  ·  Swipe ↑ to expand',
-                                                              style: TextStyle(
-                                                                  fontSize:
-                                                                      13)),
+                                                            'Hold to talk  ·  Swipe ↑ to expand',
+                                                            style: TextStyle(
+                                                              fontSize: 13,
+                                                            ),
+                                                          ),
                                                         ],
                                                       ),
                                                       backgroundColor:
                                                           const Color(
-                                                              0xFF1A1A2E),
+                                                            0xFF1A1A2E,
+                                                          ),
                                                       duration: const Duration(
-                                                          seconds: 2),
+                                                        seconds: 2,
+                                                      ),
                                                       behavior: SnackBarBehavior
                                                           .floating,
-                                                      shape:
-                                                          RoundedRectangleBorder(
-                                                              borderRadius:
-                                                                  BorderRadius
-                                                                      .circular(
-                                                                          12)),
+                                                      shape: RoundedRectangleBorder(
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              12,
+                                                            ),
+                                                      ),
                                                     ),
                                                   );
                                                 },
@@ -4837,11 +5299,13 @@ class _ChatScreenState extends State<ChatScreen>
                                                   if ((details.primaryVelocity ??
                                                           0) <
                                                       -400) {
-                                                    setState(() =>
-                                                        _isChatCollapsed =
-                                                            false);
+                                                    setState(
+                                                      () => _isChatCollapsed =
+                                                          false,
+                                                    );
                                                     _scrollToBottom(
-                                                        instant: true);
+                                                      instant: true,
+                                                    );
                                                   }
                                                 },
                                                 child: Column(
@@ -4853,49 +5317,52 @@ class _ChatScreenState extends State<ChatScreen>
                                                           _glowController,
                                                       builder: (_, __) =>
                                                           Transform.translate(
-                                                        offset: Offset(
-                                                            0,
-                                                            -3 *
-                                                                _glowController
-                                                                    .value),
-                                                        child: Icon(
-                                                          Icons
-                                                              .keyboard_arrow_up_rounded,
-                                                          color: Colors.white
-                                                              .withValues(
-                                                                  alpha: 0.25 +
-                                                                      0.2 *
-                                                                          _glowController
-                                                                              .value),
-                                                          size: 14,
-                                                        ),
-                                                      ),
+                                                            offset: Offset(
+                                                              0,
+                                                              -3 *
+                                                                  _glowController
+                                                                      .value,
+                                                            ),
+                                                            child: Icon(
+                                                              Icons
+                                                                  .keyboard_arrow_up_rounded,
+                                                              color: Colors
+                                                                  .white
+                                                                  .withValues(
+                                                                    alpha:
+                                                                        0.25 +
+                                                                        0.2 *
+                                                                            _glowController.value,
+                                                                  ),
+                                                              size: 14,
+                                                            ),
+                                                          ),
                                                     ),
                                                     AnimatedBuilder(
                                                       animation:
                                                           _glowController,
-                                                      builder:
-                                                          (context, child) {
+                                                      builder: (context, child) {
                                                         return AnimatedContainer(
                                                           duration:
                                                               const Duration(
-                                                                  milliseconds:
-                                                                      300),
+                                                                milliseconds:
+                                                                    300,
+                                                              ),
                                                           width: 64,
                                                           height: 64,
-                                                          decoration:
-                                                              BoxDecoration(
+                                                          decoration: BoxDecoration(
                                                             shape:
                                                                 BoxShape.circle,
                                                             color: _isListening
                                                                 ? AppColors
-                                                                    .statusGreen
-                                                                    .withValues(
-                                                                        alpha: 0.1 *
-                                                                            _glowController
-                                                                                .value)
+                                                                      .statusGreen
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.1 *
+                                                                            _glowController.value,
+                                                                      )
                                                                 : Colors
-                                                                    .transparent,
+                                                                      .transparent,
                                                           ),
                                                           alignment:
                                                               Alignment.center,
@@ -4903,12 +5370,12 @@ class _ChatScreenState extends State<ChatScreen>
                                                             _isListening
                                                                 ? Icons.mic
                                                                 : Icons
-                                                                    .mic_none,
+                                                                      .mic_none,
                                                             color: _isListening
                                                                 ? AppColors
-                                                                    .statusGreen
+                                                                      .statusGreen
                                                                 : Colors
-                                                                    .white70,
+                                                                      .white70,
                                                             size: 36,
                                                           ),
                                                         );
@@ -4930,17 +5397,19 @@ class _ChatScreenState extends State<ChatScreen>
                                                     Padding(
                                                       padding:
                                                           const EdgeInsets.only(
-                                                              bottom: 6),
+                                                            bottom: 6,
+                                                          ),
                                                       child: Stack(
                                                         children: [
                                                           ClipRRect(
                                                             borderRadius:
-                                                                BorderRadius
-                                                                    .circular(
-                                                                        10),
+                                                                BorderRadius.circular(
+                                                                  10,
+                                                                ),
                                                             child: Image.memory(
                                                               base64Decode(
-                                                                  _pendingImageBase64!),
+                                                                _pendingImageBase64!,
+                                                              ),
                                                               height: 80,
                                                               width: 80,
                                                               fit: BoxFit.cover,
@@ -4949,28 +5418,29 @@ class _ChatScreenState extends State<ChatScreen>
                                                           Positioned(
                                                             top: 2,
                                                             right: 2,
-                                                            child:
-                                                                GestureDetector(
-                                                              onTap: () =>
-                                                                  setState(() =>
-                                                                      _pendingImageBase64 =
-                                                                          null),
+                                                            child: GestureDetector(
+                                                              onTap: () => setState(
+                                                                () =>
+                                                                    _pendingImageBase64 =
+                                                                        null,
+                                                              ),
                                                               child: Container(
-                                                                decoration:
-                                                                    BoxDecoration(
+                                                                decoration: BoxDecoration(
                                                                   color: Colors
                                                                       .black
                                                                       .withValues(
-                                                                          alpha:
-                                                                              0.6),
+                                                                        alpha:
+                                                                            0.6,
+                                                                      ),
                                                                   shape: BoxShape
                                                                       .circle,
                                                                 ),
                                                                 child: const Icon(
-                                                                    Icons.close,
-                                                                    color: Colors
-                                                                        .white,
-                                                                    size: 16),
+                                                                  Icons.close,
+                                                                  color: Colors
+                                                                      .white,
+                                                                  size: 16,
+                                                                ),
                                                               ),
                                                             ),
                                                           ),
@@ -4984,12 +5454,13 @@ class _ChatScreenState extends State<ChatScreen>
                                                         icon: Icon(
                                                           Icons
                                                               .more_horiz_rounded,
-                                                          color: (_pendingImageBase64 !=
+                                                          color:
+                                                              (_pendingImageBase64 !=
                                                                       null ||
                                                                   _pendingVideoBase64 !=
                                                                       null)
                                                               ? AppColors
-                                                                  .statusGreen
+                                                                    .statusGreen
                                                               : Colors.white54,
                                                           size: 22,
                                                         ),
@@ -4997,23 +5468,25 @@ class _ChatScreenState extends State<ChatScreen>
                                                             EdgeInsets.zero,
                                                         constraints:
                                                             const BoxConstraints(
-                                                                minWidth: 36,
-                                                                minHeight: 36),
+                                                              minWidth: 36,
+                                                              minHeight: 36,
+                                                            ),
                                                         color: Colors.black
                                                             .withValues(
-                                                                alpha: 0.9),
-                                                        shape:
-                                                            RoundedRectangleBorder(
+                                                              alpha: 0.9,
+                                                            ),
+                                                        shape: RoundedRectangleBorder(
                                                           borderRadius:
-                                                              BorderRadius
-                                                                  .circular(16),
+                                                              BorderRadius.circular(
+                                                                16,
+                                                              ),
                                                           side: BorderSide(
-                                                              color: Colors
-                                                                  .white
-                                                                  .withValues(
-                                                                      alpha:
-                                                                          0.1),
-                                                              width: 0.8),
+                                                            color: Colors.white
+                                                                .withValues(
+                                                                  alpha: 0.1,
+                                                                ),
+                                                            width: 0.8,
+                                                          ),
                                                         ),
                                                         onSelected: (value) {
                                                           if (value ==
@@ -5047,31 +5520,37 @@ class _ChatScreenState extends State<ChatScreen>
                                                             child: Row(
                                                               children: [
                                                                 Icon(
-                                                                    _isListening
-                                                                        ? Icons
+                                                                  _isListening
+                                                                      ? Icons
                                                                             .mic
-                                                                        : Icons
+                                                                      : Icons
                                                                             .mic_none,
-                                                                    color: _isListening
-                                                                        ? AppColors
+                                                                  color:
+                                                                      _isListening
+                                                                      ? AppColors
                                                                             .statusGreen
-                                                                        : Colors
+                                                                      : Colors
                                                                             .white70,
-                                                                    size: 20),
+                                                                  size: 20,
+                                                                ),
                                                                 const SizedBox(
-                                                                    width: 12),
+                                                                  width: 12,
+                                                                ),
                                                                 Text(
-                                                                    _isListening
-                                                                        ? 'Stop Listening'
-                                                                        : 'Voice Input',
-                                                                    style: TextStyle(
-                                                                        color: _isListening
-                                                                            ? AppColors
-                                                                                .statusGreen
-                                                                            : Colors
-                                                                                .white,
-                                                                        fontSize:
-                                                                            13)),
+                                                                  _isListening
+                                                                      ? 'Stop Listening'
+                                                                      : 'Voice Input',
+                                                                  style: TextStyle(
+                                                                    color:
+                                                                        _isListening
+                                                                        ? AppColors
+                                                                              .statusGreen
+                                                                        : Colors
+                                                                              .white,
+                                                                    fontSize:
+                                                                        13,
+                                                                  ),
+                                                                ),
                                                               ],
                                                             ),
                                                           ),
@@ -5080,23 +5559,27 @@ class _ChatScreenState extends State<ChatScreen>
                                                             child: Row(
                                                               children: [
                                                                 Icon(
-                                                                    _isTakingPhoto
-                                                                        ? Icons
+                                                                  _isTakingPhoto
+                                                                      ? Icons
                                                                             .hourglass_empty
-                                                                        : Icons
+                                                                      : Icons
                                                                             .camera_alt_outlined,
-                                                                    color: Colors
-                                                                        .white70,
-                                                                    size: 20),
+                                                                  color: Colors
+                                                                      .white70,
+                                                                  size: 20,
+                                                                ),
                                                                 const SizedBox(
-                                                                    width: 12),
+                                                                  width: 12,
+                                                                ),
                                                                 const Text(
-                                                                    'Take Photo',
-                                                                    style: TextStyle(
-                                                                        color: Colors
-                                                                            .white,
-                                                                        fontSize:
-                                                                            13)),
+                                                                  'Take Photo',
+                                                                  style: TextStyle(
+                                                                    color: Colors
+                                                                        .white,
+                                                                    fontSize:
+                                                                        13,
+                                                                  ),
+                                                                ),
                                                               ],
                                                             ),
                                                           ),
@@ -5105,23 +5588,27 @@ class _ChatScreenState extends State<ChatScreen>
                                                             child: Row(
                                                               children: [
                                                                 Icon(
-                                                                    _isRecordingVideo
-                                                                        ? Icons
+                                                                  _isRecordingVideo
+                                                                      ? Icons
                                                                             .hourglass_empty
-                                                                        : Icons
+                                                                      : Icons
                                                                             .videocam_outlined,
-                                                                    color: Colors
-                                                                        .white70,
-                                                                    size: 20),
+                                                                  color: Colors
+                                                                      .white70,
+                                                                  size: 20,
+                                                                ),
                                                                 const SizedBox(
-                                                                    width: 12),
+                                                                  width: 12,
+                                                                ),
                                                                 const Text(
-                                                                    'Record Clip',
-                                                                    style: TextStyle(
-                                                                        color: Colors
-                                                                            .white,
-                                                                        fontSize:
-                                                                            13)),
+                                                                  'Record Clip',
+                                                                  style: TextStyle(
+                                                                    color: Colors
+                                                                        .white,
+                                                                    fontSize:
+                                                                        13,
+                                                                  ),
+                                                                ),
                                                               ],
                                                             ),
                                                           ),
@@ -5130,20 +5617,23 @@ class _ChatScreenState extends State<ChatScreen>
                                                             child: Row(
                                                               children: [
                                                                 Icon(
-                                                                    Icons
-                                                                        .gif_box_outlined,
-                                                                    color: Colors
-                                                                        .white70,
-                                                                    size: 20),
+                                                                  Icons
+                                                                      .gif_box_outlined,
+                                                                  color: Colors
+                                                                      .white70,
+                                                                  size: 20,
+                                                                ),
                                                                 SizedBox(
-                                                                    width: 12),
+                                                                  width: 12,
+                                                                ),
                                                                 Text(
                                                                   'Import GIF for gifgrep',
                                                                   style: TextStyle(
-                                                                      color: Colors
-                                                                          .white,
-                                                                      fontSize:
-                                                                          13),
+                                                                    color: Colors
+                                                                        .white,
+                                                                    fontSize:
+                                                                        13,
+                                                                  ),
                                                                 ),
                                                               ],
                                                             ),
@@ -5157,21 +5647,24 @@ class _ChatScreenState extends State<ChatScreen>
                                                               child: Row(
                                                                 children: [
                                                                   Icon(
-                                                                      Icons
-                                                                          .delete_outline,
+                                                                    Icons
+                                                                        .delete_outline,
+                                                                    color: Colors
+                                                                        .redAccent,
+                                                                    size: 20,
+                                                                  ),
+                                                                  SizedBox(
+                                                                    width: 12,
+                                                                  ),
+                                                                  Text(
+                                                                    'Clear Attachment',
+                                                                    style: TextStyle(
                                                                       color: Colors
                                                                           .redAccent,
-                                                                      size: 20),
-                                                                  SizedBox(
-                                                                      width:
-                                                                          12),
-                                                                  Text(
-                                                                      'Clear Attachment',
-                                                                      style: TextStyle(
-                                                                          color: Colors
-                                                                              .redAccent,
-                                                                          fontSize:
-                                                                              13)),
+                                                                      fontSize:
+                                                                          13,
+                                                                    ),
+                                                                  ),
                                                                 ],
                                                               ),
                                                             ),
@@ -5184,78 +5677,82 @@ class _ChatScreenState extends State<ChatScreen>
                                                               _textController,
                                                           style:
                                                               const TextStyle(
-                                                                  color: Colors
-                                                                      .white,
-                                                                  fontSize: 15),
+                                                                color: Colors
+                                                                    .white,
+                                                                fontSize: 15,
+                                                              ),
                                                           onChanged: (_) =>
                                                               setState(() {}),
-                                                          decoration:
-                                                              InputDecoration(
-                                                            hintText: _pendingVideoBase64 !=
+                                                          decoration: InputDecoration(
+                                                            hintText:
+                                                                _pendingVideoBase64 !=
                                                                     null
                                                                 ? "Ask about the video..."
                                                                 : _pendingImageBase64 !=
-                                                                        null
-                                                                    ? "Ask about the image..."
-                                                                    : "Message your companion...",
+                                                                      null
+                                                                ? "Ask about the image..."
+                                                                : "Message your companion...",
                                                             hintStyle: TextStyle(
+                                                              color: Colors
+                                                                  .white
+                                                                  .withValues(
+                                                                    alpha: 0.40,
+                                                                  ),
+                                                              fontSize: 14,
+                                                            ),
+                                                            border: OutlineInputBorder(
+                                                              borderRadius:
+                                                                  BorderRadius.circular(
+                                                                    30,
+                                                                  ),
+                                                              borderSide: BorderSide(
                                                                 color: Colors
                                                                     .white
                                                                     .withValues(
-                                                                        alpha:
-                                                                            0.40),
-                                                                fontSize: 14),
-                                                            border:
-                                                                OutlineInputBorder(
-                                                              borderRadius:
-                                                                  BorderRadius
-                                                                      .circular(
-                                                                          30),
-                                                              borderSide: BorderSide(
-                                                                  color: Colors
-                                                                      .white
-                                                                      .withValues(
-                                                                          alpha:
-                                                                              0.1),
-                                                                  width: 0.8),
+                                                                      alpha:
+                                                                          0.1,
+                                                                    ),
+                                                                width: 0.8,
+                                                              ),
                                                             ),
-                                                            enabledBorder:
-                                                                OutlineInputBorder(
+                                                            enabledBorder: OutlineInputBorder(
                                                               borderRadius:
-                                                                  BorderRadius
-                                                                      .circular(
-                                                                          30),
+                                                                  BorderRadius.circular(
+                                                                    30,
+                                                                  ),
                                                               borderSide: BorderSide(
-                                                                  color: Colors
-                                                                      .white
-                                                                      .withValues(
-                                                                          alpha:
-                                                                              0.1),
-                                                                  width: 0.8),
+                                                                color: Colors
+                                                                    .white
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.1,
+                                                                    ),
+                                                                width: 0.8,
+                                                              ),
                                                             ),
-                                                            focusedBorder:
-                                                                OutlineInputBorder(
+                                                            focusedBorder: OutlineInputBorder(
                                                               borderRadius:
-                                                                  BorderRadius
-                                                                      .circular(
-                                                                          30),
+                                                                  BorderRadius.circular(
+                                                                    30,
+                                                                  ),
                                                               borderSide: const BorderSide(
-                                                                  color: AppColors
-                                                                      .statusGreen,
-                                                                  width: 1.0),
+                                                                color: AppColors
+                                                                    .statusGreen,
+                                                                width: 1.0,
+                                                              ),
                                                             ),
                                                             filled: true,
                                                             fillColor: Colors
                                                                 .black
                                                                 .withValues(
-                                                                    alpha:
-                                                                        0.20),
+                                                                  alpha: 0.20,
+                                                                ),
                                                             contentPadding:
-                                                                const EdgeInsets
-                                                                    .symmetric(
-                                                              horizontal: 16,
-                                                              vertical: 12,
-                                                            ),
+                                                                const EdgeInsets.symmetric(
+                                                                  horizontal:
+                                                                      16,
+                                                                  vertical: 12,
+                                                                ),
                                                           ),
                                                           onSubmitted:
                                                               _handleSubmit,
@@ -5275,11 +5772,12 @@ class _ChatScreenState extends State<ChatScreen>
                                                     _chatNobTtsColor();
                                                 final pulse =
                                                     _isGatewayTtsUnavailable
-                                                        ? _glowController.value
-                                                        : 0.0;
+                                                    ? _glowController.value
+                                                    : 0.0;
                                                 return AnimatedContainer(
                                                   duration: const Duration(
-                                                      milliseconds: 180),
+                                                    milliseconds: 180,
+                                                  ),
                                                   decoration: BoxDecoration(
                                                     shape: BoxShape.circle,
                                                     gradient: LinearGradient(
@@ -5288,15 +5786,17 @@ class _ChatScreenState extends State<ChatScreen>
                                                           Alignment.bottomRight,
                                                       colors:
                                                           _chatNobGradientColors(
-                                                              theme),
+                                                            theme,
+                                                          ),
                                                     ),
                                                     boxShadow: [
                                                       BoxShadow(
                                                         color: signalColor
                                                             .withValues(
-                                                                alpha: 0.22 +
-                                                                    pulse *
-                                                                        0.32),
+                                                              alpha:
+                                                                  0.22 +
+                                                                  pulse * 0.32,
+                                                            ),
                                                         blurRadius:
                                                             18 + pulse * 10,
                                                         spreadRadius:
@@ -5306,13 +5806,14 @@ class _ChatScreenState extends State<ChatScreen>
                                                   ),
                                                   child: IconButton(
                                                     icon: const Icon(
-                                                        Icons.send_rounded,
-                                                        color: Colors.white,
-                                                        size: 20),
+                                                      Icons.send_rounded,
+                                                      color: Colors.white,
+                                                      size: 20,
+                                                    ),
                                                     onPressed: () =>
                                                         _handleSubmit(
-                                                            _textController
-                                                                .text),
+                                                          _textController.text,
+                                                        ),
                                                   ),
                                                 );
                                               },
@@ -5345,12 +5846,14 @@ class _ChatScreenState extends State<ChatScreen>
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        blurRadius: 20,
-                        spreadRadius: 5),
+                      color: Colors.black.withValues(alpha: 0.5),
+                      blurRadius: 20,
+                      spreadRadius: 5,
+                    ),
                   ],
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.2),
+                  ),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
@@ -5379,16 +5882,23 @@ class _ChatScreenState extends State<ChatScreen>
                                   _canvasController = null;
                                 });
                                 CanvasCapability().clearController();
-                                unawaited(controller
-                                        ?.loadRequest(Uri.parse('about:blank'))
-                                        .catchError((_) {}) ??
-                                    Future<void>.value());
+                                unawaited(
+                                  controller
+                                          ?.loadRequest(
+                                            Uri.parse('about:blank'),
+                                          )
+                                          .catchError((_) {}) ??
+                                      Future<void>.value(),
+                                );
                               },
                               child: const SizedBox(
                                 width: 48,
                                 height: 48,
-                                child: Icon(Icons.close,
-                                    color: Colors.white, size: 24),
+                                child: Icon(
+                                  Icons.close,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
                               ),
                             ),
                           ),
@@ -5421,7 +5931,8 @@ class _ChatScreenState extends State<ChatScreen>
             AuraDot(
               position: Offset(size.width / 2, voiceOrbY),
               anchorOffset: Offset.zero,
-              isSpeaking: TtsService().isSpeaking ||
+              isSpeaking:
+                  TtsService().isSpeaking ||
                   _isTtsSpeaking ||
                   _ttsQueue.isNotEmpty,
               statusColor: _gatewayTtsAuraColor(),
@@ -5453,8 +5964,8 @@ class _ChatScreenState extends State<ChatScreen>
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
               border: Border(
-                  bottom:
-                      BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -5469,20 +5980,28 @@ class _ChatScreenState extends State<ChatScreen>
                 Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.copy_rounded,
-                          size: 18, color: Colors.white70),
+                      icon: const Icon(
+                        Icons.copy_rounded,
+                        size: 18,
+                        color: Colors.white70,
+                      ),
                       onPressed: () {
                         Clipboard.setData(
-                            ClipboardData(text: _diagnosticLogs.join('\n')));
+                          ClipboardData(text: _diagnosticLogs.join('\n')),
+                        );
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                              content: Text('Logs copied to clipboard')),
+                            content: Text('Logs copied to clipboard'),
+                          ),
                         );
                       },
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded,
-                          size: 18, color: Colors.white70),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: Colors.white70,
+                      ),
                       onPressed: () => setState(() => _showDiagnostics = false),
                     ),
                   ],
@@ -5695,8 +6214,10 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<Map<String, dynamic>> _loadGatewayVoiceControlData() async {
-    final gatewayProvider =
-        Provider.of<GatewayProvider>(context, listen: false);
+    final gatewayProvider = Provider.of<GatewayProvider>(
+      context,
+      listen: false,
+    );
     final prefs = PreferencesService();
     await prefs.init();
 
@@ -5774,12 +6295,13 @@ class _ChatScreenState extends State<ChatScreen>
       final talkCatalog = await gatewayProvider.getTalkCatalog();
       final speech = talkCatalog['speech'];
       if (speech is Map) {
-        final speechActive = (speech['activeProvider'] ??
-                speech['active'] ??
-                speech['provider'] ??
-                '')
-            .toString()
-            .trim();
+        final speechActive =
+            (speech['activeProvider'] ??
+                    speech['active'] ??
+                    speech['provider'] ??
+                    '')
+                .toString()
+                .trim();
         if (speechActive.isNotEmpty) activeProvider = speechActive;
 
         final speechProviders = speech['providers'];
@@ -5824,9 +6346,9 @@ class _ChatScreenState extends State<ChatScreen>
 
     if (voices.isEmpty && activeProvider.isNotEmpty) {
       final providerEntry = providers.cast<Map<String, dynamic>?>().firstWhere(
-            (entry) => entry?['id']?.toString() == activeProvider,
-            orElse: () => null,
-          );
+        (entry) => entry?['id']?.toString() == activeProvider,
+        orElse: () => null,
+      );
       final rawVoices = providerEntry?['voices'];
       if (rawVoices is List) {
         for (final voice in rawVoices) {
@@ -5839,8 +6361,11 @@ class _ChatScreenState extends State<ChatScreen>
               key,
               () => _voiceLabelFromCatalogEntry(voice, v),
             );
-            final gender =
-                _voiceGenderFromCatalogEntry(voice, v, activeProvider);
+            final gender = _voiceGenderFromCatalogEntry(
+              voice,
+              v,
+              activeProvider,
+            );
             if (gender != null) {
               voiceGenders.putIfAbsent(key, () => gender);
             }
@@ -5872,8 +6397,10 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _applyGatewayPersona(String personaId) async {
-    final gatewayProvider =
-        Provider.of<GatewayProvider>(context, listen: false);
+    final gatewayProvider = Provider.of<GatewayProvider>(
+      context,
+      listen: false,
+    );
     await gatewayProvider.setTtsPersona(personaId);
     final prefs = PreferencesService();
     await prefs.init();
@@ -5883,8 +6410,10 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _applyGatewayProvider(String providerId) async {
-    final gatewayProvider =
-        Provider.of<GatewayProvider>(context, listen: false);
+    final gatewayProvider = Provider.of<GatewayProvider>(
+      context,
+      listen: false,
+    );
     await gatewayProvider.setTtsProvider(providerId);
   }
 
@@ -5907,36 +6436,45 @@ class _ChatScreenState extends State<ChatScreen>
                   future: dataFuture,
                   builder: (context, snapshot) {
                     final data = snapshot.data ?? const <String, dynamic>{};
-                    final providers = (data['providers'] as List?)
+                    final providers =
+                        (data['providers'] as List?)
                             ?.cast<Map<String, dynamic>>() ??
                         const <Map<String, dynamic>>[];
-                    final personas = (data['personas'] as List?)
+                    final personas =
+                        (data['personas'] as List?)
                             ?.cast<Map<String, dynamic>>() ??
                         const <Map<String, dynamic>>[];
-                    final voices = (data['voices'] as List?)?.cast<String>() ??
+                    final voices =
+                        (data['voices'] as List?)?.cast<String>() ??
                         const <String>[];
                     final voiceProvidersRaw = data['voiceProviders'];
                     final voiceProviders = voiceProvidersRaw is Map
-                        ? voiceProvidersRaw.map((key, value) =>
-                            MapEntry(key.toString(), value.toString()))
+                        ? voiceProvidersRaw.map(
+                            (key, value) =>
+                                MapEntry(key.toString(), value.toString()),
+                          )
                         : const <String, String>{};
                     final voiceLabelsRaw = data['voiceLabels'];
                     final voiceLabels = voiceLabelsRaw is Map
-                        ? voiceLabelsRaw.map((key, value) =>
-                            MapEntry(key.toString(), value.toString()))
+                        ? voiceLabelsRaw.map(
+                            (key, value) =>
+                                MapEntry(key.toString(), value.toString()),
+                          )
                         : const <String, String>{};
                     final voiceGendersRaw = data['voiceGenders'];
                     final voiceGenders = voiceGendersRaw is Map
-                        ? voiceGendersRaw.map((key, value) =>
-                            MapEntry(key.toString(), value.toString()))
+                        ? voiceGendersRaw.map(
+                            (key, value) =>
+                                MapEntry(key.toString(), value.toString()),
+                          )
                         : const <String, String>{};
 
-                    String activeProvider =
-                        (data['activeProvider'] ?? '').toString();
-                    String activePersona =
-                        (data['activePersona'] ?? 'default').toString();
-                    String selectedVoiceId =
-                        (data['selectedVoiceId'] ?? '').toString();
+                    String activeProvider = (data['activeProvider'] ?? '')
+                        .toString();
+                    String activePersona = (data['activePersona'] ?? 'default')
+                        .toString();
+                    String selectedVoiceId = (data['selectedVoiceId'] ?? '')
+                        .toString();
                     final talkConfigured = data['talkConfigured'] == true;
                     final speed = PreferencesService().ttsSpeed;
 
@@ -5944,9 +6482,11 @@ class _ChatScreenState extends State<ChatScreen>
                       activeProvider = providers.first['id']?.toString() ?? '';
                     }
                     if (selectedVoiceId.isNotEmpty &&
-                        !voices.any((voice) =>
-                            voice.toLowerCase() ==
-                            selectedVoiceId.toLowerCase())) {
+                        !voices.any(
+                          (voice) =>
+                              voice.toLowerCase() ==
+                              selectedVoiceId.toLowerCase(),
+                        )) {
                       selectedVoiceId = '';
                     }
 
@@ -5959,7 +6499,8 @@ class _ChatScreenState extends State<ChatScreen>
                           color: Colors.black.withValues(alpha: 0.6),
                           borderRadius: BorderRadius.circular(28),
                           border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.2)),
+                            color: Colors.white.withValues(alpha: 0.2),
+                          ),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.cyanAccent.withValues(alpha: 0.1),
@@ -5975,8 +6516,11 @@ class _ChatScreenState extends State<ChatScreen>
                             children: [
                               Row(
                                 children: [
-                                  const Icon(Icons.record_voice_over_rounded,
-                                      color: Colors.cyanAccent, size: 20),
+                                  const Icon(
+                                    Icons.record_voice_over_rounded,
+                                    color: Colors.cyanAccent,
+                                    size: 20,
+                                  ),
                                   const SizedBox(width: 12),
                                   Text(
                                     'GATEWAY VOICE',
@@ -5989,8 +6533,11 @@ class _ChatScreenState extends State<ChatScreen>
                                   ),
                                   const Spacer(),
                                   IconButton(
-                                    icon: const Icon(Icons.close,
-                                        color: Colors.white54, size: 20),
+                                    icon: const Icon(
+                                      Icons.close,
+                                      color: Colors.white54,
+                                      size: 20,
+                                    ),
                                     onPressed: () => Navigator.pop(context),
                                   ),
                                 ],
@@ -6001,9 +6548,10 @@ class _ChatScreenState extends State<ChatScreen>
                                 const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 24),
                                   child: Center(
-                                      child: CircularProgressIndicator(
-                                    color: Colors.cyanAccent,
-                                  )),
+                                    child: CircularProgressIndicator(
+                                      color: Colors.cyanAccent,
+                                    ),
+                                  ),
                                 )
                               else ...[
                                 if (_isGatewayTtsUnavailable) ...[
@@ -6011,12 +6559,14 @@ class _ChatScreenState extends State<ChatScreen>
                                     width: double.infinity,
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
-                                      color: _chatNobTtsColor()
-                                          .withValues(alpha: 0.12),
+                                      color: _chatNobTtsColor().withValues(
+                                        alpha: 0.12,
+                                      ),
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
-                                        color: _chatNobTtsColor()
-                                            .withValues(alpha: 0.45),
+                                        color: _chatNobTtsColor().withValues(
+                                          alpha: 0.45,
+                                        ),
                                       ),
                                     ),
                                     child: Row(
@@ -6034,8 +6584,9 @@ class _ChatScreenState extends State<ChatScreen>
                                             _gatewayTtsHealthMessage ??
                                                 'Gateway voice is unavailable right now.',
                                             style: GoogleFonts.outfit(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.82),
+                                              color: Colors.white.withValues(
+                                                alpha: 0.82,
+                                              ),
                                               fontSize: 11,
                                               fontWeight: FontWeight.w600,
                                               height: 1.25,
@@ -6060,13 +6611,17 @@ class _ChatScreenState extends State<ChatScreen>
                                   const SizedBox(height: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 12),
+                                      horizontal: 12,
+                                    ),
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(12),
-                                      color:
-                                          Colors.white.withValues(alpha: 0.05),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.05,
+                                      ),
                                       border: Border.all(
-                                          color: Colors.white12, width: 1),
+                                        color: Colors.white12,
+                                        width: 1,
+                                      ),
                                     ),
                                     child: DropdownButtonHideUnderline(
                                       child: DropdownButton<String>(
@@ -6078,8 +6633,8 @@ class _ChatScreenState extends State<ChatScreen>
                                         items: providers.map((provider) {
                                           final id =
                                               provider['id']?.toString() ?? '';
-                                          final label = provider['name']
-                                                  ?.toString() ??
+                                          final label =
+                                              provider['name']?.toString() ??
                                               provider['label']?.toString() ??
                                               id;
                                           final configured =
@@ -6131,22 +6686,29 @@ class _ChatScreenState extends State<ChatScreen>
                                   const SizedBox(height: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 12),
+                                      horizontal: 12,
+                                    ),
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(12),
-                                      color:
-                                          Colors.white.withValues(alpha: 0.05),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.05,
+                                      ),
                                       border: Border.all(
-                                          color: Colors.white12, width: 1),
+                                        color: Colors.white12,
+                                        width: 1,
+                                      ),
                                     ),
                                     child: DropdownButtonHideUnderline(
                                       child: DropdownButton<String>(
                                         value: selectedVoiceId.isEmpty
                                             ? null
                                             : selectedVoiceId,
-                                        hint: const Text('Provider default',
-                                            style: TextStyle(
-                                                color: Colors.white54)),
+                                        hint: const Text(
+                                          'Provider default',
+                                          style: TextStyle(
+                                            color: Colors.white54,
+                                          ),
+                                        ),
                                         isExpanded: true,
                                         dropdownColor: const Color(0xFF17181F),
                                         items: voices.map((voice) {
@@ -6157,7 +6719,8 @@ class _ChatScreenState extends State<ChatScreen>
                                               voiceLabels[key] ?? voice;
                                           final gender =
                                               voiceGenders[key] ?? 'Unknown';
-                                          final label = owner.isNotEmpty &&
+                                          final label =
+                                              owner.isNotEmpty &&
                                                   owner != activeProvider
                                               ? '$display · $owner'
                                               : display;
@@ -6174,31 +6737,31 @@ class _ChatScreenState extends State<ChatScreen>
                                                 ),
                                                 const SizedBox(width: 8),
                                                 Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 3,
-                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 3,
+                                                      ),
                                                   decoration: BoxDecoration(
                                                     color: _voiceGenderColor(
-                                                            gender)
-                                                        .withValues(
-                                                            alpha: 0.12),
+                                                      gender,
+                                                    ).withValues(alpha: 0.12),
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                            999),
+                                                          999,
+                                                        ),
                                                     border: Border.all(
                                                       color: _voiceGenderColor(
-                                                              gender)
-                                                          .withValues(
-                                                              alpha: 0.55),
+                                                        gender,
+                                                      ).withValues(alpha: 0.55),
                                                     ),
                                                   ),
                                                   child: Text(
                                                     gender,
                                                     style: GoogleFonts.outfit(
                                                       color: _voiceGenderColor(
-                                                          gender),
+                                                        gender,
+                                                      ),
                                                       fontSize: 10,
                                                       fontWeight:
                                                           FontWeight.w800,
@@ -6211,8 +6774,9 @@ class _ChatScreenState extends State<ChatScreen>
                                         }).toList(),
                                         onChanged: (value) async {
                                           if (value == null) return;
-                                          final owner = voiceProviders[
-                                                  value.toLowerCase()] ??
+                                          final owner =
+                                              voiceProviders[value
+                                                  .toLowerCase()] ??
                                               '';
                                           if (owner.isNotEmpty &&
                                               owner != activeProvider) {
@@ -6265,18 +6829,24 @@ class _ChatScreenState extends State<ChatScreen>
                                           });
                                         },
                                         child: AnimatedContainer(
-                                          duration:
-                                              const Duration(milliseconds: 200),
+                                          duration: const Duration(
+                                            milliseconds: 200,
+                                          ),
                                           padding: const EdgeInsets.symmetric(
-                                              horizontal: 14, vertical: 9),
+                                            horizontal: 14,
+                                            vertical: 9,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: isSelected
-                                                ? Colors.cyanAccent
-                                                    .withValues(alpha: 0.2)
-                                                : Colors.white
-                                                    .withValues(alpha: 0.05),
-                                            borderRadius:
-                                                BorderRadius.circular(14),
+                                                ? Colors.cyanAccent.withValues(
+                                                    alpha: 0.2,
+                                                  )
+                                                : Colors.white.withValues(
+                                                    alpha: 0.05,
+                                                  ),
+                                            borderRadius: BorderRadius.circular(
+                                              14,
+                                            ),
                                             border: Border.all(
                                               color: isSelected
                                                   ? Colors.cyanAccent
@@ -6303,8 +6873,11 @@ class _ChatScreenState extends State<ChatScreen>
                                 ],
                                 Row(
                                   children: [
-                                    const Icon(Icons.speed,
-                                        color: Colors.white54, size: 16),
+                                    const Icon(
+                                      Icons.speed,
+                                      color: Colors.white54,
+                                      size: 16,
+                                    ),
                                     const SizedBox(width: 8),
                                     Text(
                                       'SPEECH SPEED',
@@ -6354,33 +6927,34 @@ class _ChatScreenState extends State<ChatScreen>
                                         : () async {
                                             final gatewayProvider =
                                                 Provider.of<GatewayProvider>(
-                                                    context,
-                                                    listen: false);
+                                                  context,
+                                                  listen: false,
+                                                );
                                             final result = await gatewayProvider
                                                 .speakTextViaTalk(
-                                              'Voice check complete.',
-                                            );
+                                                  'Voice check complete.',
+                                                );
                                             if (!context.mounted) return;
                                             _setGatewayTtsHealth(
                                               result.played
                                                   ? _GatewayTtsHealth.normal
                                                   : result.allowNativeFallback ||
-                                                          result.status
-                                                              .contains(
-                                                                  'backoff')
-                                                      ? _GatewayTtsHealth
-                                                          .degraded
-                                                      : _GatewayTtsHealth
-                                                          .failed,
+                                                        result.status.contains(
+                                                          'backoff',
+                                                        )
+                                                  ? _GatewayTtsHealth.degraded
+                                                  : _GatewayTtsHealth.failed,
                                               message: result.displayMessage,
                                             );
                                             if (!result.played &&
                                                 result.displayMessage != null) {
-                                              ScaffoldMessenger.of(context)
-                                                  .showSnackBar(
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
                                                 SnackBar(
                                                   content: Text(
-                                                      result.displayMessage!),
+                                                    result.displayMessage!,
+                                                  ),
                                                   backgroundColor:
                                                       Colors.orangeAccent,
                                                 ),
@@ -6419,7 +6993,8 @@ class _ChatScreenState extends State<ChatScreen>
           opacity: anim1,
           child: ScaleTransition(
             scale: Tween<double>(begin: 0.8, end: 1.0).animate(
-                CurvedAnimation(parent: anim1, curve: Curves.easeOutBack)),
+              CurvedAnimation(parent: anim1, curve: Curves.easeOutBack),
+            ),
             child: child,
           ),
         );

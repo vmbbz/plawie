@@ -7,18 +7,16 @@ import 'ai_payment_provider_catalog.dart';
 import 'commerce_receipt.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
+import 'provider_balance_service.dart';
 import 'x402_payment_service.dart';
 
-typedef X402AuthorizationSigner = Future<Map<String, dynamic>> Function(
-  Map<String, dynamic> authorization,
-);
+typedef X402AuthorizationSigner =
+    Future<Map<String, dynamic>> Function(Map<String, dynamic> authorization);
+typedef X402ProviderBalanceRefresher =
+    Future<void> Function(String providerId, String walletAddress);
 
 class X402TransportException implements Exception {
-  const X402TransportException(
-    this.code,
-    this.message, {
-    this.httpStatus,
-  });
+  const X402TransportException(this.code, this.message, {this.httpStatus});
 
   final String code;
   final String message;
@@ -45,7 +43,7 @@ class PreparedX402Payment {
 
 class X402PaymentReceiptStore {
   X402PaymentReceiptStore({PreferencesService? preferences})
-      : _preferences = preferences ?? PreferencesService();
+    : _preferences = preferences ?? PreferencesService();
 
   static const int maxReceipts = 40;
   final PreferencesService _preferences;
@@ -57,9 +55,11 @@ class X402PaymentReceiptStore {
       try {
         final decoded = jsonDecode(encoded);
         if (decoded is Map) {
-          receipts.add(X402PaymentReceipt.fromJson(
-            decoded.map((key, value) => MapEntry(key.toString(), value)),
-          ));
+          receipts.add(
+            X402PaymentReceipt.fromJson(
+              decoded.map((key, value) => MapEntry(key.toString(), value)),
+            ),
+          );
         }
       } catch (_) {
         // Ignore old or corrupt redacted receipts individually.
@@ -99,14 +99,16 @@ class X402PaymentTransportService {
     X402AuthorizationSigner? signer,
     X402PaymentReceiptStore? receiptStore,
     CommerceReceiptStore? commerceReceiptStore,
+    X402ProviderBalanceRefresher? balanceRefresher,
     DateTime Function()? clock,
-  })  : _client = client ?? http.Client(),
-        _ownsClient = client == null,
-        approvalService = approvalService ?? X402PaymentApprovalService(),
-        _signer = signer ?? NativeBridge.signSecureX402Authorization,
-        receiptStore = receiptStore ?? X402PaymentReceiptStore(),
-        commerceReceiptStore = commerceReceiptStore ?? CommerceReceiptStore(),
-        _clock = clock ?? DateTime.now;
+  }) : _client = client ?? http.Client(),
+       _ownsClient = client == null,
+       approvalService = approvalService ?? X402PaymentApprovalService(),
+       _signer = signer ?? NativeBridge.signSecureX402Authorization,
+       _balanceRefresher = balanceRefresher ?? _refreshProviderBalance,
+       receiptStore = receiptStore ?? X402PaymentReceiptStore(),
+       commerceReceiptStore = commerceReceiptStore ?? CommerceReceiptStore(),
+       _clock = clock ?? DateTime.now;
 
   static const int maxChallengeHeaderBytes = 32 * 1024;
   static const int maxResponseBytes = 256 * 1024;
@@ -114,6 +116,7 @@ class X402PaymentTransportService {
   final http.Client _client;
   final bool _ownsClient;
   final X402AuthorizationSigner _signer;
+  final X402ProviderBalanceRefresher _balanceRefresher;
   final DateTime Function() _clock;
   final X402PaymentApprovalService approvalService;
   final X402PaymentReceiptStore receiptStore;
@@ -151,7 +154,8 @@ class X402PaymentTransportService {
         httpStatus: response.statusCode,
       );
     }
-    final required = _header(response.headers, 'payment-required') ??
+    final required =
+        _header(response.headers, 'payment-required') ??
         _header(response.headers, 'x-payment-required');
     if (required == null || required.isEmpty) {
       throw const X402TransportException(
@@ -171,11 +175,10 @@ class X402PaymentTransportService {
     final challenge = X402PaymentChallenge.fromHeader(
       required,
       policy: policy,
-      // Venice's top-up discovery challenge currently omits the optional
-      // PaymentRequired.resource object. The request URL is already fixed by
-      // the provider catalog and host policy, so use it only as a strict
-      // binding fallback.
-      fallbackResourceUrl: endpoint,
+      resourceUrlFallback: provider.allowsResourceLessTopUpChallenge
+          ? endpoint
+          : null,
+      resourceDescriptionFallback: '${provider.label} x402 top-up',
     );
     final intent = approvalService.createIntent(
       challenge: challenge,
@@ -222,7 +225,7 @@ class X402PaymentTransportService {
       final now = _clock().toUtc();
       final validAfter =
           now.subtract(const Duration(seconds: 5)).millisecondsSinceEpoch ~/
-              1000;
+          1000;
       final validBefore = intent.expiresAt.millisecondsSinceEpoch ~/ 1000;
       final requirement = intent.challenge.requirement;
       final signatureResult = await _signer(<String, dynamic>{
@@ -248,26 +251,16 @@ class X402PaymentTransportService {
         );
       }
 
-      final authorization = <String, dynamic>{
-        'from': payer,
-        'to': requirement.payTo,
-        'value': requirement.amount,
-        'validAfter': validAfter,
-        'validBefore': validBefore,
-        'nonce': intent.paymentNonce,
-      };
-      final paymentPayload = <String, dynamic>{
-        'x402Version': intent.challenge.x402Version,
-        if (intent.challenge.resource != null)
-          'resource': intent.challenge.resource,
-        'accepted': requirement.toJson(),
-        'payload': <String, dynamic>{
-          'signature': signature,
-          'authorization': authorization,
-        },
-      };
-      final paymentHeader =
-          base64Encode(utf8.encode(jsonEncode(paymentPayload)));
+      final paymentPayload = buildX402V2PaymentPayload(
+        intent: intent,
+        signature: signature,
+        payer: payer,
+        validAfter: validAfter,
+        validBefore: validBefore,
+      );
+      final paymentHeader = base64Encode(
+        utf8.encode(jsonEncode(paymentPayload)),
+      );
 
       approvalService.markSubmitted(intent.intentId);
       submitted = true;
@@ -291,14 +284,18 @@ class X402PaymentTransportService {
         errorCode: settled ? null : 'SETTLEMENT_HTTP_${response.statusCode}',
       );
       await _appendSafely(receipt);
+      if (settled) {
+        await _refreshBalanceSafely(payment.provider.id, normalizedWallet);
+      }
       return receipt;
     } catch (error) {
       final active = approvalService.activeIntent;
       if (active != null && active.intentId == payment.intent.intentId) {
         final receipt = approvalService.recordReceipt(
           intentId: active.intentId,
-          state:
-              submitted ? X402PaymentState.uncertain : X402PaymentState.failed,
+          state: submitted
+              ? X402PaymentState.uncertain
+              : X402PaymentState.failed,
           providerId: payment.provider.id,
           errorCode: submitted ? 'SETTLEMENT_UNCERTAIN' : 'SIGNING_FAILED',
         );
@@ -328,13 +325,14 @@ class X402PaymentTransportService {
       ..persistentConnection = false
       ..headers.addAll(headers)
       ..bodyBytes = body;
-    final streamed = await _client.send(request).timeout(
-          const Duration(seconds: 30),
-        );
+    final streamed = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 30));
     final bytes = BytesBuilder(copy: false);
     var length = 0;
-    await for (final chunk
-        in streamed.stream.timeout(const Duration(seconds: 30))) {
+    await for (final chunk in streamed.stream.timeout(
+      const Duration(seconds: 30),
+    )) {
       length += chunk.length;
       if (length > maxResponseBytes) {
         throw const X402TransportException(
@@ -354,7 +352,8 @@ class X402PaymentTransportService {
   }
 
   String? _transactionHash(http.Response response) {
-    final encoded = _header(response.headers, 'payment-response') ??
+    final encoded =
+        _header(response.headers, 'payment-response') ??
         _header(response.headers, 'x-payment-response');
     if (encoded != null && encoded.length <= maxChallengeHeaderBytes) {
       final decoded = _decodeHeader(encoded);
@@ -382,6 +381,30 @@ class X402PaymentTransportService {
       // The commerce projection is best-effort and never changes settlement
       // semantics or makes a confirmed provider payment retryable.
     }
+  }
+
+  Future<void> _refreshBalanceSafely(
+    String providerId,
+    String walletAddress,
+  ) async {
+    try {
+      await _balanceRefresher(providerId, walletAddress);
+    } catch (_) {
+      // A provider-confirmed settlement remains terminal when a follow-up
+      // balance read is temporarily unavailable.
+    }
+  }
+
+  static Future<void> _refreshProviderBalance(
+    String providerId,
+    String walletAddress,
+  ) async {
+    final provider = AiPaymentProviderCatalog.byId(providerId);
+    if (provider == null) return;
+    await ProviderBalanceService.instance.refreshWalletProvider(
+      provider: provider,
+      walletAddress: walletAddress,
+    );
   }
 
   dynamic _decodeHeader(String header) {

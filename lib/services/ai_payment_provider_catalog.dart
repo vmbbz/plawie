@@ -1,16 +1,8 @@
-enum AiPaymentFundingMode {
-  prepaidBalance,
-  perRequest,
-}
+enum AiPaymentFundingMode { prepaidBalance, perRequest }
 
-enum AiPaymentConnectionMode {
-  walletIdentity,
-}
+enum AiPaymentConnectionMode { walletIdentity }
 
-enum AiPaymentHeaderContract {
-  paymentSignatureV2,
-  x402Payment,
-}
+enum AiPaymentHeaderContract { paymentSignatureV2, x402Payment }
 
 /// How a provider contract could attribute or settle Plawie commission.
 ///
@@ -39,6 +31,7 @@ class AiPaymentProviderOption {
     required this.supportsTopUp,
     required this.paymentHeaderContract,
     this.monetizationMode = AiPaymentMonetizationMode.none,
+    this.allowsResourceLessTopUpChallenge = false,
     this.topUpEndpoint,
     this.balanceEndpointTemplate,
   });
@@ -53,18 +46,23 @@ class AiPaymentProviderOption {
   final bool supportsTopUp;
   final AiPaymentHeaderContract paymentHeaderContract;
   final AiPaymentMonetizationMode monetizationMode;
+
+  /// An explicit compatibility exception for a provider whose documented
+  /// top-up `PAYMENT-REQUIRED` header omits the normal x402 `resource` field.
+  /// The transport substitutes only its catalogued HTTPS top-up endpoint.
+  final bool allowsResourceLessTopUpChallenge;
   final Uri? topUpEndpoint;
   final String? balanceEndpointTemplate;
 
   String get fundingLabel => switch (fundingMode) {
-        AiPaymentFundingMode.prepaidBalance => 'Prepaid provider balance',
-        AiPaymentFundingMode.perRequest => 'Pay per request',
-      };
+    AiPaymentFundingMode.prepaidBalance => 'Prepaid provider balance',
+    AiPaymentFundingMode.perRequest => 'Pay per request',
+  };
 
   String get paymentHeaderName => switch (paymentHeaderContract) {
-        AiPaymentHeaderContract.paymentSignatureV2 => 'PAYMENT-SIGNATURE',
-        AiPaymentHeaderContract.x402Payment => 'X-402-Payment',
-      };
+    AiPaymentHeaderContract.paymentSignatureV2 => 'PAYMENT-SIGNATURE',
+    AiPaymentHeaderContract.x402Payment => 'X-402-Payment',
+  };
 }
 
 class AiPaymentProviderCatalog {
@@ -74,8 +72,8 @@ class AiPaymentProviderCatalog {
   static const String usdcContract =
       '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
-  static final List<AiPaymentProviderOption> providers =
-      <AiPaymentProviderOption>[
+  static final List<AiPaymentProviderOption>
+  providers = <AiPaymentProviderOption>[
     AiPaymentProviderOption(
       id: 'venice',
       label: 'Venice',
@@ -88,6 +86,7 @@ class AiPaymentProviderCatalog {
       supportsTopUp: true,
       paymentHeaderContract: AiPaymentHeaderContract.x402Payment,
       monetizationMode: AiPaymentMonetizationMode.none,
+      allowsResourceLessTopUpChallenge: true,
       topUpEndpoint: Uri.parse('https://api.venice.ai/api/v1/x402/top-up'),
       balanceEndpointTemplate:
           'https://api.venice.ai/api/v1/x402/balance/{walletAddress}',

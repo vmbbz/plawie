@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/native_bridge.dart';
+import 'setup_wizard_screen.dart';
 import '../widgets/glass_card.dart';
 import '../app.dart';
 
@@ -16,15 +18,63 @@ class TerminalScreen extends StatefulWidget {
 class _TerminalScreenState extends State<TerminalScreen> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _historyFocusNode = FocusNode();
   final List<OutputLine> _output = [];
   bool _isRunning = false;
+  bool? _rollbackReady;
+  String? _rollbackStatusError;
   final List<String> _history = [];
   int _historyIndex = -1;
 
   @override
   void initState() {
     super.initState();
-    _addOutput('🚀 Plawie Stable Terminal ready.\nType openclaw commands below.\n', isSystem: true);
+    _addOutput(
+      'Plawie rollback terminal.\n'
+      'Checking the optional PRoot environment...\n',
+      isSystem: true,
+    );
+    unawaited(_refreshRollbackStatus());
+  }
+
+  Future<void> _refreshRollbackStatus() async {
+    try {
+      final status = await NativeBridge.getBootstrapStatus();
+      if (!mounted) return;
+      final ready = status['binBashExists'] == true;
+      setState(() {
+        _rollbackReady = ready;
+        _rollbackStatusError = null;
+      });
+      _addOutput(
+        ready
+            ? 'PRoot rollback is installed. It starts only when you run a command.\n'
+            : 'PRoot rollback is not installed. Native Gateway remains active; open rollback setup only if you want this shell.\n',
+        isSystem: true,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _rollbackReady = false;
+        _rollbackStatusError = error.toString();
+      });
+      _addOutput('Could not verify rollback status: $error', isError: true);
+    }
+  }
+
+  Future<void> _openRollbackSetup() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const SetupWizardScreen()),
+    );
+    if (mounted) await _refreshRollbackStatus();
+  }
+
+  @override
+  void dispose() {
+    _inputController.dispose();
+    _scrollController.dispose();
+    _historyFocusNode.dispose();
+    super.dispose();
   }
 
   void _addOutput(String text, {bool isError = false, bool isSystem = false}) {
@@ -48,7 +98,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   void _navigateHistory(int offset) {
     if (_history.isEmpty) return;
-    
+
     final newIndex = _historyIndex + offset;
     if (newIndex >= -1 && newIndex < _history.length) {
       setState(() {
@@ -67,6 +117,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   Future<void> _runCommand() async {
+    if (_rollbackReady != true) {
+      await _openRollbackSetup();
+      return;
+    }
     final cmd = _inputController.text.trim();
     if (cmd.isEmpty || _isRunning) return;
 
@@ -77,9 +131,17 @@ class _TerminalScreenState extends State<TerminalScreen> {
     setState(() => _isRunning = true);
 
     try {
-      final result = await NativeBridge.runInProot(cmd, timeout: 120);
-      _addOutput(result, isError: false);
+      final result = await NativeBridge.runInProot(
+        cmd,
+        timeout: 120,
+      );
+      if (!mounted) return;
+      _addOutput(
+        result.trim().isEmpty ? '(command completed)\n' : result,
+        isError: false,
+      );
     } catch (e) {
+      if (!mounted) return;
       _addOutput('ERROR: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isRunning = false);
@@ -101,6 +163,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: Column(
                     children: [
+                      if (_rollbackReady != true) _buildRollbackReadinessCard(),
                       Expanded(
                         child: GlassCard(
                           blurStrength: 30,
@@ -120,8 +183,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
                                       color: line.isError
                                           ? Colors.redAccent
                                           : line.isSystem
-                                               ? AppColors.statusGreen.withValues(alpha: 0.8)
-                                               : Colors.white.withValues(alpha: 0.9),
+                                              ? AppColors.statusGreen
+                                                  .withValues(alpha: 0.8)
+                                              : Colors.white
+                                                  .withValues(alpha: 0.9),
                                       fontSize: 12,
                                       height: 1.2,
                                       letterSpacing: -0.2,
@@ -143,38 +208,51 @@ class _TerminalScreenState extends State<TerminalScreen> {
                           children: [
                             Expanded(
                               child: KeyboardListener(
-                                focusNode: FocusNode(),
+                                focusNode: _historyFocusNode,
                                 onKeyEvent: (event) {
                                   if (event is KeyDownEvent) {
-                                    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                                    if (event.logicalKey ==
+                                        LogicalKeyboardKey.arrowUp) {
                                       _navigateHistory(1);
-                                    } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                                    } else if (event.logicalKey ==
+                                        LogicalKeyboardKey.arrowDown) {
                                       _navigateHistory(-1);
                                     }
                                   }
                                 },
                                 child: TextField(
                                   controller: _inputController,
+                                  enabled:
+                                      _rollbackReady == true && !_isRunning,
                                   style: GoogleFonts.jetBrainsMono(
                                     color: Colors.white,
                                     fontSize: 13,
                                   ),
                                   decoration: InputDecoration(
-                                    hintText: 'Enter command...',
+                                    hintText: _rollbackReady == null
+                                        ? 'Checking rollback shell...'
+                                        : _rollbackReady == true
+                                            ? 'Enter command...'
+                                            : 'Rollback shell not installed',
                                     hintStyle: GoogleFonts.jetBrainsMono(
-                                      color: Colors.white.withValues(alpha: 0.3),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.3),
                                       fontSize: 13,
                                     ),
                                     filled: true,
-                                    fillColor: Colors.white.withValues(alpha: 0.05),
+                                    fillColor:
+                                        Colors.white.withValues(alpha: 0.05),
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(12),
                                       borderSide: BorderSide(
-                                        color: Colors.white.withValues(alpha: 0.1),
+                                        color:
+                                            Colors.white.withValues(alpha: 0.1),
                                       ),
                                     ),
-                                    prefixIcon: Icon(Icons.chevron_right, color: AppColors.statusGreen),
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    prefixIcon: Icon(Icons.chevron_right,
+                                        color: AppColors.statusGreen),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
                                   ),
                                   onSubmitted: (_) => _runCommand(),
                                 ),
@@ -185,24 +263,36 @@ class _TerminalScreenState extends State<TerminalScreen> {
                               children: [
                                 GestureDetector(
                                   onTap: () => _navigateHistory(1),
-                                  child: Icon(Icons.keyboard_arrow_up, size: 20, color: Colors.white.withValues(alpha: 0.5)),
+                                  child: Icon(Icons.keyboard_arrow_up,
+                                      size: 20,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.5)),
                                 ),
                                 GestureDetector(
                                   onTap: () => _navigateHistory(-1),
-                                  child: Icon(Icons.keyboard_arrow_down, size: 20, color: Colors.white.withValues(alpha: 0.5)),
+                                  child: Icon(Icons.keyboard_arrow_down,
+                                      size: 20,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.5)),
                                 ),
                               ],
                             ),
                             const SizedBox(width: 8),
                             Container(
                               decoration: BoxDecoration(
-                                color: AppColors.statusGreen.withValues(alpha: 0.1),
+                                color: AppColors.statusGreen
+                                    .withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: AppColors.statusGreen.withValues(alpha: 0.3)),
+                                border: Border.all(
+                                    color: AppColors.statusGreen
+                                        .withValues(alpha: 0.3)),
                               ),
                               child: IconButton(
-                                onPressed: _isRunning ? null : _runCommand,
-                                icon: Icon(Icons.send_rounded, color: AppColors.statusGreen),
+                                onPressed: _rollbackReady == true && !_isRunning
+                                    ? _runCommand
+                                    : null,
+                                icon: Icon(Icons.send_rounded,
+                                    color: AppColors.statusGreen),
                               ),
                             ),
                           ],
@@ -219,9 +309,81 @@ class _TerminalScreenState extends State<TerminalScreen> {
     );
   }
 
+  Widget _buildRollbackReadinessCard() {
+    final checking = _rollbackReady == null;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (checking)
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            const Icon(Icons.shield_outlined, color: Colors.amber),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  checking
+                      ? 'Checking rollback shell'
+                      : 'Optional rollback shell not installed',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  checking
+                      ? 'Verifying the local fallback without starting it.'
+                      : _rollbackStatusError ??
+                          'Plawie remains native-first. Install the separate Ubuntu PRoot environment only if you want this manual fallback terminal.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.68),
+                    height: 1.3,
+                  ),
+                ),
+                if (!checking) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: _openRollbackSetup,
+                        icon: const Icon(Icons.download_outlined, size: 18),
+                        label: const Text('Open rollback setup'),
+                      ),
+                      TextButton(
+                        onPressed: _refreshRollbackStatus,
+                        child: const Text('Check again'),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 100,
+      expandedHeight: AppLayout.standardSliverHeaderHeight,
       floating: false,
       pinned: true,
       elevation: 0,
@@ -266,7 +428,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
   void _copyAllOutput() {
     final allText = _output.map((e) => e.text).join('\n');
     Clipboard.setData(ClipboardData(text: allText));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Copied all output')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('✅ Copied all output')));
   }
 
   void _clearOutput() {

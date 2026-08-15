@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../constants.dart';
 import 'device_identity.dart';
 import 'openclaw_service.dart';
+import 'runtime_credential_store.dart';
 
 /// Persistent WebSocket connection to the OpenClaw gateway.
 ///
@@ -38,8 +39,6 @@ class GatewayConnection {
   // 50 attempts ≈ 12+ minutes of exponential backoff.
   // 10 was too small for phones that can be dormant for hours.
   static const _maxReconnectAttempts = 50;
-
-  static const _prefDeviceToken = 'openclaw_operator_device_token';
 
   final DeviceIdentity _identity = DeviceIdentity.operator;
   bool _identityLoaded = false;
@@ -78,8 +77,6 @@ class GatewayConnection {
   /// The device ID loaded by the identity module. Non-null after connect() is called.
   String? get deviceId => _identity.deviceId;
 
-  /// Shared-prefs key — exposed so callers can purge the token on pairing recovery.
-  static const prefDeviceToken = _prefDeviceToken;
   static const prefWsProtocol = _prefWsProtocol;
 
   Completer<void>? _handshakeCompleter;
@@ -121,7 +118,8 @@ class GatewayConnection {
       // Including this token in the auth block lets the gateway skip the
       // scope-upgrade audit on reconnect, preventing pairing-required loops.
       final prefs = await SharedPreferences.getInstance();
-      _deviceToken = prefs.getString(_prefDeviceToken);
+      await RuntimeCredentialStore.instance.init(prefs);
+      _deviceToken = RuntimeCredentialStore.instance.operatorDeviceToken;
       final storedProtocol =
           prefs.getInt(_prefWsProtocol) ?? AppConstants.wsProtocolMaxVersion;
       _preferredProtocol = _sanitizeProtocol(storedProtocol);
@@ -336,9 +334,11 @@ class GatewayConnection {
           final newDeviceToken = auth?['deviceToken'] as String?;
           if (newDeviceToken != null && newDeviceToken.isNotEmpty) {
             _deviceToken = newDeviceToken;
-            unawaited(SharedPreferences.getInstance().then(
-              (prefs) => prefs.setString(_prefDeviceToken, newDeviceToken),
-            ));
+            unawaited(
+              RuntimeCredentialStore.instance
+                  .setOperatorDeviceToken(newDeviceToken)
+                  .catchError((Object _) {}),
+            );
           }
         }
 
@@ -701,6 +701,105 @@ class GatewayConnection {
     };
   }
 
+  /// Id-less Gateway events are intentionally broadcast to active request
+  /// streams because chat turns consume them. Unary RPCs must ignore those
+  /// events and wait for their correlated terminal response instead.
+  static bool isTerminalRpcResponseFrame(Map<String, dynamic> frame) {
+    final type = frame['type'];
+    return type == 'res' || type == 'error';
+  }
+
+  /// Whether a `sessions.patch` response is an acknowledged success.
+  ///
+  /// Current Gateways return the protocol-v3 `ok: true` envelope and a
+  /// structured result containing the resolved canonical model. OpenClaw
+  /// 2026.7.1 can instead return the legacy mutation receipt
+  /// `{type: "res", payload: {ts: <epoch-ms>}}`. Keep that compatibility
+  /// narrow: an explicit failure or error never succeeds, and an untyped or
+  /// otherwise empty response is not accepted.
+  static bool isSessionPatchAcknowledged(
+    Map<String, dynamic> response, {
+    String? expectedModel,
+  }) {
+    if (response['type'] != 'res' ||
+        response['ok'] == false ||
+        response['error'] != null ||
+        response['errorCode'] != null ||
+        response['errorMessage'] != null) {
+      return false;
+    }
+    if (response['ok'] == true) {
+      final payload = response['payload'];
+      if (payload is! Map || payload['ok'] != true) return false;
+
+      final expected = expectedModel?.trim() ?? '';
+      if (expected.isEmpty) return true;
+      final separator = expected.indexOf('/');
+      if (separator <= 0 || separator == expected.length - 1) return false;
+
+      final resolved = payload['resolved'];
+      if (resolved is! Map) return false;
+      final provider = resolved['modelProvider']?.toString().trim() ?? '';
+      final model = resolved['model']?.toString().trim() ?? '';
+      return provider == expected.substring(0, separator) &&
+          model == expected.substring(separator + 1);
+    }
+
+    return expectedModel?.trim().isEmpty != false &&
+        isLegacySessionPatchReceipt(response);
+  }
+
+  /// OpenClaw 2026.7.1 mutation receipt. It proves only that a patch was
+  /// accepted, not which provider/model the session resolved to.
+  static bool isLegacySessionPatchReceipt(Map<String, dynamic> response) {
+    if (response['type'] != 'res' ||
+        response['ok'] == false ||
+        response['error'] != null ||
+        response['errorCode'] != null ||
+        response['errorMessage'] != null) {
+      return false;
+    }
+    final payload = response['payload'];
+    if (payload is! Map || payload.length != 1 || !payload.containsKey('ts')) {
+      return false;
+    }
+    final ts = payload['ts'];
+    return ts is num && ts.isFinite && ts > 0;
+  }
+
+  /// Verifies the exact session provider/model in a `sessions.list` response.
+  /// This closes the identity gap left by legacy timestamp-only patch ACKs.
+  static bool sessionListConfirmsModel(
+    Map<String, dynamic> response, {
+    required String sessionKey,
+    required String expectedModel,
+  }) {
+    final separator = expectedModel.indexOf('/');
+    if (separator <= 0 || separator == expectedModel.length - 1) return false;
+    final expectedProvider = expectedModel.substring(0, separator);
+    final expectedUpstream = expectedModel.substring(separator + 1);
+    final payload =
+        response['payload'] is Map ? response['payload'] as Map : response;
+    final sessions = payload['sessions'];
+    if (sessions is! List) return false;
+
+    for (final value in sessions) {
+      if (value is! Map) continue;
+      final key = (value['key'] ?? value['sessionKey'])?.toString().trim();
+      if (key != sessionKey) continue;
+      final resolved =
+          value['resolved'] is Map ? value['resolved'] as Map : value;
+      final provider = resolved['modelProvider']?.toString().trim() ?? '';
+      final model = resolved['model']?.toString().trim() ?? '';
+      if (provider == expectedProvider && model == expectedUpstream) {
+        return true;
+      }
+      if (model == expectedModel) return true;
+      return false;
+    }
+    return false;
+  }
+
   /// Update supported session metadata in-memory and wait for Gateway ACK.
   ///
   /// Waiting for the response is important: fire-and-forget patches made an
@@ -721,9 +820,37 @@ class GatewayConnection {
         : mainSessionKey ?? 'main';
     final response = await sendRequest(
       buildSessionPatchRequest(metadata, sessionKey: key),
-    ).first.timeout(const Duration(seconds: 10));
+    )
+        .firstWhere(isTerminalRpcResponseFrame)
+        .timeout(const Duration(seconds: 10));
 
-    if (response['type'] == 'res' && response['ok'] == true) return;
+    if (isSessionPatchAcknowledged(
+      response,
+      expectedModel: metadata['model']?.toString(),
+    )) {
+      return;
+    }
+
+    final expectedModel = metadata['model']?.toString().trim() ?? '';
+    if (expectedModel.isNotEmpty && isLegacySessionPatchReceipt(response)) {
+      final sessionSnapshot = await sendRequest(<String, dynamic>{
+        'method': 'sessions.list',
+        'params': <String, dynamic>{},
+      })
+          .firstWhere(isTerminalRpcResponseFrame)
+          .timeout(const Duration(seconds: 10));
+      if (sessionListConfirmsModel(
+        sessionSnapshot,
+        sessionKey: key,
+        expectedModel: expectedModel,
+      )) {
+        return;
+      }
+      throw StateError(
+        'sessions.patch was accepted by a legacy Gateway, but the live '
+        'session snapshot did not confirm $expectedModel for $key',
+      );
+    }
 
     final error = response['error'] ?? response['payload'] ?? response;
     final message = error is Map

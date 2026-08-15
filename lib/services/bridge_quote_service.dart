@@ -1,7 +1,8 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:http/http.dart' as http;
+
+import 'bridge/bridge_http_client.dart';
+import 'bridge/bridge_models.dart' as domain;
+import 'bridge/lifi_bridge_service.dart';
 
 enum BridgeChainType { evm, svm }
 
@@ -116,6 +117,7 @@ class BridgeQuote {
 
 class BridgeQuoteException implements Exception {
   const BridgeQuoteException(this.message, {this.httpStatus});
+
   final String message;
   final int? httpStatus;
 
@@ -123,40 +125,29 @@ class BridgeQuoteException implements Exception {
   String toString() => message;
 }
 
-class _ResolvedBridgeToken {
-  const _ResolvedBridgeToken({
-    required this.address,
-    required this.chainId,
-    required this.symbol,
-    required this.decimals,
-  });
-
-  final String address;
-  final int chainId;
-  final String symbol;
-  final int decimals;
-}
-
-/// Quote-only inbound funding for the internal Base wallet.
+/// Estimate-only inbound funding for the internal Base wallet.
 ///
-/// LI.FI runtime discovery proves current chain/connection/route support. Raw
-/// transaction calldata is discarded and cannot reach the internal signer.
-/// The user completes the source-chain transaction in an external wallet.
+/// The shared LI.FI service performs strict runtime discovery and quote-field
+/// validation. This compatibility API receives only [domain.BridgeEstimate],
+/// so executable transaction payloads cannot cross into chat or the internal
+/// Base signer.
 class BridgeQuoteService {
   BridgeQuoteService({
     http.Client? client,
     DateTime Function()? clock,
   })  : _client = client ?? http.Client(),
         _ownsClient = client == null,
-        _clock = clock ?? DateTime.now;
+        _clock = clock ?? DateTime.now {
+    _transport = BridgeHttpClient(client: _client);
+    _lifi = LifiBridgeService(transport: _transport, clock: _clock);
+  }
 
-  static const int ethereumChainId = 1;
-  static const int robinhoodChainId = 4663;
-  static const int baseChainId = 8453;
-  static const int solanaChainId = 1151111081099710;
+  static const int ethereumChainId = domain.BridgeConstants.ethereumChainId;
+  static const int robinhoodChainId = domain.BridgeConstants.robinhoodChainId;
+  static const int baseChainId = domain.BridgeConstants.baseChainId;
+  static const int solanaChainId = domain.BridgeConstants.solanaChainId;
   static const int maxResponseBytes = 1024 * 1024;
-  static const String baseUsdcContract =
-      '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+  static const String baseUsdcContract = domain.BridgeConstants.baseUsdc;
 
   static const List<BridgeSourceChain> sourceChains = <BridgeSourceChain>[
     BridgeSourceChain(
@@ -185,8 +176,8 @@ class BridgeQuoteService {
   final http.Client _client;
   final bool _ownsClient;
   final DateTime Function() _clock;
-  Set<int>? _supportedChainIds;
-  DateTime? _chainsRefreshedAt;
+  late final BridgeHttpClient _transport;
+  late final LifiBridgeService _lifi;
 
   Future<BridgeQuote> quoteToBaseUsdc(BridgeQuoteRequest request) async {
     final sourceAddress = request.sourceAddress.trim();
@@ -201,339 +192,85 @@ class BridgeQuoteService {
         'A valid internal Base destination wallet is required.',
       );
     }
-    final token = request.sourceToken.trim().toUpperCase();
-    if (token != request.sourceChain.nativeToken && token != 'USDC') {
+    final symbol = request.sourceToken.trim().toUpperCase();
+    if (symbol != request.sourceChain.nativeToken && symbol != 'USDC') {
       throw const BridgeQuoteException(
         'Only the source native token or USDC is enabled in this first bridge lane.',
       );
     }
-    final supported = await _supportedChains();
-    if (!supported.contains(request.sourceChain.id) ||
-        !supported.contains(baseChainId)) {
-      throw BridgeQuoteException(
-        '${request.sourceChain.name} to Base is not currently advertised by LI.FI.',
-      );
-    }
-    final sourceToken = await _resolveToken(
-      chainId: request.sourceChain.id,
-      token: token,
-      expectedSymbol: token,
-      chainType: request.sourceChain.type,
-    );
-    final destinationToken = await _resolveToken(
-      chainId: baseChainId,
-      token: baseUsdcContract,
-      expectedSymbol: 'USDC',
-      chainType: BridgeChainType.evm,
-    );
-    final amountUnits = _decimalToUnits(request.amount, sourceToken.decimals);
+    final decimals = symbol == 'USDC'
+        ? 6
+        : request.sourceChain.type == BridgeChainType.svm
+            ? 9
+            : 18;
+    final amountUnits = _decimalToUnits(request.amount, decimals);
     if (amountUnits <= BigInt.zero) {
       throw const BridgeQuoteException('Bridge amount must be positive.');
     }
-    if (!await _hasConnection(
-      request.sourceChain,
-      sourceToken,
-      destinationToken,
-    )) {
+
+    try {
+      final estimate = await _lifi.estimate(
+        domain.BridgeFundingRequest(
+          method: domain.BridgeFundingMethod.connectedWallet,
+          sourceChain: domain.BridgeChain(
+            id: request.sourceChain.id,
+            key: request.sourceChain.key,
+            name: request.sourceChain.name,
+            type: _domainType(request.sourceChain.type),
+            nativeTokenSymbol: request.sourceChain.nativeToken,
+          ),
+          sourceToken: domain.BridgeToken(
+            chainId: request.sourceChain.id,
+            address: symbol,
+            symbol: symbol,
+            decimals: decimals,
+            solverDepositable: false,
+          ),
+          amount: request.amount.trim(),
+          amountUnits: amountUnits.toString(),
+          baseDestinationAddress: destinationAddress,
+          sourceAddress: sourceAddress,
+        ),
+      );
+      return BridgeQuote(
+        quoteId: estimate.quoteId,
+        sourceChain: request.sourceChain,
+        sourceToken: estimate.request.sourceToken.symbol,
+        sourceAmount: _formatUnits(
+          BigInt.parse(estimate.request.amountUnits),
+          estimate.request.sourceToken.decimals,
+        ),
+        destinationAmountMinimum: estimate.minimumOutputDisplay,
+        destinationToken: 'USDC',
+        routeTool: estimate.routeTool,
+        estimatedDurationSeconds: estimate.estimatedDurationSeconds,
+        estimatedFeesUsd: estimate.estimatedFeesUsd,
+        quotedAt: estimate.quotedAt,
+        expiresAt: estimate.expiresAt,
+        externalCompletionUrl: Uri.parse('https://jumper.exchange/'),
+      );
+    } on BridgeHttpException catch (error) {
       throw BridgeQuoteException(
-        'LI.FI currently advertises no $token to Base USDC connection from ${request.sourceChain.name}.',
+        'Could not load a verified LI.FI quote.',
+        httpStatus: error.statusCode,
       );
+    } on domain.BridgeValidationException catch (error) {
+      throw BridgeQuoteException(_messageForValidation(error.code));
     }
-
-    final uri = Uri.https('li.quest', '/v1/quote', <String, String>{
-      'fromChain': request.sourceChain.id.toString(),
-      'toChain': baseChainId.toString(),
-      'fromToken': sourceToken.address,
-      'toToken': destinationToken.address,
-      'fromAmount': amountUnits.toString(),
-      'fromAddress': sourceAddress,
-      'toAddress': destinationAddress,
-      'slippage': '0.005',
-    });
-    final response = await _get(uri);
-    if (response.statusCode != 200) {
-      throw BridgeQuoteException(
-        'No live ${request.sourceChain.name} to Base USDC quote is available.',
-        httpStatus: response.statusCode,
-      );
-    }
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map) {
-      throw const BridgeQuoteException('LI.FI returned an invalid quote.');
-    }
-    final quote = decoded.map((key, value) => MapEntry(key.toString(), value));
-    final action = quote['action'] is Map
-        ? Map<String, dynamic>.from(quote['action'] as Map)
-        : const <String, dynamic>{};
-    final estimate = quote['estimate'] is Map
-        ? Map<String, dynamic>.from(quote['estimate'] as Map)
-        : const <String, dynamic>{};
-    final fromToken = action['fromToken'] is Map
-        ? Map<String, dynamic>.from(action['fromToken'] as Map)
-        : const <String, dynamic>{};
-    final toToken = action['toToken'] is Map
-        ? Map<String, dynamic>.from(action['toToken'] as Map)
-        : const <String, dynamic>{};
-    final fromChainId = (action['fromChainId'] as num?)?.toInt();
-    final toChainId = (action['toChainId'] as num?)?.toInt();
-    if (fromChainId != request.sourceChain.id ||
-        toChainId != baseChainId ||
-        !_sameAddress(
-          action['fromAddress']?.toString(),
-          sourceAddress,
-          request.sourceChain.type,
-        ) ||
-        !_sameAddress(
-          action['toAddress']?.toString(),
-          destinationAddress,
-          BridgeChainType.evm,
-        ) ||
-        !_matchesToken(fromToken, sourceToken, request.sourceChain.type) ||
-        !_matchesToken(toToken, destinationToken, BridgeChainType.evm)) {
-      throw const BridgeQuoteException(
-        'LI.FI quote fields do not match the requested wallets, chains, and token contracts.',
-      );
-    }
-    final returnedFromAmount = action['fromAmount']?.toString() ?? '';
-    if (returnedFromAmount != amountUnits.toString()) {
-      throw const BridgeQuoteException(
-        'LI.FI quote amount does not match the requested amount.',
-      );
-    }
-    final toAmountMin = BigInt.tryParse(
-      estimate['toAmountMin']?.toString() ?? '',
-    );
-    if (toAmountMin == null || toAmountMin <= BigInt.zero) {
-      throw const BridgeQuoteException(
-        'LI.FI quote has no valid minimum received amount.',
-      );
-    }
-    final quoteId = quote['id']?.toString().trim() ?? '';
-    final routeTool = quote['toolDetails'] is Map
-        ? (quote['toolDetails'] as Map)['name']?.toString().trim() ?? ''
-        : quote['tool']?.toString().trim() ?? '';
-    if (quoteId.isEmpty || routeTool.isEmpty) {
-      throw const BridgeQuoteException(
-        'LI.FI quote is missing its route identity.',
-      );
-    }
-    final feeUsd = _sumUsd(estimate['feeCosts']);
-    final gasUsd = _sumUsd(estimate['gasCosts']);
-    final now = _clock().toUtc();
-    return BridgeQuote(
-      quoteId: quoteId,
-      sourceChain: request.sourceChain,
-      sourceToken: sourceToken.symbol,
-      sourceAmount: _formatUnits(amountUnits, sourceToken.decimals),
-      destinationAmountMinimum:
-          _formatUnits(toAmountMin, destinationToken.decimals),
-      destinationToken: destinationToken.symbol,
-      routeTool: routeTool,
-      estimatedDurationSeconds:
-          (estimate['executionDuration'] as num?)?.toInt(),
-      estimatedFeesUsd: feeUsd == null && gasUsd == null
-          ? null
-          : (feeUsd ?? 0) + (gasUsd ?? 0),
-      quotedAt: now,
-      expiresAt: now.add(const Duration(seconds: 60)),
-      externalCompletionUrl: Uri.parse('https://jumper.exchange/'),
-    );
   }
 
-  Future<Set<int>> _supportedChains() async {
-    final cachedAt = _chainsRefreshedAt;
-    if (_supportedChainIds != null &&
-        cachedAt != null &&
-        _clock().toUtc().difference(cachedAt) < const Duration(minutes: 10)) {
-      return _supportedChainIds!;
-    }
-    final response = await _get(
-      Uri.https('li.quest', '/v1/chains', <String, String>{
-        'chainTypes': 'EVM,SVM',
-      }),
-    );
-    if (response.statusCode != 200) {
-      throw BridgeQuoteException(
-        'Could not verify LI.FI chain support.',
-        httpStatus: response.statusCode,
-      );
-    }
-    final decoded = jsonDecode(response.body);
-    final rawChains = decoded is Map ? decoded['chains'] : null;
-    if (rawChains is! List) {
-      throw const BridgeQuoteException('LI.FI chain catalog is invalid.');
-    }
-    final ids = <int>{};
-    for (final raw in rawChains) {
-      if (raw is! Map) continue;
-      final mainnet = raw['mainnet'];
-      final id = raw['id'];
-      if (id is num && mainnet != false) ids.add(id.toInt());
-    }
-    _supportedChainIds = ids;
-    _chainsRefreshedAt = _clock().toUtc();
-    return ids;
-  }
-
-  Future<_ResolvedBridgeToken> _resolveToken({
-    required int chainId,
-    required String token,
-    required String expectedSymbol,
-    required BridgeChainType chainType,
-  }) async {
-    final response = await _get(
-      Uri.https('li.quest', '/v1/token', <String, String>{
-        'chain': chainId.toString(),
-        'token': token,
-      }),
-    );
-    if (response.statusCode != 200) {
-      throw BridgeQuoteException(
-        'Could not resolve $expectedSymbol on chain $chainId.',
-        httpStatus: response.statusCode,
-      );
-    }
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map) {
-      throw const BridgeQuoteException('LI.FI token metadata is invalid.');
-    }
-    final resolved =
-        decoded.map((key, value) => MapEntry(key.toString(), value));
-    final resolvedChainId = (resolved['chainId'] as num?)?.toInt();
-    final address = resolved['address']?.toString().trim() ?? '';
-    final symbol = resolved['symbol']?.toString().trim().toUpperCase() ?? '';
-    final decimals = (resolved['decimals'] as num?)?.toInt();
-    final validAddress = chainType == BridgeChainType.evm
-        ? RegExp(r'^0x[a-fA-F0-9]{40}$').hasMatch(address)
-        : _isValidSolanaAddress(address);
-    if (resolvedChainId != chainId ||
-        symbol != expectedSymbol ||
-        decimals == null ||
-        decimals < 0 ||
-        decimals > 36 ||
-        !validAddress) {
-      throw BridgeQuoteException(
-        'LI.FI returned unexpected $expectedSymbol token metadata for chain $chainId.',
-      );
-    }
-    return _ResolvedBridgeToken(
-      address: address,
-      chainId: resolvedChainId!,
-      symbol: symbol,
-      decimals: decimals,
-    );
-  }
-
-  Future<bool> _hasConnection(
-    BridgeSourceChain source,
-    _ResolvedBridgeToken fromToken,
-    _ResolvedBridgeToken toToken,
-  ) async {
-    final response = await _get(
-      Uri.https('li.quest', '/v1/connections', <String, String>{
-        'fromChain': source.id.toString(),
-        'toChain': baseChainId.toString(),
-        'fromToken': fromToken.address,
-        'toToken': toToken.address,
-        'chainTypes': 'EVM,SVM',
-        'allowDestinationCall': 'false',
-      }),
-    );
-    if (response.statusCode != 200) return false;
-    final decoded = jsonDecode(response.body);
-    final connections = decoded is Map ? decoded['connections'] : null;
-    if (connections is! List) return false;
-    return connections.any((raw) {
-      if (raw is! Map) return false;
-      final fromTokens = raw['fromTokens'];
-      final toTokens = raw['toTokens'];
-      return (raw['fromChainId'] as num?)?.toInt() == source.id &&
-          (raw['toChainId'] as num?)?.toInt() == baseChainId &&
-          _tokenListContains(fromTokens, fromToken, source.type) &&
-          _tokenListContains(toTokens, toToken, BridgeChainType.evm);
-    });
-  }
-
-  bool _tokenListContains(
-    dynamic rawTokens,
-    _ResolvedBridgeToken expected,
-    BridgeChainType chainType,
-  ) {
-    if (rawTokens is! List) return false;
-    return rawTokens.any((raw) {
-      if (raw is! Map) return false;
-      return (raw['chainId'] as num?)?.toInt() == expected.chainId &&
-          _sameAddress(
-            raw['address']?.toString(),
-            expected.address,
-            chainType,
-          );
-    });
-  }
-
-  bool _matchesToken(
-    Map<String, dynamic> actual,
-    _ResolvedBridgeToken expected,
-    BridgeChainType chainType,
-  ) {
-    return (actual['chainId'] as num?)?.toInt() == expected.chainId &&
-        actual['symbol']?.toString().trim().toUpperCase() == expected.symbol &&
-        (actual['decimals'] as num?)?.toInt() == expected.decimals &&
-        _sameAddress(
-          actual['address']?.toString(),
-          expected.address,
-          chainType,
-        );
-  }
-
-  bool _sameAddress(
-    String? actual,
-    String expected,
-    BridgeChainType chainType,
-  ) {
-    if (actual == null) return false;
-    return chainType == BridgeChainType.evm
-        ? actual.toLowerCase() == expected.toLowerCase()
-        : actual == expected;
-  }
-
-  Future<http.Response> _get(Uri uri) async {
-    if (uri.scheme != 'https' || uri.host != 'li.quest') {
-      throw const BridgeQuoteException('Bridge API host is not allowlisted.');
-    }
-    final request = http.Request('GET', uri)
-      ..followRedirects = false
-      ..maxRedirects = 0
-      ..persistentConnection = false
-      ..headers['Accept'] = 'application/json';
-    final streamed = await _client.send(request).timeout(
-          const Duration(seconds: 25),
-        );
-    final bytes = BytesBuilder(copy: false);
-    var size = 0;
-    await for (final chunk
-        in streamed.stream.timeout(const Duration(seconds: 25))) {
-      size += chunk.length;
-      if (size > maxResponseBytes) {
-        throw const BridgeQuoteException('Bridge API response is too large.');
-      }
-      bytes.add(chunk);
-    }
-    return http.Response.bytes(
-      bytes.takeBytes(),
-      streamed.statusCode,
-      headers: streamed.headers,
-      reasonPhrase: streamed.reasonPhrase,
-      request: request,
-    );
-  }
+  domain.BridgeChainType _domainType(BridgeChainType type) => switch (type) {
+        BridgeChainType.evm => domain.BridgeChainType.evm,
+        BridgeChainType.svm => domain.BridgeChainType.svm,
+      };
 
   BigInt _decimalToUnits(String value, int decimals) {
     final normalized = value.trim();
     final match = RegExp(r'^(\d{1,18})(?:\.(\d+))?$').firstMatch(normalized);
     if (match == null) {
       throw const BridgeQuoteException(
-          'Enter a plain positive decimal amount.');
+        'Enter a plain positive decimal amount.',
+      );
     }
     final fraction = match.group(2) ?? '';
     if (fraction.length > decimals) {
@@ -556,21 +293,20 @@ class BridgeQuoteService {
     return fraction.isEmpty ? whole.toString() : '$whole.$fraction';
   }
 
-  double? _sumUsd(dynamic costs) {
-    if (costs is! List) return null;
-    var total = 0.0;
-    var found = false;
-    for (final raw in costs) {
-      if (raw is! Map) continue;
-      final amount = double.tryParse(raw['amountUSD']?.toString() ?? '');
-      if (amount == null) continue;
-      found = true;
-      total += amount;
-    }
-    return found ? total : null;
-  }
+  String _messageForValidation(String code) => switch (code) {
+        'unsupported_source_chain' ||
+        'route_not_advertised' =>
+          'The requested route is not currently advertised by LI.FI.',
+        'invalid_bridge_amount' => 'Bridge amount must be positive.',
+        'source_token_mismatch' ||
+        'invalid_lifi_token' =>
+          'LI.FI returned unexpected source-token metadata.',
+        'invalid_base_usdc' => 'LI.FI returned unexpected Base USDC metadata.',
+        _ => 'LI.FI returned a quote that did not match the requested route.',
+      };
 
   void dispose() {
+    _transport.dispose();
     if (_ownsClient) _client.close();
   }
 }

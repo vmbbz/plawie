@@ -23,6 +23,7 @@ void main() {
     expect(venice!.connectionMode, AiPaymentConnectionMode.walletIdentity);
     expect(venice.fundingMode, AiPaymentFundingMode.prepaidBalance);
     expect(venice.supportsTopUp, isTrue);
+    expect(venice.allowsResourceLessTopUpChallenge, isTrue);
     expect(venice.topUpEndpoint?.host, 'api.venice.ai');
     expect(venice.allowedHosts, <String>{'api.venice.ai'});
     expect(venice.paymentHeaderName, 'X-402-Payment');
@@ -36,6 +37,7 @@ void main() {
     expect(blockRun!.connectionMode, AiPaymentConnectionMode.walletIdentity);
     expect(blockRun.fundingMode, AiPaymentFundingMode.perRequest);
     expect(blockRun.supportsTopUp, isFalse);
+    expect(blockRun.allowsResourceLessTopUpChallenge, isFalse);
     expect(blockRun.topUpEndpoint, isNull);
     expect(blockRun.allowedHosts, <String>{'blockrun.ai'});
     expect(blockRun.monetizationMode, AiPaymentMonetizationMode.none);
@@ -51,15 +53,21 @@ void main() {
       () async {
     final setup =
         await File('lib/screens/setup_flow_screen.dart').readAsString();
+    final setupService =
+        await File('lib/services/provider_setup_service.dart').readAsString();
 
     expect(setup, contains('...AiPaymentProviderCatalog.providers.map('));
     expect(setup, contains('activeProvider.paymentProviderId != null'));
-    expect(setup, contains('prefs.apiProvider = null;'));
-    expect(setup, contains('prefs.configuredModel = null;'));
     expect(
-        setup,
-        contains(
-            'prefs.aiPaymentProvider = activeProvider.paymentProviderId;'));
+      setup,
+      contains('ProviderSetupService().selectWalletFundedProvider('),
+    );
+    expect(setupService, contains('_preferences.apiProvider = null;'));
+    expect(setupService, contains('_preferences.configuredModel = null;'));
+    expect(
+      setupService,
+      contains('_preferences.aiPaymentProvider = provider.id;'),
+    );
     expect(setup, isNot(contains("apiKey: 'wallet'")));
   });
 }

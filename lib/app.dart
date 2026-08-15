@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 export 'constants.dart';
 import 'constants.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,7 +7,11 @@ import 'providers/setup_provider.dart';
 import 'providers/gateway_provider.dart';
 import 'providers/node_provider.dart';
 import 'screens/splash_screen.dart';
+import 'widgets/paid_provider_approval_dialog.dart';
+import 'widgets/keeperhub_execution_review_dialog.dart';
 
+final GlobalKey<NavigatorState> plawieNavigatorKey =
+    GlobalKey<NavigatorState>();
 
 class PlawieApp extends StatelessWidget {
   const PlawieApp({super.key});
@@ -28,6 +32,7 @@ class PlawieApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
+        navigatorKey: plawieNavigatorKey,
         title: 'Plawie',
         debugShowCheckedModeBanner: false,
         theme: _buildLightTheme(),
@@ -37,6 +42,13 @@ class PlawieApp extends StatelessWidget {
         routes: {
           "/": (context) => const SplashScreen(),
         },
+        builder: (context, child) => PaidProviderApprovalHost(
+          navigatorKey: plawieNavigatorKey,
+          child: KeeperHubExecutionApprovalHost(
+            navigatorKey: plawieNavigatorKey,
+            child: child ?? const SizedBox.shrink(),
+          ),
+        ),
       ),
     );
   }
@@ -126,7 +138,9 @@ class PlawieApp extends StatelessWidget {
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return AppColors.statusGreen;
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.statusGreen;
+          }
           return AppColors.statusGrey;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
@@ -165,7 +179,9 @@ class PlawieApp extends StatelessWidget {
       ),
       radioTheme: RadioThemeData(
         fillColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return AppColors.statusGreen;
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.statusGreen;
+          }
           return AppColors.statusGrey;
         }),
       ),
@@ -257,7 +273,9 @@ class PlawieApp extends StatelessWidget {
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return AppColors.statusGreen;
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.statusGreen;
+          }
           return AppColors.statusGrey;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
@@ -295,7 +313,9 @@ class PlawieApp extends StatelessWidget {
       ),
       radioTheme: RadioThemeData(
         fillColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return AppColors.statusGreen;
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.statusGreen;
+          }
           return AppColors.statusGrey;
         }),
       ),

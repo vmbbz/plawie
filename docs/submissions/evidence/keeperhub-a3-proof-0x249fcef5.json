@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-13T14:44:25.459304Z",
+  "project": "Plawie - Human-Governed Agent Wallet",
+  "evidenceClass": "agent-originated-sponsored-mainnet-execution-supporting",
+  "agentPath": {
+    "framework": "OpenClaw",
+    "model": "zai-org-glm-5-2",
+    "capability": "keeperhub.prepare",
+    "taskId": "agent-proof:1786632129573528:70633f64-6706-450e-a90b-2a0ded53e86d"
+  },
+  "keeperHub": {
+    "intentId": "kh_f99a4b2c84014eebb760a14f74a1aaa0",
+    "executionId": "qfhbatqx6tez060s6mwww",
+    "status": "completed",
+    "sponsored": true,
+    "idempotentReplay": false,
+    "receiptVerified": true,
+    "receiptStatus": "success",
+    "verifiedAt": "2026-08-13T14:44:24.462Z"
+  },
+  "reviewedEffect": {
+    "chain": "Base Mainnet",
+    "chainId": 8453,
+    "personalApprovalWallet": "0xab299fea9D2884A4B0321af1B79E452E464bB434",
+    "agentExecutionWallet": "0x8f04a0b7192b9da472d5a1b63d75ee61fa7cd788",
+    "recipient": "0x8f04a0b7192b9da472d5a1b63d75ee61fa7cd788",
+    "amountEth": "0",
+    "reason": "Prove human-governed Agent Wallet execution.",
+    "simulationSuccess": true,
+    "simulationWouldRevert": false,
+    "simulationGasEstimate": "21227"
+  },
+  "transaction": {
+    "hash": "0x249fcef5bf20ebc598f105ee2d6efbc11893fea70eeca7c07b0694f4f80cad58",
+    "explorer": "https://basescan.org/tx/0x249fcef5bf20ebc598f105ee2d6efbc11893fea70eeca7c07b0694f4f80cad58",
+    "blockNumber": 49921458,
+    "gasUsed": "40933"
+  },
+  "independentBaseRpc": {
+    "receiptStatus": "0x1",
+    "transactionValue": "0x0",
+    "blockNumber": "0x2f9bdb2",
+    "gasUsed": "0x9fe5",
+    "outerFrom": "0x7b70a2665ecad34e19d5870dd9efb3289de79684",
+    "outerTo": "0x5af5194b4b0909eb978e3cf1e25333852277f07d",
+    "functionSelector": "0x9aefaff8",
+    "decodedSignature": "execute(address,address,uint256,bytes)",
+    "argument1": "0x8f04a0b7192b9da472d5a1b63d75ee61fa7cd788",
+    "argument2": "0x8f04a0b7192b9da472d5a1b63d75ee61fa7cd788",
+    "argument3Wei": "0"
+  },
+  "media": {
+    "rawVideo": "keeperhub-a3-reject-prepare-authorize-verified.mp4",
+    "rawVideoBytes": 412180140,
+    "rawVideoDurationSeconds": 449.571646,
+    "rawVideoResolution": "1080x2340",
+    "rawVideoSha256": "5AC4EDBB425045DD98CAF081FC9BD599BE16F011F03B29491E19BEF9C70C56A5"
+  },
+  "claimBoundary": {
+    "freshPrepareAuthorizeVerifyInClip": true,
+    "freshRejectActionInSameClip": false,
+    "visibleRejectedRecordIsEarlierPersistedEvidence": true,
+    "inFlightInterruptionClaimed": false
+  },
+  "redactions": {
+    "organizationApiKey": "not-collected",
+    "privateKeys": "not-collected",
+    "signatures": "not-collected",
+    "cookies": "not-collected",
+    "deviceIdentifier": "not-collected",
+    "finalEditedVideoReview": "pending"
+  }
+}

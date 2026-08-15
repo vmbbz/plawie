@@ -99,7 +99,7 @@ class TerminalSessionService : Service() {
         val session = activeSessions[sessionId]
         if (session != null) {
             session.executeCommand(command)
-            Log.d("TerminalSessionService", "Executed command in session $sessionId: $command")
+            Log.d("TerminalSessionService", "Executed command in session $sessionId")
         } else {
             Log.w("TerminalSessionService", "Session not found: $sessionId")
         }
@@ -206,7 +206,7 @@ class TerminalSession(
         try {
             process?.outputStream?.write("$command\n".toByteArray())
             process?.outputStream?.flush()
-            Log.d("TerminalSession", "Executed command in session $sessionId: $command")
+            Log.d("TerminalSession", "Executed command in session $sessionId")
             
         } catch (e: Exception) {
             Log.e("TerminalSession", "Failed to execute command in session $sessionId", e)

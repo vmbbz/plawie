@@ -2,6 +2,8 @@ import '../../models/node_frame.dart';
 import '../ai_payment_provider_catalog.dart';
 import '../base_service.dart';
 import '../bridge_quote_service.dart';
+import '../bridge/bridge_receipt_store.dart';
+import '../preferences_service.dart';
 import '../provider_balance_service.dart';
 import '../x402_payment_service.dart';
 import '../x402_payment_transport_service.dart';
@@ -18,15 +20,19 @@ class AiPaymentsCapability extends CapabilityHandler {
     ProviderBalanceService? balances,
     X402PaymentReceiptStore? receiptStore,
     BridgeQuoteService? bridgeQuotes,
+    BridgeReceiptStore? bridgeReceiptStore,
   })  : _base = baseService ?? BaseService(),
         _balances = balances ?? ProviderBalanceService.instance,
         _receiptStore = receiptStore ?? X402PaymentReceiptStore(),
-        _bridgeQuotes = bridgeQuotes ?? BridgeQuoteService();
+        _bridgeQuotes = bridgeQuotes ?? BridgeQuoteService(),
+        _bridgeReceiptStore = bridgeReceiptStore ??
+            BridgeReceiptStore(preferences: PreferencesService());
 
   final BaseService _base;
   final ProviderBalanceService _balances;
   final X402PaymentReceiptStore _receiptStore;
   final BridgeQuoteService _bridgeQuotes;
+  final BridgeReceiptStore _bridgeReceiptStore;
 
   @override
   String get name => 'payments';
@@ -38,6 +44,8 @@ class AiPaymentsCapability extends CapabilityHandler {
         'receipts',
         'bridge.capabilities',
         'bridge.quote',
+        'bridge.status',
+        'bridge.receipts',
       ];
 
   @override
@@ -64,6 +72,8 @@ class AiPaymentsCapability extends CapabilityHandler {
             payload: _bridgeCapabilities(),
           ),
         'bridge.quote' => await _bridgeQuote(params),
+        'bridge.status' => _bridgeStatus(),
+        'bridge.receipts' => _bridgeReceipts(),
         _ => NodeFrame.response('', error: <String, dynamic>{
             'code': 'UNKNOWN_COMMAND',
             'message': 'Unknown AI payment command: $command',
@@ -110,7 +120,7 @@ class AiPaymentsCapability extends CapabilityHandler {
       };
 
   Map<String, dynamic> _bridgeCapabilities() => <String, dynamic>{
-        'mode': 'quote-only-inbound-to-base',
+        'mode': 'agent-read-only-inbound-to-base',
         'destinationChain': 'Base',
         'destinationChainId': BridgeQuoteService.baseChainId,
         'destinationToken': 'USDC',
@@ -128,7 +138,40 @@ class AiPaymentsCapability extends CapabilityHandler {
         'internalSignerAcceptsBridgeCalldata': false,
         'agentMayQuote': true,
         'agentMayApproveOrExecute': false,
+        'foregroundExecutionAvailable': true,
+        'foregroundApprovalRequired': true,
+        'foregroundPage': 'Wallet',
       };
+
+  NodeFrame _bridgeStatus() {
+    final active = _bridgeReceiptStore.activeReceipt;
+    return NodeFrame.response('', payload: <String, dynamic>{
+      'activeReceipt': active?.toAgentJson(),
+      'hasActiveReceipt': active != null,
+      'statusSource': 'persisted-local-receipt',
+      'networkRefreshPerformed': false,
+      'foregroundApprovalRequired': true,
+      'mayApproveOrSpend': false,
+    });
+  }
+
+  NodeFrame _bridgeReceipts() {
+    final stored = _bridgeReceiptStore.receipts.toList(growable: false)
+      ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+    final receipts = stored.take(20).toList(growable: false);
+    return NodeFrame.response('', payload: <String, dynamic>{
+      'count': receipts.length,
+      'totalStored': stored.length,
+      'receipts': receipts
+          .map((receipt) => receipt.toAgentJson())
+          .toList(growable: false),
+      'redacted': true,
+      'containsWalletTransport': false,
+      'containsReviewedPayload': false,
+      'foregroundApprovalRequired': true,
+      'mayApproveOrSpend': false,
+    });
+  }
 
   Future<NodeFrame> _bridgeQuote(Map<String, dynamic> params) async {
     await _base.initialize();
@@ -193,7 +236,7 @@ class AiPaymentsCapability extends CapabilityHandler {
       'count': receipts.length,
       'receipts': receipts
           .take(20)
-          .map((receipt) => receipt.toJson())
+          .map((receipt) => receipt.toAgentJson())
           .toList(growable: false),
       'redacted': true,
       'containsSignatures': false,

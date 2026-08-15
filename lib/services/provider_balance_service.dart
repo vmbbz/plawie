@@ -85,6 +85,7 @@ class ProviderBalanceSnapshot {
 typedef VeniceIdentitySigner = Future<Map<String, dynamic>> Function(
   Map<String, dynamic> identity,
 );
+typedef ProviderWalletStatusReader = Future<SecureWalletStatus> Function();
 
 /// Provider balances are intentionally modeled per provider. A standard API
 /// key is never silently treated as an admin/billing key, and providers with
@@ -93,12 +94,14 @@ class ProviderBalanceService {
   ProviderBalanceService({
     http.Client? client,
     VeniceIdentitySigner? veniceSigner,
+    ProviderWalletStatusReader? walletStatus,
     ApiKeyDetectionService? apiKeys,
     DateTime Function()? clock,
   })  : _client = client ?? http.Client(),
         _ownsClient = client == null,
         _veniceSigner =
             veniceSigner ?? NativeBridge.signSecureVeniceBalanceIdentity,
+        _walletStatus = walletStatus ?? NativeBridge.getSecureEvmWalletStatus,
         _apiKeys = apiKeys ?? ApiKeyDetectionService(),
         _clock = clock ?? DateTime.now;
 
@@ -108,6 +111,7 @@ class ProviderBalanceService {
   final http.Client _client;
   final bool _ownsClient;
   final VeniceIdentitySigner _veniceSigner;
+  final ProviderWalletStatusReader _walletStatus;
   final ApiKeyDetectionService _apiKeys;
   final DateTime Function() _clock;
   final Map<String, ProviderBalanceSnapshot> _snapshots =
@@ -122,6 +126,70 @@ class ProviderBalanceService {
 
   ProviderBalanceSnapshot? cached(String providerId) =>
       _snapshots[providerId.trim().toLowerCase()];
+
+  Future<ProviderBalanceSnapshot> refresh(String providerId) async {
+    final normalized = providerId.trim().toLowerCase();
+    if (normalized == 'openrouter') return refreshOpenRouter();
+    final provider = AiPaymentProviderCatalog.byId(normalized);
+    if (provider == null) {
+      throw ArgumentError.value(providerId, 'providerId', 'Unknown provider.');
+    }
+    if (normalized != 'venice') {
+      return refreshWalletProvider(provider: provider, walletAddress: '');
+    }
+    final status = await _walletStatus();
+    final address = status.address?.trim() ?? '';
+    if (!status.isConnected || !status.authenticationAvailable) {
+      return _remember(ProviderBalanceSnapshot(
+        providerId: provider.id,
+        providerLabel: provider.label,
+        kind: ProviderBalanceKind.prepaidBalance,
+        state: ProviderBalanceState.notConfigured,
+        refreshedAt: _clock().toUtc(),
+        summary: 'A healthy device-authenticated Base wallet is required.',
+        managementUrl: Uri.parse('https://venice.ai/settings/api'),
+      ));
+    }
+    return refreshWalletProvider(
+      provider: provider,
+      walletAddress: address,
+    );
+  }
+
+  /// Records Venice's documented response balance hint without persisting raw
+  /// headers. A malformed or implausible value is ignored.
+  ProviderBalanceSnapshot? captureVeniceRemainingBalance(String value) {
+    final remaining = double.tryParse(value.trim());
+    if (remaining == null ||
+        !remaining.isFinite ||
+        remaining < 0 ||
+        remaining > 1000000000000) {
+      return null;
+    }
+    final previous = cached('venice');
+    final lowThreshold =
+        (previous?.minimumTopUpUsd ?? previous?.suggestedTopUpUsd ?? 1)
+            .clamp(0.5, 5)
+            .toDouble();
+    final state = remaining <= 0
+        ? ProviderBalanceState.depleted
+        : remaining <= lowThreshold
+            ? ProviderBalanceState.low
+            : ProviderBalanceState.available;
+    return _remember(ProviderBalanceSnapshot(
+      providerId: 'venice',
+      providerLabel: 'Venice',
+      kind: ProviderBalanceKind.prepaidBalance,
+      state: state,
+      refreshedAt: _clock().toUtc(),
+      summary: '\$${remaining.toStringAsFixed(2)} spendable',
+      remainingUsd: remaining,
+      canConsume: remaining > 0,
+      minimumTopUpUsd: previous?.minimumTopUpUsd,
+      suggestedTopUpUsd: previous?.suggestedTopUpUsd,
+      managementUrl: Uri.parse('https://venice.ai/settings/api'),
+    ));
+  }
 
   Future<ProviderBalanceSnapshot> refreshWalletProvider({
     required AiPaymentProviderOption provider,

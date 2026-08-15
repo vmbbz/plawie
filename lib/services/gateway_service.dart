@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -32,6 +31,15 @@ import 'openclaw_service.dart';
 import 'diagnostic_service.dart';
 import 'node_service.dart';
 import 'tts_service.dart';
+import 'paid_provider_gateway_coordinator.dart';
+import 'runtime_credential_store.dart';
+import 'gateway_config_signature.dart';
+import 'provider_turn_failure.dart';
+import 'model_capability_receipt.dart';
+import 'native_gateway_plugin_policy.dart';
+import 'model_tool_compatibility_probe.dart';
+import 'provider_compatible_fallback.dart';
+import 'provider_model_discovery_service.dart';
 
 class _FastCloudRoute {
   final String provider;
@@ -160,6 +168,8 @@ ${_boundedText(visibleText)}
 class _AssistantStreamAccumulator {
   String _delivered = '';
 
+  String get delivered => _delivered;
+
   String add(String text) {
     if (text.isEmpty) return '';
     if (_delivered.isEmpty) {
@@ -219,10 +229,34 @@ class GatewayService {
     );
   }
 
+  /// Refreshes one provider's live model catalog using the same credential
+  /// source as Gateway configuration. Credentials are passed only to the
+  /// discovery service and are never returned to the picker or persisted by
+  /// this method.
+  Future<DynamicCatalogSnapshot> refreshProviderModelCatalog(
+    String provider,
+  ) async {
+    final providerId = ModelProviderCatalog.normalizeProvider(provider);
+    final spec = ProviderModelDiscoveryService.specs[providerId];
+    if (spec == null) {
+      throw StateError('Model discovery is not available for $providerId.');
+    }
+    final config = await _readConfig();
+    final apiKey = spec.requiresApiKey
+        ? await _resolveProviderApiKey(config, providerId)
+        : null;
+    return ProviderModelDiscoveryService().refreshProvider(
+      providerId,
+      apiKey: apiKey,
+    );
+  }
+
   Timer? _healthTimer;
   StreamSubscription? _logSubscription;
   StreamSubscription<Map<String, dynamic>>? _gatewayEventSubscription;
   GatewayRuntime _runtime = GatewayRuntimeRegistry.current;
+  final PaidProviderGatewayCoordinator _paidProviderGateway =
+      PaidProviderGatewayCoordinator.instance;
   GatewayConnection? _connection;
   bool _healthCheckInFlight = false;
   bool _rpcDiscoveryDone =
@@ -233,6 +267,7 @@ class GatewayService {
   GatewayState _state = const GatewayState();
   bool _isStarting = false;
   bool _isStopping = false;
+  Future<bool>? _paidProviderPreparationInFlight;
   final _chatActivityController = StreamController<String>.broadcast();
   final List<String> _activityBuffer = []; // replay buffer for late subscribers
 
@@ -281,6 +316,8 @@ class GatewayService {
   bool _nativeDefaultOwnerSwitchInFlight = false;
   bool _chatLaneRecoveryInFlight = false;
   bool _gatewayChatTurnInFlight = false;
+  final Map<String, String> _patchedSessionModels = <String, String>{};
+  GatewayConnection? _patchedSessionConnection;
   bool _runtimeLogged = false;
   bool _appNativeSkillsRegisteredWithGateway = false;
   String _appNativeSkillBridgeStatus = 'not_registered';
@@ -364,6 +401,8 @@ class GatewayService {
       _gatewayConfigTransitionUntil = until;
     }
     _gatewayConfigTransitionReason = reason;
+    _patchedSessionModels.clear();
+    _patchedSessionConnection = null;
     _rpcDiscoveryDone = false;
     _gatewayInteractiveReadyAt = null;
     _updateState(_state.copyWith(isInteractiveReady: false));
@@ -399,6 +438,146 @@ class GatewayService {
             .timeout(const Duration(seconds: 2), onTimeout: () {})
             .catchError((_) {}),
       );
+    }
+  }
+
+  Future<bool> _preparePaidProviderRouting(
+    PreferencesService prefs, {
+    required bool gatewayAlreadyRunning,
+  }) {
+    final existing = _paidProviderPreparationInFlight;
+    if (existing != null) return existing;
+    late Future<bool> preparation;
+    preparation = _preparePaidProviderRoutingOnce(
+      prefs,
+      gatewayAlreadyRunning: gatewayAlreadyRunning,
+    ).whenComplete(() {
+      if (identical(_paidProviderPreparationInFlight, preparation)) {
+        _paidProviderPreparationInFlight = null;
+      }
+    });
+    _paidProviderPreparationInFlight = preparation;
+    return preparation;
+  }
+
+  Future<void> _retirePaidProviderRoutingAfterGatewayStop() async {
+    final config = await _readConfig();
+    if (config.isEmpty) {
+      final file = await _activeOpenClawConfigFile();
+      if (await file.exists()) {
+        throw StateError(
+          'Gateway configuration is unreadable; paid-provider capabilities '
+          'were not retired.',
+        );
+      }
+    }
+
+    final before = canonicalGatewayConfigSignature(config);
+    _paidProviderGateway.removeGatewayCapabilities(config);
+    if (canonicalGatewayConfigSignature(config) != before) {
+      // Persist the scrub while both owners are stopped. Rotating first would
+      // leave a recoverable stale capability behind if this write failed.
+      await _writeConfig(config);
+    }
+    if (_paidProviderGateway.isRunning) {
+      await _paidProviderGateway.stopAfterGateway(gatewayStopped: true);
+    }
+  }
+
+  Future<bool> _preparePaidProviderRoutingOnce(
+    PreferencesService prefs, {
+    required bool gatewayAlreadyRunning,
+  }) async {
+    final config = await _readConfig();
+    if (config.isEmpty) {
+      final file = await _activeOpenClawConfigFile();
+      if (await file.exists()) {
+        _updateState(_state.copyWith(
+          status: GatewayStatus.error,
+          errorMessage:
+              'Gateway configuration is unreadable; paid-provider routing was not changed.',
+        ));
+        return false;
+      }
+    }
+
+    final configuredModel = (prefs.configuredModel ?? '').trim();
+    final primaryModel = config['agents']?['defaults']?['model']?['primary']
+            ?.toString()
+            .trim() ??
+        '';
+    final selectedModel =
+        configuredModel.isNotEmpty ? configuredModel : primaryModel;
+    final paidProvider = _paidProviderGateway.providerForModel(selectedModel);
+    final before = canonicalGatewayConfigSignature(config);
+
+    if (paidProvider == null) {
+      // Never rewrite a live Gateway merely to remove an inactive capability.
+      // The next clean start removes it after the selected owner is confirmed
+      // stopped, preserving the existing attach-without-churn contract.
+      if (!gatewayAlreadyRunning) {
+        await _retirePaidProviderRoutingAfterGatewayStop();
+      }
+      return true;
+    }
+
+    try {
+      final preparation = await _paidProviderGateway.prepareGatewayConfig(
+        config,
+        selectedModel: selectedModel,
+      );
+      if (!preparation.enabled) {
+        throw const PaidProviderGatewayException(
+          'provider_not_selected',
+          'The selected wallet-funded provider was not recognized.',
+        );
+      }
+      if (_runtime.id ==
+          GatewayRuntimeRegistry.nativeNodeFullGatewayProduction.id) {
+        await _applyNativeProviderConfigPolicy(config);
+      } else {
+        _ensureCatalogProviderDefaults(config);
+      }
+      if (canonicalGatewayConfigSignature(config) != before) {
+        if (gatewayAlreadyRunning) {
+          _beginGatewayConfigTransition(
+            'paid-provider proxy capability refresh',
+            minimumSettle: _gatewayConfigSoftSettle,
+          );
+        }
+        await _writeConfig(config);
+      }
+      _addActivity(
+        '[PAID-PROVIDER] Authenticated loopback routing is ready for $paidProvider.',
+      );
+      return true;
+    } on PaidProviderGatewayException catch (error) {
+      if (!gatewayAlreadyRunning && _paidProviderGateway.isRunning) {
+        await _retirePaidProviderRoutingAfterGatewayStop().catchError((_) {});
+      }
+      _updateState(_state.copyWith(
+        status: GatewayStatus.error,
+        errorMessage:
+            'The selected wallet-funded provider is unavailable (${error.code}).',
+        logs: [
+          ..._state.logs,
+          '[ERROR] Paid-provider startup failed: ${error.code}',
+        ],
+      ));
+      return false;
+    } catch (_) {
+      if (!gatewayAlreadyRunning && _paidProviderGateway.isRunning) {
+        await _retirePaidProviderRoutingAfterGatewayStop().catchError((_) {});
+      }
+      _updateState(_state.copyWith(
+        status: GatewayStatus.error,
+        errorMessage: 'The selected wallet-funded provider is unavailable.',
+        logs: [
+          ..._state.logs,
+          '[ERROR] Paid-provider startup failed: gateway_config_error',
+        ],
+      ));
+      return false;
     }
   }
 
@@ -1273,7 +1452,7 @@ class GatewayService {
       profile.remove('tokenRef');
       profiles[profileId] = profile;
 
-      final content = _canonicalJsonSignature(store);
+      final content = canonicalGatewayConfigSignature(store);
       for (final authFile in authFiles) {
         await Directory(authFile.parent.path).create(recursive: true);
         await _writeStringAtomically(authFile, content);
@@ -1663,6 +1842,13 @@ class GatewayService {
     final listenerRunning = await _isSelectedRuntimeListenerAlive();
     final alreadyRunning = processRunning || listenerRunning;
 
+    if (!await _preparePaidProviderRouting(
+      prefs,
+      gatewayAlreadyRunning: alreadyRunning,
+    )) {
+      return;
+    }
+
     if (alreadyRunning && listenerRunning) {
       // FAST PATH: already healthy → skip config write + doctor + reload
       if (_state.status != GatewayStatus.running) {
@@ -1875,6 +2061,12 @@ class GatewayService {
       _startHealthCheck();
       unawaited(_checkHealth());
     } catch (e) {
+      try {
+        final runtimeStillRunning = await _runtime.isRunning();
+        if (!runtimeStillRunning && _paidProviderGateway.isRunning) {
+          await _retirePaidProviderRoutingAfterGatewayStop();
+        }
+      } catch (_) {}
       if (nativeProductionOwner) {
         _updateState(_state.copyWith(
           status: GatewayStatus.error,
@@ -2591,7 +2783,7 @@ HEARTBEAT_OK.
     File file,
     Map<String, dynamic> config,
   ) async {
-    final nextSignature = _canonicalJsonSignature(config);
+    final nextSignature = canonicalGatewayConfigSignature(config);
     var writeFile = true;
 
     if (await file.exists()) {
@@ -2601,7 +2793,8 @@ HEARTBEAT_OK.
           final decoded = jsonDecode(existingRaw);
           if (decoded is Map) {
             writeFile =
-                _canonicalJsonSignature(_deepCastMap(decoded)) != nextSignature;
+                canonicalGatewayConfigSignature(_deepCastMap(decoded)) !=
+                    nextSignature;
           }
         }
       } catch (_) {
@@ -2629,25 +2822,6 @@ HEARTBEAT_OK.
         } catch (_) {}
       }
     }
-  }
-
-  String _canonicalJsonSignature(Map<String, dynamic> value) {
-    final normalized = _normalizeForStableCompare(value);
-    return jsonEncode(normalized);
-  }
-
-  dynamic _normalizeForStableCompare(dynamic value) {
-    if (value is Map) {
-      final sorted = SplayTreeMap<String, dynamic>();
-      value.forEach((key, child) {
-        sorted['$key'] = _normalizeForStableCompare(child);
-      });
-      return sorted;
-    }
-    if (value is List) {
-      return value.map(_normalizeForStableCompare).toList();
-    }
-    return value;
   }
 
   Future<void> _writeEnvFile(String key, String value) async {
@@ -2962,11 +3136,16 @@ HEARTBEAT_OK.
         '$provider is not supported by the embedded native gateway.',
       );
     }
-    if (!await hasProviderCredential(provider)) {
+    final config = await _readConfig();
+    final paidProvider = _paidProviderGateway.providerForModel(canonical);
+    if (paidProvider != null) {
+      await _paidProviderGateway.prepareGatewayConfig(
+        config,
+        selectedModel: canonical,
+      );
+    } else if (!await hasProviderCredential(provider)) {
       throw StateError('Configure the $provider provider before selecting it.');
     }
-
-    final config = await _readConfig();
     config['models'] ??= <String, dynamic>{};
     final models = config['models'];
     if (models is! Map) {
@@ -3059,6 +3238,9 @@ HEARTBEAT_OK.
 
     try {
       final config = await _readConfig();
+      if (PaidProviderGatewayCoordinator.providerIds.contains(normalized)) {
+        return _paidProviderGateway.hasCurrentCapability(config, normalized);
+      }
       final providerConfig = config['models']?['providers']?[normalized];
       if (providerConfig is Map) {
         final apiKey = providerConfig['apiKey'];
@@ -3203,7 +3385,10 @@ HEARTBEAT_OK.
     } else {
       _removeNativeProviderAuthMetadata(config, retainedProviderIds);
       _removeUnavailableNativeModelReferences(config, retainedProviderIds);
-      _applyNativeBundledPluginPolicy(config);
+      await _applyNativePluginPolicy(
+        config,
+        retainedProviderIds: retainedProviderIds,
+      );
       return;
     }
 
@@ -3229,7 +3414,10 @@ HEARTBEAT_OK.
     }
     _removeNativeProviderAuthMetadata(config, retainedProviderIds);
     _removeUnavailableNativeModelReferences(config, retainedProviderIds);
-    _applyNativeBundledPluginPolicy(config);
+    await _applyNativePluginPolicy(
+      config,
+      retainedProviderIds: retainedProviderIds,
+    );
 
     if (removedProviderIds.isNotEmpty) {
       final removed = removedProviderIds.toList()..sort();
@@ -3239,44 +3427,15 @@ HEARTBEAT_OK.
     }
   }
 
-  void _applyNativeBundledPluginPolicy(Map<String, dynamic> config) {
-    final allowed = ModelProviderCatalog.nativeGatewayBundledPluginIds.toList()
-      ..sort();
-    final rawPlugins = config['plugins'];
-    final plugins = rawPlugins is Map ? rawPlugins : <String, dynamic>{};
-    config['plugins'] = plugins;
-
-    // Native gateway startup is read-only with respect to package management.
-    // Runtime plugin paths/install records are accepted only by a future
-    // verified extension-pack flow, never by an arbitrary config mutation.
-    plugins['allow'] = allowed;
-    plugins.remove('load');
-    plugins.remove('installs');
-
-    final entries = plugins['entries'];
-    if (entries is Map) {
-      for (final rawId in entries.keys.toList(growable: false)) {
-        final id = rawId.toString().trim().toLowerCase();
-        if (!ModelProviderCatalog.nativeGatewayBundledPluginIds.contains(id)) {
-          entries.remove(rawId);
-        }
-      }
-      if (entries.isEmpty) plugins.remove('entries');
-    }
-
-    final slots = plugins['slots'];
-    if (slots is Map) {
-      for (final rawSlot in slots.keys.toList(growable: false)) {
-        final selectedId = slots[rawSlot]?.toString().trim().toLowerCase();
-        if (selectedId == null ||
-            selectedId == 'none' ||
-            !ModelProviderCatalog.nativeGatewayBundledPluginIds
-                .contains(selectedId)) {
-          slots.remove(rawSlot);
-        }
-      }
-      if (slots.isEmpty) plugins.remove('slots');
-    }
+  Future<void> _applyNativePluginPolicy(
+    Map<String, dynamic> config, {
+    required Set<String> retainedProviderIds,
+  }) async {
+    NativeGatewayPluginPolicy.apply(
+      config,
+      retainedProviderIds: retainedProviderIds,
+      filesDir: await getFilesDir(),
+    );
   }
 
   Future<bool> _hasDurableProviderCredential(
@@ -4100,14 +4259,15 @@ HEARTBEAT_OK.
     _lastTokenFetch = null;
   }
 
-  /// Clear the operator device token from SharedPreferences and in-memory cache.
+  /// Clear the operator device token from secure storage and in-memory cache.
   /// Call this from the UI "Clear Cache" action so the next connect does a
   /// fresh identity handshake instead of reusing a potentially stale token.
   Future<void> clearDeviceToken({bool clearProtocol = false}) async {
     clearTokenCache();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(GatewayConnection.prefDeviceToken);
+      await RuntimeCredentialStore.instance.init(prefs);
+      await RuntimeCredentialStore.instance.setOperatorDeviceToken(null);
       if (clearProtocol) {
         await prefs.remove(GatewayConnection.prefWsProtocol);
       }
@@ -4182,12 +4342,17 @@ HEARTBEAT_OK.
 
     try {
       await _runtime.stop();
+      var runtimeStillRunning = false;
       for (var attempt = 0; attempt < 8; attempt++) {
-        final stillRunning =
+        runtimeStillRunning =
             await _runtime.isRunning().catchError((_) => false);
-        if (!stillRunning) break;
+        if (!runtimeStillRunning) break;
         await Future.delayed(const Duration(milliseconds: 350));
       }
+      if (runtimeStillRunning) {
+        throw StateError('Gateway process did not stop cleanly.');
+      }
+      await _retirePaidProviderRoutingAfterGatewayStop();
       _updateState(_state.copyWith(
         status: GatewayStatus.stopped,
         isWebsocketConnected: false,
@@ -5376,25 +5541,6 @@ HEARTBEAT_OK.
     }
   }
 
-  String _formatGatewayProviderError(String rawError, {String? model}) {
-    final normalized = rawError.trim();
-    if (normalized.isEmpty || normalized.toLowerCase() == 'null') {
-      return 'Gateway/provider returned an empty error payload.';
-    }
-    final lower = normalized.toLowerCase();
-    if (lower.contains('request schema') ||
-        lower.contains('tool payload') ||
-        lower.contains('schema or tool')) {
-      final selectedModel = model?.trim();
-      return '$normalized'
-          '${selectedModel == null || selectedModel.isEmpty ? '' : '\n\nSelected model: $selectedModel.'} '
-          'The provider rejected this turn before generation. Retry once; if '
-          'it persists, choose another model that supports tool calling. '
-          'Plawie keeps the official Gateway/tool lane enabled.';
-    }
-    return normalized;
-  }
-
   String _formatChatElapsed(Duration duration) {
     final ms = duration.inMilliseconds;
     if (ms < 1000) return '${ms}ms';
@@ -5628,7 +5774,7 @@ For ClawHub registry metadata requests, use action="invoke" with invokeCommand="
 For simple meme image requests, use action="invoke" with invokeCommand="meme-maker.create" and invokeParamsJson like {"topText":"Native Android","bottomText":"No PRoot needed"}. This produces a PNG through the Android app-native renderer; do not use Node canvas, sharp, npm, or PRoot for this Android path.
 ${GifgrepContract.mobileGuidance}
 For healthcheck requests, call device_health or action="invoke" with invokeCommand="device.health" and summarize the result.
-For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.sequence, avatar.mode, avatar.model, avatar.status, device.health, device.status, device.permissions, payments.capabilities, payments.status, payments.receipts, bridge.capabilities, bridge.quote, canvas.navigate, canvas.eval, canvas.snapshot, canvas.present, canvas.hide, weather.current, weather.forecast, clawhub.search, clawhub.info, gifgrep.status, gifgrep.search, gifgrep.still, gifgrep.sheet, meme-maker.create, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list. The payment and bridge commands are read-only: you may inspect/explain status, redacted receipts, and a live inbound Base quote, but you cannot approve, unlock, sign, submit, broadcast, or execute a bridge. Direct the user to the visible Base page for every payment approval and to an external source wallet for bridge execution. For canvas.present, put HTML content under ~/.openclaw/canvas/ and construct the URL as http://<gateway-host>:18789/__openclaw__/canvas/<file>.html. For generated content like SVG or HTML, write it to a file in ~/.openclaw/canvas/ first then present that file URL. IMPORTANT: Do NOT pass a "target" parameter to canvas.present or canvas.navigate — the gateway auto-routes to the connected device. Passing target="node" causes a URI parse error. Just pass the "url" parameter. CRITICAL RULE for canvas HTML: You MUST generate pure inline SVG (from a .html file) for any visualization request like "draw a flower", "illustrate X", "show me a diagram", etc. Do NOT write JavaScript that calls any external API — not OpenRouter, not OpenAI, not any API — because the WebView has no network API keys. Pure SVG embedded directly in the HTML is self-contained, works perfectly, and never needs API calls. If you MUST use JavaScript, use ONLY browser-native APIs (Canvas2D, WebGL, Web Audio) — never fetch() or XMLHttpRequest to external URLs.
+For command-style phone capabilities, use action="invoke" with invokeCommand set to the dotted command, such as avatar.gesture, avatar.sequence, avatar.mode, avatar.model, avatar.status, device.health, device.status, device.permissions, payments.capabilities, payments.status, payments.receipts, keeperhub.capabilities, keeperhub.status, keeperhub.receipts, keeperhub.prepare, bridge.capabilities, bridge.quote, bridge.status, bridge.receipts, canvas.navigate, canvas.eval, canvas.snapshot, canvas.present, canvas.hide, weather.current, weather.forecast, clawhub.search, clawhub.info, gifgrep.status, gifgrep.search, gifgrep.still, gifgrep.sheet, meme-maker.create, flash.on, flash.off, flash.toggle, flash.status, haptic.vibrate, sensor.read, or sensor.list. The payment and bridge commands are read-only: you may inspect/explain persisted status, redacted receipts, and a live inbound Base estimate, but you cannot connect a wallet, create or reveal a deposit instruction, approve, unlock, sign, submit, broadcast, retry, or execute a bridge. A quote is an estimate, not an executable transaction. KeeperHub commands may inspect redacted state or prepare one inert zero-value Base Mainnet self-transfer proposal; they cannot open approval UI, approve, authenticate, sign, submit, retry, revoke credentials, execute generic workflows, choose a recipient, add calldata, or move non-zero value. After keeperhub.prepare, direct the user to Wallet > Agent Execution Wallet to refresh, review, or discard it. Direct the user to the visible Wallet page for connected execution or one-time-address creation; every transaction still requires the external wallet's visible confirmation, and every AI-credit payment separately requires visible Plawie approval plus device authentication. For canvas.present, put HTML content under ~/.openclaw/canvas/ and construct the URL as http://<gateway-host>:18789/__openclaw__/canvas/<file>.html. For generated content like SVG or HTML, write it to a file in ~/.openclaw/canvas/ first then present that file URL. IMPORTANT: Do NOT pass a "target" parameter to canvas.present or canvas.navigate — the gateway auto-routes to the connected device. Passing target="node" causes a URI parse error. Just pass the "url" parameter. CRITICAL RULE for canvas HTML: You MUST generate pure inline SVG (from a .html file) for any visualization request like "draw a flower", "illustrate X", "show me a diagram", etc. Do NOT write JavaScript that calls any external API — not OpenRouter, not OpenAI, not any API — because the WebView has no network API keys. Pure SVG embedded directly in the HTML is self-contained, works perfectly, and never needs API calls. If you MUST use JavaScript, use ONLY browser-native APIs (Canvas2D, WebGL, Web Audio) — never fetch() or XMLHttpRequest to external URLs.
 Notification listing/reading is not currently exposed by this Android node. Do not call notifications.list or claim notification contents are available unless a tool result explicitly provides them.
 Examples: nodes({"action":"camera_snap","node":"$nodeHandle","quality":85}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.gesture","invokeParamsJson":"{\\"gesture\\":\\"wave right\\"}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"avatar.sequence","invokeParamsJson":"{\\"interruptCurrent\\":true,\\"steps\\":[{\\"gesture\\":\\"cross leg sit\\",\\"durationMs\\":30000},{\\"gesture\\":\\"bowing 2\\"}]}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"haptic.vibrate","invokeParamsJson":"{\\"durationMs\\":150}"}); nodes({"action":"invoke","node":"$nodeHandle","invokeCommand":"flash.status"}).
 If a tool plan would use node=auto, replace it with node="$nodeHandle" before calling the tool.
@@ -15090,6 +15236,7 @@ ${lines.join('\n')}
     String? model,
     List<Map<String, dynamic>>? conversationHistory,
     String? sessionKey,
+    bool explicitToolCompatibilityProbe = false,
   }) async* {
     model = await _resolveModel(model);
 
@@ -15747,11 +15894,11 @@ ${lines.join('\n')}
           '$requestedSessionKey -> $resolvedSessionKey');
     }
 
-    if (modelSyncChanges.isNotEmpty) {
-      await _patchActiveGatewaySessionModel(
-        modelSyncChanges,
-        sessionKey: resolvedSessionKey,
-      );
+    if (modelSyncChanges.isNotEmpty &&
+        !_activeSessionAlreadyUsesModel(
+          modelSyncChanges,
+          sessionKey: resolvedSessionKey,
+        )) {
       token = await _waitForGatewayChatLaneReady(token);
       if (token == null || token.isEmpty) {
         yield '[Error] Gateway is still finishing the selected model/provider update.\n\n'
@@ -15764,6 +15911,16 @@ ${lines.join('\n')}
         yield '[Error] Gateway WebSocket is reconnecting after the model/provider update.\n\n'
             'Please retry in a moment. Your message was not sent during the '
             'Gateway reload window.';
+        return;
+      }
+      try {
+        await _patchActiveGatewaySessionModel(
+          modelSyncChanges,
+          sessionKey: resolvedSessionKey,
+        );
+      } catch (error) {
+        yield '[Error] The selected model could not be attached to the active '
+            'Gateway session. No provider request was sent.\n\n$error';
         return;
       }
     }
@@ -15855,6 +16012,63 @@ ${lines.join('\n')}
     // (which may complete after our Flutter timeout) cannot close the next request's
     // stream before any content arrives.
     bool runStarted = false;
+    var providerFailureObserved = false;
+    var toolCallObserved = requiredToolContinuation != null;
+    var toolResultObserved = requiredToolContinuation != null;
+    var gatewayToolCallObserved = false;
+    var gatewayToolResultObserved = false;
+    final explicitCompatibilityProbe =
+        ModelToolCompatibilityProbe.isAuthorizedProbe(
+      message,
+      authorized: explicitToolCompatibilityProbe,
+    );
+    final probeToolCalls = <ModelToolProbeEvent>[];
+    final probeToolResults = <ModelToolProbeEvent>[];
+    var terminalFrameObserved = false;
+    ProviderCompatibleFallback? fallbackCandidate;
+    try {
+      final snapshot = await DynamicModelCatalogRepository().loadOrBundled();
+      fallbackCandidate = ProviderCompatibleFallbackPlanner.find(
+        snapshot: snapshot,
+        selectedModelId: model,
+        requiresVision: false,
+      );
+    } catch (_) {
+      // A stale/unavailable catalog must never block the selected model turn.
+    }
+
+    ProviderTurnTrace currentTurnTrace() => ProviderTurnTrace(
+          requestAccepted: gatewayAcceptedAt != null || runStarted,
+          toolCallObserved: toolCallObserved,
+          toolResultObserved: toolResultObserved,
+          assistantTextObserved: assistantTextOutputSeen,
+        );
+
+    String formatProviderFailure(
+      String rawError, {
+      bool timeout = false,
+      bool transport = false,
+    }) {
+      providerFailureObserved = true;
+      final failure = ProviderTurnFailure.classify(
+        rawError,
+        trace: currentTurnTrace(),
+        modelId: model!,
+        timeout: timeout,
+        transport: transport,
+        suggestedFallbackModelId: fallbackCandidate?.modelId,
+        suggestedFallbackLabel: fallbackCandidate?.label,
+      );
+      unawaited(ModelCapabilityReceiptRepository().recordFailure(
+        modelId: model,
+        failure: failure,
+        source: explicitCompatibilityProbe
+            ? ModelCapabilityReceiptSource.explicitProbe
+            : ModelCapabilityReceiptSource.localTurn,
+      ));
+      return failure.message;
+    }
+
     final assistantStream = _AssistantStreamAccumulator();
     bool isActiveRunFrame(String? agentRun) {
       return activeRunId == null || agentRun == null || agentRun == activeRunId;
@@ -15897,12 +16111,13 @@ ${lines.join('\n')}
       );
       disconnectWebSocket();
       unawaited(_recoverChatNoFirstTokenLane('gateway request deadline'));
-      finishChatWithError(
+      finishChatWithError(formatProviderFailure(
         'Gateway accepted the turn but did not deliver a final assistant/tool '
         'response before the ${timeoutMs ~/ 1000}s request deadline plus '
         '${hardGatewayResponseGrace.inSeconds}s grace. The chat lane is being '
         'rebuilt now; resend after Gateway settles.',
-      );
+        timeout: true,
+      ));
       timer.cancel();
     });
 
@@ -15920,7 +16135,7 @@ ${lines.join('\n')}
               payload?['message'] ?? payload ?? frame,
               fallback: 'API Error encountered',
             );
-            final errMsg = _formatGatewayProviderError(rawMsg, model: model);
+            final errMsg = formatProviderFailure(rawMsg);
             _addActivity('[CHAT] ✗ $errMsg');
             finishChatWithError(errMsg);
             return;
@@ -15938,7 +16153,7 @@ ${lines.join('\n')}
                 errStr.toLowerCase().contains('insufficient balance') ||
                 errStr.toLowerCase().contains('balance exhausted')) {
               markRelevantGatewayActivity();
-              final errMsg = _formatGatewayProviderError(errStr, model: model);
+              final errMsg = formatProviderFailure(errStr);
               _addActivity('[CHAT] ✗ $errMsg');
               finishChatWithError(errMsg);
               return;
@@ -15951,10 +16166,9 @@ ${lines.join('\n')}
             final ok = frame['ok'] as bool? ?? false;
             if (!ok) {
               final error = frame['error'] as Map<String, dynamic>?;
-              final msg = _formatGatewayProviderError(
+              final msg = formatProviderFailure(
                 _rawGatewayErrorText(error?['message'] ?? error,
                     fallback: 'chat.send failed'),
-                model: model,
               );
               _addActivity('[CHAT] ✗ $msg');
               finishChatWithError(msg);
@@ -16003,7 +16217,15 @@ ${lines.join('\n')}
             if ((state == 'final' || state == 'aborted' || state == 'error') &&
                 (runStarted || !firstToken)) {
               markRelevantGatewayActivity();
-              if (!chunkController.isClosed) {
+              if (state == 'aborted' || state == 'error') {
+                final rawError = _rawGatewayErrorText(
+                  data['error'] ?? data['reason'] ?? data['message'] ?? state,
+                );
+                final msg = formatProviderFailure(rawError);
+                _addActivity('[CHAT] ✗ $msg');
+                finishChatWithError(msg);
+              } else if (!chunkController.isClosed) {
+                terminalFrameObserved = true;
                 chunkController.close();
               }
             } else if ((state == 'aborted' || state == 'error') &&
@@ -16013,7 +16235,7 @@ ${lines.join('\n')}
               final rawError = _rawGatewayErrorText(
                 data['error'] ?? data['reason'] ?? data['message'] ?? state,
               );
-              final msg = _formatGatewayProviderError(rawError, model: model);
+              final msg = formatProviderFailure(rawError);
               _addActivity('[CHAT] ✗ $msg');
               finishChatWithError(msg);
             }
@@ -16058,11 +16280,24 @@ ${lines.join('\n')}
                 return;
               }
               markRelevantGatewayActivity();
+              toolCallObserved = true;
+              gatewayToolCallObserved = true;
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
                   '';
               final input = innerData?['input'] ?? payload?['input'];
+              if (explicitCompatibilityProbe && name.isNotEmpty) {
+                probeToolCalls.add(ModelToolProbeEvent(
+                  name: name,
+                  payload: input,
+                  callId: (innerData?['id'] ??
+                          innerData?['toolCallId'] ??
+                          payload?['id'] ??
+                          payload?['toolCallId'])
+                      ?.toString(),
+                ));
+              }
               if (name.isNotEmpty && !chunkController.isClosed) {
                 markVisibleChatOutput();
                 chunkController
@@ -16073,6 +16308,10 @@ ${lines.join('\n')}
                 return;
               }
               markRelevantGatewayActivity();
+              toolCallObserved = true;
+              toolResultObserved = true;
+              gatewayToolCallObserved = true;
+              gatewayToolResultObserved = true;
               final name = (innerData?['name'] ??
                       payload?['name'] ??
                       frame['name']) as String? ??
@@ -16081,6 +16320,17 @@ ${lines.join('\n')}
                   payload?['result'] ??
                   innerData?['output'] ??
                   payload?['output'];
+              if (explicitCompatibilityProbe) {
+                probeToolResults.add(ModelToolProbeEvent(
+                  name: name,
+                  payload: result,
+                  callId: (innerData?['id'] ??
+                          innerData?['toolCallId'] ??
+                          payload?['id'] ??
+                          payload?['toolCallId'])
+                      ?.toString(),
+                ));
+              }
 
               // Gateway TTS: intercept tts tool results that contain a MEDIA: path.
               // The gateway sherpa-onnx-tts skill returns a plain string like:
@@ -16122,11 +16372,24 @@ ${lines.join('\n')}
                   (innerData?['type'] ?? payload?['type'] ?? '') as String?;
               if (itemType == 'tool_use') {
                 markRelevantGatewayActivity();
+                toolCallObserved = true;
+                gatewayToolCallObserved = true;
                 final name = (innerData?['name'] ??
                         payload?['name'] ??
                         frame['name']) as String? ??
                     '';
                 final input = innerData?['input'] ?? payload?['input'];
+                if (explicitCompatibilityProbe && name.isNotEmpty) {
+                  probeToolCalls.add(ModelToolProbeEvent(
+                    name: name,
+                    payload: input,
+                    callId: (innerData?['id'] ??
+                            innerData?['toolCallId'] ??
+                            payload?['id'] ??
+                            payload?['toolCallId'])
+                        ?.toString(),
+                  ));
+                }
                 if (name.isNotEmpty && !chunkController.isClosed) {
                   markVisibleChatOutput();
                   chunkController
@@ -16134,6 +16397,10 @@ ${lines.join('\n')}
                 }
               } else if (itemType == 'tool_result') {
                 markRelevantGatewayActivity();
+                toolCallObserved = true;
+                toolResultObserved = true;
+                gatewayToolCallObserved = true;
+                gatewayToolResultObserved = true;
                 final name = (innerData?['name'] ??
                         payload?['name'] ??
                         frame['name']) as String? ??
@@ -16142,6 +16409,17 @@ ${lines.join('\n')}
                     payload?['result'] ??
                     innerData?['output'] ??
                     payload?['output'];
+                if (explicitCompatibilityProbe) {
+                  probeToolResults.add(ModelToolProbeEvent(
+                    name: name,
+                    payload: result,
+                    callId: (innerData?['id'] ??
+                            innerData?['toolCallId'] ??
+                            payload?['id'] ??
+                            payload?['toolCallId'])
+                        ?.toString(),
+                  ));
+                }
                 if (name == 'tts') {
                   final mediaStr =
                       result is String ? result : result?.toString() ?? '';
@@ -16179,8 +16457,7 @@ ${lines.join('\n')}
                 final rawError = _rawGatewayErrorText(
                   innerData?['error'] ?? payload?['error'] ?? frame['error'],
                 );
-                final error =
-                    _formatGatewayProviderError(rawError, model: model);
+                final error = formatProviderFailure(rawError);
                 _addActivity('[CHAT] ✗ $error');
                 if (!chunkController.isClosed) {
                   chunkController.add('[Error] $error');
@@ -16191,6 +16468,7 @@ ${lines.join('\n')}
                   return;
                 }
                 markRelevantGatewayActivity();
+                terminalFrameObserved = true;
                 final rawEndSignal = (innerData?['error'] ??
                             payload?['error'] ??
                             innerData?['reason'] ??
@@ -16213,9 +16491,8 @@ ${lines.join('\n')}
                     frame['aborted'] == true ||
                     hasMeaningfulEndSignal;
                 if (firstToken && endedWithError && !chunkController.isClosed) {
-                  final msg = _formatGatewayProviderError(
+                  final msg = formatProviderFailure(
                     rawEndSignal.isEmpty ? 'Unknown API error' : rawEndSignal,
-                    model: model,
                   );
                   _addActivity('[CHAT] ✗ $msg');
                   chunkController.add('[Error] $msg');
@@ -16245,9 +16522,8 @@ ${lines.join('\n')}
                   rawErr.toLowerCase().contains('auth') ||
                   rawErr.toLowerCase().contains('surface_error');
               if (isAuthError) {
-                final authMsg = _formatGatewayProviderError(
+                final authMsg = formatProviderFailure(
                   rawErr.isEmpty ? 'Cloud model authentication error.' : rawErr,
-                  model: model,
                 );
                 _addActivity('[CHAT] ✗ $authMsg');
                 if (!chunkController.isClosed) {
@@ -16256,7 +16532,7 @@ ${lines.join('\n')}
                 }
                 return;
               }
-              final error = _formatGatewayProviderError(rawErr, model: model);
+              final error = formatProviderFailure(rawErr);
               _addActivity('[CHAT] ✗ $error');
               if (!chunkController.isClosed) {
                 chunkController.add('[Error] $error');
@@ -16271,10 +16547,11 @@ ${lines.join('\n')}
           // Always convert to a string message — never propagate raw stream errors.
           // StateError('WebSocket disconnected') from _onDisconnect would otherwise
           // surface as "[Error: Bad state: ...]" via the catch block.
-          final msg = (e is StateError)
-              ? '[Error] Gateway connection lost. Please try again.'
-              : '[Error] WebSocket error: $e';
-          chunkController.add(msg);
+          final rawError = e is StateError
+              ? 'Gateway connection lost.'
+              : 'WebSocket error: $e';
+          final msg = formatProviderFailure(rawError, transport: true);
+          chunkController.add('[Error] $msg');
           chunkController.close();
         }
       },
@@ -16309,10 +16586,48 @@ ${lines.join('\n')}
         timing.add(
             'firstToComplete=${_formatChatElapsed(completedAt.difference(firstOutputAt))}');
       }
-      _addActivity('[CHAT] ✓ Complete (${timing.join(', ')})');
+      if (!providerFailureObserved) {
+        if (explicitCompatibilityProbe) {
+          final verdict = ModelToolCompatibilityProbe.evaluate(
+            toolCalls: probeToolCalls,
+            toolResults: probeToolResults,
+            assistantText: assistantStream.delivered,
+            terminalFrameObserved: terminalFrameObserved,
+          );
+          if (verdict.passed) {
+            await ModelCapabilityReceiptRepository()
+                .recordSuccessfulExplicitProbe(modelId: model);
+            yield '\n\nCompatibility receipt saved for this exact model.';
+          } else {
+            if (terminalFrameObserved) {
+              await ModelCapabilityReceiptRepository()
+                  .recordFailedExplicitProbe(
+                modelId: model,
+                reason: verdict.reason ?? 'The bounded tool contract failed.',
+                assistantTextObserved:
+                    assistantStream.delivered.trim().isNotEmpty,
+              );
+            }
+            yield '\n\n[Error] Compatibility test did not pass: '
+                '${verdict.reason} No model was switched and no tool was retried.';
+          }
+        } else {
+          await ModelCapabilityReceiptRepository().recordSuccessfulTurn(
+            modelId: model,
+            toolCallObserved: gatewayToolCallObserved,
+            toolResultObserved: gatewayToolResultObserved,
+            assistantTextObserved: assistantTextOutputSeen,
+          );
+        }
+        _addActivity('[CHAT] ✓ Complete (${timing.join(', ')})');
+      }
     } catch (e) {
       _addActivity('[CHAT] ✗ $e');
-      yield '[Error] WebSocket chat error: $e';
+      final msg = formatProviderFailure(
+        'WebSocket chat error: $e',
+        transport: true,
+      );
+      yield '[Error] $msg';
     } finally {
       inactivityWatchdog.cancel();
       frameSub.cancel();
@@ -16811,7 +17126,7 @@ ${lines.join('\n')}
 
     try {
       final config = await _readConfig();
-      final apiKey = _extractProviderApiKey(config, provider);
+      final apiKey = await _resolveProviderApiKey(config, provider);
       if (apiKey == null || apiKey.isEmpty) return null;
 
       final providerConfig = config['models']?['providers']?[provider];
@@ -16870,6 +17185,54 @@ ${lines.join('\n')}
     if (envVars is Map && envKey.isNotEmpty) {
       final key = envVars[envKey]?.toString().trim();
       if (key != null && key.isNotEmpty) return key;
+    }
+    return null;
+  }
+
+  /// Resolves a provider key from the same durable surfaces used by the
+  /// Gateway runtime.
+  ///
+  /// The native Gateway keeps BYOK secrets in auth-profiles.json while the
+  /// compatibility config only contains the provider/profile selection. Live
+  /// model discovery is a Dart-side request, so it must resolve that profile
+  /// before calling the provider endpoint. The key remains in memory for the
+  /// request only and is never returned to the picker or written to the model
+  /// catalog cache.
+  Future<String?> _resolveProviderApiKey(
+    Map<String, dynamic> config,
+    String provider,
+  ) async {
+    final configured = _extractProviderApiKey(config, provider);
+    if (configured != null && configured.isNotEmpty) return configured;
+
+    final normalizedProvider = _normalizeProvider(provider);
+    if (normalizedProvider.isEmpty) return null;
+
+    try {
+      for (final authFile in await _authProfilesReadOrder()) {
+        if (!await authFile.exists()) continue;
+        final raw = await authFile.readAsString();
+        if (raw.trim().isEmpty) continue;
+        final decoded = jsonDecode(raw);
+        if (decoded is! Map) continue;
+        final profiles = decoded['profiles'];
+        if (profiles is! Map) continue;
+        final profile = profiles[authProfileIdForProvider(normalizedProvider)];
+        if (profile is! Map) continue;
+
+        // key/token are the concrete credential forms the Gateway can use for
+        // an API-key provider. keyRef/tokenRef are references, not secrets;
+        // passing them to a provider would create a misleading auth failure.
+        for (final field in const <String>['key', 'token']) {
+          final value = profile[field]?.toString().trim();
+          if (value != null && value.isNotEmpty && value != 'null') {
+            return value;
+          }
+        }
+      }
+    } catch (_) {
+      // Discovery should report configuration_required rather than exposing a
+      // file/parser failure or interrupting the main Gateway lifecycle.
     }
     return null;
   }
@@ -17179,7 +17542,7 @@ ${lines.join('\n')}
   Future<List<Map<String, dynamic>>> fetchSessions() async {
     try {
       final frame = await invoke('sessions.list');
-      final raw = frame['sessions'];
+      final raw = _extractRpcPayload(frame)['sessions'];
       if (raw is! List) return [];
       return raw.whereType<Map<String, dynamic>>().toList();
     } catch (_) {
@@ -17353,16 +17716,21 @@ ${lines.join('\n')}
   }
 
   /// Ensure agents.defaults.model.primary in openclaw.json matches the
-  /// user-selected [model]. Returns a map of changed metadata if the
-  /// config was updated, allowing for hot-sync via sessions.patch.
+  /// user-selected [model], and return the model metadata that must be
+  /// asserted on the live Gateway session.
+  ///
+  /// Persisted config and live session state are independent. The file can
+  /// already contain Venice while an existing `agent:main:main` session still
+  /// owns the prior BlockRun model, so every newly connected session must be
+  /// patched and acknowledged before chat.send.
   Future<Map<String, dynamic>> _syncModelToConfig(String model) async {
     // DO NOT sync agent models to the global defaults.
     // Agents have their own IDs and config; writing 'agent/id' to the global primary
     // would corrupt the default provider model setting.
     if (model.startsWith('agent/')) return {};
 
-    final Map<String, dynamic> changedMetadata = {};
     final canonical = ModelProviderCatalog.canonicalizeModelId(model);
+    final sessionMetadata = _sessionModelMetadata(canonical);
     final config = await _readConfig();
     final nativeOwner = await _nativeConfigOwnerSelected();
     if (nativeOwner) {
@@ -17403,13 +17771,32 @@ ${lines.join('\n')}
       } catch (_) {}
       await _writeConfig(config);
       _addActivity('[MODEL] syncToConfig: $canonical');
-
-      // OpenClaw SessionsPatchParamsSchema uses `model`. `primaryModel` is not
-      // a supported session field and is rejected as an additional property.
-      changedMetadata['model'] = canonical;
     }
 
-    return changedMetadata;
+    return sessionMetadata;
+  }
+
+  Map<String, dynamic> _sessionModelMetadata(String canonicalModel) {
+    if (canonicalModel.startsWith('agent/') ||
+        ModelProviderCatalog.isDirectLocalModelId(canonicalModel)) {
+      return const <String, dynamic>{};
+    }
+    // OpenClaw SessionsPatchParamsSchema uses `model`. `primaryModel` is not
+    // a supported session field and is rejected as an additional property.
+    return <String, dynamic>{'model': canonicalModel};
+  }
+
+  Map<String, dynamic> debugSessionModelMetadataForTesting(String model) =>
+      _sessionModelMetadata(ModelProviderCatalog.canonicalizeModelId(model));
+
+  bool _activeSessionAlreadyUsesModel(
+    Map<String, dynamic> metadata, {
+    required String sessionKey,
+  }) {
+    final desiredModel = metadata['model']?.toString().trim() ?? '';
+    return desiredModel.isNotEmpty &&
+        identical(_patchedSessionConnection, _connection) &&
+        _patchedSessionModels[sessionKey] == desiredModel;
   }
 
   Future<void> _patchActiveGatewaySessionModel(
@@ -17417,17 +17804,31 @@ ${lines.join('\n')}
     String sessionKey = 'main',
   }) async {
     if (changedMetadata.isEmpty || _connection == null) return;
+    final connection = _connection!;
+    if (!identical(_patchedSessionConnection, connection)) {
+      _patchedSessionModels.clear();
+      _patchedSessionConnection = connection;
+    }
+    final desiredModel = changedMetadata['model']?.toString().trim() ?? '';
+    if (desiredModel.isNotEmpty &&
+        _patchedSessionModels[sessionKey] == desiredModel) {
+      return;
+    }
     try {
-      await _connection!.patchSessionMetadata(
+      await connection.patchSessionMetadata(
         changedMetadata,
         sessionKey: sessionKey,
       );
+      if (desiredModel.isNotEmpty) {
+        _patchedSessionModels[sessionKey] = desiredModel;
+      }
       _addActivity(
         '[MODEL] active gateway session patched ($sessionKey): $changedMetadata',
       );
       await Future.delayed(const Duration(milliseconds: 500));
     } catch (e) {
       _addActivity('[MODEL] active session model patch skipped: $e');
+      rethrow;
     }
   }
 
@@ -17471,6 +17872,8 @@ ${lines.join('\n')}
   void disconnectWebSocket() {
     _rpcDiscoveryDone = false;
     _gatewayInteractiveReadyAt = null;
+    _patchedSessionModels.clear();
+    _patchedSessionConnection = null;
     _connection?.dispose();
     _connection = null;
     _updateState(_state.copyWith(

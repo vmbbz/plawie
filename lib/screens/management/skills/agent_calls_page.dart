@@ -230,7 +230,7 @@ class _AgentCallsPageState extends State<AgentCallsPage> {
 
   Widget _buildAppBar(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 100.0,
+      expandedHeight: AppLayout.standardSliverHeaderHeight,
       floating: false,
       pinned: true,
       backgroundColor: Colors.transparent,

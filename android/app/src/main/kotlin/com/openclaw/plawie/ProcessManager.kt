@@ -1,13 +1,10 @@
 package com.openclaw.plawie
 
 import java.io.BufferedReader
-import java.io.BufferedWriter
 import java.io.InputStreamReader
-import java.io.OutputStreamWriter
 import java.io.File
 import android.util.Log
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.CompletableFuture
 import android.content.Context
 import android.os.Build
 import android.os.Environment
@@ -52,22 +49,56 @@ class ProcessManager(
     // ONLY proot-specific vars — guest env is set via `env -i` inside
     // the command line, matching proot-distro's approach.
     // ================================================================
-    private fun prootEnv(): Map<String, String> = mapOf(
-        // proot temp directory for its internal use
-        "PROOT_TMP_DIR" to tmpDir,
-        // Loader executables for proot's execve interception
-        "PROOT_LOADER" to "$nativeLibDir/libprootloader.so",
-        "PROOT_LOADER_32" to "$nativeLibDir/libprootloader32.so",
-        // LD_LIBRARY_PATH: proot itself needs libtalloc.so.2
-        // This does NOT leak into the guest (env -i cleans it)
-        "LD_LIBRARY_PATH" to "$libDir:$nativeLibDir",
-        // NOTE: Do NOT set PROOT_NO_SECCOMP. proot-distro does NOT set it.
-        // Seccomp BPF filter provides efficient syscall interception AND
-        // proper fork/clone child process tracking.
-        //
-        // NOTE: Do NOT set PROOT_L2S_DIR. We extract with Java, not
-        // `proot --link2symlink tar`, so no L2S metadata exists.
-    )
+    private fun prootEnv(): Map<String, String> {
+        ensureProotRuntimeLibraries()
+        return mapOf(
+            // proot temp directory for its internal use
+            "PROOT_TMP_DIR" to tmpDir,
+            // Loader executables for proot's execve interception
+            "PROOT_LOADER" to "$nativeLibDir/libprootloader.so",
+            "PROOT_LOADER_32" to "$nativeLibDir/libprootloader32.so",
+            // LD_LIBRARY_PATH: proot itself needs libtalloc.so.2
+            // This does NOT leak into the guest (env -i cleans it)
+            "LD_LIBRARY_PATH" to "$libDir:$nativeLibDir",
+            // NOTE: Do NOT set PROOT_NO_SECCOMP. proot-distro does NOT set it.
+            // Seccomp BPF filter provides efficient syscall interception AND
+            // proper fork/clone child process tracking.
+            //
+            // NOTE: Do NOT set PROOT_L2S_DIR. We extract with Java, not
+            // `proot --link2symlink tar`, so no L2S metadata exists.
+        )
+    }
+
+    /**
+     * Android extracts JNI libraries by their package filename, while the
+     * Termux PRoot binary requests libtalloc.so.2 by SONAME. Native-first setup
+     * does not necessarily initialize the rollback rootfs, so repair the alias
+     * at the actual PRoot execution boundary instead of relying on setup order.
+     */
+    @Synchronized
+    private fun ensureProotRuntimeLibraries() {
+        val source = File(nativeLibDir, "libtalloc.so")
+        if (!source.isFile) {
+            throw IllegalStateException(
+                "PRoot fallback runtime is incomplete: libtalloc.so is missing"
+            )
+        }
+
+        val targetDir = File(libDir)
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            throw IllegalStateException(
+                "PRoot fallback runtime directory could not be created"
+            )
+        }
+
+        val target = File(targetDir, "libtalloc.so.2")
+        if (!target.isFile || target.length() != source.length()) {
+            source.copyTo(target, overwrite = true)
+            target.setReadable(true, true)
+            target.setExecutable(true, true)
+            Log.i("ProcessManager", "Repaired PRoot libtalloc.so.2 runtime alias")
+        }
+    }
 
     // ================================================================
     // Common proot flags shared by both install and gateway modes.
@@ -238,6 +269,7 @@ class ProcessManager(
     // Used during bootstrap for apt, npm, chmod, etc.
     // ================================================================
     fun runInProotSync(command: String, timeoutSeconds: Long = 900): String {
+        ensureProotRootfsReady()
         val cmd = buildInstallCommand(command)
         val env = prootEnv()
 
@@ -295,144 +327,15 @@ class ProcessManager(
         return output.toString()
     }
 
-    // ================================================================
-    // Persistent Shell — one long-lived PRoot/bash process per session.
-    // Terminal commands pipe through it instead of spawning new processes,
-    // keeping RAM usage flat and eliminating PRoot startup overhead.
-    //
-    // Key design rules that prevent crashes:
-    //  1. Init sentinel drain uses a background thread + CompletableFuture so
-    //     readLine() never blocks the calling thread indefinitely.
-    //  2. executeInShell uses a Semaphore (not @Synchronized) so it doesn't
-    //     hold the ProcessManager lock while waiting for command output.
-    //  3. destroyShell() is safe to call at any time — it just closes streams;
-    //     the reader thread catches IOException and completes its future.
-    // ================================================================
-    private var _shellProcess: Process? = null
-    private var _shellWriter: BufferedWriter? = null
-    private var _shellReader: BufferedReader? = null
-    // Permits=1 ensures only one command runs at a time without holding
-    // the ProcessManager lock during the (potentially long) read phase.
-    private val _shellSemaphore = java.util.concurrent.Semaphore(1)
-
-    private fun buildPersistentShellCommand(): List<String> {
-        val flags = commonProotFlags().toMutableList()
-        flags.add(1, "--root-id")
-        flags.add(2, "--kernel-release=$FAKE_KERNEL_RELEASE")
-        flags.addAll(listOf(
-            "/usr/bin/env", "-i",
-            "HOME=/root",
-            "LANG=C.UTF-8",
-            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "TERM=xterm-256color",
-            "TMPDIR=/tmp",
-            "NODE_OPTIONS=--require /root/.openclaw/bionic-bypass.js",
-            "npm_config_cache=/tmp/npm-cache",
-            "UV_USE_IO_URING=0",
-            "/bin/bash", "--norc", "--noprofile",
-        ))
-        return flags
-    }
-
-    // @Synchronized here is fine — this only holds the lock briefly during
-    // startup (the readLine happens in a background thread, not inline).
-    @Synchronized
-    private fun ensureShellAlive() {
-        if (_shellProcess?.isAlive == true) return
-        Log.d("ProcessManager", "[PersistentShell] Starting...")
-        destroyShell()
-
-        val pb = ProcessBuilder(buildPersistentShellCommand())
-        pb.environment().clear()
-        pb.environment().putAll(prootEnv())
-        pb.redirectErrorStream(true)
-
-        _shellProcess = pb.start()
-        _shellWriter = BufferedWriter(OutputStreamWriter(_shellProcess!!.outputStream))
-        _shellReader = BufferedReader(InputStreamReader(_shellProcess!!.inputStream))
-
-        // Drain PRoot init noise in a background thread with a hard timeout.
-        // NEVER call readLine() inline here — it blocks indefinitely if PRoot
-        // hangs during startup, which would freeze the ProcessManager lock.
-        val initFuture = CompletableFuture<Unit>()
-        val initReader = _shellReader!!
-        Thread {
-            try {
-                _shellWriter!!.write("echo __SHELL_READY__\n")
-                _shellWriter!!.flush()
-                var line: String?
-                while (initReader.readLine().also { line = it } != null) {
-                    if ((line ?: "").trim() == "__SHELL_READY__") break
-                }
-                initFuture.complete(Unit)
-            } catch (e: Exception) {
-                initFuture.completeExceptionally(e)
-            }
-        }.start()
-
-        try {
-            initFuture.get(8, TimeUnit.SECONDS)
-            Log.d("ProcessManager", "[PersistentShell] Ready")
-        } catch (e: Exception) {
-            // Timed out or failed — shell may still be usable, proceed anyway
-            Log.w("ProcessManager", "[PersistentShell] Init incomplete: ${e.message}")
+    private fun ensureProotRootfsReady() {
+        val bashReady = File(rootfsDir, "bin/bash").isFile ||
+            File(rootfsDir, "usr/bin/bash").isFile
+        if (!bashReady) {
+            throw IllegalStateException(
+                "Optional PRoot rollback is not installed. " +
+                    "Open Terminal and choose Open rollback setup first."
+            )
         }
-    }
-
-    fun executeInShell(command: String, timeoutMs: Long = 30000): String {
-        // Semaphore ensures sequential command execution without locking
-        // the entire ProcessManager for the duration of the read phase.
-        if (!_shellSemaphore.tryAcquire(timeoutMs, TimeUnit.MILLISECONDS)) {
-            throw RuntimeException("Terminal busy — previous command still running")
-        }
-        try {
-            ensureShellAlive()
-
-            val w = _shellWriter ?: throw RuntimeException("Shell failed to start")
-            val r = _shellReader ?: throw RuntimeException("Shell failed to start")
-
-            val sentinel = "__OC_DONE_${System.currentTimeMillis()}_${(1000..9999).random()}__"
-            w.write("$command\necho $sentinel\n")
-            w.flush()
-
-            val future = CompletableFuture<String>()
-            Thread {
-                val sb = StringBuilder()
-                try {
-                    var line: String?
-                    while (r.readLine().also { line = it } != null) {
-                        val l = line!!
-                        if (l.trim() == sentinel) { future.complete(sb.toString()); return@Thread }
-                        if (!l.contains("proot warning") && !l.contains("can't sanitize")) {
-                            sb.appendLine(l)
-                        }
-                    }
-                    future.complete(sb.toString())
-                } catch (e: Exception) { future.completeExceptionally(e) }
-            }.start()
-
-            return try {
-                future.get(timeoutMs, TimeUnit.MILLISECONDS)
-            } catch (e: java.util.concurrent.TimeoutException) {
-                destroyShell()
-                throw RuntimeException("Command timed out after ${timeoutMs}ms")
-            } catch (e: java.util.concurrent.ExecutionException) {
-                destroyShell()
-                throw RuntimeException("Shell error: ${e.cause?.message}")
-            }
-        } finally {
-            _shellSemaphore.release()
-        }
-    }
-
-    fun destroyShell() {
-        try { _shellWriter?.close() } catch (_: Exception) {}
-        try { _shellReader?.close() } catch (_: Exception) {}
-        try { _shellProcess?.destroyForcibly() } catch (_: Exception) {}
-        _shellProcess = null
-        _shellWriter = null
-        _shellReader = null
-        Log.d("ProcessManager", "[PersistentShell] Destroyed")
     }
 
     // ================================================================
@@ -440,6 +343,7 @@ class ProcessManager(
     // Uses full proot-distro command_login() style configuration.
     // ================================================================
     fun startProotProcess(command: String): Process {
+        ensureProotRootfsReady()
         val cmd = buildGatewayCommand(command)
         val env = prootEnv()
 

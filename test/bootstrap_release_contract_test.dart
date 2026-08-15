@@ -304,7 +304,7 @@ void main() {
       contains('Native setup must enter waitForStartup immediately'),
     );
     expect(gateway, contains('_applyNativeProviderConfigPolicy'));
-    expect(gateway, contains('_applyNativeBundledPluginPolicy'));
+    expect(gateway, contains('_applyNativePluginPolicy'));
     expect(gateway, contains('nativeGatewayExternalPackageForProvider'));
     expect(providers, contains('nativeGatewayBundledPluginIds'));
 

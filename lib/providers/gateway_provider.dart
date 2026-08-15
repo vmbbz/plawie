@@ -41,11 +41,13 @@ class GatewayProvider extends ChangeNotifier {
     String model = ModelProviderCatalog.defaultCloudFallbackModel,
     List<Map<String, dynamic>>? conversationHistory,
     String? sessionKey,
+    bool explicitToolCompatibilityProbe = false,
   }) {
     return _gatewayService.sendMessage(message,
         model: model,
         conversationHistory: conversationHistory,
-        sessionKey: sessionKey);
+        sessionKey: sessionKey,
+        explicitToolCompatibilityProbe: explicitToolCompatibilityProbe);
   }
 
   /// Send an image + optional text directly to the local vision model on :8081.

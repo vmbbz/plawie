@@ -518,6 +518,69 @@ OpenClaw `2026.7.1` rejects `primaryModel` in `sessions.patch`. The app must
 wait for the patch response and must not tear down a healthy WebSocket merely
 to apply the supported live-session field.
 
+The response compatibility boundary is also explicit. Current protocol-v3
+Gateways acknowledge this mutation with `ok: true` and report the resolved
+canonical `modelProvider`, `model`, and effective `agentRuntime`. Plawie checks
+the returned provider/model against the exact requested canonical ID before it
+allows the paid turn. The installed 2026.7.1 Gateway can instead return the
+legacy mutation receipt `payload: {ts: <epoch-ms>}`. That timestamp does not
+prove the resolved model, so Plawie immediately reads `sessions.list` and
+requires the exact session key, provider, and upstream model before sending.
+Explicit failures, mismatched resolved models, unverifiable legacy receipts,
+error fields, empty responses, and arbitrary payloads fail closed before any
+paid provider request is sent.
+
+The persisted primary and the live session model are independent truths. A
+provider selection can already be present in `openclaw.json` while an existing
+`agent:main:main` session still owns the previous provider/model. Plawie must
+therefore assert the selected model on each newly connected session even when
+the config file needs no write. It may cache an acknowledged assertion for the
+lifetime of that WebSocket, but must invalidate the cache on disconnect,
+Gateway config transition, reload, or restart.
+
+## Paid-provider Tool Schema Compatibility
+
+The paid-provider loopback keeps OpenClaw's complete tool list and schemas by
+default. Compatibility adaptation is permitted only when a live provider/model
+error identifies a narrower schema dialect. Venice-hosted Gemini models reject
+JSON Schema's numeric `exclusiveMinimum` and `exclusiveMaximum` fields in
+function declarations, so the loopback translates only those fields to Gemini
+compatible inclusive bounds. Integer bounds remain exact. OpenClaw retains the
+original schema and remains the final argument validator; BlockRun and
+non-Gemini Venice payloads stay byte-semantically unchanged apart from the
+already documented provider model-prefix mapping.
+
+### Phase-aware provider failures
+
+Gateway chat errors are classified from observed turn state, not inferred only
+from provider prose. Plawie records whether the request was accepted, a tool
+call was emitted, a tool result was observed, and assistant text was emitted.
+The user-facing failure then identifies the stage and uses a conservative
+side-effect status.
+
+Plawie never automatically replays a failed provider turn or silently switches
+providers. When a tool call or result has been observed, the user must verify
+the action or receipt before retrying. Authentication and payment failures
+direct the user to repair the selected provider; schema failures may offer an
+explicit switch only before a tool could have run. Diagnostics are bounded and
+redact credential/signature-shaped fields.
+
+### Capability evidence and route quarantine
+
+Provider catalog flags remain advertisements. `Agent-ready` requires a
+matching full-loop receipt for the exact provider, upstream model, endpoint
+class, Gateway version, compatibility profile, mobile tool-schema digest, and
+stream mode. Local receipts are bounded, non-secret, expire after 30 days, and
+survive app updates. They contain no prompt, tool argument/result, opaque
+reasoning metadata, credential, signature, or payment proof.
+
+The release profile records physical-device evidence for the exact Venice
+`zai-org-glm-5-2` route. Venice `gemini-3-6-flash` remains schema-accepted but
+not loop-verified until continuation metadata is preserved; Venice
+`gemma-4-uncensored` remains selectable for chat but quarantined from an
+Agent-ready claim. These records do not alter any other Venice model, direct
+Google, BlockRun, BYOK provider, or local/native route.
+
 ## Device Health Cost And Freshness
 
 `device.health` includes filesystem skill parity and dependency-pack planning,

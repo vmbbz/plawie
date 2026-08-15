@@ -1,4 +1,10 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'canonical_model_selection.dart';
+import 'runtime_credential_store.dart';
 
 class PreferencesService {
   static final PreferencesService _instance = PreferencesService._internal();
@@ -10,13 +16,10 @@ class PreferencesService {
   static const _keyFirstRun = 'first_run';
   static const _keyDashboardUrl = 'dashboard_url';
   static const _keyNodeEnabled = 'node_enabled';
-  static const _keyNodeDeviceToken = 'node_device_token';
   static const _keyNodeIdentityDeviceId = 'node_identity_device_id';
   static const _keyNodeGatewayHost = 'node_gateway_host';
   static const _keyNodeGatewayPort = 'node_gateway_port';
   static const _keyNodePublicKey = 'node_ed25519_public';
-  static const _keyNodeGatewayToken = 'node_gateway_token';
-  static const _keyGatewayToken = 'gateway_token';
   static const _keyGatewayRuntimeOwner = 'gateway_runtime_owner';
   static const _keyNativeGatewayDefaultCutoverApplied =
       'native_gateway_default_cutover_applied';
@@ -25,6 +28,7 @@ class PreferencesService {
   static const _keyNodeCommandContractHash = 'node_command_contract_hash';
   static const _keyLocalChatModeEnabled = 'local_chat_mode_enabled';
   static const _keyLastCloudModel = 'last_cloud_model';
+  static const _keyCanonicalModelSelection = 'canonical_model_selection_v1';
   static const _keyImmersiveUiEnabled = 'immersive_ui_enabled';
   static const _keyPendingSetupId = 'pending_setup_id';
   static const _keyPendingSetupModel = 'pending_setup_model';
@@ -35,20 +39,37 @@ class PreferencesService {
       'last_provider_setup_receipt_id';
   static const _keyDynamicModelCatalogSnapshot =
       'dynamic_model_catalog_snapshot_v1';
+  static const _keyModelCapabilityReceipts = 'model_capability_receipts_v1';
   static const _keyAiPaymentProvider = 'ai_payment_provider';
   static const _keyX402PaymentReceipts = 'x402_payment_receipts_v1';
   static const _keyCommerceReceipts = 'commerce_receipts_v1';
+  static const _keyBridgeCapabilitySnapshot = 'bridge_capability_snapshot_v1';
+  static const _keyActiveBridgeReceipt = 'active_bridge_receipt_v1';
+  static const _keyBridgeReceipts = 'bridge_receipts_v1';
 
   SharedPreferences? _prefs;
 
   Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
+    await RuntimeCredentialStore.instance.init(_prefs!);
+  }
+
+  void _persistCredential(Future<void> operation) {
+    unawaited(
+      operation.catchError((Object error, StackTrace stackTrace) {
+        debugPrint(
+          '[PreferencesService] Secure credential persistence failed: '
+          '${error.runtimeType}',
+        );
+      }),
+    );
   }
 
   SharedPreferences get _p {
     if (_prefs == null) {
       throw StateError(
-          'PreferencesService not initialized. Call init() first.');
+        'PreferencesService not initialized. Call init() first.',
+      );
     }
     return _prefs!;
   }
@@ -81,13 +102,12 @@ class PreferencesService {
   set immersiveUiEnabled(bool value) =>
       _p.setBool(_keyImmersiveUiEnabled, value);
 
-  String? get nodeDeviceToken => _p.getString(_keyNodeDeviceToken);
+  String? get nodeDeviceToken =>
+      RuntimeCredentialStore.instance.nodeDeviceToken;
   set nodeDeviceToken(String? value) {
-    if (value != null) {
-      _p.setString(_keyNodeDeviceToken, value);
-    } else {
-      _p.remove(_keyNodeDeviceToken);
-    }
+    _persistCredential(
+      RuntimeCredentialStore.instance.setNodeDeviceToken(value),
+    );
   }
 
   String? get nodeIdentityDeviceId => _p.getString(_keyNodeIdentityDeviceId);
@@ -120,17 +140,18 @@ class PreferencesService {
 
   String? get nodePublicKey => _p.getString(_keyNodePublicKey);
 
-  String? get nodeGatewayToken => _p.getString(_keyNodeGatewayToken);
+  String? get nodeGatewayToken =>
+      RuntimeCredentialStore.instance.nodeGatewayToken;
   set nodeGatewayToken(String? value) {
-    if (value != null && value.isNotEmpty) {
-      _p.setString(_keyNodeGatewayToken, value);
-    } else {
-      _p.remove(_keyNodeGatewayToken);
-    }
+    _persistCredential(
+      RuntimeCredentialStore.instance.setNodeGatewayToken(value),
+    );
   }
 
-  String get gatewayToken => _p.getString(_keyGatewayToken) ?? '';
-  set gatewayToken(String value) => _p.setString(_keyGatewayToken, value);
+  String get gatewayToken => RuntimeCredentialStore.instance.gatewayToken;
+  set gatewayToken(String value) => _persistCredential(
+    RuntimeCredentialStore.instance.setGatewayToken(value),
+  );
 
   static const gatewayRuntimeOwnerProot = 'proot';
   static const gatewayRuntimeOwnerNativeProduction =
@@ -219,6 +240,22 @@ class PreferencesService {
   Future<void> setCommerceReceipts(List<String> receipts) =>
       _p.setStringList(_keyCommerceReceipts, receipts);
 
+  String? get bridgeCapabilitySnapshotJson =>
+      _p.getString(_keyBridgeCapabilitySnapshot);
+  Future<bool> setBridgeCapabilitySnapshotJson(String? value) => value == null
+      ? _p.remove(_keyBridgeCapabilitySnapshot)
+      : _p.setString(_keyBridgeCapabilitySnapshot, value);
+
+  String? get activeBridgeReceiptJson => _p.getString(_keyActiveBridgeReceipt);
+  Future<bool> setActiveBridgeReceiptJson(String? value) => value == null
+      ? _p.remove(_keyActiveBridgeReceipt)
+      : _p.setString(_keyActiveBridgeReceipt, value);
+
+  List<String> get bridgeReceipts =>
+      _p.getStringList(_keyBridgeReceipts) ?? const <String>[];
+  Future<bool> setBridgeReceipts(List<String> value) =>
+      _p.setStringList(_keyBridgeReceipts, value);
+
   /// User-chosen agent name
   String get agentName => _p.getString('agent_name') ?? 'Plawie';
   set agentName(String value) => _p.setString('agent_name', value);
@@ -235,6 +272,44 @@ class PreferencesService {
     } else {
       _p.remove('configured_model');
     }
+    final receipt = CanonicalModelSelection.tryDecode(
+      _p.getString(_keyCanonicalModelSelection),
+    );
+    if (receipt != null && (value == null || !receipt.matchesModelId(value))) {
+      _p.remove(_keyCanonicalModelSelection);
+    }
+  }
+
+  /// Non-secret, validated model identity receipt. The raw configured model is
+  /// retained separately for compatibility with older installs and Gateway
+  /// configuration readers.
+  String? get canonicalModelSelectionJson =>
+      _p.getString(_keyCanonicalModelSelection);
+  set canonicalModelSelectionJson(String? value) {
+    if (value != null && value.trim().isNotEmpty) {
+      _p.setString(_keyCanonicalModelSelection, value.trim());
+    } else {
+      _p.remove(_keyCanonicalModelSelection);
+    }
+  }
+
+  CanonicalModelSelection? get configuredModelSelection {
+    final selection = CanonicalModelSelection.tryDecode(
+      canonicalModelSelectionJson,
+    );
+    final rawModel = configuredModel;
+    if (selection == null ||
+        rawModel == null ||
+        !selection.matchesModelId(rawModel)) {
+      return null;
+    }
+    return selection;
+  }
+
+  void setConfiguredModelSelection(CanonicalModelSelection selection) {
+    selection.validate();
+    configuredModel = selection.namespacedModelId;
+    canonicalModelSelectionJson = selection.encode();
   }
 
   bool get localChatModeEnabled =>
@@ -427,6 +502,18 @@ class PreferencesService {
       _p.setString(_keyDynamicModelCatalogSnapshot, value);
     } else {
       _p.remove(_keyDynamicModelCatalogSnapshot);
+    }
+  }
+
+  /// Non-secret, bounded model compatibility evidence. It never contains
+  /// prompts, credentials, tool arguments/results, or payment proofs.
+  String? get modelCapabilityReceiptsJson =>
+      _p.getString(_keyModelCapabilityReceipts);
+  set modelCapabilityReceiptsJson(String? value) {
+    if (value != null && value.isNotEmpty) {
+      _p.setString(_keyModelCapabilityReceipts, value);
+    } else {
+      _p.remove(_keyModelCapabilityReceipts);
     }
   }
 }

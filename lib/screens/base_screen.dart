@@ -5,21 +5,39 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:decimal/decimal.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../constants.dart';
+import '../providers/gateway_provider.dart';
 import '../services/ai_payment_provider_catalog.dart';
 import '../services/base_service.dart';
 import '../services/base_wallet_recovery_view_model.dart';
-import '../services/bridge_quote_service.dart';
+import '../services/bridge/bridge_funding_runtime.dart';
+import '../services/bridge/bridge_models.dart';
+import '../services/dynamic_model_catalog.dart';
 import '../services/native_bridge.dart';
+import '../services/paid_provider_gateway_coordinator.dart';
+import '../services/gateway_service.dart';
 import '../services/preferences_service.dart';
 import '../services/provider_balance_service.dart';
+import '../services/provider_top_up_funding_coordinator.dart';
+import '../services/wallet_funded_provider_readiness.dart';
 import '../services/x402_payment_service.dart';
 import '../services/x402_payment_transport_service.dart';
 import '../widgets/status_card.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/bridge_funding_panel.dart';
+import '../widgets/keeperhub_agent_wallet_card.dart';
 
 class BaseScreen extends StatefulWidget {
-  const BaseScreen({super.key});
+  const BaseScreen({
+    super.key,
+    this.initialPaymentProviderId,
+    this.initialAction,
+  });
+
+  final String? initialPaymentProviderId;
+  final WalletFundedProviderAction? initialAction;
 
   @override
   State<BaseScreen> createState() => _BaseScreenState();
@@ -32,7 +50,7 @@ class _BaseScreenState extends State<BaseScreen> {
       X402PaymentTransportService();
   final ProviderBalanceService _providerBalances =
       ProviderBalanceService.instance;
-  final BridgeQuoteService _bridgeQuotes = BridgeQuoteService();
+  BridgeFundingRuntime? _bridgeFunding;
   StreamSubscription<BaseEvent>? _eventSub;
   bool _isLoading = false;
   String? _error;
@@ -43,6 +61,12 @@ class _BaseScreenState extends State<BaseScreen> {
   String? _aiPaymentProgress;
   ProviderBalanceSnapshot? _providerBalance;
   bool _providerBalanceBusy = false;
+  bool _providerReadinessBusy = false;
+  DynamicCatalogSnapshot _modelCatalog =
+      DynamicCatalogSnapshot.bundledFallback();
+  PaidProviderTransportState _paidTransportState =
+      PaidProviderTransportState.stopped;
+  bool _initialActionHandled = false;
 
   @override
   void initState() {
@@ -55,7 +79,8 @@ class _BaseScreenState extends State<BaseScreen> {
   void dispose() {
     _eventSub?.cancel();
     _x402Transport.dispose();
-    _bridgeQuotes.dispose();
+    final bridgeFunding = _bridgeFunding;
+    if (bridgeFunding != null) unawaited(bridgeFunding.dispose());
     super.dispose();
   }
 
@@ -72,21 +97,90 @@ class _BaseScreenState extends State<BaseScreen> {
     setState(() => _isLoading = true);
     try {
       await _prefs.init();
-      final savedPaymentProvider =
-          AiPaymentProviderCatalog.byId(_prefs.aiPaymentProvider);
-      if (savedPaymentProvider != null) {
-        _selectedAiPaymentProvider = savedPaymentProvider.id;
-        _providerBalance = _providerBalances.cached(savedPaymentProvider.id);
+      final selectedPaymentProvider =
+          AiPaymentProviderCatalog.byId(widget.initialPaymentProviderId) ??
+              AiPaymentProviderCatalog.byId(_prefs.aiPaymentProvider);
+      if (selectedPaymentProvider != null) {
+        _selectedAiPaymentProvider = selectedPaymentProvider.id;
+        _providerBalance = _providerBalances.cached(selectedPaymentProvider.id);
+        _prefs.aiPaymentProvider = selectedPaymentProvider.id;
       }
       await _baseService.initialize();
+      if (!mounted) return;
+      _bridgeFunding ??= BridgeFundingRuntime.create(
+        context: context,
+        preferences: _prefs,
+        baseService: _baseService,
+        isForeground: () => mounted,
+      );
+      _modelCatalog = await DynamicModelCatalogRepository().loadOrBundled();
+      final transportHealth =
+          await PaidProviderGatewayCoordinator.instance.inspectHealth();
+      _paidTransportState = transportHealth == null
+          ? PaidProviderTransportState.stopped
+          : transportHealth
+              ? PaidProviderTransportState.healthy
+              : PaidProviderTransportState.unhealthy;
       _paymentReceipts = await _x402Transport.receiptStore.read();
       if (_baseService.isConnected) {
         await _baseService.refreshBalance();
+        if (_baseService.isBaseMainnet) {
+          await _baseService.refreshBaseUsdcBalanceUnitsForPayment();
+        }
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+    if (mounted && !_initialActionHandled && widget.initialAction != null) {
+      _initialActionHandled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_runInitialProviderAction());
+      });
+    }
+  }
+
+  Future<void> _runInitialProviderAction() async {
+    final action = widget.initialAction;
+    final provider =
+        AiPaymentProviderCatalog.byId(_selectedAiPaymentProvider) ??
+            AiPaymentProviderCatalog.providers.first;
+    switch (action) {
+      case WalletFundedProviderAction.fundWallet:
+        if (_baseService.isConnected) {
+          await _showBaseFundingModal();
+        } else {
+          _showWalletRequiredDialog();
+        }
+        break;
+      case WalletFundedProviderAction.switchToMainnet:
+        if (_baseService.isConnected) {
+          await _switchToMainnetForAiPayments();
+        } else {
+          _showWalletRequiredDialog();
+        }
+        break;
+      case WalletFundedProviderAction.refreshBalance:
+        if (_baseService.isConnected) {
+          await _refreshProviderBalance(provider);
+        } else {
+          _showWalletRequiredDialog();
+        }
+        break;
+      case WalletFundedProviderAction.topUpVenice:
+        if (!_baseService.isConnected) {
+          _showWalletRequiredDialog();
+        } else {
+          await _showTopUpPreparation(provider);
+        }
+        break;
+      case WalletFundedProviderAction.none:
+      case WalletFundedProviderAction.openBase:
+      case WalletFundedProviderAction.restartGateway:
+      case WalletFundedProviderAction.refreshModels:
+      case null:
+        break;
     }
   }
 
@@ -99,6 +193,46 @@ class _BaseScreenState extends State<BaseScreen> {
       }
     } catch (e) {
       setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _selectWalletNetwork(WalletNetwork selected) async {
+    if (_isLoading || selected == _baseService.selectedNetwork) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      await _baseService.setWalletNetwork(selected);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _makeCurrentNetworkDefault() async {
+    if (_isLoading || _baseService.isSelectedNetworkDefault) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      await _baseService.setDefaultWalletNetwork(
+        _baseService.selectedNetwork,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_baseService.defaultNetworkDefinition.name} will open by default',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -138,6 +272,9 @@ class _BaseScreenState extends State<BaseScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final selectedNetwork = _baseService.network;
+    final stablecoin = selectedNetwork.token;
+    final canSend = _baseService.ordinaryTransactionsAvailable && !_isLoading;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -147,7 +284,7 @@ class _BaseScreenState extends State<BaseScreen> {
           CustomScrollView(
             slivers: [
               SliverAppBar(
-                expandedHeight: 100,
+                expandedHeight: AppLayout.standardSliverHeaderHeight,
                 floating: false,
                 pinned: true,
                 backgroundColor: Colors.transparent,
@@ -165,7 +302,7 @@ class _BaseScreenState extends State<BaseScreen> {
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      'BASE',
+                      'WALLET',
                       style: GoogleFonts.outfit(
                         fontWeight: FontWeight.w900,
                         fontSize: 14,
@@ -185,57 +322,41 @@ class _BaseScreenState extends State<BaseScreen> {
                   ),
                 ),
                 actions: [
-                  // Network toggle
-                  PopupMenuButton<bool>(
+                  PopupMenuButton<WalletNetwork>(
                     icon: Icon(
-                      Icons.public,
-                      color: _baseService.useSepolia
-                          ? Colors.orange
-                          : Colors.blue.shade400,
+                      _networkIcon(selectedNetwork),
+                      color: _networkColor(selectedNetwork),
                     ),
                     tooltip: 'Network: ${_baseService.networkName}',
-                    onSelected: (useSepolia) async {
-                      await _baseService.setNetwork(sepolia: useSepolia);
-                      setState(() {});
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: true,
-                        child: Row(
-                          children: [
-                            Icon(Icons.science,
-                                color: _baseService.useSepolia
-                                    ? Colors.orange
-                                    : Colors.grey,
-                                size: 20),
-                            const SizedBox(width: 8),
-                            const Text('Base Sepolia (Testnet)'),
-                            if (_baseService.useSepolia) ...[
-                              const Spacer(),
-                              const Icon(Icons.check, size: 18),
-                            ]
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: false,
-                        child: Row(
-                          children: [
-                            Icon(Icons.public,
-                                color: !_baseService.useSepolia
-                                    ? Colors.blue
-                                    : Colors.grey,
-                                size: 20),
-                            const SizedBox(width: 8),
-                            const Text('Base Mainnet'),
-                            if (!_baseService.useSepolia) ...[
-                              const Spacer(),
-                              const Icon(Icons.check, size: 18),
-                            ]
-                          ],
-                        ),
-                      ),
-                    ],
+                    onSelected: _selectWalletNetwork,
+                    itemBuilder: (context) => WalletNetworkPolicy.values
+                        .map(
+                          (definition) => PopupMenuItem<WalletNetwork>(
+                            value: definition.network,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _networkIcon(definition),
+                                  color: definition.network ==
+                                          _baseService.selectedNetwork
+                                      ? _networkColor(definition)
+                                      : Colors.grey,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(definition.isTestnet
+                                      ? '${definition.name} (Testnet)'
+                                      : definition.name),
+                                ),
+                                if (definition.network ==
+                                    _baseService.selectedNetwork)
+                                  const Icon(Icons.check, size: 18),
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
                   ),
                   IconButton(
                     icon: const Icon(Icons.refresh),
@@ -254,14 +375,23 @@ class _BaseScreenState extends State<BaseScreen> {
                         onRefresh: _refreshBalance,
                         child: SingleChildScrollView(
                           physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 24),
+                          padding: const EdgeInsets.fromLTRB(
+                            20,
+                            AppLayout.pageTopInset,
+                            20,
+                            24,
+                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _buildWalletHeader(theme),
                               const SizedBox(height: 16),
                               _buildWalletStatePanel(theme),
+                              const SizedBox(height: 24),
+                              _sectionLabel(theme, 'AGENT EXECUTION'),
+                              KeeperHubAgentWalletCard(
+                                personalWalletAddress: _baseService.address,
+                              ),
                               const SizedBox(height: 24),
                               _buildNetworkBanner(theme),
                               const SizedBox(height: 16),
@@ -277,19 +407,29 @@ class _BaseScreenState extends State<BaseScreen> {
                               if (_baseService.isConnected) ...[
                                 StatusCard(
                                   title: 'Send ETH',
-                                  subtitle:
-                                      'Transfer ETH to an address or .base.eth name',
+                                  subtitle: canSend
+                                      ? selectedNetwork.supportsBasenames
+                                          ? 'Transfer ETH to an address or .base.eth name'
+                                          : 'Transfer ETH to an explicit 0x address'
+                                      : _baseService
+                                          .ordinaryTransactionUnavailableReason,
                                   icon: Icons.send,
                                   trailing: const Icon(Icons.chevron_right),
-                                  onTap: _showSendEthDialog,
+                                  onTap: canSend ? _showSendEthDialog : null,
                                 ),
-                                StatusCard(
-                                  title: 'Send USDC',
-                                  subtitle: 'Transfer USDC stablecoin',
-                                  icon: Icons.attach_money,
-                                  trailing: const Icon(Icons.chevron_right),
-                                  onTap: _showSendUsdcDialog,
-                                ),
+                                if (stablecoin != null)
+                                  StatusCard(
+                                    title: 'Send ${stablecoin.symbol}',
+                                    subtitle: canSend
+                                        ? 'Transfer official ${stablecoin.symbol} on ${selectedNetwork.name}'
+                                        : _baseService
+                                            .ordinaryTransactionUnavailableReason,
+                                    icon: Icons.attach_money,
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: canSend
+                                        ? _showSendStablecoinDialog
+                                        : null,
+                                  ),
                                 StatusCard(
                                   title: 'Receive',
                                   subtitle: 'Show your wallet address / QR',
@@ -339,283 +479,67 @@ class _BaseScreenState extends State<BaseScreen> {
   }
 
   Widget _buildBridgePanel(ThemeData theme) {
-    return GlassCard(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.swap_calls_rounded,
-                    color: Color(0xFF5B8CFF), size: 22),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Fund Base from another chain',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                  ),
-                ),
-                Text(
-                  'QUOTE ONLY',
-                  style: TextStyle(
-                    color: Colors.orangeAccent,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Check a live LI.FI route from Ethereum, Solana, or Robinhood Chain into this Base wallet. The source transaction stays in your external wallet; Plawie never signs arbitrary bridge calldata.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: BridgeQuoteService.sourceChains
-                  .map((chain) => Chip(
-                        avatar: Icon(
-                          chain.type == BridgeChainType.svm
-                              ? Icons.blur_circular_rounded
-                              : Icons.hexagon_outlined,
-                          size: 14,
-                        ),
-                        label: Text(chain.name),
-                        visualDensity: VisualDensity.compact,
-                      ))
-                  .toList(growable: false),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _baseService.isConnected
-                    ? _showBridgeQuoteDialog
-                    : _showWalletRequiredDialog,
-                icon: const Icon(Icons.route_outlined),
-                label: const Text('Get live bridge quote'),
-              ),
-            ),
-          ],
+    final runtime = _bridgeFunding;
+    if (runtime == null) {
+      return const GlassCard(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text(
+            'External funding is unavailable because its local runtime could not be initialized.',
+          ),
         ),
-      ),
+      );
+    }
+    return BridgeFundingPanel(
+      controller: runtime.controller,
+      capabilities: runtime.capabilities,
+      baseDestinationAddress: _baseService.address,
+      baseWalletAvailable: _baseService.isConnected,
+      baseMainnetSelected: _baseService.isBaseMainnet,
+      onFundingCompleted: _handleBridgeFundingCompleted,
     );
   }
 
-  Future<void> _showBridgeQuoteDialog() async {
-    var sourceChain = BridgeQuoteService.sourceChains.first;
-    var sourceToken = sourceChain.nativeToken;
-    var busy = false;
-    String? dialogError;
-    final amountController = TextEditingController();
-    final sourceAddressController = TextEditingController();
-    BridgeQuote? quote;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: !busy,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Bridge into Base'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                DropdownButtonFormField<BridgeSourceChain>(
-                  initialValue: sourceChain,
-                  decoration: const InputDecoration(labelText: 'Source chain'),
-                  items: BridgeQuoteService.sourceChains
-                      .map((chain) => DropdownMenuItem(
-                            value: chain,
-                            child: Text(chain.name),
-                          ))
-                      .toList(growable: false),
-                  onChanged: busy
-                      ? null
-                      : (value) {
-                          if (value == null) return;
-                          setDialogState(() {
-                            sourceChain = value;
-                            sourceToken = value.nativeToken;
-                            dialogError = null;
-                          });
-                        },
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  key: ValueKey<String>('${sourceChain.id}-$sourceToken'),
-                  initialValue: sourceToken,
-                  decoration: const InputDecoration(labelText: 'Pay with'),
-                  items: <String>{sourceChain.nativeToken, 'USDC'}
-                      .map((token) => DropdownMenuItem(
-                            value: token,
-                            child: Text(token),
-                          ))
-                      .toList(growable: false),
-                  onChanged: busy
-                      ? null
-                      : (value) {
-                          if (value != null) {
-                            setDialogState(() => sourceToken = value);
-                          }
-                        },
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: amountController,
-                  enabled: !busy,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: 'Source amount',
-                    suffixText: sourceToken,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: sourceAddressController,
-                  enabled: !busy,
-                  autocorrect: false,
-                  decoration: InputDecoration(
-                    labelText: '${sourceChain.name} source-wallet address',
-                    helperText: 'The external wallet that will sign and pay',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Destination: ${_baseService.address}\n'
-                  'Receive: Base USDC\n'
-                  'Slippage limit: 0.5%',
-                  style: const TextStyle(fontSize: 11, height: 1.4),
-                ),
-                if (dialogError != null) ...[
-                  const SizedBox(height: 10),
-                  Text(dialogError!,
-                      style: const TextStyle(
-                          color: Colors.orangeAccent, fontSize: 11)),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: busy ? null : () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton.icon(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      setDialogState(() {
-                        busy = true;
-                        dialogError = null;
-                      });
-                      try {
-                        quote = await _bridgeQuotes.quoteToBaseUsdc(
-                          BridgeQuoteRequest(
-                            sourceChain: sourceChain,
-                            sourceToken: sourceToken,
-                            amount: amountController.text,
-                            sourceAddress: sourceAddressController.text,
-                            baseDestinationAddress: _baseService.address ?? '',
-                          ),
-                        );
-                        if (ctx.mounted) Navigator.pop(ctx);
-                      } catch (error) {
-                        if (ctx.mounted) {
-                          setDialogState(() {
-                            dialogError = '$error';
-                            busy = false;
-                          });
-                        }
-                      }
-                    },
-              icon: busy
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.search_rounded),
-              label: Text(busy ? 'Checking…' : 'Get quote'),
-            ),
-          ],
-        ),
-      ),
-    );
-    amountController.dispose();
-    sourceAddressController.dispose();
-    if (!mounted || quote == null) return;
-    await _showBridgeQuoteResult(quote!);
-  }
-
-  Future<void> _showBridgeQuoteResult(BridgeQuote quote) async {
-    final fee = quote.estimatedFeesUsd;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Live bridge estimate'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${quote.sourceAmount} ${quote.sourceToken} → at least ${quote.destinationAmountMinimum} ${quote.destinationToken}',
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Route: ${quote.routeTool}\n'
-                'From: ${quote.sourceChain.name}\n'
-                'To: Base\n'
-                '${quote.estimatedDurationSeconds == null ? '' : 'Estimated time: ~${quote.estimatedDurationSeconds}s\n'}'
-                '${fee == null ? '' : 'Estimated route + gas cost: \$${fee.toStringAsFixed(2)}\n'}'
-                'Quote validity: 60 seconds',
-                style: const TextStyle(fontSize: 12, height: 1.45),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'This is planning data only. Plawie discarded LI.FI transaction calldata. Jumper and your external source wallet must produce and show a fresh final transaction for you to approve.',
-                style: TextStyle(fontSize: 11, height: 1.4),
-              ),
-            ],
+  Future<void> _handleBridgeFundingCompleted(
+    BridgeFundingReceipt receipt,
+  ) async {
+    try {
+      if (receipt.balanceRefreshPending) {
+        await _bridgeFunding?.controller.refreshBaseBalance(receipt.intentId);
+      } else {
+        await _baseService.refreshBaseUsdcBalanceUnitsForPayment();
+      }
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_bridgeReceivedAmount(receipt)} USDC confirmed on Base Mainnet.',
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-          FilledButton.icon(
-            onPressed: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              final opened = await launchUrl(
-                quote.externalCompletionUrl,
-                mode: LaunchMode.externalApplication,
-              );
-              if (!opened && mounted) {
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Could not open Jumper.')),
-                );
-              }
-            },
-            icon: const Icon(Icons.open_in_new_rounded),
-            label: const Text('Open Jumper'),
-          ),
-        ],
-      ),
-    );
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error =
+          'Funding settled, but the Base USDC display could not refresh: $error');
+    }
   }
 
   // ── Section helpers ────────────────────────────────────────────────────────
+
+  IconData _networkIcon(WalletNetworkDefinition definition) =>
+      switch (definition.network) {
+        WalletNetwork.baseMainnet => Icons.public,
+        WalletNetwork.robinhoodMainnet => Icons.swap_horiz_rounded,
+        WalletNetwork.baseSepolia => Icons.science,
+      };
+
+  Color _networkColor(WalletNetworkDefinition definition) =>
+      switch (definition.network) {
+        WalletNetwork.baseMainnet => const Color(0xFF0052FF),
+        WalletNetwork.robinhoodMainnet => const Color(0xFF00C805),
+        WalletNetwork.baseSepolia => Colors.orange,
+      };
 
   Widget _sectionLabel(ThemeData theme, String label) => Padding(
         padding: const EdgeInsets.only(left: 4, bottom: 8),
@@ -635,7 +559,11 @@ class _BaseScreenState extends State<BaseScreen> {
     final selected =
         AiPaymentProviderCatalog.byId(_selectedAiPaymentProvider) ??
             AiPaymentProviderCatalog.providers.first;
-    final mainnetReady = !_baseService.useSepolia;
+    final mainnetReady = _baseService.isBaseMainnet;
+    final readiness = _readinessFor(selected);
+    final baseUsdc =
+        _baseService.isBaseMainnet ? _baseService.usdcBalance : Decimal.zero;
+    final baseFunded = baseUsdc > Decimal.zero;
 
     return GlassCard(
       child: Padding(
@@ -693,15 +621,17 @@ class _BaseScreenState extends State<BaseScreen> {
                     const Icon(Icons.warning_amber_rounded,
                         color: Colors.orange, size: 20),
                     const SizedBox(width: 10),
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'x402 payments use Base Mainnet, not Sepolia.',
-                        style: TextStyle(fontSize: 12),
+                        'x402 payments settle on Base Mainnet. The wallet is currently showing ${_baseService.networkName}.',
+                        style: const TextStyle(fontSize: 12),
                       ),
                     ),
                     TextButton(
                       onPressed: () async {
-                        await _baseService.setNetwork(sepolia: false);
+                        await _baseService.setWalletNetwork(
+                          WalletNetwork.baseMainnet,
+                        );
                         if (mounted) setState(() {});
                       },
                       child: const Text('Switch'),
@@ -710,6 +640,52 @@ class _BaseScreenState extends State<BaseScreen> {
                 ),
               ),
             ],
+            const SizedBox(height: 14),
+            Container(
+              key: const Key('base-ai-payment-wallet-balance'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0052FF).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFF5B8CFF).withValues(alpha: 0.28),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.account_balance_wallet_rounded,
+                      color: Color(0xFF5B8CFF), size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'BASE PAYMENT WALLET',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _baseService.isBaseMainnet
+                              ? '${baseUsdc.toString()} USDC available'
+                              : 'Switch to Base Mainnet to check USDC',
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (selected.fundingMode == AiPaymentFundingMode.perRequest &&
+                      baseFunded)
+                    const _WalletReadyBadge(),
+                ],
+              ),
+            ),
             const SizedBox(height: 14),
             Text('PROVIDER',
                 style: theme.textTheme.labelSmall?.copyWith(
@@ -746,52 +722,111 @@ class _BaseScreenState extends State<BaseScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(selected.fundingLabel,
+                  Text(readiness?.title ?? selected.fundingLabel,
                       style: const TextStyle(
                           fontWeight: FontWeight.w700, fontSize: 13)),
                   const SizedBox(height: 4),
-                  Text(selected.description,
+                  Text(readiness?.detail ?? selected.description,
                       style: TextStyle(
                           color: theme.colorScheme.onSurfaceVariant,
                           fontSize: 11,
                           height: 1.4)),
                   const SizedBox(height: 10),
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
                     children: [
-                      Expanded(
-                        child: Text(
-                          _providerBalance?.summary ??
-                              (selected.fundingMode ==
-                                      AiPaymentFundingMode.perRequest
-                                  ? 'No prepaid provider balance.'
-                                  : 'Balance not checked on this device.'),
+                      if (readiness != null)
+                        Text(
+                          readiness.catalogLabel,
                           style: TextStyle(
-                            color: _providerBalance?.needsAttention == true
-                                ? Colors.orangeAccent
-                                : theme.colorScheme.onSurfaceVariant,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 10,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      TextButton.icon(
-                        onPressed:
-                            _baseService.isConnected && !_providerBalanceBusy
-                                ? () => _refreshProviderBalance(selected)
-                                : null,
-                        icon: _providerBalanceBusy
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.refresh_rounded, size: 16),
-                        label: const Text('Balance'),
-                      ),
+                      if (readiness != null)
+                        Text(
+                          readiness.transportLabel,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 10,
+                          ),
+                        ),
+                      if (readiness != null &&
+                          const <WalletFundedProviderAction>{
+                            WalletFundedProviderAction.refreshModels,
+                            WalletFundedProviderAction.restartGateway,
+                          }.contains(readiness.primaryAction))
+                        TextButton(
+                          key: const Key('base-provider-readiness-action'),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                          ),
+                          onPressed: _providerReadinessBusy
+                              ? null
+                              : () => _runBaseReadinessAction(
+                                    selected,
+                                    readiness,
+                                  ),
+                          child: Text(_providerReadinessBusy
+                              ? 'Working…'
+                              : readiness.primaryActionLabel),
+                        ),
                     ],
                   ),
+                  if (selected.supportsTopUp) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _providerBalance?.summary ??
+                                (selected.fundingMode ==
+                                        AiPaymentFundingMode.perRequest
+                                    ? 'No prepaid provider balance.'
+                                    : 'Balance not checked on this device.'),
+                            style: TextStyle(
+                              color: _providerBalance?.needsAttention == true
+                                  ? Colors.orangeAccent
+                                  : theme.colorScheme.onSurfaceVariant,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          onPressed:
+                              _baseService.isConnected && !_providerBalanceBusy
+                                  ? () => _refreshProviderBalance(selected)
+                                  : null,
+                          icon: _providerBalanceBusy
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.refresh_rounded, size: 16),
+                          label: const Text('Balance'),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (!selected.supportsTopUp) ...[
+                    const SizedBox(height: 7),
+                    Text(
+                      baseFunded
+                          ? 'This Base USDC is already the BlockRun payment balance. Nothing is deposited into BlockRun in advance.'
+                          : 'BlockRun has no prepaid balance. Add USDC to this Base wallet before a paid request.',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -801,24 +836,23 @@ class _BaseScreenState extends State<BaseScreen> {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: _baseService.isConnected
-                        ? _showReceiveDialog
+                        ? () => unawaited(_showBaseFundingModal())
                         : _showWalletRequiredDialog,
                     icon: const Icon(Icons.account_balance_wallet_outlined,
                         size: 18),
-                    label: const Text('Fund wallet'),
+                    label:
+                        Text(baseFunded ? 'Add Base USDC' : 'Fund Base wallet'),
                   ),
                 ),
                 if (selected.supportsTopUp) ...[
                   const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: _baseService.isConnected && mainnetReady
+                      onPressed: _baseService.isConnected
                           ? _aiPaymentBusy
                               ? null
                               : () => _showTopUpPreparation(selected)
-                          : _baseService.isConnected
-                              ? _switchToMainnetForAiPayments
-                              : _showWalletRequiredDialog,
+                          : _showWalletRequiredDialog,
                       icon: _aiPaymentBusy
                           ? const SizedBox(
                               width: 16,
@@ -871,17 +905,39 @@ class _BaseScreenState extends State<BaseScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: _paymentReceipts.take(3).map((receipt) {
                             final amount = _formatReceiptAmount(receipt.amount);
+                            final deliveredUnverified =
+                                receipt.responseDeliveredSettlementUnverified;
+                            final status = deliveredUnverified
+                                ? 'response delivered'
+                                : receipt.settlementVerified
+                                    ? 'settlement verified'
+                                    : receipt.state.name;
                             return Padding(
-                              padding: const EdgeInsets.only(bottom: 5),
-                              child: Text(
-                                '${receipt.providerId ?? 'x402'} · $amount USDC · ${receipt.state.name} · ${_shortDate(receipt.recordedAt)}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color:
-                                      receipt.state == X402PaymentState.settled
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${receipt.providerId ?? 'x402'} · $amount USDC · $status · ${_shortDate(receipt.recordedAt)}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: receipt.settlementVerified
                                           ? Colors.greenAccent
                                           : Colors.orangeAccent,
-                                ),
+                                    ),
+                                  ),
+                                  if (deliveredUnverified)
+                                    Text(
+                                      'Settlement proof unavailable · paid request will not be retried.',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        height: 1.35,
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                ],
                               ),
                             );
                           }).toList(growable: false),
@@ -893,6 +949,75 @@ class _BaseScreenState extends State<BaseScreen> {
         ),
       ),
     );
+  }
+
+  WalletFundedProviderReadiness? _readinessFor(
+    AiPaymentProviderOption selected,
+  ) {
+    DynamicProviderRecord? provider;
+    for (final candidate in _modelCatalog.providers) {
+      if (candidate.id == selected.id) {
+        provider = candidate;
+        break;
+      }
+    }
+    if (provider == null) return null;
+    return WalletFundedProviderReadinessService.evaluate(
+      provider: provider,
+      walletStatus: _baseService.walletStatus,
+      isBaseMainnet: _baseService.isBaseMainnet,
+      transportState: _paidTransportState,
+      balance: _providerBalance,
+      now: DateTime.now().toUtc(),
+      baseUsdcBalance:
+          _baseService.isBaseMainnet ? _baseService.usdcBalance : null,
+    );
+  }
+
+  Future<void> _runBaseReadinessAction(
+    AiPaymentProviderOption selected,
+    WalletFundedProviderReadiness readiness,
+  ) async {
+    if (_providerReadinessBusy) return;
+    setState(() => _providerReadinessBusy = true);
+    try {
+      if (readiness.primaryAction == WalletFundedProviderAction.refreshModels) {
+        final refreshed =
+            await GatewayService().refreshProviderModelCatalog(selected.id);
+        _modelCatalog = await DynamicModelCatalogRepository().assess(
+          refreshed.withEffectiveState(DateTime.now()),
+        );
+      } else if (readiness.primaryAction ==
+          WalletFundedProviderAction.restartGateway) {
+        final gateway = context.read<GatewayProvider>();
+        await gateway.stop();
+        await gateway.start();
+        final health =
+            await PaidProviderGatewayCoordinator.instance.inspectHealth();
+        _paidTransportState = health == true
+            ? PaidProviderTransportState.healthy
+            : health == null
+                ? PaidProviderTransportState.stopped
+                : PaidProviderTransportState.unhealthy;
+      }
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(readiness.primaryAction ==
+                  WalletFundedProviderAction.refreshModels
+              ? '${selected.label} models refreshed.'
+              : 'Gateway transport restarted.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Provider readiness action failed: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _providerReadinessBusy = false);
+    }
   }
 
   void _showWalletRequiredDialog() {
@@ -924,7 +1049,9 @@ class _BaseScreenState extends State<BaseScreen> {
   }
 
   Future<void> _switchToMainnetForAiPayments() async {
-    await _baseService.setNetwork(sepolia: false);
+    if (!_baseService.isBaseMainnet) {
+      await _baseService.setWalletNetwork(WalletNetwork.baseMainnet);
+    }
     if (mounted) setState(() {});
   }
 
@@ -937,30 +1064,33 @@ class _BaseScreenState extends State<BaseScreen> {
       _aiPaymentProgress =
           'Requesting a fresh ${provider.label} payment challenge…';
     });
-    PreparedX402Payment? prepared;
     try {
-      prepared = await _x402Transport.prepareTopUp(provider);
-      if (!mounted) {
-        _x402Transport.reject(prepared);
-        return;
-      }
-      setState(() => _aiPaymentProgress =
-          'Challenge verified. Waiting for your explicit approval.');
-      final approved = await _showX402Approval(prepared);
-      if (!approved) {
-        _x402Transport.reject(prepared);
-        if (mounted) {
-          setState(() => _aiPaymentProgress = 'Payment cancelled.');
-        }
-        return;
-      }
-      if (!mounted) return;
-      setState(() => _aiPaymentProgress =
-          'Unlock the secure wallet to sign this one payment…');
-      final receipt = await _x402Transport.approveAndSubmit(
-        prepared,
-        walletAddress: _baseService.address ?? '',
+      final coordinator = ProviderTopUpFundingCoordinator(
+        prepare: _x402Transport.prepareTopUp,
+        reject: _x402Transport.reject,
+        selectBaseMainnet: _switchToMainnetForAiPayments,
+        refreshBaseUsdcBalance:
+            _baseService.refreshBaseUsdcBalanceUnitsForPayment,
+        requestFunding: _showProviderFundingModal,
+        requestPaymentApproval: _showX402Approval,
+        submitPayment: (payment) => _x402Transport.approveAndSubmit(
+          payment,
+          walletAddress: _baseService.address ?? '',
+        ),
       );
+      final receipt = await coordinator.run(
+        provider,
+        onProgress: (stage) {
+          if (mounted) {
+            setState(() =>
+                _aiPaymentProgress = _providerTopUpProgress(provider, stage));
+          }
+        },
+      );
+      if (receipt == null) {
+        if (mounted) setState(() => _aiPaymentProgress = 'Payment cancelled.');
+        return;
+      }
       _paymentReceipts = await _x402Transport.receiptStore.read();
       if (!mounted) return;
       final settled = receipt.state == X402PaymentState.settled;
@@ -986,6 +1116,126 @@ class _BaseScreenState extends State<BaseScreen> {
     } finally {
       if (mounted) setState(() => _aiPaymentBusy = false);
     }
+  }
+
+  String _providerTopUpProgress(
+    AiPaymentProviderOption provider,
+    ProviderTopUpFundingStage stage,
+  ) =>
+      switch (stage) {
+        ProviderTopUpFundingStage.selectingBase =>
+          'Switching the Wallet view to Base Mainnet…',
+        ProviderTopUpFundingStage.requestingChallenge =>
+          'Requesting a fresh ${provider.label} payment challenge…',
+        ProviderTopUpFundingStage.checkingBalance =>
+          'Checking the exact Base USDC balance…',
+        ProviderTopUpFundingStage.fundingRequired =>
+          'More Base USDC is needed. Choose a source and approve the bridge separately.',
+        ProviderTopUpFundingStage.verifyingFunding =>
+          'Base delivery completed. Verifying the refreshed USDC balance…',
+        ProviderTopUpFundingStage.requestingFreshChallenge =>
+          'Funding verified. Requesting a new ${provider.label} challenge…',
+        ProviderTopUpFundingStage.awaitingPaymentApproval =>
+          'Challenge verified. Waiting for your separate payment approval.',
+        ProviderTopUpFundingStage.submittingPayment =>
+          'Unlock the secure wallet to sign this one payment…',
+        ProviderTopUpFundingStage.cancelled => 'Payment cancelled.',
+      };
+
+  Future<bool> _showProviderFundingModal(
+    ProviderFundingRequirement requirement,
+  ) =>
+      _showBaseFundingModal(requirement: requirement);
+
+  Future<bool> _showBaseFundingModal({
+    ProviderFundingRequirement? requirement,
+  }) async {
+    final runtime = _bridgeFunding;
+    if (runtime == null || !_baseService.isConnected) return false;
+    if (!_baseService.isBaseMainnet) {
+      await _switchToMainnetForAiPayments();
+    }
+    if (!mounted) return false;
+
+    final completed = await showModalBottomSheet<bool>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF080A0E),
+      builder: (sheetContext) {
+        final media = MediaQuery.of(sheetContext);
+        return Padding(
+          padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+          child: FractionallySizedBox(
+            heightFactor: 0.94,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              requirement == null
+                                  ? 'Add USDC to the Base wallet'
+                                  : 'Fund ${requirement.provider.label} on Base',
+                              style: Theme.of(sheetContext)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              requirement == null
+                                  ? 'Use Base USDC from another wallet, or choose another live source route. Every transfer requires separate review and wallet approval.'
+                                  : 'At least ${requirement.requiredBaseUsdcDisplay} USDC is required in the Plawie Base wallet. Use Base USDC from another wallet, or choose any other live source route, then approve the provider payment separately.',
+                              style: Theme.of(sheetContext)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(height: 1.4),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Cancel funding',
+                        onPressed: () => Navigator.pop(sheetContext, false),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                    child: BridgeFundingPanel(
+                      controller: runtime.controller,
+                      capabilities: runtime.capabilities,
+                      baseDestinationAddress: _baseService.address,
+                      baseWalletAvailable: _baseService.isConnected,
+                      baseMainnetSelected: _baseService.isBaseMainnet,
+                      initialSourceChainId: BridgeConstants.baseChainId,
+                      initialSourceTokenSymbol: 'USDC',
+                      startNewTransfer: true,
+                      onFundingCompleted: (_) {
+                        if (Navigator.of(sheetContext).canPop()) {
+                          Navigator.pop(sheetContext, true);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    return completed == true;
   }
 
   Future<void> _refreshProviderBalance(
@@ -1179,7 +1429,7 @@ class _BaseScreenState extends State<BaseScreen> {
       cards.add(
         StatusCard(
           title: 'Create Wallet',
-          subtitle: 'Generate and protect a new Base EVM keypair',
+          subtitle: 'Generate one EVM identity for Base and Robinhood Chain',
           icon: Icons.add_circle_outline,
           trailing: chevron,
           onTap: _showCreateWalletDialog,
@@ -1258,6 +1508,9 @@ class _BaseScreenState extends State<BaseScreen> {
 
   Widget _buildWalletHeader(ThemeData theme) {
     final addr = _baseService.address;
+    final selectedNetwork = _baseService.network;
+    final accent = _networkColor(selectedNetwork);
+    final stablecoin = selectedNetwork.token;
     final recovery = BaseWalletRecoveryViewModel.fromStatus(
       _baseService.walletStatus,
     );
@@ -1267,17 +1520,27 @@ class _BaseScreenState extends State<BaseScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF0052FF), // Base blue
-            Colors.purple.shade600,
+            Color.lerp(accent, Colors.black, 0.08)!,
+            Color.lerp(accent, Colors.purple.shade700, 0.72)!,
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.16),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: 0.2),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1285,95 +1548,210 @@ class _BaseScreenState extends State<BaseScreen> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.black.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.2),
+                  ),
                 ),
-                child: const Icon(
-                  Icons.account_balance_wallet,
-                  color: Colors.white,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
+                    Icon(
+                      _networkIcon(selectedNetwork),
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 7),
                     Text(
-                      'Base Wallet',
+                      selectedNetwork.name,
                       style: GoogleFonts.inter(
-                        fontSize: 24,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      shortAddr,
-                      style: GoogleFonts.robotoMono(
-                        fontSize: 13,
-                        color: Colors.white.withValues(alpha: 0.85),
                       ),
                     ),
                   ],
                 ),
               ),
+              const Spacer(),
               if (_baseService.isConnected)
-                IconButton(
-                  icon: const Icon(Icons.copy, color: Colors.white70, size: 20),
-                  tooltip: 'Copy address',
-                  onPressed: () {
-                    Clipboard.setData(
-                        ClipboardData(text: _baseService.address ?? ''));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Address copied')),
-                    );
-                  },
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.verified_user_outlined,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Protected',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
             ],
           ),
           if (_baseService.isConnected) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 28),
+            Text(
+              'NETWORK BALANCE',
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.4,
+                color: Colors.white.withValues(alpha: 0.66),
+              ),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              '${_baseService.ethBalance.toStringAsFixed(6)} ETH',
+              maxLines: 1,
+              overflow: TextOverflow.fade,
+              softWrap: false,
+              style: GoogleFonts.inter(
+                fontSize: 31,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1.1,
+                color: Colors.white,
+              ),
+            ),
+            if (stablecoin != null) ...[
+              const SizedBox(height: 5),
+              Text(
+                '${_baseService.stablecoinBalance.toStringAsFixed(2)} ${stablecoin.symbol}',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withValues(alpha: 0.82),
+                ),
+              ),
+            ],
+            const SizedBox(height: 22),
+          ] else
+            const SizedBox(height: 20),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.14),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.key_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _baseService.isConnected
+                            ? 'SECURED ACCOUNT'
+                            : 'WALLET STATUS',
+                        style: GoogleFonts.inter(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1,
+                          color: Colors.white.withValues(alpha: 0.62),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        shortAddr,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.robotoMono(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_baseService.isConnected)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(
+                      Icons.copy_rounded,
+                      color: Colors.white,
+                      size: 19,
+                    ),
+                    tooltip: 'Copy address',
+                    onPressed: () {
+                      Clipboard.setData(
+                        ClipboardData(text: _baseService.address ?? ''),
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Address copied')),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+          if (_baseService.isConnected) ...[
+            const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(Icons.verified_user_outlined,
-                    size: 15, color: Colors.white70),
+                Icon(
+                  Icons.lock_outline_rounded,
+                  size: 13,
+                  color: Colors.white.withValues(alpha: 0.72),
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    '${_baseService.securityLevel} · auth per payment',
+                    '${_baseService.securityLevel} · approval required to sign',
                     style: GoogleFonts.inter(
-                      fontSize: 11,
+                      fontSize: 10,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white.withValues(alpha: 0.8),
+                      color: Colors.white.withValues(alpha: 0.72),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            Text(
-              '${_baseService.ethBalance.toStringAsFixed(6)} ETH',
-              style: GoogleFonts.inter(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${_baseService.usdcBalance.toStringAsFixed(2)} USDC',
-              style: GoogleFonts.inter(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.white.withValues(alpha: 0.85),
-              ),
-            ),
             if (_isLoading)
               Padding(
-                padding: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.only(top: 10),
                 child: SizedBox(
                   height: 2,
                   child: LinearProgressIndicator(
@@ -1392,54 +1770,211 @@ class _BaseScreenState extends State<BaseScreen> {
   // ── Network banner ─────────────────────────────────────────────────────────
 
   Widget _buildNetworkBanner(ThemeData theme) {
-    final isSepolia = _baseService.useSepolia;
+    final selected = _baseService.network;
+    final accent = _networkColor(selected);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isSepolia
-            ? Colors.orange.withValues(alpha: 0.1)
-            : const Color(0xFF0052FF).withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
+        color: accent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isSepolia
-              ? Colors.orange.withValues(alpha: 0.4)
-              : const Color(0xFF0052FF).withValues(alpha: 0.3),
+          color: accent.withValues(alpha: 0.4),
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            isSepolia ? Icons.science : Icons.public,
-            size: 16,
-            color: isSepolia ? Colors.orange : const Color(0xFF0052FF),
+          Row(
+            children: [
+              Icon(Icons.hub_outlined, size: 18, color: accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'WALLET NETWORK',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: accent,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+              Text('Chain ID ${_baseService.chainId}',
+                  style: theme.textTheme.labelSmall),
+            ],
           ),
-          const SizedBox(width: 8),
+          const SizedBox(height: 5),
           Text(
-            _baseService.networkName,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: isSepolia ? Colors.orange : const Color(0xFF0052FF),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '· Chain ID ${_baseService.chainId}',
-            style: TextStyle(
-              fontSize: 11,
+            'Choose which network this secured Plawie account displays and sends on. This does not replace its private key or address.',
+            style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
+              height: 1.35,
             ),
           ),
-          if (isSepolia) ...[
-            const Spacer(),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final definition in WalletNetworkPolicy.values)
+                ChoiceChip(
+                  key: ValueKey<String>(
+                    'wallet-network-${definition.storageValue}',
+                  ),
+                  avatar: Icon(
+                    _networkIcon(definition),
+                    size: 17,
+                    color: definition.network == _baseService.selectedNetwork
+                        ? _networkColor(definition)
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  label: Text(
+                    switch (definition.network) {
+                      WalletNetwork.baseMainnet => 'Base',
+                      WalletNetwork.robinhoodMainnet => 'Robinhood',
+                      WalletNetwork.baseSepolia => 'Base testnet',
+                    },
+                  ),
+                  selected: definition.network == _baseService.selectedNetwork,
+                  onSelected: _isLoading ||
+                          definition.network == _baseService.selectedNetwork
+                      ? null
+                      : (_) => _selectWalletNetwork(definition.network),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          AnimatedContainer(
+            key: const ValueKey<String>('wallet-default-network-control'),
+            duration: const Duration(milliseconds: 220),
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: _baseService.isSelectedNetworkDefault
+                  ? accent.withValues(alpha: 0.13)
+                  : theme.colorScheme.surface.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: _baseService.isSelectedNetworkDefault
+                    ? accent.withValues(alpha: 0.5)
+                    : theme.colorScheme.outlineVariant,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    _baseService.isSelectedNetworkDefault
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    color: accent,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'DEFAULT NETWORK',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.9,
+                          color: accent,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_baseService.defaultNetworkDefinition.name} opens first',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_baseService.isSelectedNetworkDefault)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'DEFAULT',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: accent,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  )
+                else
+                  TextButton(
+                    key: const ValueKey<String>(
+                      'make-current-wallet-network-default',
+                    ),
+                    onPressed: _isLoading ? null : _makeCurrentNetworkDefault,
+                    child: const Text('Use current'),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(_networkIcon(selected), size: 16, color: accent),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  '${selected.name} · ${selected.nativeSymbol}'
+                  '${selected.token == null ? '' : ' + ${selected.token!.symbol}'}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
+                ),
+              ),
+              if (selected.isTestnet)
+                Text(
+                  'TESTNET',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: accent.withValues(alpha: 0.8),
+                    letterSpacing: 1.0,
+                  ),
+                ),
+            ],
+          ),
+          if (selected.network == WalletNetwork.robinhoodMainnet) ...[
+            const SizedBox(height: 7),
             Text(
-              'TESTNET',
+              'Robinhood uses the same Plawie address. ETH pays gas and the supported stablecoin is official USDG.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          if (!_baseService.ordinaryTransactionsAvailable) ...[
+            const SizedBox(height: 7),
+            Text(
+              _baseService.ordinaryTransactionUnavailableReason,
               style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: Colors.orange.withValues(alpha: 0.8),
-                letterSpacing: 1.0,
+                fontSize: 11,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -1451,6 +1986,7 @@ class _BaseScreenState extends State<BaseScreen> {
   // ── Transaction history ────────────────────────────────────────────────────
 
   Widget _buildTransactionHistory(ThemeData theme) {
+    final bridgeReceipts = _completedBridgeReceipts;
     return FutureBuilder<List<BaseTx>>(
       future: _baseService.fetchHistory(limit: 5),
       builder: (context, snapshot) {
@@ -1461,7 +1997,7 @@ class _BaseScreenState extends State<BaseScreen> {
           );
         }
         final txs = snapshot.data ?? [];
-        if (txs.isEmpty) {
+        if (txs.isEmpty && bridgeReceipts.isEmpty) {
           return Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
@@ -1471,10 +2007,122 @@ class _BaseScreenState extends State<BaseScreen> {
           );
         }
         return Column(
-          children: txs.map((tx) => _buildTxTile(theme, tx)).toList(),
+          children: <Widget>[
+            ...bridgeReceipts.map(
+              (receipt) => _buildBridgeTransactionTile(theme, receipt),
+            ),
+            ...txs.map((tx) => _buildTxTile(theme, tx)),
+          ],
         );
       },
     );
+  }
+
+  List<BridgeFundingReceipt> get _completedBridgeReceipts {
+    final runtime = _bridgeFunding;
+    if (runtime == null) return const <BridgeFundingReceipt>[];
+    final receipts = runtime.controller.receipts
+        .where((receipt) =>
+            receipt.state == BridgeFundingState.completed &&
+            _baseTransactionHash(receipt) != null)
+        .toList(growable: false)
+      ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+    return receipts.take(5).toList(growable: false);
+  }
+
+  Widget _buildBridgeTransactionTile(
+    ThemeData theme,
+    BridgeFundingReceipt receipt,
+  ) {
+    final hash = _baseTransactionHash(receipt)!;
+    final source = switch (receipt.sourceChainId) {
+      BridgeConstants.ethereumChainId => 'Ethereum',
+      BridgeConstants.baseChainId => 'Base wallet',
+      BridgeConstants.robinhoodChainId => 'Robinhood',
+      BridgeConstants.solanaChainId => 'Solana',
+      _ => 'external chain',
+    };
+    return ListTile(
+      key: ValueKey<String>('bridge-history-${receipt.intentId}'),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 2),
+      leading: CircleAvatar(
+        radius: 18,
+        backgroundColor: Colors.green.withValues(alpha: 0.15),
+        child: const Icon(Icons.call_received_rounded,
+            size: 18, color: Colors.greenAccent),
+      ),
+      title: const Text(
+        'Base funding received',
+        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        '$source · ${_shortDate(receipt.updatedAt)} · '
+        '${receipt.providerSubstatus ?? receipt.providerStatus ?? 'Completed'}',
+        style:
+            TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+      ),
+      trailing: InkWell(
+        onTap: () => _openTrustedTransaction(
+          Uri.https('basescan.org', '/tx/$hash'),
+        ),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '+${_bridgeReceivedAmount(receipt)} USDC',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.greenAccent,
+                ),
+              ),
+              Text(
+                '${hash.substring(0, 8)}… ↗',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openTrustedTransaction(Uri uri) async {
+    if (uri.scheme != 'https' || uri.host != 'basescan.org') return;
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transaction explorer could not open.')),
+      );
+    }
+  }
+
+  String? _baseTransactionHash(BridgeFundingReceipt receipt) {
+    final destination = receipt.destinationTransactionHash?.trim();
+    if (destination != null && destination.isNotEmpty) return destination;
+    if (receipt.sourceChainId != BridgeConstants.baseChainId) return null;
+    final source = receipt.sourceTransactionHash?.trim();
+    return source == null || source.isEmpty ? null : source;
+  }
+
+  String _bridgeReceivedAmount(BridgeFundingReceipt receipt) {
+    final units = BigInt.tryParse(
+      receipt.actualOutputUnits ?? receipt.minimumOutputUnits ?? '0',
+    );
+    if (units == null || units.isNegative) return '0';
+    final padded = units.toString().padLeft(7, '0');
+    final whole = padded.substring(0, padded.length - 6);
+    final fraction =
+        padded.substring(padded.length - 6).replaceFirst(RegExp(r'0+$'), '');
+    return fraction.isEmpty ? whole : '$whole.$fraction';
   }
 
   Widget _buildTxTile(ThemeData theme, BaseTx tx) {
@@ -1546,6 +2194,8 @@ class _BaseScreenState extends State<BaseScreen> {
   // ── AI Skills info panel ───────────────────────────────────────────────────
 
   Widget _buildSkillsInfo(ThemeData theme) {
+    final token = _baseService.network.token;
+    final supportsBasenames = _baseService.network.supportsBasenames;
     return GlassCard(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1565,13 +2215,29 @@ class _BaseScreenState extends State<BaseScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            _skillRow(Icons.account_balance_wallet, 'get_balance',
-                'Check ETH + USDC balance'),
-            _skillRow(Icons.send, 'send_eth',
-                'Send ETH to 0x address or .base.eth name'),
-            _skillRow(Icons.attach_money, 'send_usdc', 'Send USDC stablecoin'),
-            _skillRow(Icons.person_search, 'resolve_basename',
-                'Resolve .base.eth → 0x address'),
+            _skillRow(
+              Icons.account_balance_wallet,
+              'get_balance',
+              token == null
+                  ? 'Check ETH balance'
+                  : 'Check ETH + ${token.symbol} balance',
+            ),
+            _skillRow(
+              Icons.send,
+              'send_eth',
+              supportsBasenames
+                  ? 'Send ETH to 0x address or .base.eth name'
+                  : 'Send ETH to an explicit 0x address',
+            ),
+            if (token != null)
+              _skillRow(
+                Icons.attach_money,
+                'send_${token.symbol.toLowerCase()}',
+                'Send official ${token.symbol} on ${_baseService.networkName}',
+              ),
+            if (supportsBasenames)
+              _skillRow(Icons.person_search, 'resolve_basename',
+                  'Resolve .base.eth → 0x address'),
             _skillRow(
                 Icons.history, 'get_history', 'Fetch recent transactions'),
             const Divider(height: 20),
@@ -1708,10 +2374,11 @@ class _BaseScreenState extends State<BaseScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Create Base Wallet'),
+        title: const Text('Create Plawie Wallet'),
         content: const Text(
           'Generate a new EVM keypair protected by Android Keystore and your '
-          'device lock. Signed app updates preserve it, but clearing app data '
+          'device lock. The same address works on Base and Robinhood Chain. '
+          'Signed app updates preserve it, but clearing app data '
           'or uninstalling removes it. Export a private-key backup before funding.',
         ),
         actions: [
@@ -1836,8 +2503,10 @@ class _BaseScreenState extends State<BaseScreen> {
           children: [
             TextField(
               controller: toCtrl,
-              decoration: const InputDecoration(
-                labelText: 'To (0x address or .base.eth)',
+              decoration: InputDecoration(
+                labelText: _baseService.network.supportsBasenames
+                    ? 'To (0x address or .base.eth)'
+                    : 'To (0x address)',
               ),
             ),
             const SizedBox(height: 12),
@@ -1890,26 +2559,31 @@ class _BaseScreenState extends State<BaseScreen> {
     );
   }
 
-  void _showSendUsdcDialog() {
+  void _showSendStablecoinDialog() {
+    final token = _baseService.network.token;
+    if (token == null) return;
+    final symbol = token.symbol;
     final toCtrl = TextEditingController();
     final amtCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Send USDC'),
+        title: Text('Send $symbol'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: toCtrl,
-              decoration: const InputDecoration(
-                labelText: 'To (0x address or .base.eth)',
+              decoration: InputDecoration(
+                labelText: _baseService.network.supportsBasenames
+                    ? 'To (0x address or .base.eth)'
+                    : 'To (0x address)',
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: amtCtrl,
-              decoration: const InputDecoration(labelText: 'Amount (USDC)'),
+              decoration: InputDecoration(labelText: 'Amount ($symbol)'),
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
             ),
@@ -1925,7 +2599,7 @@ class _BaseScreenState extends State<BaseScreen> {
               Navigator.pop(ctx);
               if (to.isEmpty || amt == null || amt <= Decimal.zero) return;
               final approved = await _confirmTransfer(
-                token: 'USDC',
+                token: symbol,
                 destination: to,
                 amount: amt,
               );
@@ -1933,14 +2607,18 @@ class _BaseScreenState extends State<BaseScreen> {
               setState(() => _isLoading = true);
               try {
                 final approval = _baseService.issueVisibleTransferApproval(
-                  action: 'send_usdc',
+                  action: symbol == 'USDG' ? 'send_usdg' : 'send_usdc',
                   destination: to,
                   amount: amt,
                 );
-                await _baseService.sendUsdc(to, amt, approval: approval);
+                if (symbol == 'USDG') {
+                  await _baseService.sendUsdg(to, amt, approval: approval);
+                } else {
+                  await _baseService.sendUsdc(to, amt, approval: approval);
+                }
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('USDC sent!')),
+                    SnackBar(content: Text('$symbol sent!')),
                   );
                 }
               } catch (e) {
@@ -1965,8 +2643,15 @@ class _BaseScreenState extends State<BaseScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Your Base wallet address:',
-                style: TextStyle(fontSize: 12)),
+            Text(
+              'Your Plawie wallet address on ${_baseService.networkName}:',
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'This is the same EVM address on Base and Robinhood Chain. Always verify the network before sending funds.',
+              style: TextStyle(fontSize: 11),
+            ),
             const SizedBox(height: 12),
             SelectableText(
               addr,
@@ -2024,7 +2709,7 @@ class _BaseScreenState extends State<BaseScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Remove Base Wallet'),
+        title: const Text('Remove Plawie Wallet'),
         content: const Text(
           'This permanently removes the encrypted wallet and Android Keystore '
           'protection key from this device. Make sure you have exported a backup first.',
@@ -2052,4 +2737,35 @@ class _BaseScreenState extends State<BaseScreen> {
       ),
     );
   }
+}
+
+class _WalletReadyBadge extends StatelessWidget {
+  const _WalletReadyBadge();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        key: const Key('base-payment-wallet-ready'),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.greenAccent.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle_rounded,
+                color: Colors.greenAccent, size: 13),
+            SizedBox(width: 4),
+            Text(
+              'FUNDED',
+              style: TextStyle(
+                color: Colors.greenAccent,
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+                letterSpacing: .7,
+              ),
+            ),
+          ],
+        ),
+      );
 }

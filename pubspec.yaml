@@ -1,7 +1,7 @@
 name: clawa
 description: Clawa Pocket AI Gateway for Android - standalone AI assistant.
 publish_to: 'none'
-version: 2.2.1+12
+version: 2.3.0+14
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -61,6 +61,8 @@ dependencies:
     path: ./fllama
   shelf: ^1.4.2
   shelf_router: ^1.1.4
+  reown_appkit: ^1.7.6
+  qr_flutter: ^4.1.0
   # flutter_overlay_window: ^0.5.0
 
 dependency_overrides:
@@ -88,6 +90,8 @@ flutter:
     - assets/openclaw/android_bridge_tools.js
     - assets/openclaw/mobile_gateway_probe.js
     - assets/openclaw/mobile_skill_registry.js
+    - assets/openclaw/plugins/plawie-tool-probe-guard/
+    - assets/openclaw/plugins/plawie-venice-compat/
     - assets/openclaw/python-debug-runtime/wheels/
     - assets/openclaw/whisper-runtime/lib/
     - assets/openclaw/agent-cli-pack/bin/

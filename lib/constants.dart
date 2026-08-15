@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class AppConstants {
   static const String appName = 'Plawie';
-  static const String version = '2.2.1';
+  static const String version = '2.3.0';
   static const String packageName = 'com.openclaw.plawie';
 
   /// Matches ANSI escape sequences (e.g. color codes in terminal output).
@@ -77,6 +77,15 @@ class AppConstants {
         return rootfsArm64;
     }
   }
+}
+
+/// Shared page geometry. Standard title-only SliverAppBars intentionally keep
+/// only a small expansion above the Material toolbar so page content starts
+/// promptly and consistently across the app.
+abstract final class AppLayout {
+  static const double standardSliverHeaderHeight = 72;
+  static const double featureSliverHeaderHeight = 84;
+  static const double pageTopInset = 12;
 }
 
 /// Centralized premium metallic color palette for entire app.

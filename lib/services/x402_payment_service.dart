@@ -84,14 +84,14 @@ class X402PaymentRequirement {
   BigInt get amountUnits => BigInt.parse(amount);
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'scheme': scheme,
-        'network': network,
-        'amount': amount,
-        'asset': asset,
-        'payTo': payTo,
-        'maxTimeoutSeconds': maxTimeoutSeconds,
-        if (extra.isNotEmpty) 'extra': extra,
-      };
+    'scheme': scheme,
+    'network': network,
+    'amount': amount,
+    'asset': asset,
+    'payTo': payTo,
+    'maxTimeoutSeconds': maxTimeoutSeconds,
+    if (extra.isNotEmpty) 'extra': extra,
+  };
 }
 
 class X402PaymentChallenge {
@@ -102,6 +102,7 @@ class X402PaymentChallenge {
     required this.resourceDescription,
     required this.requirement,
     required this.challengeHash,
+    this.extensions = const <String, dynamic>{},
   });
 
   final int x402Version;
@@ -115,6 +116,7 @@ class X402PaymentChallenge {
   final String? resourceDescription;
   final X402PaymentRequirement requirement;
   final String challengeHash;
+  final Map<String, dynamic> extensions;
 
   /// Parses the base64 JSON required by the x402 v2 PAYMENT-REQUIRED header.
   /// Raw JSON is accepted only for diagnostic fixtures; wire clients should
@@ -122,7 +124,8 @@ class X402PaymentChallenge {
   factory X402PaymentChallenge.fromHeader(
     String header, {
     required X402PaymentPolicy policy,
-    Uri? fallbackResourceUrl,
+    Uri? resourceUrlFallback,
+    String? resourceDescriptionFallback,
   }) {
     final decoded = _decodeHeaderJson(header);
     final version = _positiveInt(decoded['x402Version']);
@@ -131,25 +134,31 @@ class X402PaymentChallenge {
     }
     final resourceValue = decoded['resource'];
     Map<String, dynamic>? resource;
-    Uri? resourceUrl;
+    late final Uri resourceUrl;
+    String? fallbackDescription;
     if (resourceValue is Map) {
-      resource =
-          resourceValue.map((key, value) => MapEntry(key.toString(), value));
-      resourceUrl = Uri.tryParse(resource['url']?.toString() ?? '');
-      if (resourceUrl == null || !policy.allowsHost(resourceUrl)) {
+      resource = resourceValue.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+      final declaredUrl = Uri.tryParse(resource['url']?.toString() ?? '');
+      if (declaredUrl == null || !policy.allowsHost(declaredUrl)) {
         throw const X402PaymentPolicyException(
-            'x402 resource host or scheme is not allowlisted.');
+          'x402 resource host or scheme is not allowlisted.',
+        );
       }
-    } else if (resourceValue == null && fallbackResourceUrl != null) {
+      resourceUrl = declaredUrl;
+    } else if (resourceValue == null && resourceUrlFallback != null) {
       // Venice's POST /x402/top-up discovery response is a valid provider
       // challenge but currently omits PaymentRequired.resource. Bind it to
       // the exact request URL supplied by the allowlisted transport instead
       // of fabricating a resource object or accepting an arbitrary URL.
-      if (!policy.allowsHost(fallbackResourceUrl)) {
+      if (!policy.allowsHost(resourceUrlFallback)) {
         throw const X402PaymentPolicyException(
-            'x402 fallback resource host or scheme is not allowlisted.');
+          'x402 fallback resource host or scheme is not allowlisted.',
+        );
       }
-      resourceUrl = fallbackResourceUrl;
+      resourceUrl = resourceUrlFallback;
+      fallbackDescription = resourceDescriptionFallback;
     } else {
       throw const X402PaymentPolicyException('x402 resource is missing.');
     }
@@ -170,19 +179,74 @@ class X402PaymentChallenge {
     }
     if (selected == null) {
       throw const X402PaymentPolicyException(
-          'No supported Base Mainnet EIP-3009 payment requirement was offered.');
+        'No supported Base Mainnet EIP-3009 payment requirement was offered.',
+      );
     }
 
     final canonical = _canonicalJson(decoded);
+    final rawExtensions = decoded['extensions'];
     return X402PaymentChallenge(
       x402Version: version,
       resource: resource,
       resourceUrl: resourceUrl,
-      resourceDescription: resource?['description']?.toString(),
+      resourceDescription:
+          resource?['description']?.toString() ?? fallbackDescription,
       requirement: selected,
       challengeHash: bytesToHex(keccak256(utf8.encode(canonical))),
+      extensions: rawExtensions is Map
+          ? rawExtensions.map((key, value) => MapEntry(key.toString(), value))
+          : const <String, dynamic>{},
     );
   }
+}
+
+/// Builds the x402 v2 wire payload while keeping numeric EIP-3009 values in
+/// the decimal-string form required by the protocol clients and facilitators.
+/// Provider attribution may be merged into the challenge extensions without
+/// discarding server-declared metadata such as Bazaar discovery information.
+Map<String, dynamic> buildX402V2PaymentPayload({
+  required PendingPaymentIntent intent,
+  required String signature,
+  required String payer,
+  required int validAfter,
+  required int validBefore,
+  String? providerServiceCode,
+}) {
+  final extensions = Map<String, dynamic>.from(intent.challenge.extensions);
+  final serviceCode = providerServiceCode?.trim() ?? '';
+  if (serviceCode.isNotEmpty) {
+    final rawBuilderCode = extensions['builder-code'];
+    final builderCode = rawBuilderCode is Map
+        ? rawBuilderCode.map((key, value) => MapEntry(key.toString(), value))
+        : <String, dynamic>{};
+    final rawInfo = builderCode['info'];
+    final info = rawInfo is Map
+        ? rawInfo.map((key, value) => MapEntry(key.toString(), value))
+        : <String, dynamic>{};
+    info['s'] = <String>[serviceCode];
+    builderCode['info'] = info;
+    extensions['builder-code'] = builderCode;
+  }
+
+  final requirement = intent.challenge.requirement;
+  return <String, dynamic>{
+    'x402Version': intent.challenge.x402Version,
+    if (intent.challenge.resource != null)
+      'resource': intent.challenge.resource,
+    'accepted': requirement.toJson(),
+    'payload': <String, dynamic>{
+      'signature': signature,
+      'authorization': <String, dynamic>{
+        'from': payer,
+        'to': requirement.payTo,
+        'value': requirement.amount,
+        'validAfter': validAfter.toString(),
+        'validBefore': validBefore.toString(),
+        'nonce': intent.paymentNonce,
+      },
+    },
+    if (extensions.isNotEmpty) 'extensions': extensions,
+  };
 }
 
 class PendingPaymentIntent {
@@ -212,9 +276,7 @@ class PendingPaymentIntent {
 
   bool get isExpired => !expiresAt.isAfter(DateTime.now().toUtc());
 
-  PendingPaymentIntent copyWith({
-    X402PaymentState? state,
-  }) {
+  PendingPaymentIntent copyWith({X402PaymentState? state}) {
     return PendingPaymentIntent(
       intentId: intentId,
       approvalNonce: approvalNonce,
@@ -258,6 +320,9 @@ class X402PaymentReceipt {
     this.resourceUrl,
     this.challengeHash,
     this.httpStatus,
+    this.requestFingerprint,
+    this.modelId,
+    this.paidRetryConsumed = false,
   });
 
   final String intentId;
@@ -274,23 +339,85 @@ class X402PaymentReceipt {
   final String? resourceUrl;
   final String? challengeHash;
   final int? httpStatus;
+  final String? requestFingerprint;
+  final String? modelId;
+  final bool paidRetryConsumed;
+
+  /// A successful paid inference response and a verified on-chain settlement
+  /// are deliberately separate facts. Some providers return the model payload
+  /// without exposing a payment receipt header or transaction hash. In that
+  /// case the response was delivered, but settlement must remain unverified.
+  bool get responseDelivered =>
+      paidRetryConsumed &&
+      httpStatus != null &&
+      httpStatus! >= 200 &&
+      httpStatus! < 300;
+
+  bool get settlementVerified =>
+      state == X402PaymentState.settled &&
+      (transactionHash?.trim().isNotEmpty ?? false);
+
+  bool get responseDeliveredSettlementUnverified =>
+      responseDelivered &&
+      state == X402PaymentState.uncertain &&
+      !(transactionHash?.trim().isNotEmpty ?? false);
+
+  /// A consumed paid retry is never safe to repeat automatically, regardless
+  /// of whether the provider exposed enough metadata to verify settlement.
+  bool get retryAllowed => !paidRetryConsumed;
+
+  String get deliveryStatus => responseDelivered
+      ? 'delivered'
+      : paidRetryConsumed
+      ? 'unknown'
+      : 'notAttempted';
+
+  String get settlementStatus => settlementVerified
+      ? 'verified'
+      : responseDeliveredSettlementUnverified
+      ? 'unverified'
+      : switch (state) {
+          X402PaymentState.signing || X402PaymentState.submitted => 'pending',
+          X402PaymentState.uncertain => 'unverified',
+          X402PaymentState.rejected ||
+          X402PaymentState.expired ||
+          X402PaymentState.blockedByPolicy ||
+          X402PaymentState.failed => 'notSettled',
+          _ => 'notStarted',
+        };
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'intentId': intentId,
-        'state': state.name,
-        'recordedAt': recordedAt.toUtc().toIso8601String(),
-        if (transactionHash != null) 'transactionHash': transactionHash,
-        if (payer != null) 'payer': payer,
-        if (errorCode != null) 'errorCode': errorCode,
-        if (providerId != null) 'providerId': providerId,
-        if (network != null) 'network': network,
-        if (asset != null) 'asset': asset,
-        if (amount != null) 'amount': amount,
-        if (payTo != null) 'payTo': payTo,
-        if (resourceUrl != null) 'resourceUrl': resourceUrl,
-        if (challengeHash != null) 'challengeHash': challengeHash,
-        if (httpStatus != null) 'httpStatus': httpStatus,
-      };
+    'intentId': intentId,
+    'state': state.name,
+    'recordedAt': recordedAt.toUtc().toIso8601String(),
+    if (transactionHash != null) 'transactionHash': transactionHash,
+    if (payer != null) 'payer': payer,
+    if (errorCode != null) 'errorCode': errorCode,
+    if (providerId != null) 'providerId': providerId,
+    if (network != null) 'network': network,
+    if (asset != null) 'asset': asset,
+    if (amount != null) 'amount': amount,
+    if (payTo != null) 'payTo': payTo,
+    if (resourceUrl != null) 'resourceUrl': resourceUrl,
+    if (challengeHash != null) 'challengeHash': challengeHash,
+    if (httpStatus != null) 'httpStatus': httpStatus,
+    if (requestFingerprint != null) 'requestFingerprint': requestFingerprint,
+    if (modelId != null) 'modelId': modelId,
+    if (paidRetryConsumed) 'paidRetryConsumed': true,
+  };
+
+  /// Redacted, interpretation-safe shape exposed to the agent. Persistence
+  /// remains backward-compatible through [toJson], while callers can no longer
+  /// mistake successful content delivery for verified settlement.
+  Map<String, dynamic> toAgentJson() => <String, dynamic>{
+    ...toJson(),
+    'deliveryStatus': deliveryStatus,
+    'settlementStatus': settlementStatus,
+    'retryAllowed': retryAllowed,
+    if (responseDeliveredSettlementUnverified)
+      'statusSummary':
+          'Model response delivered; settlement proof was not returned.',
+  };
 
   factory X402PaymentReceipt.fromJson(Map<String, dynamic> json) {
     final stateName = json['state']?.toString();
@@ -320,6 +447,9 @@ class X402PaymentReceipt {
       resourceUrl: json['resourceUrl']?.toString(),
       challengeHash: json['challengeHash']?.toString(),
       httpStatus: (json['httpStatus'] as num?)?.toInt(),
+      requestFingerprint: json['requestFingerprint']?.toString(),
+      modelId: json['modelId']?.toString(),
+      paidRetryConsumed: json['paidRetryConsumed'] == true,
     );
   }
 }
@@ -340,7 +470,7 @@ class X402PaymentPolicyException implements Exception {
 /// no method here accepts a private key or a generic wallet transfer.
 class X402PaymentApprovalService {
   X402PaymentApprovalService({DateTime Function()? clock})
-      : _clock = clock ?? DateTime.now;
+    : _clock = clock ?? DateTime.now;
 
   final DateTime Function() _clock;
   PendingPaymentIntent? _active;
@@ -359,20 +489,24 @@ class X402PaymentApprovalService {
     _expireIfNeeded();
     if (_active != null) {
       throw const X402PaymentPolicyException(
-          'Another payment approval is already active.');
+        'Another payment approval is already active.',
+      );
     }
     if (requestUrl.toString() != challenge.resourceUrl.toString()) {
       throw const X402PaymentPolicyException(
-          'Payment resource does not match the original request.');
+        'Payment resource does not match the original request.',
+      );
     }
     if (!challenge.resourceUrl.hasScheme ||
         challenge.resourceUrl.scheme != 'https') {
       throw const X402PaymentPolicyException(
-          'Payment resource must use HTTPS.');
+        'Payment resource must use HTTPS.',
+      );
     }
     final now = _clock().toUtc();
-    final maxWindow =
-        Duration(seconds: challenge.requirement.maxTimeoutSeconds);
+    final maxWindow = Duration(
+      seconds: challenge.requirement.maxTimeoutSeconds,
+    );
     final expiresAt = now.add(maxWindow);
     final intent = PendingPaymentIntent(
       intentId: const Uuid().v4(),
@@ -398,7 +532,8 @@ class X402PaymentApprovalService {
     final intent = _requireActive(intentId);
     if (source != PaymentApprovalSource.visibleUi) {
       throw const X402PaymentPolicyException(
-          'Only the visible payment approval UI can approve a payment.');
+        'Only the visible payment approval UI can approve a payment.',
+      );
     }
     final ticket = PaymentApprovalTicket(
       intentId: intent.intentId,
@@ -427,7 +562,8 @@ class X402PaymentApprovalService {
         _ticket!.approvalNonce != ticket.approvalNonce ||
         intent.state != X402PaymentState.awaitingWalletUnlock) {
       throw const X402PaymentPolicyException(
-          'Payment approval is invalid or has already been consumed.');
+        'Payment approval is invalid or has already been consumed.',
+      );
     }
     _ticket = null;
     _active = intent.copyWith(state: X402PaymentState.signing);
@@ -438,7 +574,8 @@ class X402PaymentApprovalService {
     final intent = _requireActive(intentId);
     if (intent.state != X402PaymentState.signing) {
       throw const X402PaymentPolicyException(
-          'Payment was not claimed for signing.');
+        'Payment was not claimed for signing.',
+      );
     }
     _active = intent.copyWith(state: X402PaymentState.submitted);
   }
@@ -451,6 +588,9 @@ class X402PaymentApprovalService {
     String? errorCode,
     String? providerId,
     int? httpStatus,
+    String? requestFingerprint,
+    String? modelId,
+    bool paidRetryConsumed = false,
   }) {
     final intent = _requireActive(intentId);
     if (!const {
@@ -478,6 +618,9 @@ class X402PaymentApprovalService {
       resourceUrl: intent.requestUrl.toString(),
       challengeHash: intent.challenge.challengeHash,
       httpStatus: httpStatus,
+      requestFingerprint: requestFingerprint,
+      modelId: modelId,
+      paidRetryConsumed: paidRetryConsumed,
     );
   }
 
@@ -566,15 +709,17 @@ Map<String, dynamic> _decodeHeaderJson(String header) {
   } catch (_) {}
 
   try {
-    final decoded =
-        jsonDecode(utf8.decode(base64.decode(base64.normalize(value))));
+    final decoded = jsonDecode(
+      utf8.decode(base64.decode(base64.normalize(value))),
+    );
     if (decoded is Map) {
       return decoded.map((key, value) => MapEntry(key.toString(), value));
     }
   } catch (_) {}
   try {
-    final decoded =
-        jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(value))));
+    final decoded = jsonDecode(
+      utf8.decode(base64Url.decode(base64Url.normalize(value))),
+    );
     if (decoded is Map) {
       return decoded.map((key, value) => MapEntry(key.toString(), value));
     }
@@ -590,13 +735,16 @@ int _positiveInt(dynamic value) {
 String _canonicalJson(dynamic value) {
   dynamic canonicalize(dynamic item) {
     if (item is Map) {
-      final entries = item.entries
-          .map((entry) =>
-              MapEntry(entry.key.toString(), canonicalize(entry.value)))
-          .toList()
-        ..sort((a, b) => a.key.compareTo(b.key));
+      final entries =
+          item.entries
+              .map(
+                (entry) =>
+                    MapEntry(entry.key.toString(), canonicalize(entry.value)),
+              )
+              .toList()
+            ..sort((a, b) => a.key.compareTo(b.key));
       return <String, dynamic>{
-        for (final entry in entries) entry.key: entry.value
+        for (final entry in entries) entry.key: entry.value,
       };
     }
     if (item is List) return item.map(canonicalize).toList(growable: false);

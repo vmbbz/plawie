@@ -237,6 +237,21 @@ class NativeBridge {
     return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
   }
 
+  /// Enables the Android-secured surface used by the canonical payment dialog.
+  /// A failed enable is fatal to approval; callers must cancel the payment.
+  static Future<void> setSensitiveUiVisible(bool visible) async {
+    final applied = await _channel.invokeMethod<bool>(
+      'setSensitiveUiVisible',
+      visible,
+    );
+    if (applied != true) {
+      throw PlatformException(
+        code: 'SENSITIVE_UI_ERROR',
+        message: 'Android did not apply the sensitive UI policy.',
+      );
+    }
+  }
+
   static Future<Map<String, dynamic>> signSecureVeniceBalanceIdentity(
     Map<String, dynamic> identity,
   ) async {
@@ -245,6 +260,74 @@ class NativeBridge {
       identity,
     );
     return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
+  static Future<Map<String, dynamic>> signSecureVeniceProviderIdentity(
+    Map<String, dynamic> identity,
+  ) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'signSecureVeniceProviderIdentity',
+      identity,
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
+  /// Signs only KeeperHub's Android-owned EIP-4361 login assertion.
+  static Future<Map<String, dynamic>> signSecureKeeperHubSiwe({
+    required String nonce,
+    required DateTime issuedAt,
+  }) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'signSecureKeeperHubSiwe',
+      <String, dynamic>{
+        'nonce': nonce,
+        'issuedAt': issuedAt.toUtc().toIso8601String(),
+      },
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
+  /// Signs only KeeperHub's org_api_key_manage step-up challenge.
+  static Future<Map<String, dynamic>> signSecureKeeperHubKeyChallenge({
+    required String challenge,
+    required String operation,
+  }) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'signSecureKeeperHubKeyChallenge',
+      <String, dynamic>{
+        'challenge': challenge,
+        'operation': operation,
+      },
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
+  /// Device-authenticates one policy-bounded KeeperHub testnet execution.
+  static Future<Map<String, dynamic>> attestSecureKeeperHubExecution(
+    Map<String, dynamic> execution,
+  ) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'attestSecureKeeperHubExecution',
+      execution,
+    );
+    return Map<String, dynamic>.from(result ?? const <dynamic, dynamic>{});
+  }
+
+  static Future<Map<String, dynamic>> authorizeSecureKeeperHubRevocation({
+    required String keyId,
+    required String keyPrefix,
+  }) async {
+    final result = await _channel.invokeMapMethod<String, dynamic>(
+      'authorizeSecureKeeperHubRevocation',
+      <String, dynamic>{'keyId': keyId, 'keyPrefix': keyPrefix},
+    );
+    if (result == null) {
+      throw PlatformException(
+        code: 'KEEPERHUB_REVOCATION_EMPTY',
+        message: 'Android returned no KeeperHub revocation authorization.',
+      );
+    }
+    return Map<String, dynamic>.from(result);
   }
 
   /// Shows the private-key backup in an Android-owned authenticated dialog.
@@ -419,18 +502,6 @@ class NativeBridge {
         .invokeMethod('runInProot', {'command': withEnv, 'timeout': timeout});
   }
 
-  /// Execute a command in the persistent shell (one PRoot process reused across calls).
-  /// Uses milliseconds for timeout (default 30s). Prefer this over runInProot in the terminal.
-  static Future<String> executeInShell(String command,
-      {int timeoutMs = 30000}) async {
-    final sanitized = _applyAbsoluteBypass(command);
-    final withEnv =
-        'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH && '
-        'export NODE_OPTIONS="--require /root/.openclaw/bionic-bypass.js" && $sanitized';
-    return await _channel.invokeMethod(
-        'executeInShell', {'command': withEnv, 'timeoutMs': timeoutMs});
-  }
-
   static String _applyAbsoluteBypass(String cmd) {
     if (!cmd.contains('openclaw')) return cmd;
 
@@ -442,11 +513,6 @@ class NativeBridge {
         (match) {
       return kOpenClawCommand;
     });
-  }
-
-  /// Destroy the persistent shell process (called when terminal screen closes).
-  static Future<void> destroyShell() async {
-    await _channel.invokeMethod('destroyShell');
   }
 
   static Future<bool> startGateway({bool allowDuringSetup = false}) async {

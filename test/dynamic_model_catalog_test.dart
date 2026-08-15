@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:clawa/services/dynamic_model_catalog.dart';
+import 'package:clawa/services/model_execution_policy.dart';
 import 'package:clawa/services/model_provider_catalog.dart';
 import 'package:clawa/services/preferences_service.dart';
 
@@ -29,8 +30,9 @@ void main() {
     final encoded = jsonEncode(snapshot.toJson());
 
     expect(snapshot.isUsable, isTrue);
+    expect(snapshot.state, DynamicCatalogSnapshotState.offlineFallback);
     expect(snapshot.providers, isNotEmpty);
-    expect(encoded, isNot(contains('apiKey')));
+    expect(encoded, isNot(contains('"apiKey":')));
     expect(encoded, isNot(contains('secret')));
     for (final provider in snapshot.providers) {
       for (final model in provider.models) {
@@ -39,7 +41,33 @@ void main() {
     }
   });
 
-  test('snapshot round-trips and becomes stale without changing metadata', () {
+  test('wallet provider fallback explains offline state without claiming live',
+      () {
+    final snapshot = DynamicCatalogSnapshot.bundledFallback(
+      now: DateTime.utc(2026, 8, 5),
+    );
+
+    for (final providerId in const <String>['venice', 'blockrun']) {
+      final provider = snapshot.providers
+          .firstWhere((candidate) => candidate.id == providerId);
+      expect(provider.authenticationMode,
+          ProviderAuthenticationMode.walletIdentity);
+      expect(provider.requiresApiKey, isFalse);
+      expect(
+          provider.catalogState, DynamicProviderCatalogState.offlineFallback);
+      expect(provider.connectionState, DynamicProviderConnectionState.unknown);
+      expect(provider.models, hasLength(1));
+      expect(provider.models.single.liveAvailable, isFalse);
+      expect(provider.models.single.unavailableReason, isNotEmpty);
+      expect(provider.defaultModelId, isNull);
+      expect(
+        () => provider.models.single.gatewayModelConfig,
+        throwsA(isA<StateError>()),
+      );
+    }
+  });
+
+  test('offline fallback round-trips without pretending it was live', () {
     final updated = DateTime.utc(2026, 8, 5, 10);
     final snapshot = DynamicCatalogSnapshot.bundledFallback(
       now: updated,
@@ -51,18 +79,29 @@ void main() {
         loaded.withEffectiveState(updated.add(const Duration(hours: 2)));
 
     expect(loaded.snapshotId, snapshot.snapshotId);
-    expect(loaded.state, DynamicCatalogSnapshotState.fresh);
-    expect(stale.state, DynamicCatalogSnapshotState.stale);
+    expect(loaded.state, DynamicCatalogSnapshotState.offlineFallback);
+    expect(stale.state, DynamicCatalogSnapshotState.offlineFallback);
     expect(stale.providers.length, snapshot.providers.length);
     expect(stale.expiresAt, snapshot.expiresAt);
   });
 
+  test('fresh provider metadata becomes provider-stale with the cache', () {
+    final updated = DateTime.utc(2026, 8, 5, 10);
+    final snapshot = _freshVeniceSnapshot(updated);
+
+    final stale = snapshot.withEffectiveState(
+      updated.add(const Duration(hours: 2)),
+    );
+
+    expect(stale.state, DynamicCatalogSnapshotState.stale);
+    expect(
+        stale.providers.single.catalogState, DynamicProviderCatalogState.stale);
+    expect(stale.providers.single.models.single.liveAvailable, isTrue);
+  });
+
   test('repository persists a cache and reports expiry as stale', () async {
     final updated = DateTime.utc(2026, 8, 5, 10);
-    await repository.save(DynamicCatalogSnapshot.bundledFallback(
-      now: updated,
-      ttl: const Duration(hours: 1),
-    ));
+    await repository.save(_freshVeniceSnapshot(updated));
 
     final loaded = await repository.load(
       now: updated.add(const Duration(hours: 2)),
@@ -71,6 +110,33 @@ void main() {
     expect(loaded, isNotNull);
     expect(loaded!.state, DynamicCatalogSnapshotState.stale);
     expect(preferences.dynamicModelCatalogSnapshotJson, isNotNull);
+  });
+
+  test('adds providers introduced after an older cache was persisted',
+      () async {
+    final now = DateTime.utc(2026, 8, 5, 12);
+    final fallback = DynamicCatalogSnapshot.bundledFallback(now: now);
+    final olderCache = DynamicCatalogSnapshot(
+      schemaVersion: DynamicCatalogSnapshot.currentSchemaVersion,
+      snapshotId: 'older-provider-cache',
+      state: DynamicCatalogSnapshotState.fresh,
+      updatedAt: now,
+      expiresAt: now.add(const Duration(hours: 1)),
+      providers: <DynamicProviderRecord>[fallback.providers.first],
+      source: 'provider-api',
+    );
+    await repository.save(olderCache);
+
+    final loaded = await repository.loadOrBundled(now: now);
+    final providerIds = loaded.providers.map((provider) => provider.id).toSet();
+
+    expect(providerIds, contains('venice'));
+    expect(providerIds, contains('blockrun'));
+    expect(
+        providerIds,
+        containsAll(
+          ModelProviderCatalog.providers.map((provider) => provider.id),
+        ));
   });
 
   test('malformed or unsupported snapshots are rejected safely', () async {
@@ -88,6 +154,77 @@ void main() {
       }),
       throwsA(isA<FormatException>()),
     );
+  });
+
+  test('migrates older live provider records without losing catalog truth', () {
+    final snapshot = DynamicCatalogSnapshot.fromJson(<String, dynamic>{
+      'schemaVersion': DynamicCatalogSnapshot.currentSchemaVersion,
+      'snapshotId': 'legacy-live',
+      'state': 'fresh',
+      'updatedAt': '2026-08-05T10:00:00Z',
+      'expiresAt': '2026-08-05T11:00:00Z',
+      'source': 'mixed-provider-api',
+      'providers': <dynamic>[
+        <String, dynamic>{
+          'id': 'openrouter',
+          'label': 'OpenRouter',
+          'requiresApiKey': true,
+          'connectionState': 'connected',
+          'source': 'provider-api',
+          'models': <dynamic>[
+            <String, dynamic>{
+              'id': 'openrouter/openai/gpt-5',
+              'providerId': 'openrouter',
+              'label': 'GPT-5',
+              'route': 'cloud',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(snapshot.providers.single.authenticationMode,
+        ProviderAuthenticationMode.apiKey);
+    expect(snapshot.providers.single.catalogState,
+        DynamicProviderCatalogState.fresh);
+    expect(snapshot.providers.single.models.single.liveAvailable, isTrue);
+    expect(snapshot.providers.single.models.single.chatReadiness,
+        ModelChatReadiness.providerAdvertised);
+    expect(snapshot.providers.single.models.single.toolReadiness,
+        ModelToolReadiness.unknown);
+    expect(snapshot.providers.single.models.single.agentReady, isFalse);
+  });
+
+  test('shipped and advertised tool evidence remain distinct', () {
+    final shipped = DynamicModelRecord.fromStatic(
+      ModelProviderCatalog.modelById('openai/gpt-5.4')!,
+    );
+    const verified = DynamicModelRecord(
+      id: 'openai/gpt-5.4',
+      providerId: 'openai',
+      label: 'GPT-5.4',
+      route: ModelRouteKind.cloud,
+      supportsToolCalls: true,
+      chatReadiness: ModelChatReadiness.verified,
+      toolReadiness: ModelToolReadiness.loopVerified,
+      toolPolicy: ModelToolPolicy.reliable,
+    );
+    const advertised = DynamicModelRecord(
+      id: 'venice/gemma-4-uncensored',
+      providerId: 'venice',
+      label: 'Gemma 4 Uncensored',
+      route: ModelRouteKind.cloud,
+      supportsToolCalls: true,
+      chatReadiness: ModelChatReadiness.providerAdvertised,
+      toolReadiness: ModelToolReadiness.providerAdvertised,
+    );
+
+    expect(shipped.agentReady, isFalse);
+    expect(shipped.readinessLabel, 'Provider says tools supported');
+    expect(verified.agentReady, isTrue);
+    expect(verified.readinessLabel, 'Agent-ready');
+    expect(advertised.agentReady, isFalse);
+    expect(advertised.readinessLabel, 'Provider says tools supported');
   });
 
   test('error receipts redact length and never break on an expired cache',
@@ -147,3 +284,30 @@ void main() {
     expect(model.gatewayModelConfig, isNot(contains('maxTokens')));
   });
 }
+
+DynamicCatalogSnapshot _freshVeniceSnapshot(DateTime updated) =>
+    DynamicCatalogSnapshot(
+      schemaVersion: DynamicCatalogSnapshot.currentSchemaVersion,
+      snapshotId: 'live-venice',
+      state: DynamicCatalogSnapshotState.fresh,
+      updatedAt: updated,
+      expiresAt: updated.add(const Duration(hours: 1)),
+      source: 'provider-api',
+      providers: <DynamicProviderRecord>[
+        DynamicProviderRecord(
+          id: 'venice',
+          label: 'Venice',
+          authenticationMode: ProviderAuthenticationMode.walletIdentity,
+          catalogState: DynamicProviderCatalogState.fresh,
+          lastRefreshedAt: updated,
+          models: const <DynamicModelRecord>[
+            DynamicModelRecord(
+              id: 'venice/llama-3.3-70b',
+              providerId: 'venice',
+              label: 'Llama 3.3 70B',
+              route: ModelRouteKind.cloud,
+            ),
+          ],
+        ),
+      ],
+    );

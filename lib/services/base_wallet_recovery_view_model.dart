@@ -37,7 +37,7 @@ class BaseWalletRecoveryViewModel {
       case SecureWalletState.absent:
         return const BaseWalletRecoveryViewModel._(
           state: SecureWalletState.absent,
-          title: 'No Base wallet on this device',
+          title: 'No Plawie wallet on this device',
           consequence: 'Create a new wallet or restore an exported backup.',
           guidance: 'Back up the private key before funding the wallet.',
           actionsEnabled: true,

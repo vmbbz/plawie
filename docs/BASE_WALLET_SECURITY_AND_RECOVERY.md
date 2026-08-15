@@ -1,12 +1,13 @@
-# Base Wallet Security and Recovery
+# Wallet Security and Recovery
 
 ## Scope
 
-Plawie's Base wallet is an app-owned EVM wallet for Base Mainnet. It is used for
-explicit user transfers and bounded AI-provider payments. It is not a generic
-background signer: every private-key unwrap requires an Android system
-authentication prompt, and payment construction remains constrained by native
-policy before signing.
+Plawie's Wallet is one app-owned EVM identity shared across Base Mainnet, Base
+Sepolia, and Robinhood Chain Mainnet. It is used for explicit user transfers
+and bounded AI-provider payments. Selecting a network never creates or copies
+a second key. It is not a generic background signer: every private-key unwrap
+requires an Android system authentication prompt, and transaction construction
+remains constrained by native policy before signing.
 
 ## Key storage and persistence
 
@@ -25,6 +26,27 @@ policy before signing.
 
 The private key is only shown through the authenticated backup dialog. Ordinary
 transaction and x402 flows never return key material to Dart.
+
+## Network and asset policy
+
+| Network | Chain ID | Ordinary sends | Provider x402 |
+| --- | ---: | --- | --- |
+| Base Mainnet | 8453 | ETH and native Base USDC | Exact native Base USDC only |
+| Robinhood Chain | 4663 | ETH and official USDG only | Disabled |
+| Base Sepolia | 84532 | ETH and test USDC | Disabled |
+
+Robinhood USDG is the exact published contract
+`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`; it is never labelled as USDC or
+accepted as a provider payment. Robinhood ordinary signing permits only a
+positive native ETH transfer with empty calldata or the exact USDG contract's
+ERC-20 `transfer` call. Arbitrary contract calls and bridge calldata are
+rejected by Android before key unwrap.
+
+Release builds require a credential-free public HTTPS `ROBINHOOD_RPC_URL` for internal Robinhood
+sends and production RPC reliability. Debug/internal builds may use
+Robinhood's documented rate-limited public RPC. A release without the define
+can still attempt public reads but disables internal Robinhood sends without
+affecting Base, wallet recovery, external funding, or the native Gateway.
 
 ## Android authentication policy
 
@@ -68,6 +90,23 @@ retains the atomically verified wallet and returns
 `WALLET_CREATED_VERIFICATION_PENDING`; a cryptographic identity mismatch
 removes that newly created attempt.
 
+### Bounded Venice identity signing
+
+Venice wallet authentication uses a dedicated native SIWE operation; it does
+not add `personal_sign`, arbitrary typed-data signing, or a caller-controlled
+domain or statement. Native policy builds `Sign in to Venice AI` itself and
+accepts only these exact HTTPS resources:
+
+- `GET /api/v1/models`;
+- `POST /api/v1/chat/completions`;
+- `GET /api/v1/x402/balance/{the same secure wallet address}`.
+
+`POST /api/v1/responses` remains disabled until its proxy contract is enabled
+and tested. Every inference authorization uses a fresh alphanumeric nonce and
+a lifetime of at most five minutes, verifies the returned payer and exact SIWE
+message in Dart, and is never cached. The existing balance-read compatibility
+path may cache its exact identity header in memory for up to five minutes.
+
 ## Recovery states
 
 | State | User-visible behavior | Recovery |
@@ -106,7 +145,7 @@ clear the busy flag before returning the freshly classified status. They never
 run through create/import and cannot remove a healthy wallet. Ordinary healthy
 wallet removal still authenticates by decrypting the existing envelope first.
 
-The Base wallet page maps each state to its allowed actions. Create/import are
+The Wallet page maps each state to its allowed actions. Create/import are
 shown only for `absent`; damaged states offer restore/removal; orphan state
 offers alias cleanup; busy, unknown, and authentication-unavailable states are
 read-only. The agent skill page can display wallet capability and open the
@@ -148,3 +187,39 @@ Base Mainnet does not remove the approval boundary. Plawie must show the asset,
 amount, destination, network, provider, and estimated network fee before asking
 Android to authenticate. Agent-initiated payment intents may prepare this
 review, but they cannot authenticate, sign, or broadcast without the human.
+
+## Canonical interactive payment approval
+
+`PaidProviderApprovalHost` is the single app-scoped owner of paid-provider
+foreground state and BlockRun approval dialogs. A request fails closed unless
+the app is resumed, the host is subscribed, and no other approval is active.
+The non-dismissible dialog shows the exact USDC amount, provider, model,
+network, purpose, resource host, expiry, full recipient, and redacted request
+fingerprint. It never shows or stores the prompt, tool payload, signature, or
+private key.
+
+Backgrounding completes the broker decision as `appBackgrounded`, removes the
+owned dialog route, invalidates Venice foreground-turn authorization, and never
+calls the signer. Approval completes only the one process-local broker intent;
+the Android wallet then independently requires strong biometric or device
+credential authentication and revalidates the bounded EIP-3009 payload.
+
+While the dialog is visible, Android applies `FLAG_SECURE`, filters touches from
+obscuring windows, and on Android 12 or newer hides non-system overlays. If that
+secure surface cannot be enabled, the dialog is not shown and the payment is
+cancelled. The app clears the temporary window policy after the dialog closes.
+
+## Funding before a provider top-up
+
+AI-provider settlement remains Base Mainnet native USDC. If a fresh provider
+challenge exceeds the exact refreshed Base balance, Plawie rejects that
+challenge before opening the funding modal. The modal may offer Robinhood ETH
+or official USDG only when live LI.FI/Relay capability discovery confirms the
+route to Base USDC. It warns users to retain ETH for source-chain gas.
+
+A completed bridge receipt is not payment approval. Plawie switches back to
+Base, fails closed if the USDC balance cannot be freshly read, verifies that
+the delivered balance is sufficient, obtains a new provider challenge, and
+then shows a separate exact x402 approval followed by Android authentication.
+Closing or backgrounding the modal, partial delivery, refund, expiry, unknown
+submission state, or an increased fresh challenge stops the provider payment.

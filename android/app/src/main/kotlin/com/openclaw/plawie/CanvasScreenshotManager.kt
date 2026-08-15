@@ -3,6 +3,7 @@ package com.openclaw.plawie
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
+import android.app.Activity
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -11,7 +12,6 @@ import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
-import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
@@ -20,9 +20,9 @@ import java.util.concurrent.TimeUnit
 object CanvasScreenshotManager {
     const val CHANNEL = "com.openclaw.plawie/canvas_screenshot"
 
-    private var activity: FlutterActivity? = null
+    private var activity: Activity? = null
 
-    fun register(activity: FlutterActivity, messenger: io.flutter.plugin.common.BinaryMessenger) {
+    fun register(activity: Activity, messenger: io.flutter.plugin.common.BinaryMessenger) {
         this.activity = activity
         MethodChannel(messenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {

@@ -5,6 +5,7 @@ import '../constants.dart';
 import '../app.dart';
 import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
+import '../services/runtime_credential_store.dart';
 import 'dashboard_screen.dart';
 import 'setup_flow_screen.dart';
 import 'setup_wizard_screen.dart';
@@ -172,7 +173,8 @@ class _SplashScreenState extends State<SplashScreen>
     if (migratedVersion == AppConstants.version) return;
 
     // Reset stale handshake state on app upgrade to avoid protocol/nonce loops.
-    await storage.remove('node_device_token');
+    await RuntimeCredentialStore.instance.init(storage);
+    await RuntimeCredentialStore.instance.setNodeDeviceToken(null);
     await storage.remove('openclaw_operator_ws_protocol');
     await storage.remove('last_approved_request_id');
     await storage.setString(_appStateVersionKey, AppConstants.version);

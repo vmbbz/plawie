@@ -244,10 +244,7 @@ class NodeService {
         final approvedToken = await _approveNodeViaDevicePairing(null);
         if (approvedToken != null && approvedToken.isNotEmpty) {
           prefs.nodeDeviceToken = approvedToken;
-          final preview = approvedToken.length > 8
-              ? '${approvedToken.substring(0, 8)}...'
-              : approvedToken;
-          log('[NODE] Approved pending node command snapshot ($preview)');
+          log('[NODE] Approved pending node command snapshot');
         } else {
           log('[NODE] Pending node snapshot approved; token will be learned on reconnect');
         }
@@ -997,10 +994,7 @@ class NodeService {
         activeDeviceToken != null && activeDeviceToken.isNotEmpty;
     const scopes = <String>[];
     if (hasDeviceToken) {
-      final preview = activeDeviceToken.length > 8
-          ? '${activeDeviceToken.substring(0, 8)}...'
-          : activeDeviceToken;
-      log('[NODE] Using cached node device token: $preview');
+      log('[NODE] Using cached node device token');
     } else {
       log('[NODE] No cached node device token — using first-time pairing path');
     }
@@ -1182,13 +1176,10 @@ class NodeService {
       final authPayload = payload['auth'];
       final deviceToken =
           authPayload is Map ? authPayload['deviceToken']?.toString() : null;
-      final previewLength = deviceToken == null
-          ? 0
-          : (deviceToken.length < 6 ? deviceToken.length : 6);
-      final tokenPreview = deviceToken != null && deviceToken.isNotEmpty
-          ? '${deviceToken.substring(0, previewLength)}...'
+      final tokenState = deviceToken != null && deviceToken.isNotEmpty
+          ? 'updated'
           : 'unchanged';
-      return '[NODE] Connect accepted (protocol=v$protocol, methods=$methodCount, presence=$presenceCount, token=$tokenPreview)';
+      return '[NODE] Connect accepted (protocol=v$protocol, methods=$methodCount, presence=$presenceCount, token=$tokenState)';
     }
 
     final errPayload = response.payload ?? response.error ?? {};
@@ -1452,10 +1443,7 @@ class NodeService {
           hasValidRequestId ? requestId : null);
       if (approvedToken != null && approvedToken.isNotEmpty) {
         prefs.nodeDeviceToken = approvedToken;
-        final preview = approvedToken.length > 8
-            ? '${approvedToken.substring(0, 8)}...'
-            : approvedToken;
-        log('[NODE] Device approved; received new node token ($preview)');
+        log('[NODE] Device approved; received new node token');
       } else {
         log('[NODE] Device approved; token will be learned on next successful connect');
       }
