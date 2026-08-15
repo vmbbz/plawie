@@ -21,6 +21,7 @@ import '../services/wallet_funded_provider_readiness.dart';
 import '../services/provider_balance_service.dart';
 import '../services/provider_model_discovery_service.dart';
 import '../services/preferences_service.dart';
+import '../services/product_telemetry_service.dart';
 import '../services/tts_service.dart';
 import '../services/local_llm_service.dart';
 import '../services/storage_service.dart';
@@ -70,6 +71,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Wake Word
   String _wakeWordMode = 'off'; // off | foreground | always
   bool _hotwordRunning = false;
+  bool _shareAnonymousAnalytics = false;
+  bool _analyticsConfigured = false;
 
   @override
   void initState() {
@@ -107,6 +110,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     int silenceTimeout = _silenceTimeout;
     String wakeWordMode = _wakeWordMode;
     bool hotwordRunning = _hotwordRunning;
+    bool shareAnonymousAnalytics = _shareAnonymousAnalytics;
+    bool analyticsConfigured = _analyticsConfigured;
 
     try {
       await _safeCall(_prefs.init(), null);
@@ -123,6 +128,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _prefs.ttsEngine = 'gateway';
       }
       wakeWordMode = _prefs.wakeWordMode;
+      await ProductTelemetryService.instance.initialize();
+      shareAnonymousAnalytics = ProductTelemetryService.instance.consentGranted;
+      analyticsConfigured =
+          ProductTelemetryService.instance.analyticsConfigured;
 
       hotwordRunning = await _safeCall(NativeBridge.isHotwordRunning(), false);
       hasFullStorageAccess =
@@ -163,6 +172,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _silenceTimeout = silenceTimeout;
           _wakeWordMode = wakeWordMode;
           _hotwordRunning = hotwordRunning;
+          _shareAnonymousAnalytics = shareAnonymousAnalytics;
+          _analyticsConfigured = analyticsConfigured;
           _loading = false;
         });
       }
@@ -616,6 +627,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               },
                             ),
                           ],
+                        ),
+                      ),
+                      const Divider(),
+                      _sectionHeader(theme, 'PRIVACY & ANALYTICS'),
+                      SwitchListTile(
+                        title: const Text('Anonymous product analytics'),
+                        subtitle: Text(
+                          _shareAnonymousAnalytics
+                              ? (_analyticsConfigured
+                                  ? 'On · sends allowlisted usage and reliability events'
+                                  : 'Allowed · this build has no analytics destination configured')
+                              : 'Off · no Plawie product analytics are transmitted',
+                        ),
+                        secondary: const Icon(Icons.analytics_outlined),
+                        value: _shareAnonymousAnalytics,
+                        onChanged: (value) async {
+                          final saved =
+                              await ProductTelemetryService.instance.setConsent(
+                            value
+                                ? ProductAnalyticsConsent.granted
+                                : ProductAnalyticsConsent.denied,
+                          );
+                          if (!context.mounted) return;
+                          setState(() {
+                            _shareAnonymousAnalytics = saved
+                                ? value
+                                : ProductTelemetryService
+                                    .instance.consentGranted;
+                          });
+                          if (!saved) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Could not save the analytics preference.',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                      const ListTile(
+                        leading: Icon(Icons.shield_outlined),
+                        title: Text('Local-first without an account'),
+                        subtitle: Text(
+                          'Analytics is optional. Prompts, responses, transcripts, audio, wallet data, signatures, and API keys are excluded.',
+                        ),
+                        isThreeLine: true,
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.privacy_tip_outlined),
+                        title: const Text('Privacy policy'),
+                        subtitle:
+                            const Text('Review data handling and choices'),
+                        trailing: const Icon(Icons.open_in_new, size: 18),
+                        onTap: () => launchUrl(
+                          Uri.parse('https://plawie.app/privacy/'),
+                          mode: LaunchMode.externalApplication,
                         ),
                       ),
                       const Divider(),

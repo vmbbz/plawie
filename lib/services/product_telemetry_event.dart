@@ -6,8 +6,10 @@
 
 enum ProductTelemetryEventName {
   appFirstOpened,
+  appOpened,
   gatewayReady,
   firstAgentTurnCompleted,
+  agentTurnCompleted,
   voiceTurnCompleted,
   wakeWordEnabled,
   companionSessionStarted,
@@ -42,10 +44,14 @@ extension ProductTelemetryEventNameValue on ProductTelemetryEventName {
     switch (this) {
       case ProductTelemetryEventName.appFirstOpened:
         return 'app_first_opened';
+      case ProductTelemetryEventName.appOpened:
+        return 'app_opened';
       case ProductTelemetryEventName.gatewayReady:
         return 'gateway_ready';
       case ProductTelemetryEventName.firstAgentTurnCompleted:
         return 'first_agent_turn_completed';
+      case ProductTelemetryEventName.agentTurnCompleted:
+        return 'agent_turn_completed';
       case ProductTelemetryEventName.voiceTurnCompleted:
         return 'voice_turn_completed';
       case ProductTelemetryEventName.wakeWordEnabled:

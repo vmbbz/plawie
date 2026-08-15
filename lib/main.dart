@@ -6,6 +6,7 @@ import 'services/agent_skill_server.dart';
 import 'services/skills_service.dart';
 import 'services/native_bridge.dart';
 import 'services/preferences_service.dart';
+import 'services/product_telemetry_service.dart';
 import 'services/ui_chrome_service.dart';
 
 Future<void> main() async {
@@ -14,6 +15,7 @@ Future<void> main() async {
   await prefs.init();
   await prefs.applyNativeGatewayDefaultCutoverIfNeeded();
   await UiChromeService.applyFromPreferences();
+  await ProductTelemetryService.instance.initialize();
   NativeBridge.init();
 
   runApp(const PlawieApp());

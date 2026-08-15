@@ -24,6 +24,38 @@ require an embedded API key. Any future partner credential belongs behind a
 controlled backend. Build-time Dart defines are compiled into the APK and are
 never a safe transport for paid RPC credentials or provider secrets.
 
+## Product analytics inputs
+
+Product analytics remains disabled unless the user explicitly opts in **and**
+all required build inputs below are valid. The PostHog project token is public
+ingest metadata, not an administrative API key, but it should still be supplied
+through controlled release configuration so staging and production data cannot
+be mixed accidentally.
+
+| Define | Required when | Failure behavior |
+| --- | --- | --- |
+| `PLAWIE_POSTHOG_HOST` | Consented product analytics is enabled; exact regional ingest origin such as `https://eu.i.posthog.com` | No product analytics are queued or transmitted |
+| `PLAWIE_POSTHOG_PROJECT_KEY` | Consented product analytics is enabled; public project token only, never a personal or secret API key | No product analytics are queued or transmitted |
+| `PLAWIE_RELEASE_CHANNEL` | Every measured build | Defaults to `android-preview` |
+| `PLAWIE_APP_VERSION` | Optional release metadata override | Defaults to `AppConstants.version` |
+
+The client appends `/i/v0/e/` to the configured HTTPS host and sets PostHog's
+`$process_person_profile` property to `false`. It does not enable autocapture,
+session replay, advertising identifiers, or a general analytics SDK. Never put
+a PostHog personal API key, project secret key, Supabase service-role key, or
+other backend credential in a Dart define.
+
+Before supplying these defines to a public build:
+
+1. create separate PostHog staging and production projects in the chosen data
+   region;
+2. update the app/site privacy disclosure and Google Play Data Safety answers;
+3. verify opt-in, opt-out, queue retry, and deletion behavior against staging;
+4. confirm dashboards use active installations rather than claiming verified
+   people;
+5. verify captured properties contain no prompts, responses, transcripts,
+   audio, wallet data, signatures, credentials, raw URLs, or raw exceptions.
+
 ### Create the Reown project
 
 1. Sign in at `https://dashboard.reown.com` and create a Plawie project using
@@ -65,6 +97,11 @@ used, is explicitly public configuration rather than a secret.
 ```powershell
 if ([string]::IsNullOrWhiteSpace($env:ROBINHOOD_RPC_URL)) { throw 'ROBINHOOD_RPC_URL is required' }
 if ([string]::IsNullOrWhiteSpace($env:PLAWIE_UPLOAD_STORE_FILE)) { throw 'Upload keystore is required' }
+
+# Supply both only after PostHog staging verification and policy updates.
+# $env:PLAWIE_POSTHOG_HOST = 'https://eu.i.posthog.com'
+# $env:PLAWIE_POSTHOG_PROJECT_KEY = '<public project token>'
+$env:PLAWIE_RELEASE_CHANNEL = 'android-production'
 
 .\scripts\build_plawie_android.ps1 -Mode release -Bundle
 ```

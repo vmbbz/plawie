@@ -16,6 +16,8 @@ import 'gateway_service.dart';
 import 'package:uuid/uuid.dart';
 import 'skill_provisioning_service.dart';
 import 'provider_setup_service.dart';
+import 'product_telemetry_event.dart';
+import 'product_telemetry_service.dart';
 
 class BootstrapService {
   // Pin the core Gateway package for reproducible fresh installs. Dependency
@@ -583,6 +585,14 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
 
       await NativeBridge.markBootstrapComplete();
       setupPrefs.setupComplete = true;
+      await ProductTelemetryService.instance.recordOnce(
+        ProductTelemetryEventName.onboardingCompleted,
+        onceKey: 'onboarding_completed_v1',
+        properties: const <String, Object?>{
+          'source': 'bootstrap_service',
+          'mode': 'native_gateway',
+        },
+      );
       if (setupPrefs.dashboardUrl == null || setupPrefs.dashboardUrl!.isEmpty) {
         setupPrefs.dashboardUrl = 'http://127.0.0.1:18789';
       }
@@ -999,6 +1009,14 @@ printf '__OPENCLAW_INSTALL_VERIFIED__=%s\n' "$version"
       final prefs = PreferencesService();
       await prefs.init();
       prefs.setupComplete = true;
+      await ProductTelemetryService.instance.recordOnce(
+        ProductTelemetryEventName.onboardingCompleted,
+        onceKey: 'onboarding_completed_v1',
+        properties: const <String, Object?>{
+          'source': 'bootstrap_service',
+          'mode': 'proot_rollback',
+        },
+      );
       if (prefs.dashboardUrl == null || prefs.dashboardUrl!.isEmpty) {
         prefs.dashboardUrl = 'http://127.0.0.1:18789';
       }

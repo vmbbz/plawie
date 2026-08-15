@@ -5,6 +5,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:ui';
 import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
+import '../services/product_telemetry_event.dart';
+import '../services/product_telemetry_service.dart';
 import '../providers/gateway_provider.dart';
 import '../widgets/glass_card.dart';
 import '../app.dart';
@@ -219,6 +221,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     await prefs.init();
     prefs.setupComplete = true;
     prefs.isFirstRun = false;
+    await ProductTelemetryService.instance.recordOnce(
+      ProductTelemetryEventName.onboardingCompleted,
+      onceKey: 'onboarding_completed_v1',
+      properties: const <String, Object?>{
+        'source': 'legacy_onboarding',
+      },
+    );
   }
 
   void _triggerGatewayStateRefresh() {

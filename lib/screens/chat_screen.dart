@@ -16,6 +16,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app.dart';
 import '../services/preferences_service.dart';
+import '../services/product_telemetry_event.dart';
+import '../services/product_telemetry_service.dart';
 import '../services/paid_provider_proxy_models.dart';
 import '../services/paid_provider_turn_authorization_service.dart';
 import '../services/speech_text_normalizer.dart';
@@ -2395,6 +2397,10 @@ class _ChatScreenState extends State<ChatScreen>
         _updatePipMicIcon();
       }
       _addDiagnosticLog('Talk relay error: $message');
+      _recordVoiceTelemetryFailure(
+        source: 'gateway_talk_relay',
+        errorCode: 'relay_error',
+      );
       unawaited(
         _recoverVoiceInputToWakeWord(
           reason: 'Wake word recovery after Talk relay error.',
@@ -2436,6 +2442,7 @@ class _ChatScreenState extends State<ChatScreen>
 
     if (role == 'user') {
       if (isFinal && text.trim().isNotEmpty) {
+        _recordVoiceTelemetrySuccess(source: 'gateway_talk_relay');
         // A new Talk turn gets a fresh duplicate window. Keep any currently
         // playing prior audio intact, but allow the same words in a later
         // user turn to be spoken legitimately.
@@ -2875,6 +2882,7 @@ class _ChatScreenState extends State<ChatScreen>
       _addDiagnosticLog('$source recognized: $text');
       setState(() {});
       _updatePipMicIcon();
+      _recordVoiceTelemetrySuccess(source: source);
       _handleSubmit(text);
       return;
     }
@@ -2890,6 +2898,10 @@ class _ChatScreenState extends State<ChatScreen>
     setState(() {});
     _updatePipMicIcon();
     if (!expectedSilence) {
+      _recordVoiceTelemetryFailure(
+        source: source,
+        errorCode: 'empty_transcript',
+      );
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
@@ -2908,6 +2920,45 @@ class _ChatScreenState extends State<ChatScreen>
             : 'Wake word recovery after no transcript.',
       ),
     );
+  }
+
+  void _recordVoiceTelemetrySuccess({required String source}) {
+    unawaited(
+      ProductTelemetryService.instance.record(
+        ProductTelemetryEventName.voiceTurnCompleted,
+        properties: <String, Object?>{
+          'source': _voiceTelemetrySource(source),
+          'mode': _continuousModeEnabled ? 'continuous' : 'manual',
+          'surface': _isPipMode ? 'pip' : 'chat',
+          'outcome': 'transcribed',
+        },
+      ),
+    );
+  }
+
+  void _recordVoiceTelemetryFailure({
+    required String source,
+    required String errorCode,
+  }) {
+    unawaited(
+      ProductTelemetryService.instance.record(
+        ProductTelemetryEventName.voiceTranscriptionFailed,
+        properties: <String, Object?>{
+          'source': _voiceTelemetrySource(source),
+          'mode': _continuousModeEnabled ? 'continuous' : 'manual',
+          'surface': _isPipMode ? 'pip' : 'chat',
+          'errorCode': errorCode,
+        },
+      ),
+    );
+  }
+
+  String _voiceTelemetrySource(String source) {
+    final normalized = source.toLowerCase();
+    if (normalized.contains('native')) return 'android_speech_recognizer';
+    if (normalized.contains('relay')) return 'gateway_talk_relay';
+    if (normalized.contains('gateway')) return 'gateway_stt';
+    return 'voice_input';
   }
 
   void _handleNativeSpeechFinished(String? text, int generation) {

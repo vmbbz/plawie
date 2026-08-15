@@ -8,6 +8,9 @@ import '../services/gateway_skill_proxy.dart';
 import '../services/bootstrap_service.dart';
 import '../services/model_provider_catalog.dart';
 import '../services/dynamic_model_catalog.dart';
+import '../services/preferences_service.dart';
+import '../services/product_telemetry_event.dart';
+import '../services/product_telemetry_service.dart';
 import '../services/skill_provisioning_service.dart';
 
 class GatewayProvider extends ChangeNotifier {
@@ -85,14 +88,47 @@ class GatewayProvider extends ChangeNotifier {
 
   GatewayProvider() {
     _subscription = _gatewayService.stateStream.listen((state) {
+      final previous = _state;
       _state = state;
       notifyListeners();
+      if (!previous.isInteractiveReady && state.isInteractiveReady) {
+        unawaited(
+          ProductTelemetryService.instance.record(
+            ProductTelemetryEventName.gatewayReady,
+            properties: <String, Object?>{
+              'source': 'gateway_state_stream',
+              'mode': _telemetryRuntimeMode(),
+            },
+          ),
+        );
+      }
+      if (previous.status != GatewayStatus.error &&
+          state.status == GatewayStatus.error) {
+        unawaited(
+          ProductTelemetryService.instance.record(
+            ProductTelemetryEventName.gatewayFailed,
+            properties: <String, Object?>{
+              'source': 'gateway_state_stream',
+              'mode': _telemetryRuntimeMode(),
+              'status': 'error',
+              'errorCode': 'gateway_state_error',
+            },
+          ),
+        );
+      }
     });
     // Wire the GatewaySkillProxy singleton so all skill pages can call
     // gateway.invoke('skills.execute', ...) without needing BuildContext.
     GatewaySkillProxy().attach(this);
     // Check if gateway is already running (e.g. after app restart)
     _gatewayService.init();
+  }
+
+  String _telemetryRuntimeMode() {
+    final owner = PreferencesService().gatewayRuntimeOwner;
+    return owner == PreferencesService.gatewayRuntimeOwnerProot
+        ? 'proot_rollback'
+        : 'native_gateway';
   }
 
   Future<void> start() async {

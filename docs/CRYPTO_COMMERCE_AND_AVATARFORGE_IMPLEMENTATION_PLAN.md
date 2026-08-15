@@ -254,6 +254,8 @@ Keep the existing AvatarForge card marked `SOON` until the portal is live. When 
 
 Accounts exist for receipts, creator profiles, optional sync, and support—not for local use.
 
+Product analytics does not require a Plawie account. The Android app uses a random installation ID generated only after explicit consent, and it reports active installations rather than claiming verified users. Wallet addresses, Gateway device identities, and transaction signatures must never become analytics identifiers. Anonymous identity may be linked to a later account only after separate analytics consent and explicit signup.
+
 Minimum backend tables:
 
 - profiles;
@@ -264,7 +266,7 @@ Minimum backend tables:
 - avatar assets, mints, listings, rentals;
 - deletion requests.
 
-Every table exposed to a client has RLS policies. Service-role operations run only in Edge Functions or a private service. Analytics identity is merged only after consent and signup; anonymous local use can remain untracked.
+Every table exposed to a client has RLS policies. Service-role operations run only in Edge Functions or a private service. Analytics identity is merged only after consent and signup; anonymous local use remains fully functional when analytics is declined. Account deletion/export ships before broad account promotion.
 
 ## Phase 7 — operational finance and reporting
 

@@ -1,7 +1,7 @@
 # Plawie Product Readiness, Crypto Commerce, and Product Hunt Plan
 
-**Status:** Strategic baseline — no recurring subscriptions, no Stripe dependency, and no central account requirement
-**Date:** 2026-08-15  
+**Status:** Guest-first Android measurement foundation implemented; production analytics activation and dashboards remain gated
+**Date:** 2026-08-16
 **Product:** Plawie, the local-first Android companion and OpenClaw control surface
 
 ## Executive decision
@@ -9,6 +9,8 @@
 Plawie is not a subscription SaaS. It is a local-first BYOK and crypto-provider product with optional account services and transaction-based revenue.
 
 Users should be able to run local voice, local Gateway features, and BYOK providers without creating a Plawie account. Plawie earns revenue only when it adds measurable value to a transaction and the user sees the fee before approval.
+
+Product analytics is required for launch learning and defensible product metrics, but product identity is not. Plawie will measure consented anonymous installations and sessions before it introduces optional accounts. The primary first-run action remains local setup, not signup. An account becomes appropriate only when it provides durable value such as cross-device sync, recoverable receipts, creator identity, marketplace participation, or support continuity.
 
 The intended revenue lanes are:
 
@@ -56,6 +58,13 @@ An account may be introduced for durable services, but not as a gate in front of
 - transaction receipts and commission statements;
 - future hosted services, if we ever add them without changing the core promise.
 
+The launch UI must use a guest-first hierarchy:
+
+1. `Continue locally` or the equivalent setup action is primary.
+2. Anonymous product analytics is a separate, optional choice with plain-language exclusions.
+3. `Create account` is introduced only beside a feature that needs durable identity.
+4. Wallet connection is not treated as a Plawie account and is never silently correlated with analytics identity.
+
 ### Revenue without subscriptions
 
 The product must distinguish these four financial concepts:
@@ -74,7 +83,7 @@ The dashboard must report gross volume, partner share, network cost, refunds/dis
 | Capability | First choice | Boundary |
 |---|---|---|
 | Optional identity and account recovery | Supabase Auth + Postgres + Edge Functions | Use for accounts, creator profiles, receipts, and consent; never make local mode depend on it |
-| Product analytics | PostHog Flutter/web SDK | Send explicit, redacted events; never upload prompts, audio, wallet secrets, or raw logs |
+| Product analytics | First-party bounded adapter to the PostHog Capture API | Person profiles, autocapture, session replay, and broad SDK collection remain disabled; only explicit redacted events are sent |
 | Bridge commission | LI.FI Partner Portal/API integrator fee | Requires an approved integrator identity, fee wallet, fee policy, and route reconciliation |
 | LLM top-up commission | Provider-specific referral/partner/settlement integration | Do not alter a direct x402 challenge or add a hidden payee |
 | Avatar mint/rental commerce | AvatarForge-owned web/API and audited on-chain contracts | External wallet signing first; no app-held marketplace custody |
@@ -82,7 +91,7 @@ The dashboard must report gross volume, partner share, network cost, refunds/dis
 
 Supabase Auth integrates with Postgres RLS; its documentation requires protecting user tables and using server-side authorization. See [Supabase Auth](https://supabase.com/docs/guides/auth), [user data](https://supabase.com/docs/guides/auth/managing-user-data), and [API security](https://supabase.com/docs/guides/api/securing-your-api).
 
-PostHog’s Flutter package supports Android, iOS, macOS, and web. Use custom events and funnels/retention rather than broad collection. See [PostHog Flutter](https://pub.dev/packages/posthog_flutter) and [PostHog product analytics](https://github.com/PostHog/PostHog).
+PostHog's public Capture API accepts explicit events and supports anonymous capture with person-profile processing disabled. Plawie's first integration uses that narrow API through the existing HTTP dependency rather than enabling SDK autocapture. See [PostHog Capture API](https://posthog.com/docs/api/capture). A future SDK migration must preserve the same consent and allowlist boundaries.
 
 LI.FI documents an integrator `fee` parameter and configured fee wallet for monetizing supported routes. Fees are taken from the sending asset and collected through LI.FI’s partner flow; this requires LI.FI onboarding and a verified integration. See [LI.FI monetization](https://docs.li.fi/introduction/integrating-lifi/monetizing-integration), [quote parameters](https://docs.li.fi/li.fi-api/requesting-a-quote), and [FeeForwarder](https://docs.li.fi/introduction/integrating-lifi/fee-forwarder).
 
@@ -234,16 +243,18 @@ Do not call an avatar “owned” merely because a local file is present. The ap
 
 ### Event contract
 
-Every event has `event_name`, `schema_version`, actor ID, session ID where useful, platform, release channel, app version, timestamp, and a deduplication key.
+Every transmitted event has `event_name`, `schema_version`, a random installation ID, an app-session ID, platform, release channel, app version, timestamp, and a locally generated event ID. The installation ID is created only after consent. It is not an Android advertising ID, hardware identifier, wallet address, Gateway device identity, account ID, or cryptographic key.
+
+Until optional accounts exist, dashboards must say **active installations** rather than claiming verified people or registered users. Download counts are acquisition signals, not installs; installation IDs are not people.
 
 Acquisition events:
 
 - `landing_viewed`, `download_clicked`, `release_notes_opened`, `signup_started`, `signup_completed`;
 - `product_hunt_campaign_seen`, `product_hunt_download_clicked`.
 
-Activation events:
+Activation and retention events:
 
-- `app_first_opened`, `gateway_ready`, `first_agent_turn_completed`, `voice_turn_completed`;
+- `app_first_opened`, `app_opened`, `gateway_ready`, `first_agent_turn_completed`, `agent_turn_completed`, `voice_turn_completed`;
 - `wake_word_enabled`, `companion_session_started`, `avatar_equipped`, `onboarding_completed`.
 
 Commerce events:
@@ -257,6 +268,8 @@ Reliability events:
 
 - `gateway_failed`, `voice_transcription_failed`, `tts_failed`, `foreground_service_restarted`, `support_report_submitted`;
 - bounded error code and correlation ID only; never raw payloads.
+
+The app analytics boundary rejects prompts, assistant responses, transcripts, audio, media, filenames, raw URLs, wallet addresses, transaction hashes, signatures, balances, API keys, tokens, provider payloads, arbitrary exception strings, and nested objects. Commerce truth remains in signed/provider/chain receipts and the future reconciliation ledger, never in PostHog.
 
 ### Business metrics
 
@@ -276,7 +289,7 @@ The internal dashboard should show cash/crypto settlement and expected commissio
 
 ## Product Hunt readiness
 
-Product Hunt is a distribution event, not proof of product-market fit. Use one campaign URL with UTM attribution, then measure activated users, retained users, transaction volume, and commission—not only votes.
+Product Hunt is a distribution event, not proof of product-market fit. It does not require Plawie to force product signup. Use one campaign URL with allowlisted UTM attribution, then measure activated installations, retained installations, transaction volume, and commission—not only votes.
 
 Before launch:
 
@@ -304,20 +317,25 @@ Read the [Product Hunt Launch Guide](https://www.producthunt.com/launch), [prepa
 
 ### Phase 1 — measurement foundation
 
-- Define event schemas and redaction tests.
-- The local `ProductTelemetryEvent` contract and consent gate are now defined
-  and tested; no analytics SDK or network sender is wired yet.
-- Add consent-aware PostHog web/Flutter events.
-- Add stable random installation IDs, never hardware identifiers.
+- Define event schemas and redaction tests. **Completed.**
+- Keep the local `ProductTelemetryEvent` contract as the only feature-code entry point. **Completed.**
+- Add a consent-aware, fail-closed PostHog Capture API sender with person profiles disabled and no autocapture. **Completed in Android code; production host/token not configured.**
+- Add stable random installation IDs generated only after consent, never hardware or wallet identifiers. **Completed and tested.**
+- Add a bounded redacted retry queue that can never block app functionality. **Completed and tested.**
+- Instrument app open, onboarding, Gateway readiness/failure, successful agent turns, and voice/TTS success/failure. **Completed for the first Android activation slice.**
+- Add consent-aware landing-page acquisition events and allowlisted Product Hunt UTM attribution. **Not started; must update the website privacy disclosure and CSP in the same release.**
 - Create the activation, reliability, and transaction-volume dashboards.
 - Add release/channel/fee-schedule version to every commerce event.
+- Configure the production PostHog project token and regional ingest host only through release build configuration; do not commit a fabricated token.
 
 ### Phase 2 — optional identity and receipts
 
 - Create Supabase staging with Auth, profiles, personal workspaces, devices, receipts, and RLS.
-- Add magic-link/OTP account creation only for sync, receipts, creator profiles, or support.
+- Add magic-link/OTP account creation only beside sync, recoverable receipts, creator profiles, marketplace participation, or support continuity.
+- Keep `Continue locally` primary. Do not ask for identity merely to count users or unlock local/BYOK chat.
 - Keep wallet keys and provider credentials device-owned; the cloud stores references and redacted receipts only.
 - Add export/delete flows before broad signup promotion.
+- Merge an anonymous analytics identity into an account only after separate analytics consent and explicit signup; never derive identity from a wallet address.
 
 ### Phase 3 — commission lanes
 
@@ -343,20 +361,22 @@ Read the [Product Hunt Launch Guide](https://www.producthunt.com/launch), [prepa
 
 ## Immediate next commits
 
-1. Add the revised strategy and commerce implementation documents.
-2. Quarantine the unused legacy OpenRouter/Coinbase credit service after a full import/build check.
-3. Add tests proving direct x402 payees cannot be changed by a local fee setting.
-4. Add a fee-policy domain model that is disabled unless a verified provider/LI.FI configuration is present; do not add real treasury addresses yet.
-5. Add bridge quote fields for integrator/fee schedule/commission display, initially read-only and feature-gated.
-6. Add AvatarForge asset-state models (`local`, `verified`, `minted`, `rented`, `expired`, `unverified`) without claiming on-chain ownership.
-7. Add redacted commerce events and local receipt correlation before enabling analytics transmission.
-8. Request the external inputs needed for live enablement: provider agreements, LI.FI partner identity, fee wallet, legal review, chain/contract choices, and AvatarForge asset/license specification.
+1. Complete and test the Android consent, anonymous identity, queue, PostHog sender, and first activation/reliability instrumentation.
+2. Create the production PostHog project, select its data region, configure release build variables, and verify anonymous capture in a staging project.
+3. Build dashboards for acquisition, activation, retained installations, voice reliability, Gateway reliability, and commerce funnels.
+4. Add website consent and allowlisted campaign/download events; update the privacy page, CSP hash, and Google Play Data Safety inventory in the same release.
+5. Instrument provider and bridge receipts only after each event can be derived from the redacted receipt contracts without addresses, hashes, signatures, or exact balances.
+6. Defer Supabase signup until recoverable receipts, sync, support continuity, or AvatarForge creator features provide a concrete account benefit.
+7. Request the external inputs needed for live commission enablement: provider agreements, LI.FI partner identity, fee wallet, legal review, chain/contract choices, and AvatarForge asset/license specification.
 
 ## Non-negotiable decisions
 
 - No subscriptions.
 - No Stripe dependency.
 - No forced account wall for local/BYOK usage.
+- No signup merely for analytics, download counting, or Product Hunt participation.
+- No analytics transmission before explicit consent or without valid release configuration.
+- No prompts, responses, transcripts, wallet data, credentials, raw logs, or arbitrary payloads in product analytics.
 - No hidden commission added to a provider challenge.
 - No custody or unattended signing introduced to collect revenue.
 - No bridge commission enabled without a visible quote and verified fee settlement.

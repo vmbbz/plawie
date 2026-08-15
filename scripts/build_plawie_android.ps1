@@ -49,6 +49,58 @@ if (-not [string]::IsNullOrWhiteSpace($env:ROBINHOOD_RPC_URL)) {
     $arguments += "--dart-define=ROBINHOOD_RPC_URL=$($env:ROBINHOOD_RPC_URL)"
 }
 
+$postHogHostPresent =
+    -not [string]::IsNullOrWhiteSpace($env:PLAWIE_POSTHOG_HOST)
+$postHogProjectKeyPresent =
+    -not [string]::IsNullOrWhiteSpace($env:PLAWIE_POSTHOG_PROJECT_KEY)
+if ($postHogHostPresent -xor $postHogProjectKeyPresent) {
+    throw 'Product analytics configuration is incomplete. Supply both PLAWIE_POSTHOG_HOST and PLAWIE_POSTHOG_PROJECT_KEY, or neither.'
+}
+if ($postHogHostPresent) {
+    $postHogUri = $null
+    if (-not [Uri]::TryCreate(
+        $env:PLAWIE_POSTHOG_HOST,
+        [UriKind]::Absolute,
+        [ref]$postHogUri
+    ) -or
+        $postHogUri.Scheme -ne 'https' -or
+        -not [string]::IsNullOrEmpty($postHogUri.UserInfo) -or
+        -not [string]::IsNullOrEmpty($postHogUri.Query) -or
+        -not [string]::IsNullOrEmpty($postHogUri.Fragment) -or
+        ($postHogUri.AbsolutePath -ne '' -and $postHogUri.AbsolutePath -ne '/')) {
+        throw 'PLAWIE_POSTHOG_HOST must be the credential-free HTTPS ingest origin, without a path, query, userinfo, or fragment.'
+    }
+
+    $postHogProjectKey = $env:PLAWIE_POSTHOG_PROJECT_KEY.Trim()
+    if ($postHogProjectKey.Length -lt 8 -or
+        $postHogProjectKey.Length -gt 200 -or
+        $postHogProjectKey -match '\s' -or
+        $postHogProjectKey -match '^ph[svx]_') {
+        throw 'PLAWIE_POSTHOG_PROJECT_KEY must be a public project token, never a personal or secret API key.'
+    }
+
+    $arguments +=
+        "--dart-define=PLAWIE_POSTHOG_HOST=$($postHogUri.GetLeftPart([UriPartial]::Authority))"
+    $arguments +=
+        "--dart-define=PLAWIE_POSTHOG_PROJECT_KEY=$postHogProjectKey"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($env:PLAWIE_RELEASE_CHANNEL)) {
+    $releaseChannel = $env:PLAWIE_RELEASE_CHANNEL.Trim()
+    if ($releaseChannel -notmatch '^[A-Za-z0-9._-]{1,32}$') {
+        throw 'PLAWIE_RELEASE_CHANNEL must use 1-32 letters, numbers, dots, underscores, or hyphens.'
+    }
+    $arguments += "--dart-define=PLAWIE_RELEASE_CHANNEL=$releaseChannel"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($env:PLAWIE_APP_VERSION)) {
+    $analyticsAppVersion = $env:PLAWIE_APP_VERSION.Trim()
+    if ($analyticsAppVersion -notmatch '^[A-Za-z0-9.+_-]{1,64}$') {
+        throw 'PLAWIE_APP_VERSION must use 1-64 version-safe characters.'
+    }
+    $arguments += "--dart-define=PLAWIE_APP_VERSION=$analyticsAppVersion"
+}
+
 if ($Mode -eq 'release') {
     $requiredSigningEnvironment = @(
         'PLAWIE_UPLOAD_STORE_FILE',

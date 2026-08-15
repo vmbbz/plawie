@@ -15,6 +15,8 @@ import 'paid_provider_turn_authorization_service.dart';
 import 'paid_provider_tool_probe_authorization.dart';
 import 'paid_provider_proxy_models.dart';
 import 'preferences_service.dart';
+import 'product_telemetry_event.dart';
+import 'product_telemetry_service.dart';
 import 'speech_text_normalizer.dart';
 import 'tool_media_event_bus.dart';
 import 'tts_service.dart';
@@ -297,6 +299,7 @@ class ChatRuntimeService extends ChangeNotifier {
     var fullResponse = '';
     final sendStopwatch = Stopwatch()..start();
     var loggedFirstAssistantChunk = false;
+    var turnFailed = false;
     final List<ChatToolEvent> toolEvents = [];
     final dispatchedInlineGestureMarkers = <String>{};
     Map<String, dynamic>? lastLocationResult;
@@ -403,6 +406,7 @@ class ChatRuntimeService extends ChangeNotifier {
               );
             }();
           } else {
+            turnFailed = true;
             stream = Stream.value(
               'Video captured, but no local vision model is active. Please start a multimodal model like Qwen2-VL.',
             );
@@ -411,6 +415,7 @@ class ChatRuntimeService extends ChangeNotifier {
           if (localLlm.isVisionReady) {
             stream = gateway.sendVisionMessage(text, imageBase64);
           } else {
+            turnFailed = true;
             stream = Stream.value(
               'Image captured, but no local vision model is active. Start Qwen2-VL 2B or LLaVA 1.5 7B in Local LLM.',
             );
@@ -538,6 +543,7 @@ class ChatRuntimeService extends ChangeNotifier {
         if (chunk.contains('[Error]') ||
             chunk.contains('rate limit reached') ||
             chunk.contains('API error')) {
+          turnFailed = true;
           var errorMsg = chunk.replaceAll('[Error]', '').trim();
           if (_isRecoverableGatewaySessionFailure(errorMsg)) {
             final rawGatewayError = errorMsg;
@@ -567,12 +573,14 @@ class ChatRuntimeService extends ChangeNotifier {
 
       _flushTtsQueue();
     } catch (e) {
+      turnFailed = true;
       addDiagnostic('Exception during chat: $e');
       fullResponse += '\n\n[Error: $e]';
       updateAssistant(text: fullResponse);
     }
 
     if (fullResponse.trim().isEmpty) {
+      turnFailed = true;
       fullResponse =
           'Warning: No response received. The model may still be loading. Please try again in a moment.';
       updateAssistant(text: fullResponse);
@@ -638,9 +646,60 @@ class ChatRuntimeService extends ChangeNotifier {
     }
 
     _setState(isThinking: false, isGenerating: false, notify: false);
+    sendStopwatch.stop();
     addDiagnostic('Generation completed. Total length: ${fullResponse.length}');
     notifyListeners();
     await persistNow();
+
+    if (!explicitToolCompatibilityProbe &&
+        !turnFailed &&
+        loggedFirstAssistantChunk &&
+        fullResponse.trim().isNotEmpty) {
+      final properties = <String, Object?>{
+        'providerId': _telemetryProviderId(model),
+        'lane': ModelProviderCatalog.isLocalModelId(model)
+            ? 'local_model'
+            : 'gateway_model',
+        'mode': videoBase64 != null
+            ? 'video'
+            : imageBase64 != null
+                ? 'image'
+                : 'text',
+        'outcome': 'success',
+        'durationBucket':
+            ProductTelemetryBuckets.duration(sendStopwatch.elapsed),
+        'source': 'chat_runtime',
+      };
+      unawaited(
+        ProductTelemetryService.instance.record(
+          ProductTelemetryEventName.agentTurnCompleted,
+          properties: properties,
+        ),
+      );
+      unawaited(
+        ProductTelemetryService.instance.recordOnce(
+          ProductTelemetryEventName.firstAgentTurnCompleted,
+          onceKey: 'first_agent_turn_completed_v1',
+          properties: properties,
+        ),
+      );
+    }
+  }
+
+  String _telemetryProviderId(String model) {
+    final normalized = model.trim().toLowerCase();
+    if (normalized.isEmpty) return 'unknown';
+    if (ModelProviderCatalog.isLocalModelId(normalized)) return 'local';
+    final catalogModel = ModelProviderCatalog.modelById(normalized);
+    if (catalogModel != null) return catalogModel.providerId;
+    final separator = normalized.indexOf('/');
+    if (separator > 0) {
+      final candidate = normalized.substring(0, separator);
+      if (ModelProviderCatalog.providerById(candidate) != null) {
+        return candidate;
+      }
+    }
+    return 'custom';
   }
 
   Map<String, dynamic>? _tryDecodeJsonMap(String raw) {
@@ -972,17 +1031,34 @@ class ChatRuntimeService extends ChangeNotifier {
               : ChatRuntimeTtsHealth.failed,
           message: message,
         );
+        if (!degraded) {
+          _recordTtsFailure('gateway_tts_unavailable');
+        }
         _isTtsSpeaking = false;
         notifyListeners();
         _processNextTtsInQueue();
       }
     } catch (e) {
       addDiagnostic('TTS error: $e');
+      _recordTtsFailure('tts_runtime_error');
       _setTtsHealth(ChatRuntimeTtsHealth.failed, message: 'TTS error: $e');
       _isTtsSpeaking = false;
       notifyListeners();
       _processNextTtsInQueue();
     }
+  }
+
+  void _recordTtsFailure(String errorCode) {
+    unawaited(
+      ProductTelemetryService.instance.recordSessionOnce(
+        ProductTelemetryEventName.ttsFailed,
+        sessionKey: 'tts_failed_$errorCode',
+        properties: <String, Object?>{
+          'source': 'gateway_talk',
+          'errorCode': errorCode,
+        },
+      ),
+    );
   }
 
   @override

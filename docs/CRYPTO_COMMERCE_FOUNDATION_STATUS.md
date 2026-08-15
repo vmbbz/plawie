@@ -1,8 +1,8 @@
 # Crypto Commerce Foundation Status
 
-**Branch:** `codex/crypto-commerce-foundation`
-**Date:** 2026-08-15
-**Status:** Foundation round; live monetization remains disabled
+**Branch:** `native-node-gateway-research`
+**Date:** 2026-08-16
+**Status:** Foundation merged; guest-first Android analytics foundation implemented and live monetization remains disabled
 
 ## Completed in this round
 
@@ -41,6 +41,16 @@
 - Added [the AvatarForge smart-contract stub](AVATARFORGE_SMART_CONTRACT_STUB.md)
   to make the non-live boundary explicit: no chain, contract/program,
   addresses, ABI, minting, renting, or custody code exists yet.
+- Added explicit analytics consent in first-run setup and Settings. Declining
+  analytics leaves local/BYOK operation unchanged and clears the analytics-only
+  installation ID, retry queue, and milestone markers.
+- Added a fail-closed PostHog Capture API adapter with anonymous person-profile
+  processing disabled, no autocapture/session replay, a 64-event redacted retry
+  queue, per-install and per-session random IDs, and build-time-only host/token
+  configuration.
+- Instrumented app open, onboarding, Gateway readiness/failure, successful
+  agent turns, voice transcription success/failure, and bounded TTS failure
+  events without prompts, responses, transcripts, wallet data, or raw errors.
 
 ## Deliberately not enabled
 
@@ -50,13 +60,19 @@
 - No LI.FI integrator fee without a verified partner identity, fee wallet, public schedule, legal review, and reconciliation.
 - No AvatarForge mint/rental transaction without a portal, asset/license contract, chain decision, and audited contract/program path.
 - No central account requirement for local/BYOK use.
-- No telemetry or analytics dependency has been added yet; the next round will
-  define a consent-aware, payload-redacted event contract before any provider
-  is connected.
+- No broad analytics SDK, autocapture, person profiles, session replay, or
+  account wall has been added. The active measurement round uses a first-party,
+  allowlisted adapter to PostHog's public Capture API, configured only at build
+  time and disabled until the user explicitly opts in.
 
 ## Next implementation gate
 
-The next code round can add disabled-by-default domain models and redacted event contracts. Live commission behavior requires external inputs that cannot be safely invented in source:
+The completed code round adds consent state, a random analytics-only
+installation ID, a bounded redacted retry queue, and activation/reliability
+events. Production transmission remains off until a real PostHog project,
+policy disclosures, release inputs, and staging verification exist. It does not
+enable a fee or create an account. Live commission behavior still requires
+external inputs that cannot be safely invented in source:
 
 - provider referral/split/settlement agreement;
 - LI.FI Partner Portal configuration and fee wallet;

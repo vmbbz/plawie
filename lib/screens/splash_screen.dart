@@ -5,6 +5,8 @@ import '../constants.dart';
 import '../app.dart';
 import '../services/native_bridge.dart';
 import '../services/preferences_service.dart';
+import '../services/product_telemetry_event.dart';
+import '../services/product_telemetry_service.dart';
 import '../services/runtime_credential_store.dart';
 import 'dashboard_screen.dart';
 import 'setup_flow_screen.dart';
@@ -108,6 +110,14 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (isFullyConfigured) {
         prefs.setupComplete = true;
+        await ProductTelemetryService.instance.recordOnce(
+          ProductTelemetryEventName.onboardingCompleted,
+          onceKey: 'onboarding_completed_v1',
+          properties: const <String, Object?>{
+            'source': 'splash_setup_detection',
+          },
+        );
+        if (!mounted) return;
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
             pageBuilder: (context, animation, secondaryAnimation) =>

@@ -10,6 +10,7 @@ import '../services/native_bridge.dart';
 import '../services/ai_payment_provider_catalog.dart';
 import '../services/model_provider_catalog.dart';
 import '../services/preferences_service.dart';
+import '../services/product_telemetry_service.dart';
 import '../services/provider_setup_service.dart';
 import 'setup_wizard_screen.dart';
 
@@ -41,6 +42,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
   // Step 2: Agent Name
   final _agentNameController = TextEditingController(text: 'Plawie');
+  bool _shareAnonymousAnalytics = false;
 
   late final AnimationController _fadeController;
   late final Animation<double> _fadeAnimation;
@@ -127,6 +129,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
   @override
   void initState() {
     super.initState();
+    _shareAnonymousAnalytics = ProductTelemetryService.instance.consentGranted;
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -1033,6 +1036,29 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           subtitle: 'Use SecretRef for secure key handling',
           value: true,
           onChanged: (_) {},
+        ),
+        const SizedBox(height: 12),
+        _buildSettingTile(
+          theme: theme,
+          isDark: isDark,
+          icon: Icons.analytics_outlined,
+          title: 'Share anonymous product analytics',
+          subtitle:
+              'Optional. Sends feature and reliability events only — never prompts, transcripts, audio, wallet data, or API keys.',
+          value: _shareAnonymousAnalytics,
+          onChanged: (value) async {
+            final saved = await ProductTelemetryService.instance.setConsent(
+              value
+                  ? ProductAnalyticsConsent.granted
+                  : ProductAnalyticsConsent.denied,
+            );
+            if (!mounted) return;
+            setState(() {
+              _shareAnonymousAnalytics = saved
+                  ? value
+                  : ProductTelemetryService.instance.consentGranted;
+            });
+          },
         ),
         const SizedBox(height: 24),
         // Pre-install summary card
