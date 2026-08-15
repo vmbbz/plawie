@@ -16717,19 +16717,46 @@ ${lines.join('\n')}
   }
 
   Future<Map<String, dynamic>> createTalkRealtimeRelaySession({
+    String? sessionKey,
+    String? language,
     String? provider,
     String? model,
     String? voice,
   }) async {
-    final frame = await invoke('talk.session.create', {
+    final resolvedSessionKey = (sessionKey?.trim().isNotEmpty == true
+            ? sessionKey!.trim()
+            : _connection?.mainSessionKey?.trim()) ??
+        'main';
+    final resolvedLanguage = language?.trim();
+    final params = <String, dynamic>{
+      'sessionKey': resolvedSessionKey,
       'mode': 'realtime',
       'transport': 'gateway-relay',
       'brain': 'agent-consult',
+      if (resolvedLanguage != null && resolvedLanguage.isNotEmpty)
+        'language': resolvedLanguage,
       if (provider != null && provider.isNotEmpty) 'provider': provider,
       if (model != null && model.isNotEmpty) 'model': model,
       if (voice != null && voice.isNotEmpty) 'voice': voice,
-    });
-    return _extractRpcPayload(frame);
+    };
+    try {
+      final frame = await invoke('talk.session.create', params);
+      return _extractRpcPayload(frame);
+    } catch (error) {
+      // Older gateways reject the optional language field even though they
+      // support the realtime relay contract. Preserve compatibility with a
+      // single retry, while keeping the official sessionKey binding.
+      final message = error.toString().toLowerCase();
+      final languageRejected = resolvedLanguage != null &&
+          (message.contains('invalid') ||
+              message.contains('unknown') ||
+              message.contains('language'));
+      if (!languageRejected) rethrow;
+      final retryParams = Map<String, dynamic>.from(params)
+        ..remove('language');
+      final frame = await invoke('talk.session.create', retryParams);
+      return _extractRpcPayload(frame);
+    }
   }
 
   Future<void> appendTalkSessionAudio({

@@ -242,11 +242,15 @@ class GatewayProvider extends ChangeNotifier {
       _gatewayService.setTtsPersona(personaId);
 
   Future<Map<String, dynamic>> createTalkRealtimeRelaySession({
+    String? sessionKey,
+    String? language,
     String? provider,
     String? model,
     String? voice,
   }) {
     return _gatewayService.createTalkRealtimeRelaySession(
+      sessionKey: sessionKey,
+      language: language,
       provider: provider,
       model: model,
       voice: voice,

@@ -245,6 +245,35 @@ ownership, then add typed PiP state and visual/accessibility polish.
 Continuous Talk and avatars are not being reimplemented from scratch; they are
 being brought under the same reliable session contract.
 
+### Realtime session and background ownership slice
+
+The next local slice now applies the official client's session contract to the
+existing Plawie relay without replacing its renderer or Gateway architecture:
+
+- `talk.session.create` includes the Gateway's negotiated main `sessionKey` and
+  the device language; if an older Gateway rejects the optional language field,
+  the client retries once without that field;
+- streamed audio includes a timestamp, matching the official relay payload
+  shape;
+- stopping relay capture arms a bounded transcript-finalization timer. A
+  missing `transcript`/assistant completion no longer leaves the UI waiting
+  forever; the client cancels and closes the stale relay session;
+- terminal relay error/close/final transcript events cancel that timer;
+- ordinary Activity backgrounding stops and invalidates capture after a short
+  PiP-transition grace period. An active PiP surface remains an authorized
+  voice owner; PiP entry/exit itself does not tear down the session.
+
+This slice has passed analysis and focused session/auth tests. It still needs a
+configured realtime provider for real `ready` → audio → transcript → assistant
+completion evidence; the current handset's provider/network limitation means
+that path is not yet claimed as device-proven.
+
+The newly installed debug APK also passed an ordinary-background smoke: native
+recognition opened `AudioRecord`, the Activity was sent Home, and after return
+the voice menu showed `Voice Input` rather than `Stop Listening`. The device
+again reported `NO_SPEECH_DETECTED` because of its recognition environment, but
+the microphone was released and the app did not retain a stale capture owner.
+
 ## Proposed state boundary
 
 Introduce a small voice-session model without moving every existing behavior at once:

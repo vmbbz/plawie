@@ -106,6 +106,9 @@ class _ChatScreenState extends State<ChatScreen>
   StreamSubscription<Uint8List>? _talkAudioStreamSub;
   StreamSubscription<Map<String, dynamic>>? _talkEventSub;
   Future<void> _talkAudioSendChain = Future<void>.value();
+  Timer? _talkRelayFinalizationTimer;
+  bool _talkRelayTurnAwaitingTranscript = false;
+  Timer? _backgroundVoiceStopTimer;
   int? _talkAssistantMessageIndex;
   String _talkAssistantTextBuffer = '';
 
@@ -1979,7 +1982,11 @@ class _ChatScreenState extends State<ChatScreen>
     }
     _talkRelaySessionId = null;
     try {
-      final session = await gatewayProvider.createTalkRealtimeRelaySession();
+      final locale = Platform.localeName.replaceAll('-', '_');
+      final language = locale.split('_').first.trim();
+      final session = await gatewayProvider.createTalkRealtimeRelaySession(
+        language: language.isEmpty ? null : language,
+      );
       final sessionId = (session['sessionId'] ??
               session['relaySessionId'] ??
               session['transcriptionSessionId'])
@@ -2024,6 +2031,9 @@ class _ChatScreenState extends State<ChatScreen>
     }
     if (eventType == 'error') {
       final message = payload['message']?.toString() ?? 'unknown';
+      _talkRelayFinalizationTimer?.cancel();
+      _talkRelayFinalizationTimer = null;
+      _talkRelayTurnAwaitingTranscript = false;
       _talkRelayReady = false;
       if (_isTalkRelayCaptureActive) {
         _voiceSession.invalidate(
@@ -2040,6 +2050,9 @@ class _ChatScreenState extends State<ChatScreen>
     }
     if (eventType == 'close') {
       final reason = payload['reason']?.toString() ?? 'unknown';
+      _talkRelayFinalizationTimer?.cancel();
+      _talkRelayFinalizationTimer = null;
+      _talkRelayTurnAwaitingTranscript = false;
       _talkRelayReady = false;
       if (_isTalkRelayCaptureActive) {
         _voiceSession.invalidate(
@@ -2103,6 +2116,9 @@ class _ChatScreenState extends State<ChatScreen>
       _scrollToBottom();
 
       if (isFinal) {
+        _talkRelayFinalizationTimer?.cancel();
+        _talkRelayFinalizationTimer = null;
+        _talkRelayTurnAwaitingTranscript = false;
         _flushTtsQueue();
         setState(() {
           _isGenerating = false;
@@ -2129,6 +2145,7 @@ class _ChatScreenState extends State<ChatScreen>
       await gatewayProvider.appendTalkSessionAudio(
         sessionId: sessionId,
         audioBase64: audioBase64,
+        timestamp: DateTime.now().millisecondsSinceEpoch.toDouble(),
       );
     }).catchError((e) {
       _addDiagnosticLog('Talk relay appendAudio failed: $e');
@@ -2168,6 +2185,55 @@ class _ChatScreenState extends State<ChatScreen>
     await _talkAudioStreamSub?.cancel();
     _talkAudioStreamSub = null;
     _isTalkRelayCaptureActive = false;
+  }
+
+  void _armTalkRelayFinalizationTimeout(String? sessionId) {
+    _talkRelayFinalizationTimer?.cancel();
+    _talkRelayTurnAwaitingTranscript = sessionId != null && sessionId.isNotEmpty;
+    if (!_talkRelayTurnAwaitingTranscript) return;
+    _talkRelayFinalizationTimer = Timer(const Duration(seconds: 15), () {
+      unawaited(_expireTalkRelayTurn(sessionId!));
+    });
+  }
+
+  Future<void> _expireTalkRelayTurn(String sessionId) async {
+    if (!mounted ||
+        !_talkRelayTurnAwaitingTranscript ||
+        _talkRelaySessionId != sessionId) {
+      return;
+    }
+    _talkRelayTurnAwaitingTranscript = false;
+    _talkRelayFinalizationTimer = null;
+    _talkRelayReady = false;
+    _addDiagnosticLog(
+        'Talk relay transcript timed out; closing session $sessionId.');
+    final gatewayProvider =
+        Provider.of<GatewayProvider>(context, listen: false);
+    try {
+      await gatewayProvider.cancelTalkSessionTurn(
+        sessionId,
+        reason: 'transcript-finalization-timeout',
+      );
+    } catch (error) {
+      _addDiagnosticLog('Talk relay cancel after timeout failed: $error');
+    }
+    try {
+      await gatewayProvider.closeTalkSession(sessionId);
+    } catch (error) {
+      _addDiagnosticLog('Talk relay close after timeout failed: $error');
+    }
+    if (_talkRelaySessionId == sessionId) {
+      _talkRelaySessionId = null;
+      _talkAssistantMessageIndex = null;
+      _talkAssistantTextBuffer = '';
+    }
+    if (mounted) {
+      _voiceSession.invalidate(
+        phase: VoiceSessionPhase.error,
+        reason: 'Talk relay transcript timed out.',
+      );
+      _addDiagnosticLog('Talk relay session closed after transcript timeout.');
+    }
   }
 
   /// Start recording — called when user begins holding the mic orb (hold-to-record UX).
@@ -2282,11 +2348,14 @@ class _ChatScreenState extends State<ChatScreen>
     _voiceSession.invalidate(reason: 'Voice capture stopped by user.');
 
     if (_isTalkRelayCaptureActive) {
+      final sessionId = _talkRelaySessionId;
       await _stopTalkRelayCapture();
       if (!mounted) return;
       _publishListeningState(false);
-      _addDiagnosticLog(
-          'Voice relay recording stopped; waiting for transcript...');
+      _armTalkRelayFinalizationTimeout(sessionId);
+      _addDiagnosticLog(sessionId == null
+          ? 'Voice relay recording stopped without a session id.'
+          : 'Voice relay recording stopped; waiting for transcript...');
       return;
     }
 
@@ -3189,7 +3258,27 @@ class _ChatScreenState extends State<ChatScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _backgroundVoiceStopTimer?.cancel();
+      _backgroundVoiceStopTimer = null;
       _scrollToBottom(instant: true);
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // Android can report paused/inactive just before the PiP mode callback.
+      // Defer the stop briefly so an active PiP voice surface keeps ownership,
+      // while ordinary backgrounding still releases the microphone promptly.
+      if (!_isPipMode &&
+          (_isListening || _voiceSession.state.captureActive)) {
+        _backgroundVoiceStopTimer?.cancel();
+        _backgroundVoiceStopTimer = Timer(const Duration(milliseconds: 350), () {
+          _backgroundVoiceStopTimer = null;
+          if (!mounted || _isPipMode) return;
+          if (_isListening || _voiceSession.state.captureActive) {
+            _addDiagnosticLog(
+                'Voice capture stopped because the Activity entered background.');
+            unawaited(_stopListening());
+          }
+        });
+      }
     }
 
     final mode = PreferencesService().wakeWordMode;
@@ -3228,6 +3317,10 @@ class _ChatScreenState extends State<ChatScreen>
     _toolMediaSub?.cancel();
     _talkAudioStreamSub?.cancel();
     _talkEventSub?.cancel();
+    _talkRelayFinalizationTimer?.cancel();
+    _talkRelayFinalizationTimer = null;
+    _backgroundVoiceStopTimer?.cancel();
+    _backgroundVoiceStopTimer = null;
     _configurationRequestSub?.cancel();
     _chatRuntime.removeListener(_syncChatRuntimeState);
     _scrollController.removeListener(_handleChatScroll);
