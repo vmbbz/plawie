@@ -31,6 +31,10 @@
 - Added explicit provider monetization metadata; Venice and BlockRun are both
   currently `none`, so no referral, split, or first-party settlement behavior
   is implied by the catalog.
+- Added the non-custodial `AvatarAssetManifest` and `AvatarAssetRecord`
+  contracts. Local previews, verified assets, minted assets, rentals, and
+  expired rentals are distinct; the preview UI now says minting and rentals
+  are planned rather than available.
 
 ## Deliberately not enabled
 

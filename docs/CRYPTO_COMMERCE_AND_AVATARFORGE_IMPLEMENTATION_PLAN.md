@@ -173,6 +173,11 @@ Reject a fee-enabled quote unless all of these match:
 
 ## Phase 5 — AvatarForge commerce
 
+The local foundation now validates canonical asset manifests and rental expiry
+semantics without connecting to a chain, wallet, portal, or marketplace. The
+Android preview remains equip-only and does not claim ownership or rental
+rights.
+
 ### Asset contract
 
 Define a canonical avatar package before minting:
