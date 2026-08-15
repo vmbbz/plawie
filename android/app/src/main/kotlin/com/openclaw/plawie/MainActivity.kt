@@ -187,7 +187,7 @@ class MainActivity : FlutterActivity() {
                         try {
                             val params = android.app.PictureInPictureParams.Builder()
                                 .setAspectRatio(android.util.Rational(3, 4))
-                                .setActions(buildPipActions(false))
+                                .setActions(buildPipActions(pipVoiceState))
                                 .build()
                             val success = enterPictureInPictureMode(params)
                             result.success(success)
@@ -198,13 +198,39 @@ class MainActivity : FlutterActivity() {
                         result.error("UNSUPPORTED", "PiP requires Android O+", null)
                     }
                 }
-                "updatePipMicState" -> {
-                    val isListening = call.arguments as? Boolean ?: false
+                "updatePipVoiceState" -> {
+                    val state = PipVoiceState.from(call.arguments)
+                    pipVoiceState = state
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         try {
                             val params = android.app.PictureInPictureParams.Builder()
                                 .setAspectRatio(android.util.Rational(3, 4))
-                                .setActions(buildPipActions(isListening))
+                                .setActions(buildPipActions(state))
+                                .build()
+                            setPictureInPictureParams(params)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.w("MainActivity", "Failed to update PiP voice state", e)
+                            result.success(false)
+                        }
+                    } else {
+                        result.success(false)
+                    }
+                }
+                "updatePipMicState" -> {
+                    // Keep the old boolean method for already-installed Flutter
+                    // shells while the typed state bridge rolls out.
+                    val isListening = call.arguments as? Boolean ?: false
+                    pipVoiceState = PipVoiceState(
+                        phase = if (isListening) "listening" else "idle",
+                        isListening = isListening,
+                        label = if (isListening) "Listening" else "Voice ready",
+                    )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        try {
+                            val params = android.app.PictureInPictureParams.Builder()
+                                .setAspectRatio(android.util.Rational(3, 4))
+                                .setActions(buildPipActions(pipVoiceState))
                                 .build()
                             setPictureInPictureParams(params)
                             result.success(true)
@@ -1619,27 +1645,63 @@ class MainActivity : FlutterActivity() {
         pipMethodChannel?.invokeMethod("onPiPModeChanged", isInPictureInPictureMode)
     }
 
-    private fun buildPipActions(isListening: Boolean): List<RemoteAction> {
+    private data class PipVoiceState(
+        val phase: String,
+        val isListening: Boolean,
+        val label: String,
+    ) {
+        companion object {
+            fun from(arguments: Any?): PipVoiceState {
+                val map = arguments as? Map<*, *> ?: return PipVoiceState(
+                    phase = "idle",
+                    isListening = false,
+                    label = "Voice ready",
+                )
+                val phase = map["phase"]?.toString()?.trim()?.lowercase()
+                    ?.takeIf { it.isNotEmpty() } ?: "idle"
+                val listening = map["listening"] as? Boolean ?: phase == "listening"
+                val label = map["label"]?.toString()?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: if (listening) "Listening" else "Voice ready"
+                return PipVoiceState(phase, listening, label)
+            }
+        }
+    }
+
+    private var pipVoiceState = PipVoiceState(
+        phase = "idle",
+        isListening = false,
+        label = "Voice ready",
+    )
+
+    private fun buildPipActions(state: PipVoiceState): List<RemoteAction> {
         val micIntent = Intent(ACTION_PIP_MIC).setPackage(packageName)
         val micPendingIntent = PendingIntent.getBroadcast(
             this, 0, micIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Using standard Android icons. 
-        // ic_btn_speak_now (outline) for idle
-        // ic_lock_idle_lock (filled/different) for listening - or just a different title
-        val iconRes = if (isListening) android.R.drawable.ic_lock_idle_lock else android.R.drawable.ic_btn_speak_now
-        val title = if (isListening) "Listening..." else "Mic"
+        // The RemoteAction is also the native fallback indicator when Flutter
+        // rendering is paused: the icon and explicit label communicate the
+        // current voice phase without relying on the WebView/avatar.
+        val iconRes = if (state.isListening) {
+            android.R.drawable.ic_menu_close_clear_cancel
+        } else {
+            android.R.drawable.ic_btn_speak_now
+        }
+        val title = if (state.isListening) "Stop listening" else "Start voice input"
+        val description = if (state.isListening) {
+            "Stop Plawie voice input (${state.label})"
+        } else {
+            "Start Plawie voice input (${state.label})"
+        }
         
         val micAction = RemoteAction(
             Icon.createWithResource(this, iconRes),
             title,
-            "Toggle microphone",
+            description,
             micPendingIntent
         )
-        // We can't easily tint RemoteAction icons dynamically in PiP without custom icons, 
-        // but changing the icon resource and title provides clear feedback.
         return listOf(micAction)
     }
 

@@ -54,6 +54,8 @@ The first code slice is now implemented on this branch:
   and generation contract;
 - PiP entry/exit changes the presentation surface without stopping active
   capture;
+- the Flutter/native PiP bridge now carries a typed phase, listening flag, and
+  user-facing label, and caches that state before PiP entry;
 - the native PiP mic action waits for the asynchronous Flutter toggle before
   refreshing its icon;
 - delayed continuous-mode restarts reject stale generations;
@@ -85,9 +87,10 @@ SM-A556E running Android 14 / API 34:
 - microphone permission and device-level AAC capture worked;
 - transcript/reply could not be validated because the test device had no
   Gateway token (`STT Exception: No gateway token`);
-- Samsung's visible PiP controls did not clearly label a microphone action, so
-  native RemoteAction discoverability remains an OEM follow-up rather than a
-  claim of completion.
+- after the typed-state round, Samsung's visible PiP menu showed a distinct
+  microphone action alongside expand/close/settings; the overlay rendered the
+  icon but did not expose the RemoteAction title/content description as visible
+  text, so accessibility-label and second-OEM validation remain follow-ups.
 
 The APK and copied native runtime prerequisites were local build artifacts only
 and were not committed or pushed.
@@ -215,13 +218,15 @@ contracts and proof:
      Gateway reconnect, and stale native/TTS callbacks.
 
 4. **PiP companion hardening**
-   - replace boolean-only native updates with a typed state payload;
-   - keep a native status/graphic fallback when Flutter/WebView rendering is
-     paused or unavailable;
+   - **implemented in the current round:** replace boolean-only native updates
+     with a typed phase/listening/label payload cached before PiP entry;
+   - **implemented in the current round:** keep an explicit native microphone
+     icon and Start voice input/Stop listening RemoteAction description when
+     Flutter/WebView rendering is paused or unavailable;
    - expose safe, idempotent actions for mute/resume, stop, and expand;
-   - validate RemoteAction discoverability on Samsung and at least one other
-     Android implementation, since the first Samsung smoke did not clearly
-     label the microphone action.
+   - validate RemoteAction accessibility/discoverability on Samsung and at
+     least one other Android implementation; Samsung currently shows the icon
+     but not the action text in its PiP overlay.
 
 5. **Voice visuals and accessibility**
    - map input/output levels and session phase to the existing VRM/orb without
@@ -239,9 +244,9 @@ contracts and proof:
    - background/lock/unlock/process-recreation evidence;
    - no APKs, screenshots, tokens, or temporary device artifacts committed.
 
-The implementation order is therefore: finish the native voice-send fix and
-provider-backed transcript proof, then harden realtime Talk and lifecycle
-ownership, then add typed PiP state and visual/accessibility polish.
+The implementation order is therefore: finish provider-backed transcript/send
+proof, then complete the remaining realtime Talk and lifecycle test matrix,
+then add compact visual/accessibility polish and second-OEM PiP validation.
 Continuous Talk and avatars are not being reimplemented from scratch; they are
 being brought under the same reliable session contract.
 
@@ -273,6 +278,36 @@ recognition opened `AudioRecord`, the Activity was sent Home, and after return
 the voice menu showed `Voice Input` rather than `Stop Listening`. The device
 again reported `NO_SPEECH_DETECTED` because of its recognition environment, but
 the microphone was released and the app did not retain a stale capture owner.
+
+### Typed PiP status and action slice
+
+The PiP bridge now carries the minimum state needed by the native surface
+without making the renderer authoritative:
+
+- Flutter sends `phase`, `listening`, and `label` through
+  `updatePipVoiceState` on voice-state changes and on PiP entry/exit;
+- `MainActivity` caches the last state and uses it when entering PiP, closing
+  the race where the system enters PiP before Flutter's next frame updates the
+  native action;
+- the native `RemoteAction` uses different microphone/cancel icons and
+  explicit Start voice input/Stop listening titles and content descriptions;
+- the old boolean `updatePipMicState` method remains as a compatibility shim
+  for an already-installed Flutter shell, but new code uses the typed bridge.
+
+Device evidence on the Samsung Android 14/API 34 handset:
+
+- the rebuilt debug APK entered PiP with Android reporting `mode=pinned`, a
+  3:4 surface, and `hasSetActions=true`;
+- the Samsung PiP menu visibly rendered the avatar plus expand, close, and a
+  microphone action icon;
+- tapping the microphone action correlated with a platform
+  `VOICE_RECOGNITION` start/stop pair while the app remained pinned, showing
+  that the RemoteAction can reach the voice path;
+- the handset still produced no transcript because its recognizer had no
+  network and no offline `en-ZA` pack; Samsung's overlay did not expose the
+  action's text/content description, so label discoverability is not claimed;
+- a second Android implementation, action-level stop/mute semantics, and a
+  visible compact status graphic remain validation/polish work.
 
 ## Proposed state boundary
 

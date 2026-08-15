@@ -2444,9 +2444,16 @@ class _ChatScreenState extends State<ChatScreen>
 
   /// Tell native Android to update the PiP RemoteAction icon based on listening state.
   void _updatePipMicIcon() {
-    if (_isPipMode) {
-      _pipChannel.invokeMethod('updatePipMicState', _isListening);
-    }
+    final phase = _isListening ? 'listening' : 'idle';
+    final label = _isListening ? 'Listening' : 'Voice ready';
+    unawaited(_pipChannel.invokeMethod('updatePipVoiceState', {
+      'phase': phase,
+      'listening': _isListening,
+      'label': label,
+    }).catchError((_) {
+      // The native bridge keeps the legacy boolean method for older builds;
+      // no UI state depends on a PiP action refresh succeeding.
+    }));
   }
 
   // FIX: Decoupled cinematic effect from typing to prevent zoom jumps
