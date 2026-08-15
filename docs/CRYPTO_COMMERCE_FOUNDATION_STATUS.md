@@ -21,6 +21,9 @@
 - Added `lib/services/commerce_fee_policy.dart` as a pure, integer-safe,
   fail-closed fee calculator. It has no treasury, network, signing, or provider
   integration and therefore cannot collect a fee by itself.
+- Added `CommerceReceipt` and `CommerceReceiptStore` as a redacted local
+  projection. Existing x402 provider settlements are mirrored into it with a
+  zero Plawie fee; local receipts never become proof of platform revenue.
 
 ## Deliberately not enabled
 
@@ -30,6 +33,9 @@
 - No LI.FI integrator fee without a verified partner identity, fee wallet, public schedule, legal review, and reconciliation.
 - No AvatarForge mint/rental transaction without a portal, asset/license contract, chain decision, and audited contract/program path.
 - No central account requirement for local/BYOK use.
+- No telemetry or analytics dependency has been added yet; the next round will
+  define a consent-aware, payload-redacted event contract before any provider
+  is connected.
 
 ## Next implementation gate
 

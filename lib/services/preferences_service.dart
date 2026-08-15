@@ -37,6 +37,7 @@ class PreferencesService {
       'dynamic_model_catalog_snapshot_v1';
   static const _keyAiPaymentProvider = 'ai_payment_provider';
   static const _keyX402PaymentReceipts = 'x402_payment_receipts_v1';
+  static const _keyCommerceReceipts = 'commerce_receipts_v1';
 
   SharedPreferences? _prefs;
 
@@ -209,6 +210,14 @@ class PreferencesService {
 
   Future<void> setX402PaymentReceipts(List<String> receipts) =>
       _p.setStringList(_keyX402PaymentReceipts, receipts);
+
+  /// Redacted, local commerce operation records. These are operational
+  /// receipts only; they are not a platform revenue ledger.
+  List<String> get commerceReceipts =>
+      _p.getStringList(_keyCommerceReceipts) ?? const <String>[];
+
+  Future<void> setCommerceReceipts(List<String> receipts) =>
+      _p.setStringList(_keyCommerceReceipts, receipts);
 
   /// User-chosen agent name
   String get agentName => _p.getString('agent_name') ?? 'Plawie';

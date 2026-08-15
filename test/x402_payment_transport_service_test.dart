@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:clawa/services/ai_payment_provider_catalog.dart';
+import 'package:clawa/services/commerce_receipt.dart';
 import 'package:clawa/services/x402_payment_service.dart';
 import 'package:clawa/services/x402_payment_transport_service.dart';
 
@@ -17,6 +18,7 @@ void main() {
       () async {
     var calls = 0;
     final store = _MemoryReceiptStore();
+    final commerceStore = _MemoryCommerceReceiptStore();
     final client = MockClient((request) async {
       calls++;
       expect(request.method, 'POST');
@@ -45,6 +47,7 @@ void main() {
       client: client,
       approvalService: approval,
       receiptStore: store,
+      commerceReceiptStore: commerceStore,
       clock: () => now,
       signer: (authorization) async {
         expect(authorization['host'], 'api.venice.ai');
@@ -70,6 +73,9 @@ void main() {
     expect(receipt.state, X402PaymentState.settled);
     expect(receipt.transactionHash, '0x${'a' * 64}');
     expect(store.receipts, hasLength(1));
+    expect(commerceStore.receipts, hasLength(1));
+    expect(commerceStore.receipts.single.platformFeeUnits, BigInt.zero);
+    expect(commerceStore.receipts.single.netAmountUnits, BigInt.from(5000000));
     expect(jsonEncode(receipt.toJson()), isNot(contains('signature')));
   });
 
@@ -164,4 +170,17 @@ class _MemoryReceiptStore extends X402PaymentReceiptStore {
   @override
   Future<List<X402PaymentReceipt>> read() async =>
       List<X402PaymentReceipt>.unmodifiable(receipts);
+}
+
+class _MemoryCommerceReceiptStore extends CommerceReceiptStore {
+  final List<CommerceReceipt> receipts = <CommerceReceipt>[];
+
+  @override
+  Future<void> append(CommerceReceipt receipt) async {
+    receipts.insert(0, receipt);
+  }
+
+  @override
+  Future<List<CommerceReceipt>> read() async =>
+      List<CommerceReceipt>.unmodifiable(receipts);
 }

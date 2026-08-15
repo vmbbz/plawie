@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import 'ai_payment_provider_catalog.dart';
+import 'commerce_receipt.dart';
 import 'native_bridge.dart';
 import 'preferences_service.dart';
 import 'x402_payment_service.dart';
@@ -97,12 +98,14 @@ class X402PaymentTransportService {
     X402PaymentApprovalService? approvalService,
     X402AuthorizationSigner? signer,
     X402PaymentReceiptStore? receiptStore,
+    CommerceReceiptStore? commerceReceiptStore,
     DateTime Function()? clock,
   })  : _client = client ?? http.Client(),
         _ownsClient = client == null,
         approvalService = approvalService ?? X402PaymentApprovalService(),
         _signer = signer ?? NativeBridge.signSecureX402Authorization,
         receiptStore = receiptStore ?? X402PaymentReceiptStore(),
+        commerceReceiptStore = commerceReceiptStore ?? CommerceReceiptStore(),
         _clock = clock ?? DateTime.now;
 
   static const int maxChallengeHeaderBytes = 32 * 1024;
@@ -114,6 +117,7 @@ class X402PaymentTransportService {
   final DateTime Function() _clock;
   final X402PaymentApprovalService approvalService;
   final X402PaymentReceiptStore receiptStore;
+  final CommerceReceiptStore commerceReceiptStore;
 
   Future<PreparedX402Payment> prepareTopUp(
     AiPaymentProviderOption provider,
@@ -365,6 +369,12 @@ class X402PaymentTransportService {
     } catch (_) {
       // A provider-confirmed payment must never look retryable merely because
       // local redacted receipt persistence failed.
+    }
+    try {
+      await commerceReceiptStore.append(CommerceReceipt.fromX402(receipt));
+    } catch (_) {
+      // The commerce projection is best-effort and never changes settlement
+      // semantics or makes a confirmed provider payment retryable.
     }
   }
 
