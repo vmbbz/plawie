@@ -395,6 +395,66 @@ resume, and verify foreground-only versus always-on policy across Activity
 pause/resume. The latter must remain subject to Android microphone and battery
 policy; PiP is not treated as unrestricted background capture.
 
+### 2026-08-15 device diagnosis and recovery patch
+
+The first live wake-word failure was inspected from Android logcat rather than
+treated as a Gateway restart by assumption. The evidence was:
+
+- the Vosk model loaded successfully and recognized the spoken brand as the
+  phonetic phrase `"play we"`; the small English model does not contain the
+  spelling `plawie`, so that spelling is ignored when placed directly in its
+  grammar;
+- `MainActivity` received the wake event and the expected microphone handoff
+  stopped `HotwordService`; no Gateway/native-node restart occurred at that
+  timestamp;
+- after the handoff, Android's platform `SpeechRecognizer` entered listening
+  but emitted no terminal callback, final result, or error, leaving the
+  Flutter session in `Listening` indefinitely.
+
+The reliability patch now:
+
+- uses only model-vocabulary wake aliases (`play we`, `hey play we`, and
+  `ok play we`) while retaining the user-facing wake word `Plawie`;
+- restores persisted `always` wake mode when the Activity/process is recreated
+  while the Activity is visible; this is intentionally not attempted from
+  `BootReceiver`, because Android 14+ disallows microphone foreground-service
+  startup from `BOOT_COMPLETED` for apps targeting API 34+;
+- lets the Dashboard subscribe to wake events, open Chat, release the detector
+  microphone, and start the existing voice turn on the Chat/PiP surface;
+- gives native SpeechRecognizer fallback a two-second silence boundary, a
+  thirty-second maximum listen window, and a 32-second safety release;
+- routes empty/error/timeout wake turns back to the wake-word owner, releases
+  Talk relay capture at the final user VAD boundary before TTS, and prevents an
+  `always` service from being stopped merely because the Chat route is rebuilt;
+- adds a regression test proving a `noTranscript` wake turn releases capture
+  ownership for the next wake turn.
+
+The newly built debug APK restored `HotwordService` on a clean Dashboard launch
+and passed Flutter analysis plus the focused voice/Gateway tests. A manual
+spoken Dashboard wake → Chat command and two-turn Continuous Mode run remain
+the final device gates for this slice; APKs and temporary device artifacts are
+not part of the commit.
+
+### 2026-08-15 microphone foreground-service crash diagnosis
+
+The connected Samsung Android 14 device showed two identical `data_app_crash`
+records while Instagram was brought to the foreground. Android recreated the
+persisted `HotwordService` after Plawie's process was backgrounded, and the
+service's `START_STICKY` return value allowed that recreation. Its `onCreate()`
+called `startForeground()` with the microphone service type, but Android 14
+rejected the background restart with a `SecurityException` because the app was
+not in an eligible foreground state. The exception was previously uncaught and
+terminated the Plawie process.
+
+The crash guard now catches that promotion failure, logs it, stops only the
+wake-word service, and keeps the app process alive. Normal service starts from a
+visible Activity still promote to the microphone foreground service. The
+service is now `START_NOT_STICKY`: it remains active while alive, but is not
+silently recreated in an ineligible background state. `MainActivity` restores a
+persisted `always` policy when the user visibly returns to Plawie. This is an
+Android platform constraint, not a permission omission; the manifest already
+declares `RECORD_AUDIO` and `FOREGROUND_SERVICE_MICROPHONE`.
+
 ## Proposed state boundary
 
 Introduce a small voice-session model without moving every existing behavior at once:
