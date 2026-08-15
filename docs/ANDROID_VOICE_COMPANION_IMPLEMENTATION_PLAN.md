@@ -421,8 +421,8 @@ The reliability patch now:
   startup from `BOOT_COMPLETED` for apps targeting API 34+;
 - lets the Dashboard subscribe to wake events, open Chat, release the detector
   microphone, and start the existing voice turn on the Chat/PiP surface;
-- gives native SpeechRecognizer fallback a two-second silence boundary, a
-  thirty-second maximum listen window, and a 32-second safety release;
+- gives native SpeechRecognizer fallback a five-second silence boundary, a
+  45-second maximum listen window, and a 50-second safety release;
 - routes empty/error/timeout wake turns back to the wake-word owner, releases
   Talk relay capture at the final user VAD boundary before TTS, and prevents an
   `always` service from being stopped merely because the Chat route is rebuilt;
@@ -472,6 +472,44 @@ a normalized per-turn key so cumulative/replayed Gateway chunks cannot cause an
 identical sentence to be synthesized twice. Focused tests cover bullet cleanup,
 capture-group expansion, natural currency/percentage speech, and duplicate-key
 stability.
+
+### 2026-08-15 second-turn regression audit
+
+The connected Samsung SM-A556E was used to compare the merged voice build with
+the immediately preceding voice commits (`6daf5ca` and `cbe9c12`). The failure
+was not a Gateway restart or a microphone permission failure. The device log
+showed the second-turn handoff entering Android's recognizer, then failing
+before a transcript was possible:
+
+```text
+SodaSpeechRecognizer: Initialize Soda [locale: en-ZA]
+SodaLPDirGenerator: Returning no LP, as MDD does not support locale: en-ZA
+SodaSpeechRecognizer: Failed to get language pack of required locale: error 12
+```
+
+The current `cbe9c12` path also introduced a two-second silence boundary and
+disarmed Continuous Mode whenever that recognizer returned an empty/error
+result. On this handset those two behaviors combined into a misleading state:
+the first reply finished, the next recognition window closed almost
+immediately, and recovery returned to a wake-word service that was still
+loading its Vosk model. Saying the wake word during that reload was lost. The
+log showed Vosk eventually reaching `Wake word recognition started`, with no
+Gateway crash at the same timestamp.
+
+The corrective patch now:
+
+- requests the broadly available `en_US` English recognizer instead of the
+  unavailable device-default `en-ZA` pack;
+- gives a command five seconds of natural pause time and a 45-second maximum,
+  while retaining the safety release timer;
+- keeps Continuous Mode armed after a transient no-transcript/error result and
+  schedules the next capture on the same full-screen/PiP surface;
+- preserves wake-word recovery when Continuous Mode is disabled.
+
+Flutter analysis and the focused voice/TTS tests pass after this patch. A
+fresh APK install plus a spoken two-turn test remains the device acceptance
+gate; the test must confirm both the visible second `Listening` phase and a
+second transcript/send, not merely that the recognizer opened.
 
 ## Proposed state boundary
 

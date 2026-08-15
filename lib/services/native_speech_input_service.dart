@@ -9,6 +9,13 @@ import 'package:speech_to_text/speech_to_text.dart';
 /// realtime provider; it returns recognized text for the existing chat submit
 /// pipeline instead of requiring the Gateway's optional `/talk/stt` route.
 class NativeSpeechInputService {
+  // Samsung/Google recognition on some South African firmware exposes
+  // en-ZA as the system locale even when its downloadable speech pack is not
+  // installed. Plawie currently speaks English, so prefer the broadly
+  // available US English model for the short command recognizer instead of
+  // silently entering a no-speech failure loop.
+  static const _preferredEnglishLocale = 'en_US';
+
   final SpeechToText _speech = SpeechToText();
 
   bool _initialized = false;
@@ -59,11 +66,12 @@ class NativeSpeechInputService {
         },
         listenOptions: SpeechListenOptions(
           partialResults: true,
-          // A fallback command ends after a short silence. Without this,
-          // Samsung's recognizer can remain in "listening" forever after a
-          // wake-word handoff and never return the captured phrase.
-          pauseFor: Duration(seconds: 2),
-          listenFor: Duration(seconds: 30),
+          localeId: _preferredEnglishLocale,
+          // Leave enough room for the wake phrase to hand off to the command
+          // without closing the recognizer during the user's natural pause.
+          // The safety timer below still bounds a broken recognizer.
+          pauseFor: Duration(seconds: 5),
+          listenFor: Duration(seconds: 45),
         ),
       );
     } catch (_) {
@@ -75,7 +83,7 @@ class NativeSpeechInputService {
     // though Android has accepted the recognition request.
     _listening = true;
     _safetyTimer?.cancel();
-    _safetyTimer = Timer(const Duration(seconds: 32), () {
+    _safetyTimer = Timer(const Duration(seconds: 50), () {
       if (!_listening) return;
       _onStatus?.call('timeout');
       unawaited(stop(timeout: const Duration(seconds: 1)));

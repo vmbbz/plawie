@@ -980,16 +980,32 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   /// Return ownership to the idle wake-word service when a voice capture did
-  /// not produce a turn. Continuous Mode is intentionally disarmed here: it
-  /// chains completed turns, but must not strand the app in a silent capture
-  /// handoff after an empty/error result.
+  /// not produce a turn. Continuous Mode remains armed so a transient native
+  /// recognizer timeout does not strand the user at the end of the first turn.
+  /// When continuous mode is off, ownership returns to the wake-word service.
   Future<void> _recoverVoiceInputToWakeWord({required String reason}) async {
-    _continuousSessionArmed = false;
     _addDiagnosticLog(reason);
     if (_isTalkRelayCaptureActive) {
       await _stopTalkRelayCapture();
       if (mounted) _publishListeningState(false);
     }
+
+    if (_continuousModeEnabled && _voiceSurfaceCanCapture) {
+      _continuousSessionArmed = true;
+      _voiceSession.setPhase(
+        VoiceSessionPhase.idle,
+        reason: 'Ready for the next continuous voice turn.',
+      );
+      if (mounted) {
+        setState(() {});
+        _syncOverlayState();
+        _updatePipMicIcon();
+      }
+      _scheduleContinuousListening();
+      return;
+    }
+
+    _continuousSessionArmed = false;
     await _resumeWakeWordIfNeeded(force: true);
   }
 
