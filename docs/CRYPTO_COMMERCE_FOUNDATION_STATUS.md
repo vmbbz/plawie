@@ -1,0 +1,43 @@
+# Crypto Commerce Foundation Status
+
+**Branch:** `codex/crypto-commerce-foundation`
+**Date:** 2026-08-15
+**Status:** Foundation round; live monetization remains disabled
+
+## Completed in this round
+
+- Replaced the subscription/Stripe strategy with the BYOK and crypto-commission strategy.
+- Added the detailed [crypto commerce and AvatarForge implementation plan](CRYPTO_COMMERCE_AND_AVATARFORGE_IMPLEMENTATION_PLAN.md).
+- Removed the unused `CryptoCreditsService`, which contained the obsolete OpenRouter/Coinbase/LI.FI prototype flow.
+- Updated the dynamic provider/x402 plan so the removed service is not treated as an active architecture surface.
+
+## Existing capabilities preserved
+
+- Venice prepaid top-up remains provider-owned and wallet-approved.
+- BlockRun remains per-request x402; it is not represented as a Plawie balance.
+- LI.FI remains quote/read-only until external execution and partner fee configuration are independently enabled.
+- Android wallet signing remains visible, authenticated, and bounded by the existing payment intent policy.
+- AvatarForge remains a local equip experience with a clearly marked future web portal; no mint/rental success is simulated.
+- Added `lib/services/commerce_fee_policy.dart` as a pure, integer-safe,
+  fail-closed fee calculator. It has no treasury, network, signing, or provider
+  integration and therefore cannot collect a fee by itself.
+
+## Deliberately not enabled
+
+- No recurring subscriptions.
+- No Stripe integration.
+- No hidden provider fee or changed x402 payee.
+- No LI.FI integrator fee without a verified partner identity, fee wallet, public schedule, legal review, and reconciliation.
+- No AvatarForge mint/rental transaction without a portal, asset/license contract, chain decision, and audited contract/program path.
+- No central account requirement for local/BYOK use.
+
+## Next implementation gate
+
+The next code round can add disabled-by-default domain models and redacted event contracts. Live commission behavior requires external inputs that cannot be safely invented in source:
+
+- provider referral/split/settlement agreement;
+- LI.FI Partner Portal configuration and fee wallet;
+- approved fee schedule and destination disclosure;
+- South African legal/accounting/compliance review;
+- AvatarForge chain, contract/program, metadata, license, creator split, and rental rules;
+- production backend and secret configuration.
