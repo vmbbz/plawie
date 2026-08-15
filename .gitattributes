@@ -1,0 +1,3 @@
+# These assets are SHA-256 verified by Android before the embedded Gateway
+# loads them. Their bytes must be identical on Windows, macOS, and Linux.
+assets/openclaw/plugins/** text eol=lf

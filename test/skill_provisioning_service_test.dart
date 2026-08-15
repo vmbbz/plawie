@@ -113,6 +113,7 @@ requirements:
       'native-home',
       '.openclaw',
     );
+    await _writeUnavailableDependencyPackCatalog(nativeRoot);
     final nativeSkills =
         Directory(path.join(nativeRoot, 'workspace', 'skills'));
     final bundledBinDir = Directory(path.join(
@@ -167,6 +168,7 @@ requirements:
       'native-home',
       '.openclaw',
     );
+    await _writeUnavailableDependencyPackCatalog(nativeRoot);
     final nativeSkills =
         Directory(path.join(nativeRoot, 'workspace', 'skills'));
     final bundledBinDir = Directory(path.join(
@@ -242,6 +244,7 @@ requirements:
       'native-home',
       '.openclaw',
     );
+    await _writeUnavailableDependencyPackCatalog(nativeRoot);
     final nativeSkills =
         Directory(path.join(nativeRoot, 'workspace', 'skills'));
     final bundledBinDir = Directory(path.join(
@@ -297,6 +300,7 @@ requirements:
       'native-home',
       '.openclaw',
     );
+    await _writeUnavailableDependencyPackCatalog(nativeRoot);
     final nativeSkills =
         Directory(path.join(nativeRoot, 'workspace', 'skills'));
     final bundledBinDir = Directory(path.join(
@@ -357,6 +361,7 @@ requirements:
       'native-home',
       '.openclaw',
     );
+    await _writeUnavailableDependencyPackCatalog(nativeRoot);
     final nativeSkills =
         Directory(path.join(nativeRoot, 'workspace', 'skills'));
     final bundledBinDir = Directory(path.join(
@@ -432,6 +437,7 @@ requirements:
       'native-home',
       '.openclaw',
     );
+    await _writeUnavailableDependencyPackCatalog(nativeRoot);
     final nativeSkills =
         Directory(path.join(nativeRoot, 'workspace', 'skills'));
     final bundledAudioBinDir = Directory(path.join(
@@ -569,6 +575,7 @@ metadata:
       'native-home',
       '.openclaw',
     );
+    await _writeUnavailableDependencyPackCatalog(nativeRoot);
     final nativeSkills =
         Directory(path.join(nativeRoot, 'workspace', 'skills'));
     final bundledBinDir = Directory(path.join(
@@ -1672,6 +1679,20 @@ Body text that must not be parsed as headers.
       isFalse,
     );
   });
+}
+
+Future<void> _writeUnavailableDependencyPackCatalog(String nativeRoot) async {
+  final manifest = File(
+    path.join(nativeRoot, 'dependencies', 'dependency_packs.json'),
+  );
+  await manifest.create(recursive: true);
+  await manifest.writeAsString(
+    jsonEncode(<String, dynamic>{
+      'schemaVersion': 1,
+      'packs': const <Map<String, dynamic>>[],
+    }),
+    flush: true,
+  );
 }
 
 Future<void> _writeNodeShim(String nativeRoot) async {

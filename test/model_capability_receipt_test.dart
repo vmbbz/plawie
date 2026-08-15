@@ -50,7 +50,9 @@ void main() {
       preferences: preferences,
     ).loadOrBundled(now: DateTime.utc(2026, 8, 13, 13));
 
-    final glm = loaded.providers.single.models
+    final glm = loaded.providers
+        .singleWhere((provider) => provider.id == 'venice')
+        .models
         .singleWhere((model) => model.id == 'venice/zai-org-glm-5-2');
     expect(glm.agentReady, isTrue);
   });
