@@ -35,6 +35,9 @@
   contracts. Local previews, verified assets, minted assets, rentals, and
   expired rentals are distinct; the preview UI now says minting and rentals
   are planned rather than available.
+- Added `CommerceCommissionQuote`, which requires fee schedule timing, asset,
+  recipient reference, disclosure, partner cost, expiry, and reconciled net
+  received before it can exist. It is not connected to a live payment path.
 
 ## Deliberately not enabled
 

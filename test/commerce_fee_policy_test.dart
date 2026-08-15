@@ -86,4 +86,60 @@ void main() {
     expect(quote.lane, CommerceLane.avatarRental);
     expect(quote.scheduleVersion, 7);
   });
+
+  test('builds a disclosed commission quote only with partner configuration',
+      () {
+    final configured = CommerceFeeSchedule(
+      lane: CommerceLane.bridge,
+      version: 4,
+      availability: CommerceAvailability.enabled,
+      basisPoints: 250,
+      settlementAsset: 'USDC',
+      effectiveAt: DateTime.utc(2026, 8, 1),
+      recipientReference: 'plawie-bridge-fee-v4',
+      disclosureText: 'Plawie bridge service fee',
+    );
+    final quote = configured.quoteCommission(
+      grossAmountUnits: BigInt.from(1000000),
+      partnerCostUnits: BigInt.from(10000),
+      quotedAt: DateTime.utc(2026, 8, 15),
+      quoteExpiresAt: DateTime.utc(2026, 8, 15, 0, 5),
+    );
+
+    expect(quote.platformFeeUnits, BigInt.from(25000));
+    expect(quote.minimumReceivedUnits, BigInt.from(965000));
+    expect(quote.toJson()['recipientReference'], 'plawie-bridge-fee-v4');
+    expect(quote.isExpiredAt(DateTime.utc(2026, 8, 15, 0, 6)), isTrue);
+  });
+
+  test('fails closed when disclosure or schedule timing is incomplete', () {
+    expect(
+      () => schedule().quoteCommission(
+        grossAmountUnits: BigInt.from(1000),
+        partnerCostUnits: BigInt.zero,
+        quotedAt: DateTime.utc(2026, 8, 15),
+        quoteExpiresAt: DateTime.utc(2026, 8, 15, 0, 5),
+      ),
+      throwsStateError,
+    );
+    final future = CommerceFeeSchedule(
+      lane: CommerceLane.bridge,
+      version: 1,
+      availability: CommerceAvailability.enabled,
+      basisPoints: 100,
+      settlementAsset: 'USDC',
+      effectiveAt: DateTime.utc(2026, 9, 1),
+      recipientReference: 'future',
+      disclosureText: 'future fee',
+    );
+    expect(
+      () => future.quoteCommission(
+        grossAmountUnits: BigInt.from(1000),
+        partnerCostUnits: BigInt.zero,
+        quotedAt: DateTime.utc(2026, 8, 15),
+        quoteExpiresAt: DateTime.utc(2026, 8, 15, 0, 5),
+      ),
+      throwsStateError,
+    );
+  });
 }
