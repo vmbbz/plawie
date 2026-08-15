@@ -61,6 +61,26 @@ void main() {
     );
   });
 
+  test('binds a resource-less provider challenge only to an explicit fallback',
+      () {
+    final endpoint = Uri.parse('https://api.example.test/data');
+    final challenge = X402PaymentChallenge.fromHeader(
+      _encodedChallenge(includeResource: false),
+      policy: policy,
+      fallbackResourceUrl: endpoint,
+    );
+
+    expect(challenge.resource, isNull);
+    expect(challenge.resourceUrl, endpoint);
+    expect(
+      () => X402PaymentChallenge.fromHeader(
+        _encodedChallenge(includeResource: false),
+        policy: policy,
+      ),
+      throwsA(isA<X402PaymentPolicyException>()),
+    );
+  });
+
   test('approval is bound to the exact request and cannot be replayed', () {
     final service = X402PaymentApprovalService(clock: () => now);
     final challenge = X402PaymentChallenge.fromHeader(
@@ -158,13 +178,15 @@ String _encodedChallenge({
   String resourceUrl = 'https://api.example.test/data',
   List<Map<String, dynamic>>? accepts,
   int timeout = 60,
+  bool includeResource = true,
 }) {
   final body = <String, dynamic>{
     'x402Version': 2,
-    'resource': <String, dynamic>{
-      'url': resourceUrl,
-      'description': 'Test paid resource',
-    },
+    if (includeResource)
+      'resource': <String, dynamic>{
+        'url': resourceUrl,
+        'description': 'Test paid resource',
+      },
     'accepts':
         accepts ?? <Map<String, dynamic>>[_requirement(timeout: timeout)],
   };

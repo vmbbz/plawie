@@ -99,6 +99,59 @@ void main() {
     expect(signerCalled, isFalse);
   });
 
+  test('accepts Venice-style resource-less top-up discovery', () async {
+    final service = X402PaymentTransportService(
+      client: MockClient((request) async => http.Response('', 402, headers: {
+            'payment-required': _challengeWithoutResource(),
+          })),
+    );
+
+    final prepared = await service.prepareTopUp(provider);
+
+    expect(prepared.intent.challenge.resource, isNull);
+    expect(
+      prepared.intent.challenge.resourceUrl,
+      provider.topUpEndpoint,
+    );
+    expect(prepared.amountUsd, 5);
+  });
+
+  test('omits absent resource metadata from the Venice payment payload',
+      () async {
+    var calls = 0;
+    final service = X402PaymentTransportService(
+      client: MockClient((request) async {
+        calls++;
+        if (calls == 1) {
+          return http.Response('', 402, headers: {
+            'payment-required': _challengeWithoutResource(),
+          });
+        }
+        final payment = jsonDecode(utf8.decode(base64Decode(
+          request.headers['X-402-Payment']!,
+        ))) as Map<String, dynamic>;
+        expect(payment.containsKey('resource'), isFalse);
+        return http.Response('', 200);
+      }),
+      approvalService: X402PaymentApprovalService(clock: () => now),
+      receiptStore: _MemoryReceiptStore(),
+      signer: (_) async => <String, dynamic>{
+        'signature': '0x${'b' * 130}',
+        'payer': payer,
+      },
+      clock: () => now,
+    );
+
+    final prepared = await service.prepareTopUp(provider);
+    final receipt = await service.approveAndSubmit(
+      prepared,
+      walletAddress: payer,
+    );
+
+    expect(calls, 2);
+    expect(receipt.state, X402PaymentState.settled);
+  });
+
   test('a rejected settlement is terminal and is not retried again', () async {
     var calls = 0;
     final store = _MemoryReceiptStore();
@@ -151,6 +204,26 @@ String _challenge(Uri endpoint) {
         'maxTimeoutSeconds': 300,
         'extra': <String, dynamic>{
           'assetTransferMethod': 'eip3009',
+          'name': 'USD Coin',
+          'version': '2',
+        },
+      },
+    ],
+  })));
+}
+
+String _challengeWithoutResource() {
+  return base64Encode(utf8.encode(jsonEncode(<String, dynamic>{
+    'x402Version': 2,
+    'accepts': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'scheme': 'exact',
+        'network': X402PaymentPolicy.network,
+        'amount': '5000000',
+        'asset': X402PaymentPolicy.usdc,
+        'payTo': '0x2222222222222222222222222222222222222222',
+        'maxTimeoutSeconds': 300,
+        'extra': <String, dynamic>{
           'name': 'USD Coin',
           'version': '2',
         },

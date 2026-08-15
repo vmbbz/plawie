@@ -105,7 +105,12 @@ class X402PaymentChallenge {
   });
 
   final int x402Version;
-  final Map<String, dynamic> resource;
+
+  /// Resource metadata is optional in a PaymentPayload. Venice's dedicated
+  /// top-up discovery response currently omits it from PAYMENT-REQUIRED, so
+  /// the transport may bind the challenge to its already allowlisted request
+  /// URL without inventing provider metadata.
+  final Map<String, dynamic>? resource;
   final Uri resourceUrl;
   final String? resourceDescription;
   final X402PaymentRequirement requirement;
@@ -117,20 +122,36 @@ class X402PaymentChallenge {
   factory X402PaymentChallenge.fromHeader(
     String header, {
     required X402PaymentPolicy policy,
+    Uri? fallbackResourceUrl,
   }) {
     final decoded = _decodeHeaderJson(header);
     final version = _positiveInt(decoded['x402Version']);
     if (version != 2) {
       throw const X402PaymentPolicyException('Only x402 version 2 is allowed.');
     }
-    final resource = decoded['resource'];
-    if (resource is! Map) {
+    final resourceValue = decoded['resource'];
+    Map<String, dynamic>? resource;
+    Uri? resourceUrl;
+    if (resourceValue is Map) {
+      resource =
+          resourceValue.map((key, value) => MapEntry(key.toString(), value));
+      resourceUrl = Uri.tryParse(resource['url']?.toString() ?? '');
+      if (resourceUrl == null || !policy.allowsHost(resourceUrl)) {
+        throw const X402PaymentPolicyException(
+            'x402 resource host or scheme is not allowlisted.');
+      }
+    } else if (resourceValue == null && fallbackResourceUrl != null) {
+      // Venice's POST /x402/top-up discovery response is a valid provider
+      // challenge but currently omits PaymentRequired.resource. Bind it to
+      // the exact request URL supplied by the allowlisted transport instead
+      // of fabricating a resource object or accepting an arbitrary URL.
+      if (!policy.allowsHost(fallbackResourceUrl)) {
+        throw const X402PaymentPolicyException(
+            'x402 fallback resource host or scheme is not allowlisted.');
+      }
+      resourceUrl = fallbackResourceUrl;
+    } else {
       throw const X402PaymentPolicyException('x402 resource is missing.');
-    }
-    final resourceUrl = Uri.tryParse(resource['url']?.toString() ?? '');
-    if (resourceUrl == null || !policy.allowsHost(resourceUrl)) {
-      throw const X402PaymentPolicyException(
-          'x402 resource host or scheme is not allowlisted.');
     }
     final accepts = decoded['accepts'];
     if (accepts is! List || accepts.isEmpty) {
@@ -155,11 +176,9 @@ class X402PaymentChallenge {
     final canonical = _canonicalJson(decoded);
     return X402PaymentChallenge(
       x402Version: version,
-      resource: resource.map(
-        (key, value) => MapEntry(key.toString(), value),
-      ),
+      resource: resource,
       resourceUrl: resourceUrl,
-      resourceDescription: resource['description']?.toString(),
+      resourceDescription: resource?['description']?.toString(),
       requirement: selected,
       challengeHash: bytesToHex(keccak256(utf8.encode(canonical))),
     );

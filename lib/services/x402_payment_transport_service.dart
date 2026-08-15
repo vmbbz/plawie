@@ -171,6 +171,11 @@ class X402PaymentTransportService {
     final challenge = X402PaymentChallenge.fromHeader(
       required,
       policy: policy,
+      // Venice's top-up discovery challenge currently omits the optional
+      // PaymentRequired.resource object. The request URL is already fixed by
+      // the provider catalog and host policy, so use it only as a strict
+      // binding fallback.
+      fallbackResourceUrl: endpoint,
     );
     final intent = approvalService.createIntent(
       challenge: challenge,
@@ -253,7 +258,8 @@ class X402PaymentTransportService {
       };
       final paymentPayload = <String, dynamic>{
         'x402Version': intent.challenge.x402Version,
-        'resource': intent.challenge.resource,
+        if (intent.challenge.resource != null)
+          'resource': intent.challenge.resource,
         'accepted': requirement.toJson(),
         'payload': <String, dynamic>{
           'signature': signature,

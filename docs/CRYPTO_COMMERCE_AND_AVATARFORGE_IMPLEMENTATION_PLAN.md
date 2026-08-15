@@ -17,6 +17,24 @@ The active product path is already safer than the older prototype:
 - `lib/screens/base_screen.dart` is the canonical visible surface for wallet, provider, quote, approval, and receipt state.
 - `lib/services/crypto_credits_service.dart` is a legacy unused OpenRouter/Coinbase/LI.FI prototype and is not a valid foundation for the new commerce model.
 
+### 2026-08-15 Venice top-up challenge compatibility audit
+
+The live `POST https://api.venice.ai/api/v1/x402/top-up` discovery response was
+verified after the Base wallet UI reported `x402 resource is missing`. Venice
+returns HTTP 402 with a base64 `PAYMENT-REQUIRED` object containing
+`x402Version` and `accepts[]`, but its dedicated top-up challenge currently
+omits the optional `resource` object. The previous parser treated that field as
+mandatory and stopped before the approval dialog, so no transaction was ever
+attempted.
+
+The parser now accepts this provider-specific shape only through the
+allowlisted Venice top-up transport. It binds the missing resource URL to the
+catalogued exact endpoint, preserves the provider-supplied Base network, USDC
+asset, amount, recipient, and expiry, and omits the optional resource from the
+outgoing payment payload when Venice did not supply it. Generic resource-less
+challenges remain rejected, and the visible approval plus Android-authenticated
+signing gates are unchanged.
+
 ### Avatar surfaces
 
 - `lib/screens/avatar_forge_page.dart` currently equips a local `gemini.vrm` asset.
