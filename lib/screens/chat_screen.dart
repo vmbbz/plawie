@@ -284,9 +284,7 @@ class _ChatScreenState extends State<ChatScreen>
         final bool isPip = call.arguments as bool;
         if (!mounted) return;
         _voiceSession.updateSurface(
-          isPip
-              ? VoiceSessionSurface.pip
-              : VoiceSessionSurface.fullScreen,
+          isPip ? VoiceSessionSurface.pip : VoiceSessionSurface.fullScreen,
         );
         setState(() => _isPipMode = isPip);
         // Moving between full screen and PiP changes the presentation surface,
@@ -599,6 +597,21 @@ class _ChatScreenState extends State<ChatScreen>
       _gatewayTtsHealth = _runtimeTtsHealthToScreen(_chatRuntime.ttsHealth);
       _gatewayTtsHealthMessage = _chatRuntime.ttsHealthMessage;
     });
+    if (!_isListening) {
+      final nextVoicePhase = _isTtsSpeaking
+          ? VoiceSessionPhase.speaking
+          : _isThinking
+              ? VoiceSessionPhase.thinking
+              : !_isGenerating &&
+                      _voiceSession.state.phase == VoiceSessionPhase.thinking
+                  ? VoiceSessionPhase.idle
+                  : null;
+      if (nextVoicePhase != null &&
+          nextVoicePhase != _voiceSession.state.phase) {
+        _voiceSession.setPhase(nextVoicePhase);
+        _updatePipMicIcon();
+      }
+    }
     if (_chatPinnedToBottom ||
         scrollInstantly ||
         _isGenerating ||
@@ -866,10 +879,12 @@ class _ChatScreenState extends State<ChatScreen>
 
     _tts.onStart = () {
       if (mounted) {
+        _voiceSession.setPhase(VoiceSessionPhase.speaking);
         setState(() {
           _speechIntensity = 0.8;
         });
         _syncOverlayState();
+        _updatePipMicIcon();
       }
     };
 
@@ -880,11 +895,15 @@ class _ChatScreenState extends State<ChatScreen>
 
         // Only close mouth and reset gesture when the entire queue is drained
         if (_ttsQueue.isEmpty && _ttsSentenceBuffer.isEmpty) {
+          if (!_isListening && !_isGenerating) {
+            _voiceSession.setPhase(VoiceSessionPhase.idle);
+          }
           setState(() {
             _speechIntensity = 0.0;
             _currentGesture = null;
           });
           _syncOverlayState();
+          _updatePipMicIcon();
 
           // Continuous mode: wait 500ms then restart listening automatically.
           if (PreferencesService().continuousMode && !_isGenerating) {
@@ -1410,6 +1429,7 @@ class _ChatScreenState extends State<ChatScreen>
       return;
     }
 
+    _voiceSession.setPhase(VoiceSessionPhase.thinking);
     final imageBase64 = _pendingImageBase64;
     final videoBase64 = _pendingVideoBase64;
     FocusManager.instance.primaryFocus?.unfocus();
@@ -1420,6 +1440,7 @@ class _ChatScreenState extends State<ChatScreen>
       _speechIntensity = 0.0;
     });
     _syncOverlayState();
+    _updatePipMicIcon();
     _scrollToBottom();
 
     unawaited(_chatRuntime.sendMessage(
@@ -1899,11 +1920,26 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _toggleListeningAsync() async {
-    if (_isListening) {
+    final voiceState = _voiceSession.state;
+    if (_isListening || voiceState.captureActive) {
       await _stopListening();
-    } else {
-      await _startListening();
+      return;
     }
+
+    // A PiP action can arrive while the previous turn is still transcribing
+    // or while its reply/TTS is being delivered. Do not turn that action into
+    // a second capture owner; the current turn must reach a terminal state
+    // first.
+    if (voiceState.phase == VoiceSessionPhase.transcribing ||
+        voiceState.phase == VoiceSessionPhase.thinking ||
+        voiceState.phase == VoiceSessionPhase.speaking ||
+        voiceState.phase == VoiceSessionPhase.reconnecting) {
+      _addDiagnosticLog(
+          'Voice toggle ignored while phase=${voiceState.phase.name}.');
+      return;
+    }
+
+    await _startListening();
   }
 
   void _scheduleContinuousListening() {
@@ -2035,11 +2071,16 @@ class _ChatScreenState extends State<ChatScreen>
       _talkRelayFinalizationTimer = null;
       _talkRelayTurnAwaitingTranscript = false;
       _talkRelayReady = false;
+      _voiceSession.invalidate(
+        phase: VoiceSessionPhase.error,
+        reason: 'Talk relay error: $message',
+      );
+      if (mounted) {
+        setState(() {});
+        _syncOverlayState();
+        _updatePipMicIcon();
+      }
       if (_isTalkRelayCaptureActive) {
-        _voiceSession.invalidate(
-          phase: VoiceSessionPhase.error,
-          reason: 'Talk relay error: $message',
-        );
         unawaited(_stopTalkRelayCapture().then((_) {
           if (!mounted) return;
           _publishListeningState(false);
@@ -2054,11 +2095,16 @@ class _ChatScreenState extends State<ChatScreen>
       _talkRelayFinalizationTimer = null;
       _talkRelayTurnAwaitingTranscript = false;
       _talkRelayReady = false;
+      _voiceSession.invalidate(
+        phase: VoiceSessionPhase.paused,
+        reason: 'Talk relay closed: $reason',
+      );
+      if (mounted) {
+        setState(() {});
+        _syncOverlayState();
+        _updatePipMicIcon();
+      }
       if (_isTalkRelayCaptureActive) {
-        _voiceSession.invalidate(
-          phase: VoiceSessionPhase.paused,
-          reason: 'Talk relay closed: $reason',
-        );
         unawaited(_stopTalkRelayCapture().then((_) {
           if (!mounted) return;
           _publishListeningState(false);
@@ -2078,14 +2124,16 @@ class _ChatScreenState extends State<ChatScreen>
 
     if (role == 'user') {
       if (isFinal && text.trim().isNotEmpty) {
+        _voiceSession.setPhase(VoiceSessionPhase.thinking);
         setState(() {
           _messages.add(ChatMessage(text: text.trim(), isUser: true));
           _messages.add(ChatMessage(text: '', isUser: false));
-          _talkAssistantMessageIndex = _messages.length - 1;
-          _talkAssistantTextBuffer = '';
+           _talkAssistantMessageIndex = _messages.length - 1;
+           _talkAssistantTextBuffer = '';
           _isGenerating = true;
           _isThinking = true;
         });
+        _updatePipMicIcon();
         _saveChatHistory();
         _scrollToBottom();
       }
@@ -2115,17 +2163,22 @@ class _ChatScreenState extends State<ChatScreen>
       });
       _scrollToBottom();
 
-      if (isFinal) {
+        if (isFinal) {
         _talkRelayFinalizationTimer?.cancel();
         _talkRelayFinalizationTimer = null;
         _talkRelayTurnAwaitingTranscript = false;
         _flushTtsQueue();
-        setState(() {
-          _isGenerating = false;
-          _isThinking = false;
-        });
-        _saveChatHistory();
-      }
+          setState(() {
+            _isGenerating = false;
+            _isThinking = false;
+          });
+          if (!_tts.isSpeaking && _ttsQueue.isEmpty) {
+            _voiceSession.setPhase(VoiceSessionPhase.idle);
+            setState(() {});
+            _updatePipMicIcon();
+          }
+          _saveChatHistory();
+        }
     }
   }
 
@@ -2189,7 +2242,8 @@ class _ChatScreenState extends State<ChatScreen>
 
   void _armTalkRelayFinalizationTimeout(String? sessionId) {
     _talkRelayFinalizationTimer?.cancel();
-    _talkRelayTurnAwaitingTranscript = sessionId != null && sessionId.isNotEmpty;
+    _talkRelayTurnAwaitingTranscript =
+        sessionId != null && sessionId.isNotEmpty;
     if (!_talkRelayTurnAwaitingTranscript) return;
     _talkRelayFinalizationTimer = Timer(const Duration(seconds: 15), () {
       unawaited(_expireTalkRelayTurn(sessionId!));
@@ -2232,6 +2286,9 @@ class _ChatScreenState extends State<ChatScreen>
         phase: VoiceSessionPhase.error,
         reason: 'Talk relay transcript timed out.',
       );
+      setState(() {});
+      _syncOverlayState();
+      _updatePipMicIcon();
       _addDiagnosticLog('Talk relay session closed after transcript timeout.');
     }
   }
@@ -2241,6 +2298,14 @@ class _ChatScreenState extends State<ChatScreen>
     if (_isListening) return;
 
     if (!await _audioRecorder.hasPermission()) {
+      _voiceSession.setPhase(
+        VoiceSessionPhase.error,
+        reason: 'Microphone permission is required for voice input.',
+      );
+      if (mounted) {
+        setState(() {});
+        _updatePipMicIcon();
+      }
       _addDiagnosticLog('Microphone permission denied.');
       return;
     }
@@ -2248,14 +2313,18 @@ class _ChatScreenState extends State<ChatScreen>
 
     final generation = _voiceSession.beginCapture(
       owner: _isPipMode ? VoiceCaptureOwner.pip : VoiceCaptureOwner.chat,
-      surface: _isPipMode
-          ? VoiceSessionSurface.pip
-          : VoiceSessionSurface.fullScreen,
+      surface:
+          _isPipMode ? VoiceSessionSurface.pip : VoiceSessionSurface.fullScreen,
     );
     if (generation == null) {
       _addDiagnosticLog('Voice capture request ignored: session is busy.');
       return;
     }
+    if (mounted) {
+      setState(() {});
+      _syncOverlayState();
+    }
+    _updatePipMicIcon();
 
     final gatewayProvider =
         Provider.of<GatewayProvider>(context, listen: false);
@@ -2286,8 +2355,10 @@ class _ChatScreenState extends State<ChatScreen>
     _nativeSpeechPendingText = null;
     try {
       final nativeStarted = await _nativeSpeechInput.start(
-        onStatus: (status) => _addDiagnosticLog('Native speech status: $status'),
-        onError: (message) => _addDiagnosticLog('Native speech error: $message'),
+        onStatus: (status) =>
+            _addDiagnosticLog('Native speech status: $status'),
+        onError: (message) =>
+            _addDiagnosticLog('Native speech error: $message'),
         onFinished: (text) => _handleNativeSpeechFinished(text, generation),
       );
       if (nativeStarted) {
@@ -2334,6 +2405,11 @@ class _ChatScreenState extends State<ChatScreen>
         phase: VoiceSessionPhase.error,
         reason: 'Microphone start failed: $e',
       );
+      if (mounted) {
+        setState(() {});
+        _syncOverlayState();
+        _updatePipMicIcon();
+      }
       _addDiagnosticLog('Voice recording failed to start: $e');
       return;
     }
@@ -2345,12 +2421,20 @@ class _ChatScreenState extends State<ChatScreen>
   /// Stop recording and transcribe — called when user releases the mic orb.
   Future<void> _stopListening() async {
     if (!_isListening && !_voiceSession.state.captureActive) return;
-    _voiceSession.invalidate(reason: 'Voice capture stopped by user.');
+    final stopGeneration = _voiceSession.invalidate(
+      phase: VoiceSessionPhase.transcribing,
+      reason: 'Voice capture stopped by user.',
+    );
+    if (mounted) {
+      setState(() {});
+      _syncOverlayState();
+    }
+    _updatePipMicIcon();
 
     if (_isTalkRelayCaptureActive) {
       final sessionId = _talkRelaySessionId;
       await _stopTalkRelayCapture();
-      if (!mounted) return;
+      if (!mounted || !_voiceSession.isCurrent(stopGeneration)) return;
       _publishListeningState(false);
       _armTalkRelayFinalizationTimeout(sessionId);
       _addDiagnosticLog(sessionId == null
@@ -2362,37 +2446,68 @@ class _ChatScreenState extends State<ChatScreen>
     if (_usingNativeSpeechFallback) {
       _nativeSpeechStopRequested = true;
       final text = await _nativeSpeechInput.stop();
-      if (!mounted) return;
+      if (!mounted || !_voiceSession.isCurrent(stopGeneration)) return;
       _finalizeNativeSpeechSession(
         text,
         reason: 'Native speech recording stopped by user.',
+        expectedGeneration: stopGeneration,
       );
       return;
     }
 
     final path = await _audioRecorder.stop();
-    if (!mounted) return;
+    if (!mounted || !_voiceSession.isCurrent(stopGeneration)) return;
     _publishListeningState(false);
     _addDiagnosticLog('Voice recording stopped.');
 
     if (path != null) {
       _addDiagnosticLog('Transcribing audio at $path...');
       final text = await GatewayService().transcribeAudio(File(path));
-      _submitVoiceTranscript(text, source: 'Gateway STT');
+      if (!mounted || !_voiceSession.isCurrent(stopGeneration)) return;
+      _submitVoiceTranscript(
+        text,
+        source: 'Gateway STT',
+        expectedGeneration: stopGeneration,
+      );
+    } else if (mounted && _voiceSession.isCurrent(stopGeneration)) {
+      _voiceSession.setPhase(
+        VoiceSessionPhase.noTranscript,
+        reason: 'Audio recording returned no file.',
+      );
+      setState(() {});
+      _updatePipMicIcon();
     }
   }
 
-  void _submitVoiceTranscript(String? rawText, {required String source}) {
+  void _submitVoiceTranscript(
+    String? rawText, {
+    required String source,
+    int? expectedGeneration,
+  }) {
     if (!mounted) return;
+    if (expectedGeneration != null &&
+        !_voiceSession.isCurrent(expectedGeneration)) {
+      _addDiagnosticLog('$source result ignored from stale voice generation.');
+      return;
+    }
     final text = rawText?.trim() ?? '';
     if (text.isNotEmpty) {
+      _voiceSession.setPhase(VoiceSessionPhase.sent);
       _textController.text = text;
       _addDiagnosticLog('$source recognized: $text');
+      setState(() {});
+      _updatePipMicIcon();
       _handleSubmit(text);
       return;
     }
 
+    _voiceSession.setPhase(
+      VoiceSessionPhase.noTranscript,
+      reason: '$source returned no text.',
+    );
     _addDiagnosticLog('$source returned no text.');
+    setState(() {});
+    _updatePipMicIcon();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -2418,21 +2533,41 @@ class _ChatScreenState extends State<ChatScreen>
     _finalizeNativeSpeechSession(
       text,
       reason: 'Native speech session ended by the platform.',
+      expectedGeneration: generation,
     );
   }
 
-  void _finalizeNativeSpeechSession(String? text, {required String reason}) {
+  void _finalizeNativeSpeechSession(
+    String? text, {
+    required String reason,
+    int? expectedGeneration,
+  }) {
     if (!mounted || _nativeSpeechStopRequested && !_usingNativeSpeechFallback) {
+      return;
+    }
+    if (expectedGeneration != null &&
+        !_voiceSession.isCurrent(expectedGeneration)) {
+      _addDiagnosticLog('Native speech result ignored from stale generation.');
       return;
     }
     _nativeSpeechStopRequested = true;
     _usingNativeSpeechFallback = false;
     _nativeSpeechFinishedBeforeUiState = false;
     _nativeSpeechPendingText = null;
-    _voiceSession.invalidate(reason: reason);
+    final finalizationGeneration =
+        _voiceSession.state.phase == VoiceSessionPhase.transcribing
+            ? _voiceSession.state.generation
+            : _voiceSession.invalidate(
+                phase: VoiceSessionPhase.transcribing,
+                reason: reason,
+              );
     _publishListeningState(false);
     _addDiagnosticLog(reason);
-    _submitVoiceTranscript(text, source: 'Native SpeechRecognizer');
+    _submitVoiceTranscript(
+      text,
+      source: 'Native SpeechRecognizer',
+      expectedGeneration: finalizationGeneration,
+    );
   }
 
   void _publishListeningState(bool listening) {
@@ -2444,16 +2579,104 @@ class _ChatScreenState extends State<ChatScreen>
 
   /// Tell native Android to update the PiP RemoteAction icon based on listening state.
   void _updatePipMicIcon() {
-    final phase = _isListening ? 'listening' : 'idle';
-    final label = _isListening ? 'Listening' : 'Voice ready';
+    final state = _voiceSession.state;
+    final phase = state.phase.name;
+    final label = state.phase.userLabel;
     unawaited(_pipChannel.invokeMethod('updatePipVoiceState', {
       'phase': phase,
-      'listening': _isListening,
+      'listening': state.captureActive,
       'label': label,
     }).catchError((_) {
       // The native bridge keeps the legacy boolean method for older builds;
       // no UI state depends on a PiP action refresh succeeding.
     }));
+  }
+
+  String get _voiceStatusLabel => _voiceSession.state.phase.userLabel;
+
+  bool get _hasVisibleVoiceStatus =>
+      _voiceSession.state.phase != VoiceSessionPhase.idle;
+
+  String get _voiceActionLabel => _voiceSession.state.captureActive
+      ? 'Stop listening'
+      : 'Start voice input';
+
+  IconData get _voiceStatusIcon {
+    switch (_voiceSession.state.phase) {
+      case VoiceSessionPhase.starting:
+      case VoiceSessionPhase.listening:
+        return Icons.mic;
+      case VoiceSessionPhase.transcribing:
+        return Icons.graphic_eq;
+      case VoiceSessionPhase.thinking:
+        return Icons.psychology_outlined;
+      case VoiceSessionPhase.speaking:
+        return Icons.volume_up_outlined;
+      case VoiceSessionPhase.sent:
+        return Icons.check_circle_outline;
+      case VoiceSessionPhase.noTranscript:
+        return Icons.mic_off_outlined;
+      case VoiceSessionPhase.paused:
+        return Icons.pause_circle_outline;
+      case VoiceSessionPhase.reconnecting:
+        return Icons.sync;
+      case VoiceSessionPhase.stopped:
+        return Icons.stop_circle_outlined;
+      case VoiceSessionPhase.error:
+        return Icons.error_outline;
+      case VoiceSessionPhase.idle:
+        return Icons.mic_none;
+    }
+  }
+
+  Widget _buildVoiceStatusIndicator() {
+    if (!_hasVisibleVoiceStatus) return const SizedBox.shrink();
+    final active = _voiceSession.state.captureActive;
+    final color = active
+        ? AppColors.statusGreen
+        : _voiceSession.state.phase == VoiceSessionPhase.error ||
+                _voiceSession.state.phase == VoiceSessionPhase.noTranscript
+            ? AppColors.statusRed
+            : Colors.white70;
+    return Semantics(
+      liveRegion: true,
+      label: 'Voice status: $_voiceStatusLabel',
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (active)
+              Container(
+                width: 7,
+                height: 7,
+                margin: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.statusRed,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.statusRed.withValues(alpha: 0.55),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
+              ),
+            Icon(_voiceStatusIcon, color: color, size: 16),
+            const SizedBox(width: 6),
+            Text(
+              _voiceStatusLabel,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // FIX: Decoupled cinematic effect from typing to prevent zoom jumps
@@ -3273,10 +3496,10 @@ class _ChatScreenState extends State<ChatScreen>
       // Android can report paused/inactive just before the PiP mode callback.
       // Defer the stop briefly so an active PiP voice surface keeps ownership,
       // while ordinary backgrounding still releases the microphone promptly.
-      if (!_isPipMode &&
-          (_isListening || _voiceSession.state.captureActive)) {
+      if (!_isPipMode && (_isListening || _voiceSession.state.captureActive)) {
         _backgroundVoiceStopTimer?.cancel();
-        _backgroundVoiceStopTimer = Timer(const Duration(milliseconds: 350), () {
+        _backgroundVoiceStopTimer =
+            Timer(const Duration(milliseconds: 350), () {
           _backgroundVoiceStopTimer = null;
           if (!mounted || _isPipMode) return;
           if (_isListening || _voiceSession.state.captureActive) {
@@ -4374,499 +4597,565 @@ class _ChatScreenState extends State<ChatScreen>
                                   top: false,
                                   bottom:
                                       false, // Ensure container is flush against the bottom edge
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      // ──────────────────────────────────────────
-                                      // 2026 UX: hold-to-record orb
-                                      //   onLongPressStart  → start listening
-                                      //   onLongPressEnd    → stop  listening
-                                      //   onVerticalDragEnd(up) → expand chat
-                                      //   onTap → no-op (reserved for hold)
-                                      // ──────────────────────────────────────────
-                                      if (_isChatCollapsed)
-                                        GestureDetector(
-                                          behavior: HitTestBehavior.opaque,
-                                          onTap: () {
-                                            // Tap on collapsed orb = show hint
-                                            ScaffoldMessenger.of(context)
-                                                .clearSnackBars();
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: const Row(
-                                                  children: [
-                                                    Icon(Icons.info_outline,
-                                                        color: Colors.white70,
-                                                        size: 16),
-                                                    SizedBox(width: 8),
-                                                    Text(
-                                                        'Hold to talk  ·  Swipe ↑ to expand',
-                                                        style: TextStyle(
-                                                            fontSize: 13)),
-                                                  ],
-                                                ),
-                                                backgroundColor:
-                                                    const Color(0xFF1A1A2E),
-                                                duration:
-                                                    const Duration(seconds: 2),
+                                      if (!_isChatCollapsed)
+                                        _buildVoiceStatusIndicator(),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          // ──────────────────────────────────────────
+                                          // 2026 UX: hold-to-record orb
+                                          //   onLongPressStart  → start listening
+                                          //   onLongPressEnd    → stop  listening
+                                          //   onVerticalDragEnd(up) → expand chat
+                                          //   onTap → no-op (reserved for hold)
+                                          // ──────────────────────────────────────────
+                                          if (_isChatCollapsed)
+                                            Semantics(
+                                              button: true,
+                                              label: _voiceActionLabel,
+                                              hint:
+                                                  'Hold to talk. Swipe up to expand the chat.',
+                                              child: GestureDetector(
                                                 behavior:
-                                                    SnackBarBehavior.floating,
-                                                shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            12)),
-                                              ),
-                                            );
-                                          },
-                                          onLongPressStart: (_) {
-                                            HapticFeedback.mediumImpact();
-                                            _startListening();
-                                          },
-                                          onLongPressEnd: (_) {
-                                            HapticFeedback.lightImpact();
-                                            _stopListening();
-                                          },
-                                          onVerticalDragEnd: (details) {
-                                            if ((details.primaryVelocity ?? 0) <
-                                                -400) {
-                                              setState(() =>
-                                                  _isChatCollapsed = false);
-                                              _scrollToBottom(instant: true);
-                                            }
-                                          },
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              AnimatedBuilder(
-                                                animation: _glowController,
-                                                builder: (_, __) =>
-                                                    Transform.translate(
-                                                  offset: Offset(
-                                                      0,
-                                                      -3 *
-                                                          _glowController
-                                                              .value),
-                                                  child: Icon(
-                                                    Icons
-                                                        .keyboard_arrow_up_rounded,
-                                                    color: Colors.white.withValues(
-                                                        alpha: 0.25 +
-                                                            0.2 *
-                                                                _glowController
-                                                                    .value),
-                                                    size: 14,
-                                                  ),
-                                                ),
-                                              ),
-                                              AnimatedBuilder(
-                                                animation: _glowController,
-                                                builder: (context, child) {
-                                                  return AnimatedContainer(
-                                                    duration: const Duration(
-                                                        milliseconds: 300),
-                                                    width: 64,
-                                                    height: 64,
-                                                    decoration: BoxDecoration(
-                                                      shape: BoxShape.circle,
-                                                      color: _isListening
-                                                          ? AppColors
-                                                              .statusGreen
-                                                              .withValues(
-                                                                  alpha: 0.1 *
-                                                                      _glowController
-                                                                          .value)
-                                                          : Colors.transparent,
-                                                    ),
-                                                    alignment: Alignment.center,
-                                                    child: Icon(
-                                                      _isListening
-                                                          ? Icons.mic
-                                                          : Icons.mic_none,
-                                                      color: _isListening
-                                                          ? AppColors
-                                                              .statusGreen
-                                                          : Colors.white70,
-                                                      size: 36,
+                                                    HitTestBehavior.opaque,
+                                                onTap: () {
+                                                  // Tap on collapsed orb = show hint
+                                                  ScaffoldMessenger.of(context)
+                                                      .clearSnackBars();
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    SnackBar(
+                                                      content: const Row(
+                                                        children: [
+                                                          Icon(
+                                                              Icons
+                                                                  .info_outline,
+                                                              color: Colors
+                                                                  .white70,
+                                                              size: 16),
+                                                          SizedBox(width: 8),
+                                                          Text(
+                                                              'Hold to talk  ·  Swipe ↑ to expand',
+                                                              style: TextStyle(
+                                                                  fontSize:
+                                                                      13)),
+                                                        ],
+                                                      ),
+                                                      backgroundColor:
+                                                          const Color(
+                                                              0xFF1A1A2E),
+                                                      duration: const Duration(
+                                                          seconds: 2),
+                                                      behavior: SnackBarBehavior
+                                                          .floating,
+                                                      shape:
+                                                          RoundedRectangleBorder(
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                          12)),
                                                     ),
                                                   );
                                                 },
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      if (!_isChatCollapsed) ...[
-                                        const SizedBox(width: 4),
-                                        Expanded(
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              // Image preview strip — shown when a photo is pending
-                                              if (_pendingImageBase64 != null)
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                          bottom: 6),
-                                                  child: Stack(
-                                                    children: [
-                                                      ClipRRect(
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(10),
-                                                        child: Image.memory(
-                                                          base64Decode(
-                                                              _pendingImageBase64!),
-                                                          height: 80,
-                                                          width: 80,
-                                                          fit: BoxFit.cover,
-                                                        ),
-                                                      ),
-                                                      Positioned(
-                                                        top: 2,
-                                                        right: 2,
-                                                        child: GestureDetector(
-                                                          onTap: () => setState(
-                                                              () =>
-                                                                  _pendingImageBase64 =
-                                                                      null),
-                                                          child: Container(
-                                                            decoration:
-                                                                BoxDecoration(
-                                                              color: Colors
-                                                                  .black
-                                                                  .withValues(
-                                                                      alpha:
-                                                                          0.6),
-                                                              shape: BoxShape
-                                                                  .circle,
-                                                            ),
-                                                            child: const Icon(
-                                                                Icons.close,
-                                                                color: Colors
-                                                                    .white,
-                                                                size: 16),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              Row(
-                                                children: [
-                                                  // 3-Dots Utility Menu (Camera / Video)
-                                                  PopupMenuButton<String>(
-                                                    icon: Icon(
-                                                      Icons.more_horiz_rounded,
-                                                      color: (_pendingImageBase64 !=
-                                                                  null ||
-                                                              _pendingVideoBase64 !=
-                                                                  null)
-                                                          ? AppColors
-                                                              .statusGreen
-                                                          : Colors.white54,
-                                                      size: 22,
-                                                    ),
-                                                    padding: EdgeInsets.zero,
-                                                    constraints:
-                                                        const BoxConstraints(
-                                                            minWidth: 36,
-                                                            minHeight: 36),
-                                                    color: Colors.black
-                                                        .withValues(alpha: 0.9),
-                                                    shape:
-                                                        RoundedRectangleBorder(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                              16),
-                                                      side: BorderSide(
+                                                onLongPressStart: (_) {
+                                                  HapticFeedback.mediumImpact();
+                                                  _startListening();
+                                                },
+                                                onLongPressEnd: (_) {
+                                                  HapticFeedback.lightImpact();
+                                                  _stopListening();
+                                                },
+                                                onVerticalDragEnd: (details) {
+                                                  if ((details.primaryVelocity ??
+                                                          0) <
+                                                      -400) {
+                                                    setState(() =>
+                                                        _isChatCollapsed =
+                                                            false);
+                                                    _scrollToBottom(
+                                                        instant: true);
+                                                  }
+                                                },
+                                                child: Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    AnimatedBuilder(
+                                                      animation:
+                                                          _glowController,
+                                                      builder: (_, __) =>
+                                                          Transform.translate(
+                                                        offset: Offset(
+                                                            0,
+                                                            -3 *
+                                                                _glowController
+                                                                    .value),
+                                                        child: Icon(
+                                                          Icons
+                                                              .keyboard_arrow_up_rounded,
                                                           color: Colors.white
                                                               .withValues(
-                                                                  alpha: 0.1),
-                                                          width: 0.8),
+                                                                  alpha: 0.25 +
+                                                                      0.2 *
+                                                                          _glowController
+                                                                              .value),
+                                                          size: 14,
+                                                        ),
+                                                      ),
                                                     ),
-                                                    onSelected: (value) {
-                                                      if (value == 'camera') {
-                                                        _takePicture();
-                                                      }
-                                                      if (value == 'video') {
-                                                        _showVideoDurationPicker();
-                                                      }
-                                                      if (value == 'voice') {
-                                                        _toggleListening();
-                                                      }
-                                                      if (value == 'gif') {
-                                                        _importGif();
-                                                      }
-                                                      if (value == 'clear') {
-                                                        setState(() {
-                                                          _pendingImageBase64 =
-                                                              null;
-                                                          _pendingVideoBase64 =
-                                                              null;
-                                                        });
-                                                      }
-                                                    },
-                                                    itemBuilder: (ctx) => [
-                                                      PopupMenuItem(
-                                                        value: 'voice',
-                                                        child: Row(
-                                                          children: [
-                                                            Icon(
-                                                                _isListening
-                                                                    ? Icons.mic
-                                                                    : Icons
-                                                                        .mic_none,
-                                                                color: _isListening
-                                                                    ? AppColors
-                                                                        .statusGreen
-                                                                    : Colors
-                                                                        .white70,
-                                                                size: 20),
-                                                            const SizedBox(
-                                                                width: 12),
-                                                            Text(
-                                                                _isListening
-                                                                    ? 'Stop Listening'
-                                                                    : 'Voice Input',
-                                                                style: TextStyle(
+                                                    AnimatedBuilder(
+                                                      animation:
+                                                          _glowController,
+                                                      builder:
+                                                          (context, child) {
+                                                        return AnimatedContainer(
+                                                          duration:
+                                                              const Duration(
+                                                                  milliseconds:
+                                                                      300),
+                                                          width: 64,
+                                                          height: 64,
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            shape:
+                                                                BoxShape.circle,
+                                                            color: _isListening
+                                                                ? AppColors
+                                                                    .statusGreen
+                                                                    .withValues(
+                                                                        alpha: 0.1 *
+                                                                            _glowController
+                                                                                .value)
+                                                                : Colors
+                                                                    .transparent,
+                                                          ),
+                                                          alignment:
+                                                              Alignment.center,
+                                                          child: Icon(
+                                                            _isListening
+                                                                ? Icons.mic
+                                                                : Icons
+                                                                    .mic_none,
+                                                            color: _isListening
+                                                                ? AppColors
+                                                                    .statusGreen
+                                                                : Colors
+                                                                    .white70,
+                                                            size: 36,
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          if (!_isChatCollapsed) ...[
+                                            const SizedBox(width: 4),
+                                            Expanded(
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  // Image preview strip — shown when a photo is pending
+                                                  if (_pendingImageBase64 !=
+                                                      null)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                              bottom: 6),
+                                                      child: Stack(
+                                                        children: [
+                                                          ClipRRect(
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        10),
+                                                            child: Image.memory(
+                                                              base64Decode(
+                                                                  _pendingImageBase64!),
+                                                              height: 80,
+                                                              width: 80,
+                                                              fit: BoxFit.cover,
+                                                            ),
+                                                          ),
+                                                          Positioned(
+                                                            top: 2,
+                                                            right: 2,
+                                                            child:
+                                                                GestureDetector(
+                                                              onTap: () =>
+                                                                  setState(() =>
+                                                                      _pendingImageBase64 =
+                                                                          null),
+                                                              child: Container(
+                                                                decoration:
+                                                                    BoxDecoration(
+                                                                  color: Colors
+                                                                      .black
+                                                                      .withValues(
+                                                                          alpha:
+                                                                              0.6),
+                                                                  shape: BoxShape
+                                                                      .circle,
+                                                                ),
+                                                                child: const Icon(
+                                                                    Icons.close,
+                                                                    color: Colors
+                                                                        .white,
+                                                                    size: 16),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  Row(
+                                                    children: [
+                                                      // 3-Dots Utility Menu (Camera / Video)
+                                                      PopupMenuButton<String>(
+                                                        icon: Icon(
+                                                          Icons
+                                                              .more_horiz_rounded,
+                                                          color: (_pendingImageBase64 !=
+                                                                      null ||
+                                                                  _pendingVideoBase64 !=
+                                                                      null)
+                                                              ? AppColors
+                                                                  .statusGreen
+                                                              : Colors.white54,
+                                                          size: 22,
+                                                        ),
+                                                        padding:
+                                                            EdgeInsets.zero,
+                                                        constraints:
+                                                            const BoxConstraints(
+                                                                minWidth: 36,
+                                                                minHeight: 36),
+                                                        color: Colors.black
+                                                            .withValues(
+                                                                alpha: 0.9),
+                                                        shape:
+                                                            RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(16),
+                                                          side: BorderSide(
+                                                              color: Colors
+                                                                  .white
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.1),
+                                                              width: 0.8),
+                                                        ),
+                                                        onSelected: (value) {
+                                                          if (value ==
+                                                              'camera') {
+                                                            _takePicture();
+                                                          }
+                                                          if (value ==
+                                                              'video') {
+                                                            _showVideoDurationPicker();
+                                                          }
+                                                          if (value ==
+                                                              'voice') {
+                                                            _toggleListening();
+                                                          }
+                                                          if (value == 'gif') {
+                                                            _importGif();
+                                                          }
+                                                          if (value ==
+                                                              'clear') {
+                                                            setState(() {
+                                                              _pendingImageBase64 =
+                                                                  null;
+                                                              _pendingVideoBase64 =
+                                                                  null;
+                                                            });
+                                                          }
+                                                        },
+                                                        itemBuilder: (ctx) => [
+                                                          PopupMenuItem(
+                                                            value: 'voice',
+                                                            child: Row(
+                                                              children: [
+                                                                Icon(
+                                                                    _isListening
+                                                                        ? Icons
+                                                                            .mic
+                                                                        : Icons
+                                                                            .mic_none,
                                                                     color: _isListening
                                                                         ? AppColors
                                                                             .statusGreen
                                                                         : Colors
-                                                                            .white,
-                                                                    fontSize:
-                                                                        13)),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      PopupMenuItem(
-                                                        value: 'camera',
-                                                        child: Row(
-                                                          children: [
-                                                            Icon(
-                                                                _isTakingPhoto
-                                                                    ? Icons
-                                                                        .hourglass_empty
-                                                                    : Icons
-                                                                        .camera_alt_outlined,
-                                                                color: Colors
-                                                                    .white70,
-                                                                size: 20),
-                                                            const SizedBox(
-                                                                width: 12),
-                                                            const Text(
-                                                                'Take Photo',
-                                                                style: TextStyle(
-                                                                    color: Colors
-                                                                        .white,
-                                                                    fontSize:
-                                                                        13)),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      PopupMenuItem(
-                                                        value: 'video',
-                                                        child: Row(
-                                                          children: [
-                                                            Icon(
-                                                                _isRecordingVideo
-                                                                    ? Icons
-                                                                        .hourglass_empty
-                                                                    : Icons
-                                                                        .videocam_outlined,
-                                                                color: Colors
-                                                                    .white70,
-                                                                size: 20),
-                                                            const SizedBox(
-                                                                width: 12),
-                                                            const Text(
-                                                                'Record Clip',
-                                                                style: TextStyle(
-                                                                    color: Colors
-                                                                        .white,
-                                                                    fontSize:
-                                                                        13)),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      const PopupMenuItem(
-                                                        value: 'gif',
-                                                        child: Row(
-                                                          children: [
-                                                            Icon(
-                                                                Icons
-                                                                    .gif_box_outlined,
-                                                                color: Colors
-                                                                    .white70,
-                                                                size: 20),
-                                                            SizedBox(width: 12),
-                                                            Text(
-                                                              'Import GIF for gifgrep',
-                                                              style: TextStyle(
-                                                                  color: Colors
-                                                                      .white,
-                                                                  fontSize: 13),
+                                                                            .white70,
+                                                                    size: 20),
+                                                                const SizedBox(
+                                                                    width: 12),
+                                                                Text(
+                                                                    _isListening
+                                                                        ? 'Stop Listening'
+                                                                        : 'Voice Input',
+                                                                    style: TextStyle(
+                                                                        color: _isListening
+                                                                            ? AppColors
+                                                                                .statusGreen
+                                                                            : Colors
+                                                                                .white,
+                                                                        fontSize:
+                                                                            13)),
+                                                              ],
                                                             ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      if (_pendingImageBase64 !=
-                                                              null ||
-                                                          _pendingVideoBase64 !=
-                                                              null)
-                                                        const PopupMenuItem(
-                                                          value: 'clear',
-                                                          child: Row(
-                                                            children: [
-                                                              Icon(
-                                                                  Icons
-                                                                      .delete_outline,
-                                                                  color: Colors
-                                                                      .redAccent,
-                                                                  size: 20),
-                                                              SizedBox(
-                                                                  width: 12),
-                                                              Text(
-                                                                  'Clear Attachment',
+                                                          ),
+                                                          PopupMenuItem(
+                                                            value: 'camera',
+                                                            child: Row(
+                                                              children: [
+                                                                Icon(
+                                                                    _isTakingPhoto
+                                                                        ? Icons
+                                                                            .hourglass_empty
+                                                                        : Icons
+                                                                            .camera_alt_outlined,
+                                                                    color: Colors
+                                                                        .white70,
+                                                                    size: 20),
+                                                                const SizedBox(
+                                                                    width: 12),
+                                                                const Text(
+                                                                    'Take Photo',
+                                                                    style: TextStyle(
+                                                                        color: Colors
+                                                                            .white,
+                                                                        fontSize:
+                                                                            13)),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                          PopupMenuItem(
+                                                            value: 'video',
+                                                            child: Row(
+                                                              children: [
+                                                                Icon(
+                                                                    _isRecordingVideo
+                                                                        ? Icons
+                                                                            .hourglass_empty
+                                                                        : Icons
+                                                                            .videocam_outlined,
+                                                                    color: Colors
+                                                                        .white70,
+                                                                    size: 20),
+                                                                const SizedBox(
+                                                                    width: 12),
+                                                                const Text(
+                                                                    'Record Clip',
+                                                                    style: TextStyle(
+                                                                        color: Colors
+                                                                            .white,
+                                                                        fontSize:
+                                                                            13)),
+                                                              ],
+                                                            ),
+                                                          ),
+                                                          const PopupMenuItem(
+                                                            value: 'gif',
+                                                            child: Row(
+                                                              children: [
+                                                                Icon(
+                                                                    Icons
+                                                                        .gif_box_outlined,
+                                                                    color: Colors
+                                                                        .white70,
+                                                                    size: 20),
+                                                                SizedBox(
+                                                                    width: 12),
+                                                                Text(
+                                                                  'Import GIF for gifgrep',
                                                                   style: TextStyle(
                                                                       color: Colors
-                                                                          .redAccent,
+                                                                          .white,
                                                                       fontSize:
-                                                                          13)),
-                                                            ],
+                                                                          13),
+                                                                ),
+                                                              ],
+                                                            ),
                                                           ),
-                                                        ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  Expanded(
-                                                    child: TextField(
-                                                      controller:
-                                                          _textController,
-                                                      style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 15),
-                                                      onChanged: (_) =>
-                                                          setState(() {}),
-                                                      decoration:
-                                                          InputDecoration(
-                                                        hintText: _pendingVideoBase64 !=
-                                                                null
-                                                            ? "Ask about the video..."
-                                                            : _pendingImageBase64 !=
+                                                          if (_pendingImageBase64 !=
+                                                                  null ||
+                                                              _pendingVideoBase64 !=
+                                                                  null)
+                                                            const PopupMenuItem(
+                                                              value: 'clear',
+                                                              child: Row(
+                                                                children: [
+                                                                  Icon(
+                                                                      Icons
+                                                                          .delete_outline,
+                                                                      color: Colors
+                                                                          .redAccent,
+                                                                      size: 20),
+                                                                  SizedBox(
+                                                                      width:
+                                                                          12),
+                                                                  Text(
+                                                                      'Clear Attachment',
+                                                                      style: TextStyle(
+                                                                          color: Colors
+                                                                              .redAccent,
+                                                                          fontSize:
+                                                                              13)),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                        ],
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Expanded(
+                                                        child: TextField(
+                                                          controller:
+                                                              _textController,
+                                                          style:
+                                                              const TextStyle(
+                                                                  color: Colors
+                                                                      .white,
+                                                                  fontSize: 15),
+                                                          onChanged: (_) =>
+                                                              setState(() {}),
+                                                          decoration:
+                                                              InputDecoration(
+                                                            hintText: _pendingVideoBase64 !=
                                                                     null
-                                                                ? "Ask about the image..."
-                                                                : "Message your companion...",
-                                                        hintStyle: TextStyle(
-                                                            color: Colors.white
-                                                                .withValues(
-                                                                    alpha:
-                                                                        0.40),
-                                                            fontSize: 14),
-                                                        border:
-                                                            OutlineInputBorder(
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(30),
-                                                          borderSide: BorderSide(
-                                                              color: Colors
-                                                                  .white
-                                                                  .withValues(
-                                                                      alpha:
-                                                                          0.1),
-                                                              width: 0.8),
-                                                        ),
-                                                        enabledBorder:
-                                                            OutlineInputBorder(
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(30),
-                                                          borderSide: BorderSide(
-                                                              color: Colors
-                                                                  .white
-                                                                  .withValues(
-                                                                      alpha:
-                                                                          0.1),
-                                                              width: 0.8),
-                                                        ),
-                                                        focusedBorder:
-                                                            OutlineInputBorder(
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(30),
-                                                          borderSide:
-                                                              const BorderSide(
+                                                                ? "Ask about the video..."
+                                                                : _pendingImageBase64 !=
+                                                                        null
+                                                                    ? "Ask about the image..."
+                                                                    : "Message your companion...",
+                                                            hintStyle: TextStyle(
+                                                                color: Colors
+                                                                    .white
+                                                                    .withValues(
+                                                                        alpha:
+                                                                            0.40),
+                                                                fontSize: 14),
+                                                            border:
+                                                                OutlineInputBorder(
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                          30),
+                                                              borderSide: BorderSide(
+                                                                  color: Colors
+                                                                      .white
+                                                                      .withValues(
+                                                                          alpha:
+                                                                              0.1),
+                                                                  width: 0.8),
+                                                            ),
+                                                            enabledBorder:
+                                                                OutlineInputBorder(
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                          30),
+                                                              borderSide: BorderSide(
+                                                                  color: Colors
+                                                                      .white
+                                                                      .withValues(
+                                                                          alpha:
+                                                                              0.1),
+                                                                  width: 0.8),
+                                                            ),
+                                                            focusedBorder:
+                                                                OutlineInputBorder(
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                          30),
+                                                              borderSide: const BorderSide(
                                                                   color: AppColors
                                                                       .statusGreen,
                                                                   width: 1.0),
-                                                        ),
-                                                        filled: true,
-                                                        fillColor: Colors.black
-                                                            .withValues(
-                                                                alpha: 0.20),
-                                                        contentPadding:
-                                                            const EdgeInsets
-                                                                .symmetric(
-                                                          horizontal: 16,
-                                                          vertical: 12,
+                                                            ),
+                                                            filled: true,
+                                                            fillColor: Colors
+                                                                .black
+                                                                .withValues(
+                                                                    alpha:
+                                                                        0.20),
+                                                            contentPadding:
+                                                                const EdgeInsets
+                                                                    .symmetric(
+                                                              horizontal: 16,
+                                                              vertical: 12,
+                                                            ),
+                                                          ),
+                                                          onSubmitted:
+                                                              _handleSubmit,
                                                         ),
                                                       ),
-                                                      onSubmitted:
-                                                          _handleSubmit,
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            AnimatedBuilder(
+                                              animation: _glowController,
+                                              builder: (context, _) {
+                                                final theme = Theme.of(context);
+                                                final signalColor =
+                                                    _chatNobTtsColor();
+                                                final pulse =
+                                                    _isGatewayTtsUnavailable
+                                                        ? _glowController.value
+                                                        : 0.0;
+                                                return AnimatedContainer(
+                                                  duration: const Duration(
+                                                      milliseconds: 180),
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    gradient: LinearGradient(
+                                                      begin: Alignment.topLeft,
+                                                      end:
+                                                          Alignment.bottomRight,
+                                                      colors:
+                                                          _chatNobGradientColors(
+                                                              theme),
                                                     ),
+                                                    boxShadow: [
+                                                      BoxShadow(
+                                                        color: signalColor
+                                                            .withValues(
+                                                                alpha: 0.22 +
+                                                                    pulse *
+                                                                        0.32),
+                                                        blurRadius:
+                                                            18 + pulse * 10,
+                                                        spreadRadius:
+                                                            -2 + pulse * 2,
+                                                      ),
+                                                    ],
                                                   ),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        AnimatedBuilder(
-                                          animation: _glowController,
-                                          builder: (context, _) {
-                                            final theme = Theme.of(context);
-                                            final signalColor =
-                                                _chatNobTtsColor();
-                                            final pulse =
-                                                _isGatewayTtsUnavailable
-                                                    ? _glowController.value
-                                                    : 0.0;
-                                            return AnimatedContainer(
-                                              duration: const Duration(
-                                                  milliseconds: 180),
-                                              decoration: BoxDecoration(
-                                                shape: BoxShape.circle,
-                                                gradient: LinearGradient(
-                                                  begin: Alignment.topLeft,
-                                                  end: Alignment.bottomRight,
-                                                  colors:
-                                                      _chatNobGradientColors(
-                                                          theme),
-                                                ),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color:
-                                                        signalColor.withValues(
-                                                            alpha: 0.22 +
-                                                                pulse * 0.32),
-                                                    blurRadius: 18 + pulse * 10,
-                                                    spreadRadius:
-                                                        -2 + pulse * 2,
+                                                  child: IconButton(
+                                                    icon: const Icon(
+                                                        Icons.send_rounded,
+                                                        color: Colors.white,
+                                                        size: 20),
+                                                    onPressed: () =>
+                                                        _handleSubmit(
+                                                            _textController
+                                                                .text),
                                                   ),
-                                                ],
-                                              ),
-                                              child: IconButton(
-                                                icon: const Icon(
-                                                    Icons.send_rounded,
-                                                    color: Colors.white,
-                                                    size: 20),
-                                                onPressed: () => _handleSubmit(
-                                                    _textController.text),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ],
+                                                );
+                                              },
+                                            ),
+                                          ],
+                                        ],
+                                      ),
                                     ],
                                   ),
                                 ),

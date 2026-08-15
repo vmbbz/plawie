@@ -67,4 +67,27 @@ void main() {
     expect(controller.markListening(generation), isTrue);
     expect(controller.state.phase, VoiceSessionPhase.listening);
   });
+
+  test('voice phases expose stable user-facing labels', () {
+    expect(VoiceSessionPhase.starting.userLabel, 'Starting microphone');
+    expect(VoiceSessionPhase.transcribing.userLabel, 'Transcribing');
+    expect(VoiceSessionPhase.noTranscript.userLabel, 'No transcript');
+    expect(VoiceSessionPhase.speaking.userLabel, 'Speaking');
+  });
+
+  test('stale phase updates cannot overwrite a newer generation', () {
+    final controller = VoiceSessionController();
+    final first = controller.beginCapture(
+      owner: VoiceCaptureOwner.chat,
+      surface: VoiceSessionSurface.fullScreen,
+    )!;
+
+    controller.invalidate(phase: VoiceSessionPhase.transcribing);
+
+    expect(
+      controller.setPhaseIfCurrent(first, VoiceSessionPhase.sent),
+      isFalse,
+    );
+    expect(controller.state.phase, VoiceSessionPhase.transcribing);
+  });
 }

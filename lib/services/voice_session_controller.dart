@@ -9,12 +9,46 @@ enum VoiceSessionPhase {
   idle,
   starting,
   listening,
+  transcribing,
   thinking,
   speaking,
+  sent,
+  noTranscript,
   paused,
   reconnecting,
   stopped,
   error,
+}
+
+extension VoiceSessionPhasePresentation on VoiceSessionPhase {
+  String get userLabel {
+    switch (this) {
+      case VoiceSessionPhase.idle:
+        return 'Voice ready';
+      case VoiceSessionPhase.starting:
+        return 'Starting microphone';
+      case VoiceSessionPhase.listening:
+        return 'Listening';
+      case VoiceSessionPhase.transcribing:
+        return 'Transcribing';
+      case VoiceSessionPhase.thinking:
+        return 'Thinking';
+      case VoiceSessionPhase.speaking:
+        return 'Speaking';
+      case VoiceSessionPhase.sent:
+        return 'Sent';
+      case VoiceSessionPhase.noTranscript:
+        return 'No transcript';
+      case VoiceSessionPhase.paused:
+        return 'Paused';
+      case VoiceSessionPhase.reconnecting:
+        return 'Reconnecting';
+      case VoiceSessionPhase.stopped:
+        return 'Stopped';
+      case VoiceSessionPhase.error:
+        return 'Voice error';
+    }
+  }
 }
 
 enum VoiceCaptureOwner { none, chat, pip, wakeWord, service }
@@ -41,6 +75,8 @@ class VoiceSessionState {
   bool get captureActive =>
       phase == VoiceSessionPhase.starting ||
       phase == VoiceSessionPhase.listening;
+
+  bool get hasVoiceActivity => phase != VoiceSessionPhase.idle;
 
   VoiceSessionState copyWith({
     VoiceSessionPhase? phase,
@@ -113,6 +149,34 @@ class VoiceSessionController {
       generation,
       phase: VoiceSessionPhase.thinking,
       statusReason: null,
+    );
+  }
+
+  bool markTranscribing(int generation) {
+    return _replaceIfCurrent(
+      generation,
+      phase: VoiceSessionPhase.transcribing,
+      statusReason: null,
+    );
+  }
+
+  bool setPhase(VoiceSessionPhase phase, {String? reason}) {
+    _state = _state.copyWith(
+      phase: phase,
+      statusReason: reason,
+    );
+    return true;
+  }
+
+  bool setPhaseIfCurrent(
+    int generation,
+    VoiceSessionPhase phase, {
+    String? reason,
+  }) {
+    return _replaceIfCurrent(
+      generation,
+      phase: phase,
+      statusReason: reason,
     );
   }
 

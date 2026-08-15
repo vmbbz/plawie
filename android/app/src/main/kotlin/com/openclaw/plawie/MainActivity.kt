@@ -1684,16 +1684,24 @@ class MainActivity : FlutterActivity() {
         // The RemoteAction is also the native fallback indicator when Flutter
         // rendering is paused: the icon and explicit label communicate the
         // current voice phase without relying on the WebView/avatar.
-        val iconRes = if (state.isListening) {
-            android.R.drawable.ic_menu_close_clear_cancel
-        } else {
-            android.R.drawable.ic_btn_speak_now
+        val isBusy = state.phase == "transcribing" ||
+            state.phase == "thinking" ||
+            state.phase == "speaking" ||
+            state.phase == "reconnecting"
+        val iconRes = when {
+            state.isListening -> android.R.drawable.ic_menu_close_clear_cancel
+            isBusy -> android.R.drawable.ic_popup_sync
+            else -> android.R.drawable.ic_btn_speak_now
         }
-        val title = if (state.isListening) "Stop listening" else "Start voice input"
-        val description = if (state.isListening) {
-            "Stop Plawie voice input (${state.label})"
-        } else {
-            "Start Plawie voice input (${state.label})"
+        val title = when {
+            state.isListening -> "Stop listening"
+            isBusy -> state.label
+            else -> "Start voice input"
+        }
+        val description = when {
+            state.isListening -> "Stop Plawie voice input (${state.label})"
+            isBusy -> "Voice input is busy: ${state.label}"
+            else -> "Start Plawie voice input (${state.label})"
         }
         
         val micAction = RemoteAction(
@@ -1702,6 +1710,10 @@ class MainActivity : FlutterActivity() {
             description,
             micPendingIntent
         )
+        // A disabled RemoteAction remains a native status indicator but cannot
+        // create a second capture while the current turn is transcribing or
+        // delivering its response.
+        micAction.isEnabled = !isBusy
         return listOf(micAction)
     }
 

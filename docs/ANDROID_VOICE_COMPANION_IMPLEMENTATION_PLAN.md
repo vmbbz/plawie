@@ -60,12 +60,21 @@ The first code slice is now implemented on this branch:
   refreshing its icon;
 - delayed continuous-mode restarts reject stale generations;
 - recorder/relay startup and stop paths reject stale async completions;
+- full-screen voice UI publishes stable Starting, Listening, Transcribing,
+  Thinking, Speaking, Sent, No transcript, Paused, and Error phases with a
+  recording/privacy indicator;
+- relay error, close, and transcript-finalization timeout paths publish a
+  terminal state instead of leaving the user waiting on a stale turn;
+- native PiP actions refuse to create a second capture while transcription,
+  reply generation, TTS, or relay reconnection is still in progress;
+- microphone permission and recorder-start failures are visible as recoverable
+  voice errors;
 - disposal invalidates the active generation before resources are released.
 
 Validation completed for this checkpoint:
 
 - targeted Flutter analysis: clean;
-- `voice_session_controller_test.dart`: 4 tests passed;
+- `voice_session_controller_test.dart`: 6 tests passed;
 - existing avatar gesture, VRM bootstrap, and Gateway TTS policy tests: passed.
 
 The native compact visual, full Activity/PiP lifecycle matrix, and service
@@ -244,11 +253,12 @@ contracts and proof:
    - background/lock/unlock/process-recreation evidence;
    - no APKs, screenshots, tokens, or temporary device artifacts committed.
 
-The implementation order is therefore: finish provider-backed transcript/send
-proof, then complete the remaining realtime Talk and lifecycle test matrix,
-then add compact visual/accessibility polish and second-OEM PiP validation.
-Continuous Talk and avatars are not being reimplemented from scratch; they are
-being brought under the same reliable session contract.
+The implementation order is therefore: obtain provider-backed transcript/send
+proof, complete the remaining realtime Talk and lifecycle test matrix, then
+add a richer compact visual/accessibility graphic and second-OEM PiP
+validation. The basic status presentation and duplicate-action guard are now
+implemented; Continuous Talk and avatars are not being reimplemented from
+scratch, but are brought under the same reliable session contract.
 
 ### Realtime session and background ownership slice
 
@@ -309,6 +319,46 @@ Device evidence on the Samsung Android 14/API 34 handset:
 - a second Android implementation, action-level stop/mute semantics, and a
   visible compact status graphic remain validation/polish work.
 
+### Voice phase presentation and PiP action-safety slice
+
+This local round closes the most important user-facing gap left by the session
+contract: the session could know that capture had stopped while the screen and
+native PiP action still presented an ambiguous start/stop state. The Flutter
+surface now derives its compact status from `VoiceSessionState`, rather than
+from recorder or WebView timing alone:
+
+- `VoiceSessionPhase` includes explicit capture, transcription, response, and
+  terminal phases with stable user-facing labels;
+- the expanded composer shows a live-region status row, a red recording/privacy
+  dot while capture is active, and phase-specific icon/color treatment;
+- the collapsed hold-to-talk control exposes an accessible Start/Stop label;
+- relay `error`, `close`, and finalization-timeout events update the visible
+  state and invalidate stale callbacks;
+- a native PiP action is disabled while a turn is transcribing, thinking,
+  speaking, or reconnecting, while still exposing the current status as the
+  native fallback indicator;
+- permission denial and recorder startup failures become visible `Voice error`
+  states rather than silent no-ops.
+
+Validation for this round:
+
+- `flutter analyze`: clean;
+- focused voice-session and Gateway-auth tests: passed;
+- `flutter build apk --debug`: passed;
+- Samsung Android 14/API 34 smoke: the Voice Input menu opened the platform
+  recognizer and `AudioRecord`; PiP entered with `mode=pinned`, a 3:4 surface,
+  and `hasSetActions=true`, with no crash or ANR;
+- transcript/send is still not claimed: the handset's recognizer reports no
+  offline `en-ZA` language pack and `NO_SPEECH_DETECTED`, so this environment
+  cannot provide spoken text for the final chat-send assertion;
+- the repository-wide Flutter suite still reports seven unrelated failures in
+  `skill_provisioning_service_test.dart` around legacy dependency-pack label
+  expectations. No changed voice test failed.
+
+This round intentionally does not claim provider-backed transcript/send proof,
+a second-OEM PiP result, or an unrestricted background microphone service. Those
+remain explicit gates for the next validation pass.
+
 ## Proposed state boundary
 
 Introduce a small voice-session model without moving every existing behavior at once:
@@ -316,8 +366,9 @@ Introduce a small voice-session model without moving every existing behavior at 
 ```text
 VoiceSessionState
   desiredMode: off | pushToTalk | continuous | wakeWord
-  actualState: idle | starting | listening | thinking | speaking |
-               paused | reconnecting | stopped | error
+  actualState: idle | starting | listening | transcribing | thinking |
+               speaking | sent | noTranscript | paused | reconnecting |
+               stopped | error
   captureOwner: none | chat | pip | wakeWord | service
   sessionId: optional Gateway/realtime session id
   generation: monotonically increasing callback guard
