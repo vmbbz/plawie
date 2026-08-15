@@ -1,383 +1,363 @@
-# Plawie SaaS Product Readiness and Product Hunt Plan
+# Plawie Product Readiness, Crypto Commerce, and Product Hunt Plan
 
-**Status:** Planning baseline — no cloud account, billing, or central analytics backend is enabled yet  
+**Status:** Strategic baseline — no recurring subscriptions, no Stripe dependency, and no central account requirement
 **Date:** 2026-08-15  
 **Product:** Plawie, the local-first Android companion and OpenClaw control surface
 
 ## Executive decision
 
-Plawie should become a measurable SaaS product in stages, without turning the local-first promise into an account wall.
+Plawie is not a subscription SaaS. It is a local-first BYOK and crypto-provider product with optional account services and transaction-based revenue.
 
-The recommended foundation is:
+Users should be able to run local voice, local Gateway features, and BYOK providers without creating a Plawie account. Plawie earns revenue only when it adds measurable value to a transaction and the user sees the fee before approval.
 
-| Capability | Recommended first system | Why |
-|---|---|---|
-| Identity, optional accounts, workspaces, entitlements | Supabase Auth + Postgres + Edge Functions | One durable user/workspace model, SQL reporting, row-level authorization, and a reasonable path from solo users to teams |
-| Product analytics and experiments | PostHog | Funnels, retention, feature flags, experiments, surveys, and a Flutter SDK in one product analytics layer |
-| Web subscriptions and invoices | Stripe Billing + Checkout + Customer Portal | Mature subscription lifecycle, webhook events, tax/recovery options, and a clean web checkout |
-| Android digital subscriptions | Google Play Billing | Required platform lane for digital goods sold through a Play-distributed app; verify purchases on a secure backend |
-| Cross-platform entitlement wrapper | RevenueCat, only when needed | Reduces native Play/App Store entitlement plumbing if mobile subscriptions become a core product; do not add it before there are real products to sell |
-| Crash and diagnostic triage | Existing bounded logs first; evaluate Sentry separately | Product analytics should not become a dump for sensitive prompts, audio, wallet material, or gateway logs |
+The intended revenue lanes are:
 
-Supabase is a good fit because its Auth sessions integrate with Postgres Row Level Security (RLS), while its documentation explicitly requires protecting user tables with RLS and using stable `auth.users` references. See [Supabase Auth](https://supabase.com/docs/guides/auth), [managing user data](https://supabase.com/docs/guides/auth/managing-user-data), and [securing the Data API](https://supabase.com/docs/guides/api/securing-your-api).
+1. Commission or referral revenue on supported crypto-funded LLM credit top-ups, only where the provider contract or referral program explicitly allows it.
+2. A transparent bridge/integrator fee on supported LI.FI routes, after partner onboarding, fee-wallet configuration, compliance review, and route-level testing.
+3. Later AvatarForge marketplace revenue from 3D companion minting and renting: creator/platform splits, mint fees, rental commissions, and optional asset services.
 
-PostHog should receive deliberately designed events rather than raw conversations. The Flutter SDK supports Android, iOS, macOS, and web, and product analytics supports funnels, retention, lifecycle, and feature adoption analysis. See [PostHog Flutter](https://pub.dev/packages/posthog_flutter) and [PostHog product analytics](https://www.mintlify.com/PostHog/posthog/products/product-analytics).
+There is no recurring Pro/Team subscription in this plan. There is no Stripe integration in the product architecture. Any future payment provider would need an explicit decision and would not be assumed by the implementation.
 
-Stripe should be authoritative for web billing state through signed webhooks; the app must never decide that a subscription is paid based only on a client-side callback. See [Stripe subscription lifecycle](https://docs.stripe.com/billing/subscriptions/overview) and [Stripe subscriptions](https://docs.stripe.com/subscriptions).
+## South Africa payment decision
 
-For Play-distributed digital features, Google documents a backend purchase-verification and entitlement architecture, including real-time developer notifications. See [Google Play Billing](https://developer.android.com/google/play/billing) and [purchase lifecycle and RTDNs](https://developer.android.com/google/play/billing/lifecycle). RevenueCat is an optional abstraction over Play Billing, App Store billing, and web entitlements; see its [Flutter installation and cross-platform notes](https://www.revenuecat.com/docs/getting-started/installation/flutter).
+Stripe is removed from the plan. Stripe’s current global page lists South Africa under an “Extended network” category, but eligibility, onboarding, settlement, and product availability are not the same as a guaranteed self-serve account. Stripe also states that opening an account in another country requires a legal entity, tax ID, physical location, phone number, government ID, and physical bank account in that country. See [Stripe global availability](https://stripe.com/global) and [Stripe’s cross-country account requirements](https://support.stripe.com/questions/requirements-to-open-a-stripe-account-in-another-country).
 
-## The product boundary we should protect
+We will not build a business model around that uncertainty. Plawie’s first commercial model is crypto-native and non-recurring. The company still needs South African accounting, tax, financial-crime, consumer-protection, and crypto-asset legal advice before charging commissions or operating a marketplace. This document is an engineering/product plan, not legal advice.
 
-Plawie currently has a valuable distinction:
+South African launch gates must include a direct review of:
 
-- local Android runtime and voice interaction can work without a Plawie cloud account;
-- users can bring their own model provider keys;
-- the app can expose sensitive tools, wallets, conversations, audio, and device actions;
-- cloud services are selected by the user rather than assumed.
+- whether the exact top-up, routing, commission, marketplace, rental, and minting activities make Plawie a Crypto Asset Service Provider or another regulated intermediary;
+- whether the business needs an FSCA licence, a licensed partner, or a different operating model;
+- FIC/KYC/AML obligations and suspicious-transaction controls;
+- VAT/income-tax treatment, crypto-asset reporting, transaction records, and creator payouts;
+- consumer disclosures, refunds, disputes, custody, wallet recovery, and cross-border services.
 
-The SaaS layer should add durable value rather than silently changing that contract.
+The FSCA says crypto-asset service providers must obtain a licence to conduct business; SARS separately describes reporting obligations for providers facilitating crypto-asset transactions. Review the [FSCA CASP guidance](https://www.fsca.co.za/New-Financial-Service-Provider/), [FSCA authorised-provider resources](https://www.fsca.co.za/Regulated-Entities/), and [SARS Crypto-Asset Reporting Framework](https://www.sars.gov.za/businesses-and-employers/third-party-data/crypto-asset-reporting-framework-carf/) before enabling commercial fees.
 
-### Account optionality
+## Product boundary
 
-An account is required only for features that genuinely need server state:
+### Free and account-optional
 
-- cross-device settings and conversation sync, if the user explicitly enables it;
-- hosted Gateway or hosted model services operated by Plawie;
-- team workspaces, shared skills, roles, and billing;
-- paid entitlements, invoices, receipts, and account recovery;
-- support diagnostics that the user explicitly submits.
+No account is required for:
 
-An account is not required for:
-
-- local-only chat and voice;
+- local chat and local voice;
 - on-device models;
-- BYOK providers;
-- local wake-word and foreground voice operation;
-- inspecting local health and logs;
-- downloading the public Android preview.
+- BYOK model providers;
+- local wake word, PiP, foreground voice, and TTS;
+- local avatar equip and local VRM assets;
+- inspecting local health and bounded logs;
+- downloading public Android previews.
 
-This gives us a conversion path without making privacy-sensitive users abandon the product before they understand its value.
+An account may be introduced for durable services, but not as a gate in front of local usefulness:
 
-### Monetizable value, not artificial limits
+- cross-device avatar/library sync, if explicitly enabled;
+- user-submitted support diagnostics;
+- creator profiles and AvatarForge listings;
+- transaction receipts and commission statements;
+- future hosted services, if we ever add them without changing the core promise.
 
-The first paid offer should be attached to an operating cost or durable convenience that users understand:
+### Revenue without subscriptions
 
-1. **Free local/BYOK:** local Gateway, local voice, BYOK model providers, basic device tools, and a bounded local history.
-2. **Pro:** encrypted sync, multi-device continuity, managed backups, premium voice/companion capabilities, hosted convenience, and higher support priority—only where those services exist and have a real cost/value.
-3. **Team or builder:** shared workspace, member roles, skill/configuration sharing, audit history, usage controls, and a team billing owner.
-4. **Usage-based add-ons:** only for Plawie-provided hosted inference, hosted Gateway capacity, or other metered infrastructure. Provider pass-through and Plawie margin must be separate ledger lines.
+The product must distinguish these four financial concepts:
 
-Do not charge for “AI messages” that are actually paid directly by a user’s BYOK provider. Do not describe wallet-funded provider spend as Plawie revenue. Revenue, pass-through volume, provider cost, infrastructure cost, refunds, and gross margin need distinct accounting dimensions.
-
-## Target architecture
-
-```text
-Landing site ── consented attribution ──┐
-                                        ├── PostHog: product events, funnels, cohorts, flags
-Flutter app ── optional auth/session ───┤
-                                        │
-Stripe webhooks ── signed Edge Function ─┤
-Google Play RTDN ── verified backend ────┤
-                                        └── Supabase Postgres: users, workspaces, devices,
-                                            entitlements, billing ledger, deletion state
-```
-
-### System-of-record rules
-
-- Supabase owns Plawie identity, workspace membership, device links, feature grants, and deletion requests.
-- Stripe owns Stripe customer, subscription, invoice, payment, refund, and tax facts for web purchases.
-- Google Play owns Play purchase facts for Play purchases; the backend stores verified entitlement state and the original purchase token reference according to the applicable data-retention policy.
-- PostHog owns behavioral analytics and experiment exposure data, not access control or billing truth.
-- The app consumes a short-lived, server-issued entitlement view. It never embeds a Stripe secret, Supabase service-role key, Play private credential, or provider master key.
-- Webhooks are idempotent and append-only at the event boundary. Replaying a webhook must not duplicate a subscription, invoice, credit, or entitlement.
-
-### Suggested core tables
-
-| Table | Purpose | Important rules |
+| Concept | Meaning | Counts as Plawie revenue? |
 |---|---|---|
-| `profiles` | Minimal user profile and consent state | References `auth.users(id)`; no prompt/audio content |
-| `workspaces` | Future-proof solo and team ownership | Every user starts with a personal workspace; team support uses the same model |
-| `workspace_members` | Roles and membership lifecycle | RLS by membership; never trust client-provided role metadata |
-| `devices` | Random installation ID, platform, app version, last-seen health | No hardware serial, IMEI, contacts, or unnecessary fingerprinting |
-| `attribution_touchpoints` | UTM/referrer/Product Hunt source history | Store coarse campaign metadata, not a hidden identity graph |
-| `entitlements` | Server-computed feature access | Derived from verified billing or explicit grants; expires and can be revoked |
-| `billing_customers` | Provider customer mapping | Separate provider IDs from internal user/workspace IDs |
-| `billing_events` | Immutable provider event ledger | Unique provider event ID; raw payload retention must be bounded and redacted |
-| `usage_periods` | Metered usage and cost summaries | Aggregate by workspace/period; never use raw prompt text as a meter key |
-| `deletion_requests` | Auditable deletion/export workflow | Track requested, processing, completed, and blocked-by-provider states |
+| Provider/user spend | USDC or other crypto paid to an LLM provider | No; it is user/provider volume |
+| Bridge volume | Assets routed through an external bridge | No; it is gross transaction volume |
+| Plawie commission | Contractual/referral/integrator amount attributable to Plawie | Yes, subject to accounting/tax treatment |
+| Pass-through/network/partner cost | LI.FI, bridge, gas, facilitator, creator, or settlement share | No; subtract or report separately |
 
-Do not expose billing tables directly to the mobile client. Use Edge Functions or a narrow server API for checkout, entitlement refresh, account deletion, and support exports.
+The dashboard must report gross volume, partner share, network cost, refunds/disputes, and net commission separately. We must never present provider spend or bridged principal as Plawie revenue.
 
-## Identity and attribution design
+## Recommended stack
 
-### Identity lifecycle
+| Capability | First choice | Boundary |
+|---|---|---|
+| Optional identity and account recovery | Supabase Auth + Postgres + Edge Functions | Use for accounts, creator profiles, receipts, and consent; never make local mode depend on it |
+| Product analytics | PostHog Flutter/web SDK | Send explicit, redacted events; never upload prompts, audio, wallet secrets, or raw logs |
+| Bridge commission | LI.FI Partner Portal/API integrator fee | Requires an approved integrator identity, fee wallet, fee policy, and route reconciliation |
+| LLM top-up commission | Provider-specific referral/partner/settlement integration | Do not alter a direct x402 challenge or add a hidden payee |
+| Avatar mint/rental commerce | AvatarForge-owned web/API and audited on-chain contracts | External wallet signing first; no app-held marketplace custody |
+| Error/incident triage | Existing bounded logs, then evaluate Sentry | Keep product analytics and sensitive diagnostics separate |
 
-1. On first launch, create a random local installation ID. It is not a hardware identifier.
-2. Before signup, PostHog may use an anonymous ID only after the user has the required analytics consent. Local-only use can remain untracked.
-3. When the user signs up, create the Supabase user and personal workspace.
-4. Alias/merge the anonymous analytics identity into the stable internal user UUID only after signup and consent.
-5. Link one or more device installation IDs to the user through a short-lived pairing flow.
-6. On logout, clear account-scoped local caches and stop sending authenticated events. Do not silently upload local conversations during logout or login.
-7. On account deletion, revoke sessions, unlink devices, cancel or explain billing implications, delete Plawie-held data, and retain only legally required financial records.
+Supabase Auth integrates with Postgres RLS; its documentation requires protecting user tables and using server-side authorization. See [Supabase Auth](https://supabase.com/docs/guides/auth), [user data](https://supabase.com/docs/guides/auth/managing-user-data), and [API security](https://supabase.com/docs/guides/api/securing-your-api).
 
-### Attribution fields
+PostHog’s Flutter package supports Android, iOS, macOS, and web. Use custom events and funnels/retention rather than broad collection. See [PostHog Flutter](https://pub.dev/packages/posthog_flutter) and [PostHog product analytics](https://github.com/PostHog/PostHog).
 
-Capture these fields on the landing site and carry them into signup where possible:
+LI.FI documents an integrator `fee` parameter and configured fee wallet for monetizing supported routes. Fees are taken from the sending asset and collected through LI.FI’s partner flow; this requires LI.FI onboarding and a verified integration. See [LI.FI monetization](https://docs.li.fi/introduction/integrating-lifi/monetizing-integration), [quote parameters](https://docs.li.fi/li.fi-api/requesting-a-quote), and [FeeForwarder](https://docs.li.fi/introduction/integrating-lifi/fee-forwarder).
 
-- `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`;
-- first-touch timestamp and most recent-touch timestamp;
-- referrer host, landing path, and release channel;
-- `product_hunt_post_id` or a normalized `product_hunt` source marker;
-- APK release tag and app version at activation.
-
-Use a campaign URL such as:
+## Architecture and authority
 
 ```text
-https://plawie.app/?utm_source=producthunt&utm_medium=launch&utm_campaign=2026-08-preview
+Landing site ── consented campaign attribution ──┐
+Flutter app ── optional account/session ──────────┤
+                                                ├── PostHog: redacted product events
+Provider/bridge callbacks ── verified API ────────┤
+                                                └── Supabase: identity, receipts,
+                                                    commission ledger, creator/rental state
+
+User wallet ── explicit external or Android-authenticated approval ── provider/bridge
+AvatarForge ── creator wallet + audited contracts + signed asset delivery ── Plawie app
 ```
 
-Do not place emails, wallet addresses, provider keys, or conversation fragments in UTM parameters.
+### Source-of-truth rules
 
-## Event contract
+- Supabase owns Plawie users, creator profiles, optional workspaces, device links, consent state, receipt references, and commission-ledger records.
+- The provider owns LLM balance and settlement facts. Plawie records a redacted reference and any contractual commission event; it does not invent a universal provider balance.
+- LI.FI owns route/fee/settlement facts for LI.FI integrations. Plawie reconciles the route ID, transaction hashes, fee token, fee amount, and partner payout status.
+- AvatarForge contracts and storage own token ownership, mint state, rental state, and creator/platform split facts.
+- PostHog owns behavioral analytics, not payment truth, access control, ownership, or balances.
+- The client may prepare a quote and show a review. It cannot silently add a fee, choose a new payee, create a provider account, sign, or broadcast.
+- No private key, API key, provider credential, x402 signature, or LI.FI secret is placed in the APK or website JavaScript.
 
-Create one shared event vocabulary for the landing site, Flutter app, and backend. Every event should have:
+## Financial data model
 
-- `event_name`;
-- `schema_version`;
-- anonymous or authenticated actor ID;
-- `session_id` where useful;
-- `platform`, `app_version`, `release_channel`;
-- `workspace_id` only when the event is workspace-scoped;
-- `occurred_at` and server-ingested timestamp;
-- a small, documented property set;
-- a deduplication key for retries.
+The first ledger is transaction-based, not subscription-based.
 
-### Acquisition and signup
-
-| Event | Activation question answered |
+| Record | Purpose |
 |---|---|
-| `landing_viewed` | Which sources bring qualified visitors? |
-| `download_clicked` | Which CTA and campaign produce APK demand? |
-| `release_notes_opened` | Are visitors validating trust before installing? |
-| `signup_started` | Where does account intent begin? |
-| `signup_completed` | Which source produces actual accounts? |
-| `email_verified` | Are signup emails deliverable and trusted? |
+| `users` / `profiles` | Optional account identity and consent |
+| `devices` | Random installation ID, platform, release, and last-seen health |
+| `provider_connections` | Provider ID, redacted account identity, capability state |
+| `provider_payment_receipts` | x402/top-up request ID, provider, asset, amount, payee, status, tx reference |
+| `bridge_quotes` | Route ID, source/destination, token, gross amount, fee policy, expiry |
+| `bridge_transactions` | Source hash, destination hash, route status, fee token/amount, reconciliation state |
+| `commission_intents` | Product lane, quote/receipt reference, fee schedule version, expected commission |
+| `commission_settlements` | Actual partner/platform settlement, currency/token, payout reference, status |
+| `fee_schedules` | Effective-dated public fee policy, BPS/percentage, minimums, caps, destination wallet reference |
+| `avatar_assets` | Canonical VRM/glTF metadata hash, preview, creator, license, chain/network |
+| `avatar_mints` | Mint transaction, token/asset ID, creator split, platform commission, status |
+| `avatar_rentals` | Listing, renter, owner, terms, duration, escrow/contract reference, platform fee |
+| `deletion_requests` | Account/data deletion state and retained legal/financial records |
 
-### Product activation
+Every financial record needs a provider/chain event ID, an idempotency key, `created_at`, `observed_at`, `effective_at`, `status`, and a reconciliation state. Keep expected commission and realized commission separate.
 
-| Event | Activation question answered |
-|---|---|
-| `app_first_opened` | Did the installed artifact launch? |
-| `device_linked` | Did the user connect the app to a durable account? |
-| `gateway_ready` | Did the core runtime reach a usable state? |
-| `first_agent_turn_completed` | Did the user experience the product’s core promise? |
-| `voice_turn_completed` | Did voice work end-to-end? |
-| `wake_word_enabled` | Is proactive voice useful enough to enable? |
-| `companion_session_started` | Is the visual/voice surface being used? |
-| `onboarding_completed` | Did the user reach a stable first-session state? |
+### No raw sensitive content
 
-Recommended activation definition for the first dashboard:
+Never send these to PostHog or generic logs:
 
-> A new user is activated when, within 24 hours of signup or first app open, the app reaches `gateway_ready` and completes at least one successful agent turn. Voice activation is a separate cohort, not a hidden requirement for everyone.
+- audio, transcripts, prompts, model responses, screenshots, attachments, or tool results;
+- private keys, recovery phrases, wallet backups, auth headers, provider keys, pairing tokens, or payment signatures;
+- full wallet addresses unless a reviewed operational need exists;
+- raw Gateway logs or NFT metadata containing personal information.
 
-### Engagement and reliability
+Use bounded operation codes, release versions, route IDs, public transaction hashes where necessary, and redacted correlation IDs.
 
-- `session_started`, `session_ended`;
-- `agent_turn_started`, `agent_turn_completed`, `agent_turn_failed`;
-- `voice_listening_started`, `voice_transcription_received`, `voice_turn_completed`, `voice_turn_failed`;
-- `tts_started`, `tts_completed`, `tts_failed`, `tts_duplicate_suppressed`;
-- `wake_word_detected`, `wake_word_false_triggered`;
-- `gateway_restarted`, `gateway_ready`, `gateway_failed`;
-- `crash_reported` as a coarse diagnostic reference, never a raw stack/log payload in PostHog;
-- `support_report_started`, `support_report_submitted`.
+## Revenue lane A — crypto LLM credit top-ups
 
-### Monetization
+### What is already true
 
-- `pricing_viewed`;
-- `checkout_started`;
-- `checkout_completed`;
-- `subscription_started`;
-- `invoice_paid`;
-- `payment_failed`;
-- `subscription_paused`;
-- `subscription_canceled`;
-- `refund_issued`;
-- `entitlement_granted`, `entitlement_revoked`;
-- `usage_limit_reached`;
-- `upgrade_started`, `upgrade_completed`, `downgrade_completed`.
+The current app has a provider catalog with explicit semantics:
 
-Billing events should carry normalized numeric fields such as currency, gross amount, tax, discount, provider fee, refund amount, and net recognized revenue. Never calculate MRR from a client-side `checkout_completed` event.
+- Venice is represented as a prepaid wallet-linked provider with a top-up endpoint and balance endpoint.
+- BlockRun is represented as a per-request x402 provider and does not use a Plawie top-up balance.
+- The active payment transport validates provider hosts, binds the payment to the exact request, requires visible approval, asks Android to authenticate, performs one signed retry, and stores a redacted receipt.
+- `lib/services/crypto_credits_service.dart` is a legacy unused OpenRouter/LI.FI/Coinbase path and must remain quarantined or be removed after import/build verification.
 
-### Sensitive-data exclusions
+### Commission constraint
 
-Never send these to PostHog or a generic analytics event:
+If a provider returns a direct x402 challenge whose payee is the provider, Plawie cannot secretly insert its own fee. A commission requires one of:
 
-- audio bytes, transcripts, prompts, model responses, screenshots, attachments, or tool results;
-- API keys, auth headers, pairing tokens, cookies, session secrets, private keys, recovery phrases, or raw signatures;
-- full wallet addresses unless there is a separately reviewed product need;
-- precise location, contacts, message contents, or personal files;
-- raw Gateway logs or exception payloads that may contain user data.
+1. a provider referral/affiliate agreement that attributes settled volume to Plawie;
+2. a provider API that explicitly supports a platform/partner fee or split;
+3. a Plawie-operated merchant/settlement flow that has been legally and operationally approved;
+4. a separate, clearly disclosed Plawie service fee paid to an approved recipient.
 
-For failure analysis, send a bounded error code, screen, operation, release, and correlation ID. Keep detailed diagnostics in an explicit user-submitted support flow with redaction.
+Until one of these is signed and tested, the app must show the provider’s exact amount and payee and record no fictional Plawie revenue.
 
-## Metrics that make the business sellable
+### Required implementation
 
-Product Hunt votes and page views are launch signals, not the business model. The internal weekly dashboard should show:
+- Add a provider-specific `monetization` capability: `none`, `referral`, `provider_split`, or `first_party_settlement`.
+- Show “Provider charge” and “Plawie commission” as separate lines only when the provider contract and signed fee schedule support both.
+- Bind the commission schedule version to the payment intent; changing the schedule invalidates the pending intent.
+- Record provider request ID, payment intent ID, tx hash, gross amount, partner share, expected commission, and settlement state.
+- Reconcile from provider/chain evidence. A local receipt is not proof of revenue.
 
-### Acquisition
+## Revenue lane B — bridging fee
 
-- unique landing visitors by source/campaign;
-- download click-through rate;
-- signup start and completion rate;
-- cost per qualified signup once paid acquisition exists;
-- Product Hunt visitors, signups, activated users, and paid conversions separately.
+### Current boundary
 
-### Activation and product value
+The app currently uses LI.FI for read-only quote discovery and hands execution to the user’s external source wallet. This is the correct safety boundary until external wallet execution is fully proven.
 
-- activation rate within 24 hours;
-- median time from install/signup to first successful agent turn;
-- gateway-ready rate;
-- voice completion rate and voice failure rate;
-- crash-free sessions and foreground-service restart failures;
-- 1-day, 7-day, and 30-day retention cohorts;
-- weekly active users / monthly active users;
-- feature adoption: voice, wake word, PiP, sync, hosted features, and team sharing.
+### LI.FI monetization path
 
-### Revenue and unit economics
+After LI.FI partner onboarding:
 
-- active paid workspaces and paid seats;
-- new MRR, expansion MRR, contraction MRR, churned MRR, and ending MRR;
-- ARR run rate (`ending MRR × 12`), clearly labeled as a run rate;
-- ARPU and average revenue per paid workspace;
-- gross logo churn and revenue churn;
-- trial-to-paid and checkout conversion;
-- refunds, failed payments, involuntary churn, and recovery rate;
-- provider pass-through volume versus Plawie revenue;
-- infrastructure and support cost per active workspace;
-- gross margin by plan and by hosted feature;
-- CAC, payback period, and LTV only after there are enough cohorts to make those estimates meaningful.
+1. Configure the Plawie integrator identity and fee wallet in the LI.FI Partner Portal.
+2. Define a public fee schedule with a maximum percentage, minimum/maximum fee, supported chains/tokens, and effective date.
+3. Add the integrator and fee parameters to quote requests through a server-owned or signed configuration path.
+4. Display gross amount, network/bridge costs, Plawie fee, minimum received, destination, route, expiry, and fee recipient semantics before the user leaves for wallet approval.
+5. Preserve `allowDestinationCall=false` unless a separately reviewed destination-call path is required.
+6. Record quote ID, integrator, fee schedule version, source hash, destination hash, route status, fee token/amount, and reconciliation status.
+7. Test route failures, expiry, partial execution, refunds, duplicate callbacks, and chain/token mismatch.
 
-For early-stage reporting, show both cash collected and normalized recurring revenue. Do not call a one-time model-credit purchase MRR. Do not call gross provider spend Plawie revenue. Keep the ledger auditable down to provider event IDs and release version.
+The app must not embed a LI.FI API key. LI.FI’s docs explicitly warn against exposing API keys in client-side environments.
 
-## Product Hunt launch sequence
+## Revenue lane C — AvatarForge minting and rental
 
-Product Hunt’s current launch guidance supports preparing a draft/scheduled launch, building the maker/community response plan, and publishing launch assets before launch day. Read the [official Launch Guide](https://www.producthunt.com/launch), [preparation guide](https://www.producthunt.com/launch/before-launch), and [sharing guidance](https://www.producthunt.com/launch/sharing-your-launch) immediately before scheduling because platform details can change.
+AvatarForge is a later commerce product, not a current claim that the Android screen already supports minting or rentals.
 
-### Do not launch before these gates
+### Product stages
 
-- A new user can understand the product in one sentence and reach the first successful agent turn without founder intervention.
-- Signup, email verification, logout, account deletion, and recovery work on a clean install.
-- Local/BYOK mode remains usable if the user declines cloud signup.
-- The latest release has a stable install/update path and an honest release page.
-- Voice, wake word, PiP, background behavior, and TTS have an explicit tested support matrix; known device limitations are visible.
-- Analytics can distinguish anonymous acquisition, signup, activation, retention, and paid conversion without storing sensitive content.
-- Stripe webhooks or Play entitlement verification are tested in sandbox, including failed payment, cancellation, refund, and replay.
-- Privacy policy, terms, data deletion instructions, support route, and vendor disclosures match the actual implementation.
-- A founder can answer support questions during the launch window and publish a short incident/update note if the release fails.
+1. **Local identity stage:** import/download a VRM or glTF asset, validate its manifest/hash, equip it, and keep it usable offline.
+2. **Creator stage:** web portal creates an avatar, validates the asset, stores canonical metadata and licensing terms, and lets the creator connect an external wallet.
+3. **Mint stage:** creator signs an explicit mint transaction; token ownership and creator/platform fee split are visible before signing.
+4. **Marketplace stage:** a user can list an avatar for rental with price, duration, usage rights, asset delivery rules, and revocation/expiry behavior.
+5. **App stage:** Plawie resolves a verified token/asset record, downloads a signed or integrity-checked runtime asset, and permits the user to equip only assets whose license and safety checks pass.
 
-### Suggested timeline
+### Required decisions before implementation
 
-**T-6 to T-4 weeks — instrumentation and private beta**
+- Which chain owns the canonical mint: Solana, EVM, or separate lanes?
+- What exact contract/program controls minting, rental, escrow, expiry, royalties, and disputes?
+- Does “renting” grant a time-bound license, a token transfer, a delegation, or a marketplace listing only?
+- Who owns the VRM asset copyright and commercial usage rights?
+- How are unsafe files, malicious scripts, oversized assets, and impersonation handled?
+- Who receives creator share, protocol share, marketplace share, and network cost?
+- What happens when a rental expires while the avatar is equipped or cached offline?
 
-- create staging Supabase/PostHog/Stripe projects;
-- implement event schema and dashboard;
-- invite 20–50 testers across device classes;
-- measure activation and voice reliability before optimizing the launch page;
-- conduct willingness-to-pay interviews rather than guessing the final plan structure.
+### Proposed fee ledger
 
-**T-3 to T-2 weeks — commercial alpha**
+For each mint or rental, record:
 
-- ship optional account creation and workspace identity;
-- implement one narrow paid value proposition;
-- run checkout and entitlement recovery tests;
-- publish privacy/terms/support updates;
-- create Product Hunt draft, demo video/GIF, screenshots, founder story, and FAQ.
+- gross price and token/chain;
+- creator share;
+- marketplace/platform commission;
+- network/contract fee;
+- refunds, cancellations, disputes, and expiry;
+- token/asset ID, transaction ID, listing ID, and rental ID;
+- metadata and asset hashes;
+- license version accepted by creator and renter.
 
-**T-1 week — release candidate**
+Do not call an avatar “owned” merely because a local file is present. The app should distinguish local asset, verified token, active rental, expired rental, and unverified import.
 
-- freeze event names and pricing identifiers;
-- test clean install, upgrade, logout/login, deletion, and offline/local paths;
-- rehearse the launch dashboard and support escalation;
-- validate every campaign link and release checksum;
-- schedule only when the page, artifact, billing, and support paths are ready.
+## Analytics and launch metrics
 
-**Launch day**
+### Event contract
 
-- use one canonical Product Hunt campaign URL;
-- monitor traffic, signup, activation, checkout, crashes, and support—not only votes;
-- respond to comments with useful product detail and honest limitations;
-- do not offer rewards for upvotes or ask users to misrepresent their experience;
-- record timestamps for any incident, rollback, or pricing change.
+Every event has `event_name`, `schema_version`, actor ID, session ID where useful, platform, release channel, app version, timestamp, and a deduplication key.
 
-**T+1, T+7, T+30 days**
+Acquisition events:
 
-- publish a concise results review;
-- compare Product Hunt cohorts with organic and direct cohorts;
-- review activation and retention before changing pricing;
-- interview activated users and churned users;
-- fix the largest activation or reliability bottleneck before adding more features.
+- `landing_viewed`, `download_clicked`, `release_notes_opened`, `signup_started`, `signup_completed`;
+- `product_hunt_campaign_seen`, `product_hunt_download_clicked`.
 
-## Security, privacy, and operational readiness
+Activation events:
 
-### Minimum controls before real accounts
+- `app_first_opened`, `gateway_ready`, `first_agent_turn_completed`, `voice_turn_completed`;
+- `wake_word_enabled`, `companion_session_started`, `avatar_equipped`, `onboarding_completed`.
 
-- Separate development, staging, and production projects and credentials.
-- Store secrets only in deployment secret stores; no service keys in Flutter assets, APKs, website JavaScript, or Git history.
-- Enable RLS on every client-reachable Supabase table and test both positive and negative access cases.
-- Use server-side authorization for workspace roles and entitlements; never trust `user_metadata` for authorization.
-- Verify Stripe signatures and Google Play purchase tokens on the backend.
-- Make webhook handlers idempotent and observable with a correlation ID.
-- Rate-limit signup, pairing, checkout creation, support upload, and entitlement refresh endpoints.
-- Add a deletion/export path and a written retention schedule before collecting personal data.
-- Use explicit analytics consent where required and provide an in-app/site opt-out path.
-- Treat prompts, audio, wallet data, provider keys, and device logs as sensitive by default.
+Commerce events:
 
-### Operational controls
+- `provider_quote_received`, `provider_payment_approved`, `provider_payment_submitted`, `provider_payment_settled`;
+- `bridge_quote_received`, `bridge_fee_displayed`, `bridge_approval_started`, `bridge_submitted`, `bridge_settled`;
+- `avatar_created`, `avatar_validation_passed`, `avatar_mint_started`, `avatar_minted`;
+- `avatar_listing_created`, `avatar_rental_started`, `avatar_rental_expired`, `commission_reconciled`.
 
-- uptime/health check for the account and entitlement API;
-- error budget for signup, login, gateway-ready, voice completion, and checkout;
-- release channel labels: debug preview, beta, production;
-- incident runbook for auth outage, billing mismatch, data deletion failure, and Android voice regression;
-- daily launch dashboard snapshots retained with the release tag;
-- support inbox with severity labels and a public status/update path.
+Reliability events:
 
-## Immediate implementation order
+- `gateway_failed`, `voice_transcription_failed`, `tts_failed`, `foreground_service_restarted`, `support_report_submitted`;
+- bounded error code and correlation ID only; never raw payloads.
 
-This is the next sequence I recommend, in separate small commits:
+### Business metrics
 
-1. **Measurement contract:** add a versioned event catalog and redaction tests without sending production data yet.
-2. **Staging foundation:** create Supabase staging, Auth, minimal schema, RLS policies, and environment configuration.
-3. **Optional account flow:** magic-link/email OTP first; create a personal workspace; preserve local mode for anonymous users.
-4. **PostHog integration:** consent-aware landing events and Flutter events; identify/alias only after signup; build the activation and retention dashboard.
-5. **Device linking:** link an installation to a user/workspace through a short-lived pairing code; never use a hardware ID.
-6. **Commercial wedge:** choose one paid feature with a clear cost/value explanation; do not ship a broad “Pro” label with no entitlement semantics.
-7. **Billing adapter:** Stripe Checkout/Portal for web; backend webhook ledger; add Play Billing or RevenueCat only when the Android entitlement is ready for sale.
-8. **Readiness rehearsal:** clean install, signup, activation, subscription, refund, revoke, deletion, and offline/local regression tests.
-9. **Product Hunt preparation:** campaign attribution, draft page, demo assets, launch support plan, and a no-incentivized-voting policy.
-10. **Launch decision:** proceed only when activation, reliability, privacy, support, and billing gates pass together.
+Do not use MRR, ARR, subscription churn, or subscription LTV. Use:
 
-## Decisions we should not make yet
+- landing visitors → APK downloads → activated users;
+- 1-day, 7-day, and 30-day retention;
+- provider top-up gross volume and successful settlement rate;
+- bridge gross volume, route success, average fee, and reconciliation time;
+- AvatarForge mints, active listings, rental volume, rental completion, and creator repeat rate;
+- Plawie gross commission, partner share, network cost, refunds/disputes, net commission, and contribution margin;
+- commission per active user, commission per active creator, and commission per successful transaction;
+- product-hunt cohort versus organic/direct cohort;
+- support reports and reliability by release/device/channel.
 
-- Do not force account creation into the current local-first preview.
-- Do not upload every conversation/audio turn to “understand usage.”
-- Do not build a custom payment processor or store card data.
-- Do not treat PostHog as the billing ledger or Stripe as the product database.
-- Do not add RevenueCat merely because it is convenient before there are mobile products and entitlements to manage.
-- Do not promise team collaboration, hosted Gateway, encrypted sync, or premium voice until each has a backend security and cost model.
-- Do not declare Product Hunt success from votes alone; the durable result is activated, retained, paying users with measurable support and margin.
+The internal dashboard should show cash/crypto settlement and expected commission separately. Revenue is recognized only after the contractual/chain settlement is evidenced and the accounting treatment is confirmed.
 
-## First dashboard definition
+## Product Hunt readiness
 
-The initial internal dashboard should have these cards and filters:
+Product Hunt is a distribution event, not proof of product-market fit. Use one campaign URL with UTM attribution, then measure activated users, retained users, transaction volume, and commission—not only votes.
 
-- date range, release channel, app version, platform, campaign source, and plan;
-- landing visitors → download clicks → signups → activated users → retained users → paid workspaces;
-- activation rate, median time to value, 7-day retention, 30-day retention;
-- gateway-ready rate, voice completion rate, crash/force-stop rate, and support reports per 100 active users;
-- active paid workspaces, MRR, net new MRR, churn, refunds, failed payments, and gross margin;
-- Product Hunt cohort versus non-Product Hunt cohort;
-- event schema errors, webhook failures, entitlement mismatches, and deletion backlog.
+Before launch:
 
-The dashboard should be exportable as a dated CSV/JSON snapshot attached to each release review. That gives a future buyer evidence of acquisition quality, activation, retention, revenue, cost, and operational discipline rather than a collection of screenshots.
+- the download link and release checksum work;
+- local/BYOK onboarding works with no account;
+- voice/PiP/wake-word limitations are honest and tested;
+- bridge and provider flows clearly show that the user approves crypto transactions;
+- no commercial fee is enabled without its partner/legal gate;
+- AvatarForge is labeled “planned” unless the actual portal/contracts are live;
+- the support page, privacy page, terms, and data-deletion path match reality;
+- analytics events are consented and redacted;
+- a founder support/incident plan exists for launch day.
 
+Read the [Product Hunt Launch Guide](https://www.producthunt.com/launch), [preparation guide](https://www.producthunt.com/launch/before-launch), and [sharing guidance](https://www.producthunt.com/launch/sharing-your-launch) immediately before scheduling. Do not incentivize votes or describe planned commerce as shipped capability.
+
+## Implementation sequence
+
+### Phase 0 — truth and quarantine
+
+- Keep local/BYOK operation independent of accounts and commerce.
+- Remove or quarantine the unused OpenRouter/Coinbase `CryptoCreditsService`.
+- Make the active provider catalog and x402 receipt flow the only payment surface.
+- Keep bridge execution and AvatarForge mint/rental disabled until their gates pass.
+- Update all user-facing copy to say “provider charge,” “bridge quote,” “planned AvatarForge,” and “no subscriptions.”
+
+### Phase 1 — measurement foundation
+
+- Define event schemas and redaction tests.
+- Add consent-aware PostHog web/Flutter events.
+- Add stable random installation IDs, never hardware identifiers.
+- Create the activation, reliability, and transaction-volume dashboards.
+- Add release/channel/fee-schedule version to every commerce event.
+
+### Phase 2 — optional identity and receipts
+
+- Create Supabase staging with Auth, profiles, personal workspaces, devices, receipts, and RLS.
+- Add magic-link/OTP account creation only for sync, receipts, creator profiles, or support.
+- Keep wallet keys and provider credentials device-owned; the cloud stores references and redacted receipts only.
+- Add export/delete flows before broad signup promotion.
+
+### Phase 3 — commission lanes
+
+- Secure provider commission/referral terms before changing top-up displays.
+- Complete LI.FI partner onboarding and fee-wallet setup before adding the fee parameter.
+- Implement a server-signed fee schedule, quote display, transaction receipt, and reconciliation job.
+- Add a finance export with gross volume, partner share, commission, cost, settlement, and dispute states.
+
+### Phase 4 — AvatarForge
+
+- Publish the asset manifest/license specification.
+- Build the portal and wallet-connected creator flow.
+- Audit and test mint/rental contracts or use a reviewed partner protocol.
+- Implement signed asset resolution, rental expiry, creator/platform split, and app equip checks.
+- Only then replace the current “SOON” portal affordance with a real deep link/callback.
+
+### Phase 5 — Product Hunt launch
+
+- Launch the stable local/BYOK product first if commerce gates are not ready.
+- If a commission lane is live, disclose it plainly in the launch page and approval UI.
+- Publish a dated dashboard snapshot after launch day, day 7, and day 30.
+- Use actual activation, retention, transaction success, and net commission to decide what to build next.
+
+## Immediate next commits
+
+1. Add the revised strategy and commerce implementation documents.
+2. Quarantine the unused legacy OpenRouter/Coinbase credit service after a full import/build check.
+3. Add tests proving direct x402 payees cannot be changed by a local fee setting.
+4. Add a fee-policy domain model that is disabled unless a verified provider/LI.FI configuration is present; do not add real treasury addresses yet.
+5. Add bridge quote fields for integrator/fee schedule/commission display, initially read-only and feature-gated.
+6. Add AvatarForge asset-state models (`local`, `verified`, `minted`, `rented`, `expired`, `unverified`) without claiming on-chain ownership.
+7. Add redacted commerce events and local receipt correlation before enabling analytics transmission.
+8. Request the external inputs needed for live enablement: provider agreements, LI.FI partner identity, fee wallet, legal review, chain/contract choices, and AvatarForge asset/license specification.
+
+## Non-negotiable decisions
+
+- No subscriptions.
+- No Stripe dependency.
+- No forced account wall for local/BYOK usage.
+- No hidden commission added to a provider challenge.
+- No custody or unattended signing introduced to collect revenue.
+- No bridge commission enabled without a visible quote and verified fee settlement.
+- No AvatarForge mint/rental claim until contracts, metadata, licensing, and asset delivery are real.
+- No provider spend or bridged principal counted as Plawie revenue.
+- No Product Hunt launch copy that turns a roadmap item into a shipped feature.
