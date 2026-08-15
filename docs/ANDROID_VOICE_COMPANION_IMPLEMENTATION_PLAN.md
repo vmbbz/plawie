@@ -71,6 +71,27 @@ ownership audit remain subsequent phases. The current change deliberately does
 not add another Android service or make background microphone capture
 unrestricted.
 
+Real-device smoke validation was completed on 2026-08-15 using a Samsung
+SM-A556E running Android 14 / API 34:
+
+- the debug APK installed and launched; Gateway reached `LIVE` and the VRM
+  chat surface rendered;
+- Android confirmed `mode=pinned` and
+  `mLastReportedPictureInPictureMode=true`;
+- the PiP avatar remained visible after Home, while the app process and
+  `NodeForegroundService` stayed alive;
+- the system expand control returned the Activity to full screen without a
+  crash or ANR;
+- microphone permission and device-level AAC capture worked;
+- transcript/reply could not be validated because the test device had no
+  Gateway token (`STT Exception: No gateway token`);
+- Samsung's visible PiP controls did not clearly label a microphone action, so
+  native RemoteAction discoverability remains an OEM follow-up rather than a
+  claim of completion.
+
+The APK and copied native runtime prerequisites were local build artifacts only
+and were not committed or pushed.
+
 ## Proposed state boundary
 
 Introduce a small voice-session model without moving every existing behavior at once:
