@@ -1,7 +1,7 @@
 # Crypto Commerce and AvatarForge Implementation Plan
 
-**Status:** Implementation design; live fees remain disabled  
-**Date:** 2026-08-15  
+**Status:** Implementation design; live fees remain disabled
+**Date:** 2026-08-15
 **Scope:** Plawie Android app, optional account/receipt backend, LI.FI bridge commission, provider top-up attribution, and later AvatarForge commerce
 
 ## Current implementation audit
@@ -287,4 +287,3 @@ The commission system is ready for a controlled production release only when:
 - South African legal/accounting/compliance gates are recorded;
 - support can explain failed, uncertain, refunded, expired, or disputed transactions;
 - the release and Product Hunt copy describe only capabilities that are actually live.
-
