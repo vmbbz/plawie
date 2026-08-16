@@ -97,3 +97,9 @@ Before enabling production analytics:
 9. document retention and a support/deletion decision;
 10. retain screenshots or exports of the submitted declarations as release
     evidence.
+
+The 2026-08-16 staging acceptance verified the implemented consent boundary on
+a physical Android device: no identifier before consent, a random app-only ID
+after opt-in, successful queue drain, and identifier/queue removal after
+opt-out. This engineering evidence does not replace the publisher's final Play
+Data Safety review of the complete production artifact and all dependencies.

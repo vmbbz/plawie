@@ -1,6 +1,6 @@
 # Plawie Product Readiness, Crypto Commerce, and Product Hunt Plan
 
-**Status:** Guest-first measurement foundations and website staging acceptance completed; Android staging, production activation, and dashboards remain gated
+**Status:** Guest-first measurement foundations plus website and Android staging acceptance completed; production activation and dashboards remain gated
 **Date:** 2026-08-16
 **Product:** Plawie, the local-first Android companion and OpenClaw control surface
 
@@ -362,7 +362,7 @@ Read the [Product Hunt Launch Guide](https://www.producthunt.com/launch), [prepa
 ## Immediate next commits
 
 1. Inspect the verified staging events in PostHog Live events and retain the event-property review as release evidence.
-2. Build an analytics-configured Android staging artifact and verify its opt-in, queue, redaction, and opt-out behavior on a physical device.
+2. Retain the completed Android staging artifact digest and physical-device opt-in, delivery, queue-drain, and opt-out evidence with the release record.
 3. Materialize the documented acquisition, activation, retained-installation, voice, and Gateway dashboards in the PostHog UI.
 4. Create the production PostHog project only after staging acceptance and privacy/Data Safety review, then deploy the consent-gated website and use the allowlisted Product Hunt campaign URL.
 5. Instrument provider and bridge receipts only after each event can be derived from the redacted receipt contracts without addresses, hashes, signatures, or exact balances.

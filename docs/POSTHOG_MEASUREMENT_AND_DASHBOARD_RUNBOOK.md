@@ -1,7 +1,7 @@
 # Plawie PostHog Measurement and Dashboard Runbook
 
 **Date:** 2026-08-16
-**Status:** EU staging project and Netlify draft verified end to end; Android staging and production activation pending
+**Status:** Website and Android staging verified end to end; production activation and dashboards pending
 **Identity model:** Consented anonymous installations, not verified people
 
 ## 1. Account setup and project separation
@@ -23,9 +23,9 @@ different region:
 
 As of 2026-08-16, `Plawie Staging` exists in PostHog EU and its public Capture
 API endpoint accepted the repository smoke event. The Netlify deploy-preview
-context and browser network acceptance test are complete. Visual confirmation
-of the received fields in PostHog Live events and an Android staging-device test
-remain release gates.
+context, browser network acceptance test, and Android physical-device consent
+test are complete. Visual confirmation of the received fields in PostHog Live
+events remains a release-evidence gate.
 
 The public project token identifies the ingestion project; it is not permission
 to administer the PostHog account. Dashboard creation can be completed manually
@@ -202,5 +202,22 @@ but only after a privacy/policy review and a separate implementation plan.
   capture.
 - The local generated runtime configuration was reset to disabled after deploy.
 
-Remaining staging evidence: inspect the four events in PostHog Live events and
-complete the equivalent Android physical-device acceptance test.
+## 9. Verified Android staging evidence — 2026-08-16
+
+- Device: Samsung SM-A556E; installed package `com.openclaw.plawie` version
+  `2.3.0` / version code `15`, debuggable staging build.
+- Local arm64 APK: 230,114,071 bytes, SHA-256
+  `3ecf8137e3bdfbc7d2f52efda2eeaee9f1e2a5f9d6e886341d0a79d1854e1baf`.
+- The APK was installed with replace-in-place semantics, preserving existing app
+  data, and its temporary local build output was removed after installation.
+- Before consent, the Settings toggle reported analytics off, no analytics
+  installation ID existed, and pending/once-only telemetry lists were empty.
+- Granting consent changed the UI to configured/on, created only a valid random
+  `plawie-install-*` ID, recorded the measured first-open lifecycle marker, and
+  drained the pending queue to zero after staging delivery.
+- Denying consent again removed the installation ID and reset both telemetry
+  lists to zero. The device was left in this denied/off state.
+
+Remaining staging evidence: inspect the website and Android staging events in
+PostHog Live events and retain the reviewed property list or screenshots with
+the release record.
