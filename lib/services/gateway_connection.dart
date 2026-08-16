@@ -91,6 +91,30 @@ class GatewayConnection {
   String? get lastCloseReason => _lastCloseReason;
   DateTime? get lastDisconnectAt => _lastDisconnectAt;
 
+  /// True for Gateway policy closes that specifically reject the signed device
+  /// identity. The first disconnect callback can arrive before the socket's
+  /// close code is available, so the explicit server reason is authoritative.
+  static bool isDeviceAuthInvalidClose({
+    required int? closeCode,
+    required String? closeReason,
+  }) {
+    final reason = closeReason?.trim().toLowerCase() ?? '';
+    if (reason.isEmpty || (closeCode != null && closeCode != 1008)) {
+      return false;
+    }
+    return reason.contains('device signature invalid') ||
+        reason.contains('device identity mismatch') ||
+        reason.contains('device signature expired') ||
+        reason.contains('device nonce required') ||
+        reason.contains('device nonce mismatch') ||
+        reason.contains('device public key invalid');
+  }
+
+  bool get lastCloseWasDeviceAuthInvalid => isDeviceAuthInvalidClose(
+        closeCode: _lastCloseCode,
+        closeReason: _lastCloseReason,
+      );
+
   Future<bool>? _connectFuture;
 
   /// Connect to the gateway with the given auth token.

@@ -31,14 +31,74 @@ class DeviceIdentity {
   String? _deviceId;
   String? _publicKeyBase64Url;
   SimpleKeyPairData? _keyPair;
+  Future<void>? _initFuture;
 
   String? get deviceId => _deviceId;
   String? get publicKeyBase64Url => _publicKeyBase64Url;
 
   String _key(String base) => _namespace.isEmpty ? base : '${base}_$_namespace';
 
+  /// Verify that persisted private/public material still represents one
+  /// Ed25519 identity and that its stored device ID was derived from that
+  /// public key.
+  ///
+  /// The private key lives in Android Keystore-backed storage while the public
+  /// fields live in SharedPreferences. An interrupted write or a restored
+  /// preference file can therefore leave individually valid values that do not
+  /// belong together. Such a split identity signs every Gateway challenge with
+  /// an invalid signature until it is repaired.
+  @visibleForTesting
+  static Future<bool> isStoredMaterialConsistent({
+    required String privateKeyBase64Url,
+    required String publicKeyBase64Url,
+    required String deviceId,
+  }) async {
+    String padBase64(String value) => value.padRight(
+          value.length + (4 - value.length % 4) % 4,
+          '=',
+        );
+
+    try {
+      final privateBytes = base64Url.decode(padBase64(privateKeyBase64Url));
+      final publicBytes = base64Url.decode(padBase64(publicKeyBase64Url));
+      if (privateBytes.isEmpty || publicBytes.length != 32) return false;
+
+      final publicKey = SimplePublicKey(
+        publicBytes,
+        type: KeyPairType.ed25519,
+      );
+      final keyPair = SimpleKeyPairData(
+        privateBytes,
+        publicKey: publicKey,
+        type: KeyPairType.ed25519,
+      );
+
+      final hash = await Sha256().hash(publicBytes);
+      final derivedDeviceId = hash.bytes
+          .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+          .join();
+      if (derivedDeviceId != deviceId.trim().toLowerCase()) return false;
+
+      final probe = utf8.encode('plawie-device-identity-consistency-v1');
+      final signature = await Ed25519().sign(probe, keyPair: keyPair);
+      return Ed25519().verify(
+        probe,
+        signature: Signature(signature.bytes, publicKey: publicKey),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Load existing identity from SharedPreferences, or generate a new one.
-  Future<void> init() async {
+  ///
+  /// Initialization is single-flight because operator connection attempts can
+  /// overlap during Gateway startup. Without this guard, two first-run key
+  /// generations can interleave their secure/private and preference/public
+  /// writes and persist a split identity.
+  Future<void> init() => _initFuture ??= _initInternal();
+
+  Future<void> _initInternal() async {
     final prefs = await SharedPreferences.getInstance();
     final credentialStore = RuntimeCredentialStore.instance;
     await credentialStore.init(prefs);
@@ -48,9 +108,15 @@ class DeviceIdentity {
     final existingPublic = prefs.getString(_key(_prefPublicKey));
     final existingDeviceId = prefs.getString(_key(_prefDeviceId));
 
-    if (existingPrivate != null &&
+    final hasCompleteIdentity = existingPrivate != null &&
         existingPublic != null &&
-        existingDeviceId != null) {
+        existingDeviceId != null;
+    if (hasCompleteIdentity &&
+        await isStoredMaterialConsistent(
+          privateKeyBase64Url: existingPrivate,
+          publicKeyBase64Url: existingPublic,
+          deviceId: existingDeviceId,
+        )) {
       // Restore existing keys (pad safely to prevent FormatException: Invalid length)
       String padBase64(String s) =>
           s.padRight(s.length + (4 - s.length % 4) % 4, '=');
@@ -74,8 +140,30 @@ class DeviceIdentity {
           node: isNodeIdentity,
           value: null,
         );
-        // Fall through to generate new keys if corrupted
+        // Fall through to rotate the identity if restoration unexpectedly
+        // fails after consistency validation.
       }
+    }
+
+    final hadPersistedIdentity = existingPrivate != null ||
+        existingPublic != null ||
+        existingDeviceId != null;
+    if (hadPersistedIdentity) {
+      debugPrint(
+        '[DeviceIdentity] Incomplete or inconsistent '
+        '${isNodeIdentity ? 'node' : 'operator'} identity; rotating safely.',
+      );
+      await credentialStore.setDevicePrivateKey(
+        node: isNodeIdentity,
+        value: null,
+      );
+      if (isNodeIdentity) {
+        await credentialStore.setNodeDeviceToken(null);
+      } else {
+        await credentialStore.setOperatorDeviceToken(null);
+      }
+      await prefs.remove(_key(_prefPublicKey));
+      await prefs.remove(_key(_prefDeviceId));
     }
 
     // Generate new Ed25519 key pair

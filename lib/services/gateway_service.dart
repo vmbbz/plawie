@@ -1210,10 +1210,21 @@ class GatewayService {
     }
     _lastDisconnectContextAt = now;
     try {
-      final running = await _runtime.isRunning();
-      final contextMessage = running
-          ? '[HEALTH] WS dropped but gateway process is alive (likely temporary overload/reload).'
-          : '[HEALTH] WS dropped and gateway process is down.';
+      final deviceAuthRejected =
+          _connection?.lastCloseWasDeviceAuthInvalid ?? false;
+      final processRunning = await _runtime
+          .isRunning()
+          .timeout(const Duration(seconds: 3), onTimeout: () => false);
+      final listenerAlive = processRunning
+          ? true
+          : await _isSelectedRuntimeListenerAlive(
+              timeout: const Duration(seconds: 2),
+            );
+      final contextMessage = deviceAuthRejected && listenerAlive
+          ? '[HEALTH] Gateway listener is live; operator device authentication was rejected and will be repaired without restarting the Gateway.'
+          : listenerAlive
+              ? '[HEALTH] WS dropped but gateway listener is alive (likely temporary overload/reload).'
+              : '[HEALTH] WS dropped and no live gateway process/listener was found.';
       _updateState(_state.copyWith(logs: [..._state.logs, contextMessage]));
     } catch (_) {}
   }
