@@ -1,7 +1,7 @@
 # Plawie PostHog Measurement and Dashboard Runbook
 
 **Date:** 2026-08-16
-**Status:** Client foundations implemented; EU staging project provisioned and capture endpoint verified; deployment activation pending
+**Status:** EU staging project and Netlify draft verified end to end; Android staging and production activation pending
 **Identity model:** Consented anonymous installations, not verified people
 
 ## 1. Account setup and project separation
@@ -22,9 +22,10 @@ different region:
    repeat the public-token step through the production secret manager.
 
 As of 2026-08-16, `Plawie Staging` exists in PostHog EU and its public Capture
-API endpoint accepted the repository smoke event. Confirming the event fields in
-Live events, connecting the Netlify deploy context, and testing an Android
-staging build remain release gates.
+API endpoint accepted the repository smoke event. The Netlify deploy-preview
+context and browser network acceptance test are complete. Visual confirmation
+of the received fields in PostHog Live events and an Android staging-device test
+remain release gates.
 
 The public project token identifies the ingestion project; it is not permission
 to administer the PostHog account. Dashboard creation can be completed manually
@@ -183,3 +184,23 @@ but only after a privacy/policy review and a separate implementation plan.
 8. Install a staging Android build; repeat opt-in/opt-out and inspect event
    properties for forbidden content.
 9. Keep staging data out of production dashboards.
+
+## 8. Verified staging evidence — 2026-08-16
+
+- Netlify draft: <https://analytics-staging--plawie.netlify.app>
+- Draft deploy ID: `6a818f1a94af087f0bac97ef`
+- Context variables exist only in `deploy-preview`; the production deploy and
+  `plawie.app` were not replaced.
+- A clean browser produced no PostHog request and no analytics identifier before
+  consent.
+- Consent produced `landing_viewed`, `product_hunt_campaign_seen`,
+  `download_clicked`, and `product_hunt_download_clicked`; all four requests
+  received successful responses.
+- The payloads kept only allowlisted Product Hunt attribution and excluded the
+  test search-term value.
+- Opt-out removed the browser installation ID and suppressed a later download
+  capture.
+- The local generated runtime configuration was reset to disabled after deploy.
+
+Remaining staging evidence: inspect the four events in PostHog Live events and
+complete the equivalent Android physical-device acceptance test.

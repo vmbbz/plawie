@@ -90,6 +90,13 @@ the build fails. Follow
 [the measurement runbook](POSTHOG_MEASUREMENT_AND_DASHBOARD_RUNBOOK.md) before
 production activation.
 
+The `deploy-preview` context was verified on 2026-08-16 at
+<https://analytics-staging--plawie.netlify.app>. The clean-browser acceptance
+test proved pre-consent silence, four allowlisted Product Hunt/download events,
+successful ingestion responses, identifier removal on opt-out, and suppression
+of later capture. This evidence does not authorize production analytics; use a
+separate production PostHog project and repeat the release gates first.
+
 PowerShell example:
 
 ```powershell
