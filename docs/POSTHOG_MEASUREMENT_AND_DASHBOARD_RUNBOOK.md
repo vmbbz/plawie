@@ -120,39 +120,112 @@ first historical launch before consent.
 
 ## 5. Dashboards to create
 
-### Dashboard A — Product Hunt acquisition
+Create each dashboard as a blank dashboard, then add saved insights. PostHog's
+current dashboard flow is documented at
+<https://posthog.com/docs/product-analytics/dashboards>; trends, funnels, and
+retention are documented at
+<https://posthog.com/docs/product-analytics/trends/overview>,
+<https://posthog.com/docs/product-analytics/funnels>, and
+<https://posthog.com/docs/product-analytics/retention>.
 
-1. Unique `product_hunt_campaign_seen` installations/sessions.
-2. Unique `product_hunt_download_clicked` installations/sessions.
-3. Funnel: campaign seen → download clicked, within one day.
-4. Download click split by `surface`.
-5. Release-note opens split by `source`.
+### Construction rules
 
-### Dashboard B — Android activation
+- Use the names below so staging can later be copied to a separate production
+  project without ambiguous duplicates.
+- Apply the stated `releaseChannel` event-property filter to every insight, not
+  a person-property filter. Keep staging and production in separate projects
+  even though each insight is filtered.
+- `Unique users` means unique consented anonymous installation IDs. Label tiles
+  **installations** or **browser installations**, never registered users or
+  people.
+- Use `Unique users` for acquisition, activation, and retention. Use total event
+  count for per-turn reliability ratios so repeated successes and failures are
+  represented.
+- `app_first_opened` is the first measured open for the current consent-created
+  identity. Revoking consent deletes that identity and its once-only state, so a
+  later opt-in correctly begins a new anonymous measurement identity. It is not
+  a package-manager install counter.
+- Do not enable autocapture, replay, heatmaps, person profiles, GeoIP, or broad
+  URL/referrer collection to make a dashboard easier to populate.
+- Staging is test evidence, so do not turn on **Filter out internal and test
+  users** there. Production access and internal-traffic policy are separate
+  launch decisions.
 
-1. Unique active installations by `app_opened`, daily and weekly.
-2. Funnel: `app_first_opened` → `onboarding_completed` → `gateway_ready` →
-   `first_agent_turn_completed`, within seven days.
-3. Median time between each funnel step.
-4. Successful agent turns split by `lane`, `mode`, and bounded `providerId`.
-5. Activation rate by Android release channel.
+### Dashboard A — `Plawie — Acquisition — Staging`
 
-### Dashboard C — Voice and Gateway reliability
+Build this dashboard now because its events are present in staging:
 
-1. Voice transcription success ratio:
-   `voice_turn_completed / (voice_turn_completed + voice_transcription_failed)`.
-2. Voice result split by manual/continuous mode and chat/PiP surface.
-3. Gateway-ready installations versus gateway-failed installations.
-4. TTS failure count per 100 successful agent turns.
-5. Release-channel comparison after every Android release.
+| Insight name | Type | Query | Required filter / setting |
+|---|---|---|---|
+| Product Hunt campaign browser installations | Trends | `product_hunt_campaign_seen`, unique users | `releaseChannel = web-staging`; last 30 days; daily |
+| Product Hunt download browser installations | Trends | `product_hunt_download_clicked`, unique users | `releaseChannel = web-staging`; last 30 days; daily |
+| Product Hunt landing to APK click | Funnel | `product_hunt_campaign_seen` → `product_hunt_download_clicked` | ordered; unique users; conversion window 1 day; `releaseChannel = web-staging` |
+| All APK download browser installations by surface | Trends | `download_clicked`, unique users | breakdown `surface`; `releaseChannel = web-staging` |
+| Release-note browser installations by source | Trends | `release_notes_opened`, unique users | breakdown `source`; `releaseChannel = web-staging` |
 
-### Dashboard D — Retention
+The Product Hunt funnel is valid because its two steps share one browser
+installation identity. It must not be extended with Android events because the
+website and Android identity namespaces are intentionally unrelated.
 
-1. D1, D7, and D30 retention using `app_opened`.
-2. D7 retained installations that also completed an agent turn.
-3. Voice-user retention versus non-voice-user retention.
-4. Local-model versus Gateway-model retention, reported only when cohorts are
-   large enough to avoid misleading conclusions.
+### Dashboard B — `Plawie — Android Activation — Staging`
+
+Build the first three tiles now. The remaining tiles become meaningful after a
+fresh consented setup and successful chat session produce the milestone events.
+
+| Insight name | Type | Query | Required filter / setting |
+|---|---|---|---|
+| Daily active Android installations | Trends | `app_opened`, unique users | `releaseChannel = android-staging`; last 30 days; daily |
+| Weekly active Android installations | Trends | `app_opened`, unique users | `releaseChannel = android-staging`; last 12 weeks; weekly |
+| Measured first opens | Trends | `app_first_opened`, unique users | `releaseChannel = android-staging`; last 30 days; daily |
+| First-open to first value | Funnel | `app_first_opened` → `onboarding_completed` → `gateway_ready` → `first_agent_turn_completed` | ordered; unique users; conversion window 7 days; first occurrence matching filters; `releaseChannel = android-staging` |
+| Time to first value | Funnel | same four steps | graph type **Time to convert**; same window and filter |
+| Successful turns by runtime lane | Trends | `agent_turn_completed`, total count | breakdown `lane`; `releaseChannel = android-staging` |
+| Successful turns by provider | Trends | `agent_turn_completed`, total count | breakdown `providerId`; `releaseChannel = android-staging` |
+| Successful turns by input type | Trends | `agent_turn_completed`, total count | breakdown `mode`; `releaseChannel = android-staging` |
+
+The app currently emits `lane` as `local_model` or `gateway_model`; turn `mode`
+as `text`, `image`, or `video`; and provider IDs from a bounded catalog with
+`local`, `custom`, or `unknown` fallbacks. Do not replace those values with raw
+model identifiers.
+
+### Dashboard C — `Plawie — Voice and Gateway — Staging`
+
+| Insight name | Type | Query | Required filter / setting |
+|---|---|---|---|
+| Voice transcription success rate | Trends formula | A = `voice_turn_completed`; B = `voice_transcription_failed`; formula `100 * A / (A + B)` | total count; `releaseChannel = android-staging`; show percent |
+| Voice outcomes by mode | Trends | success and failure series | total count; breakdown `mode`; expected `manual` / `continuous` |
+| Voice outcomes by surface | Trends | success and failure series | total count; breakdown `surface`; expected `chat` / `pip` |
+| Voice failures by category | Trends | `voice_transcription_failed`, total count | breakdown `errorCode`; `releaseChannel = android-staging` |
+| Gateway state transitions | Trends | `gateway_ready` and `gateway_failed`, total count | breakdown `mode`; expected `native_gateway` / `proot_rollback` |
+| TTS failures per 100 turns | Trends formula | A = `tts_failed`; B = `agent_turn_completed`; formula `100 * A / B` | total count; `releaseChannel = android-staging` |
+
+Treat a zero denominator as no evidence, not a 0% failure rate. `tts_failed` is
+deduplicated once per session and error category, so its tile is a bounded
+incident-rate signal rather than a count of every low-level synthesis retry.
+
+### Dashboard D — `Plawie — Retention — Staging`
+
+1. Create a retention insight with start event `app_first_opened`, return event
+   `app_opened`, unique users, daily periods, first-ever start occurrence, and
+   `releaseChannel = android-staging`. Read D1, D7, and D30 only after each cohort
+   period is complete.
+2. Create a second retention insight with start event
+   `first_agent_turn_completed` and return event `agent_turn_completed` to test
+   whether installations that reached first value return for another successful
+   turn.
+3. Defer voice-user versus non-voice-user and local-versus-Gateway retention
+   comparisons until the required events exist and each cohort is large enough
+   to avoid identifying or over-interpreting a handful of installations.
+
+### Dashboard completion gate
+
+For each saved insight, confirm the event-property filter, aggregation, window,
+and title against this table, add it to the named dashboard, and retain either a
+dashboard export or screenshot. Do not mark dashboards complete merely because
+empty tiles were created. Acquisition is accepted when its current staging
+events render; Android activation/reliability/retention require one deliberately
+consented end-to-end staging session and then a property review of each newly
+observed event family.
 
 ## 6. Acquisition-to-app limitation
 
