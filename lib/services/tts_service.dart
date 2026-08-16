@@ -4,6 +4,27 @@ import 'audio_playback_service.dart';
 import 'preferences_service.dart';
 import 'voice_persona_service.dart';
 
+/// Invalidates synthesized audio that belongs to an older playback request.
+///
+/// Gateway synthesis is asynchronous, so a stopped sentence can otherwise
+/// arrive late and restart after the user has begun a newer turn.
+@visibleForTesting
+class TtsPlaybackGenerationGate {
+  int _generation = 0;
+
+  int get generation => _generation;
+
+  bool claim(int expectedGeneration) {
+    if (expectedGeneration != _generation) return false;
+    _generation++;
+    return true;
+  }
+
+  void invalidate() {
+    _generation++;
+  }
+}
+
 /// Lean TTS facade — now 100% relies on OpenClaw Gateway TTS.
 /// The gateway handles text → MP3 generation and returns a playable URL.
 /// This class manages the centralized AudioPlaybackService to bridge
@@ -19,6 +40,8 @@ class TtsService {
 
   final AudioPlaybackService _playback = AudioPlaybackService();
   final VoicePersonaService _personaService = VoicePersonaService();
+  final TtsPlaybackGenerationGate _playbackGate =
+      TtsPlaybackGenerationGate();
   static const MethodChannel _nativeTtsChannel =
       MethodChannel('plawie/native_tts');
   bool _nativeSpeaking = false;
@@ -81,9 +104,14 @@ class TtsService {
   /// Gateway talk mode still uses [speakBytes]/[speakUrl]. Local NDK mode has no
   /// gateway TTS stream, so this falls back to Android's native TextToSpeech
   /// engine and keeps the same onStart/onComplete hooks for avatar lip sync.
-  Future<void> speak(String text) async {
+  Future<bool> speak(
+    String text, {
+    int? expectedGeneration,
+  }) async {
     final clean = text.trim();
-    if (clean.isEmpty) return;
+    if (clean.isEmpty) return false;
+    final generation = expectedGeneration ?? _playbackGate.generation;
+    if (!_playbackGate.claim(generation)) return false;
     debugPrint('TtsService: Speaking via native Android TTS: $clean');
     _nativeSpeaking = true;
     _notifyStart();
@@ -98,22 +126,36 @@ class TtsService {
       _nativeSpeaking = false;
       _notifyComplete();
     }
+    return true;
   }
 
   /// Play a direct MP3 URL from the Gateway
-  Future<void> speakUrl(String url) async {
+  Future<bool> speakUrl(
+    String url, {
+    int? expectedGeneration,
+  }) async {
+    final generation = expectedGeneration ?? _playbackGate.generation;
+    if (!_playbackGate.claim(generation)) return false;
     debugPrint('TtsService: Playing gateway audio: $url');
     await _playback.playUrl(url);
+    return true;
   }
 
   /// Play direct synthesized bytes from gateway talk.speak / tts.convert.
-  Future<void> speakBytes(Uint8List bytes) async {
+  Future<bool> speakBytes(
+    Uint8List bytes, {
+    int? expectedGeneration,
+  }) async {
+    final generation = expectedGeneration ?? _playbackGate.generation;
+    if (!_playbackGate.claim(generation)) return false;
     debugPrint(
         'TtsService: Playing gateway audio bytes (${bytes.length} bytes)');
     await _playback.playBytes(bytes);
+    return true;
   }
 
   Future<void> stop() async {
+    _playbackGate.invalidate();
     _nativeSpeaking = false;
     try {
       await _nativeTtsChannel.invokeMethod('stop');
@@ -124,6 +166,8 @@ class TtsService {
   bool get isReady => true; // Gateway path is always ready
 
   bool get isSpeaking => _playback.isPlaying || _nativeSpeaking;
+
+  int get playbackGeneration => _playbackGate.generation;
 
   /// Deprecated: Local engines removed in v2.0-beta.1 cleanup
   bool get isUsingFallback => false;

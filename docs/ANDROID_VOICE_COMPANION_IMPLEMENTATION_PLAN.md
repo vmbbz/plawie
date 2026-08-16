@@ -474,6 +474,31 @@ identical sentence to be synthesized twice. Focused tests cover bullet cleanup,
 capture-group expansion, natural currency/percentage speech, and duplicate-key
 stability.
 
+### 2026-08-16 post-tool stream and stale-playback hardening
+
+A live Hacker News tool run exposed a deeper replay path than sentence-level
+deduplication could contain. The Gateway emitted a short pre-tool assistant
+segment, then restarted cumulative assistant snapshots after the tool phase.
+The client compared every snapshot only with the complete response delivered so
+far, so each larger post-tool snapshot looked like a new segment. One persisted
+assistant message grew to 13,392 characters and repeated its heading 22 times;
+the TTS sentence queue then faithfully spoke that corrupted text.
+
+Assistant stream assembly now tracks both the complete delivered response and
+the current cumulative segment. A post-tool snapshot restart emits only the
+new suffix of that segment. Regression coverage reproduces the observed
+short-prefix, pre-tool explanation, and growing post-tool snapshot sequence,
+including repeated and shrinking snapshots.
+
+The playback path is hardened independently because synthesis can finish after
+the user starts another turn. A turn now clears its queue and invalidates the
+old speech generation before stopping playback, so the stop-completion callback
+cannot advance the previous queue. Gateway, URL, byte, and native playback all
+claim a centralized generation; synthesized audio from an invalidated or
+already-claimed generation is discarded. The audio player also invalidates a
+pending source request before an asynchronous stop can resume it. Cancellation
+is treated as a neutral supersession rather than a provider failure.
+
 ### 2026-08-15 second-turn regression audit
 
 The connected Samsung SM-A556E was used to compare the merged voice build with

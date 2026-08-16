@@ -167,6 +167,7 @@ ${_boundedText(visibleText)}
 
 class _AssistantStreamAccumulator {
   String _delivered = '';
+  String _segmentSnapshot = '';
 
   String get delivered => _delivered;
 
@@ -174,6 +175,7 @@ class _AssistantStreamAccumulator {
     if (text.isEmpty) return '';
     if (_delivered.isEmpty) {
       _delivered = text;
+      _segmentSnapshot = text;
       return text;
     }
 
@@ -183,12 +185,29 @@ class _AssistantStreamAccumulator {
     if (text.startsWith(_delivered)) {
       final delta = text.substring(_delivered.length);
       _delivered = text;
+      _segmentSnapshot = text;
       return delta;
     }
     if (_delivered.startsWith(text)) return '';
 
+    // A Gateway run can restart cumulative snapshots after a tool call. At
+    // that point [text] grows from the beginning of the new assistant segment,
+    // not from the beginning of the full response already delivered. Compare
+    // against that segment independently so each growth emits only its suffix.
+    if (_segmentSnapshot.isNotEmpty) {
+      if (text == _segmentSnapshot || _segmentSnapshot.endsWith(text)) return '';
+      if (text.startsWith(_segmentSnapshot)) {
+        final delta = text.substring(_segmentSnapshot.length);
+        _segmentSnapshot = text;
+        _delivered += delta;
+        return delta;
+      }
+      if (_segmentSnapshot.startsWith(text)) return '';
+    }
+
     // A genuine new segment (including post-tool assistant text).
     _delivered += text;
+    _segmentSnapshot = text;
     return text;
   }
 }
@@ -16792,6 +16811,8 @@ ${lines.join('\n')}
       );
     }
 
+    final tts = TtsService();
+    final playbackGeneration = tts.playbackGeneration;
     final prefs = PreferencesService();
     await prefs.init();
     final selectedVoiceId = prefs.gatewayVoiceId.trim();
@@ -16815,7 +16836,18 @@ ${lines.join('\n')}
         throw StateError('talk.speak returned empty audio payload.');
       }
       final audioBytes = base64Decode(audioBase64);
-      await TtsService().speakBytes(audioBytes);
+      final playbackStarted = await tts.speakBytes(
+        audioBytes,
+        expectedGeneration: playbackGeneration,
+      );
+      if (!playbackStarted) {
+        return const TalkSpeakPlayback(
+          played: false,
+          allowNativeFallback: false,
+          status: 'cancelled',
+          message: 'Voice playback was superseded by a newer request.',
+        );
+      }
       _talkSpeakUnavailableUntil = null;
       _talkSpeakBackoffMessage = null;
       return const TalkSpeakPlayback(

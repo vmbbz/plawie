@@ -16,6 +16,7 @@ class AudioPlaybackService {
   final AudioPlayer _player = AudioPlayer();
   bool _isPlaying = false;
   bool _hasActivePlayback = false;
+  int _playbackRequestId = 0;
   bool get isPlaying => _isPlaying;
 
   // Callbacks for UI/VRM synchronization (e.g. lip-sync)
@@ -66,12 +67,14 @@ class AudioPlaybackService {
 
   /// Play audio from a URL (e.g., from the OpenClaw Gateway media server)
   Future<void> playUrl(String url) async {
+    final requestId = ++_playbackRequestId;
     try {
       debugPrint('AudioPlaybackService: Playing URL: $url');
       _hasActivePlayback = true;
       if (_isPlaying) {
         await _player.stop();
       }
+      if (requestId != _playbackRequestId) return;
       await _player.play(UrlSource(url));
     } catch (e) {
       debugPrint('AudioPlaybackService Error (playUrl): $e');
@@ -81,12 +84,14 @@ class AudioPlaybackService {
 
   /// Play audio from a local file path (e.g., from Kokoro or Native TTS)
   Future<void> playFile(String path) async {
+    final requestId = ++_playbackRequestId;
     try {
       debugPrint('AudioPlaybackService: Playing File: $path');
       _hasActivePlayback = true;
       if (_isPlaying) {
         await _player.stop();
       }
+      if (requestId != _playbackRequestId) return;
       await _player.play(DeviceFileSource(path));
     } catch (e) {
       debugPrint('AudioPlaybackService Error (playFile): $e');
@@ -96,12 +101,14 @@ class AudioPlaybackService {
 
   /// Play audio from raw bytes (e.g., from Kokoro)
   Future<void> playBytes(Uint8List bytes) async {
+    final requestId = ++_playbackRequestId;
     try {
       debugPrint('AudioPlaybackService: Playing bytes (${bytes.length} bytes)');
       _hasActivePlayback = true;
       if (_isPlaying) {
         await _player.stop();
       }
+      if (requestId != _playbackRequestId) return;
       await _player.play(BytesSource(bytes));
     } catch (e) {
       debugPrint('AudioPlaybackService Error (playBytes): $e');
@@ -110,6 +117,7 @@ class AudioPlaybackService {
   }
 
   Future<void> stop() async {
+    _playbackRequestId++;
     await _player.stop();
     _markComplete();
   }

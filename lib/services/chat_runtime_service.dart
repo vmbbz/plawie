@@ -69,6 +69,7 @@ class ChatRuntimeService extends ChangeNotifier {
   bool _isThinking = false;
   bool _isGenerating = false;
   bool _isTtsSpeaking = false;
+  int _ttsTurnGeneration = 0;
   ChatRuntimeTtsHealth _ttsHealth = ChatRuntimeTtsHealth.normal;
   String? _ttsHealthMessage;
   String _ttsSentenceBuffer = '';
@@ -275,11 +276,12 @@ class ChatRuntimeService extends ChangeNotifier {
       return;
     }
 
-    await _tts.stop();
+    _ttsTurnGeneration++;
     _ttsQueue.clear();
     _queuedTtsKeys.clear();
     _ttsSentenceBuffer = '';
     _isTtsSpeaking = false;
+    await _tts.stop();
     _setTtsHealth(ChatRuntimeTtsHealth.normal, notify: false);
     _ttsModel = model;
 
@@ -998,6 +1000,7 @@ class ChatRuntimeService extends ChangeNotifier {
 
   Future<void> _processNextTtsInQueue() async {
     if (_isTtsSpeaking || _ttsQueue.isEmpty || _tts.isSpeaking) return;
+    final turnGeneration = _ttsTurnGeneration;
     _isTtsSpeaking = true;
     if (_ttsHealth == ChatRuntimeTtsHealth.normal) {
       _setTtsHealth(ChatRuntimeTtsHealth.processing, notify: false);
@@ -1006,10 +1009,18 @@ class ChatRuntimeService extends ChangeNotifier {
     final sentence = _ttsQueue.removeAt(0);
     try {
       if (ModelProviderCatalog.isLocalModelId(_ttsModel)) {
+        if (turnGeneration != _ttsTurnGeneration) return;
         await _tts.speak(sentence);
         return;
       }
       final playback = await GatewayService().speakTextViaTalk(sentence);
+      if (turnGeneration != _ttsTurnGeneration) return;
+      if (!playback.played && playback.status == 'cancelled') {
+        _isTtsSpeaking = false;
+        notifyListeners();
+        _processNextTtsInQueue();
+        return;
+      }
       if (playback.played) {
         _setTtsHealth(ChatRuntimeTtsHealth.normal);
       }
@@ -1019,6 +1030,7 @@ class ChatRuntimeService extends ChangeNotifier {
           message: playback.displayMessage ??
               'Gateway voice is unavailable; using local system TTS.',
         );
+        if (turnGeneration != _ttsTurnGeneration) return;
         await _tts.speak(sentence);
       } else if (!playback.played) {
         final message = playback.displayMessage ??
@@ -1039,6 +1051,7 @@ class ChatRuntimeService extends ChangeNotifier {
         _processNextTtsInQueue();
       }
     } catch (e) {
+      if (turnGeneration != _ttsTurnGeneration) return;
       addDiagnostic('TTS error: $e');
       _recordTtsFailure('tts_runtime_error');
       _setTtsHealth(ChatRuntimeTtsHealth.failed, message: 'TTS error: $e');
