@@ -724,6 +724,19 @@ html[data-motion="reduced"] .product-device-slot .phone-shell { transform: none;
   html:not([data-motion="full"]) .product-device-slot .phone-shell { transform: none; }
 }
 
+/* Consent-gated product analytics */
+.privacy-choices-button { position: fixed; right: 18px; bottom: 18px; z-index: 48; min-height: 38px; padding: 0 14px; border: 1px solid var(--line-bright); border-radius: 999px; background: rgba(2, 7, 6, .94); color: var(--text-2); font: 700 .7rem/1 var(--mono); letter-spacing: .035em; cursor: pointer; box-shadow: 0 12px 35px rgba(0, 0, 0, .3); }
+.privacy-choices-button:hover, .privacy-choices-button:focus-visible { border-color: var(--mint); color: var(--text); }
+.analytics-consent { position: fixed; right: 18px; bottom: 70px; z-index: 49; width: min(620px, calc(100vw - 36px)); padding: 24px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: end; border: 1px solid var(--line-bright); border-radius: 20px; background: rgba(3, 12, 9, .98); color: var(--text); box-shadow: 0 26px 90px rgba(0, 0, 0, .55); backdrop-filter: blur(22px); }
+.analytics-consent[hidden] { display: none; }
+.analytics-consent .eyebrow { margin: 0 0 8px; }
+.analytics-consent h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.85rem); letter-spacing: -.035em; }
+.analytics-consent p { margin: 9px 0 0; color: var(--text-2); font-size: .82rem; }
+.analytics-consent .analytics-consent-detail { color: var(--text-3); font-size: .72rem; }
+.analytics-consent a { display: inline-block; margin-top: 11px; color: var(--mint-soft); font-size: .72rem; text-decoration: underline; text-underline-offset: 3px; }
+.analytics-consent-actions { min-width: 190px; display: grid; gap: 8px; }
+.analytics-consent-actions .button { width: 100%; min-height: 44px; padding-inline: 15px; font-size: .76rem; }
+
 /* Policy and support pages */
 .subpage { background: var(--ink); }
 .subpage .site-header { position: sticky; height: 72px; border-color: var(--line); background: rgba(2, 7, 6, .92); backdrop-filter: blur(18px); }
@@ -769,6 +782,9 @@ html[data-motion="reduced"] .product-device-slot .phone-shell { transform: none;
 .status-list span { color: var(--text-3); font-size: .74rem; }
 
 @media (max-width: 760px) {
+  .privacy-choices-button { right: 12px; bottom: 12px; }
+  .analytics-consent { right: 12px; bottom: 60px; width: calc(100vw - 24px); grid-template-columns: 1fr; gap: 18px; padding: 20px; }
+  .analytics-consent-actions { min-width: 0; }
   .legal-hero { padding-top: 80px; }
   .legal-layout { grid-template-columns: 1fr; padding-top: 40px; }
   .legal-nav { position: static; grid-template-columns: 1fr 1fr; padding-bottom: 25px; border-bottom: 1px solid var(--line); }

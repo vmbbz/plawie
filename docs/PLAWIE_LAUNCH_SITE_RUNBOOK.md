@@ -1,8 +1,8 @@
 # Plawie launch-site deployment and release-channel runbook
 
-**Updated:** 2026-08-10
+**Updated:** 2026-08-16
 
-**Branch:** `codex/plawie-landing-site`
+**Integration branch:** `native-node-gateway-research`
 
 **Production origin:** `https://plawie.app`
 
@@ -17,7 +17,9 @@ does not make a claim the Android release cannot support.
 
 The website is static semantic HTML, CSS, and dependency-free JavaScript. It
 does not depend on the Flutter web shell, does not contain wallet or provider
-credentials, does not set marketing cookies, and does not collect email.
+credentials, does not set marketing cookies, and does not collect email. A
+direct PostHog Capture API adapter is present but remains disabled unless a
+valid build destination and explicit visitor consent both exist.
 
 The dedicated landing branch excluded the app-only `fllama` gitlink because
 Netlify attempted to resolve it during repository preparation even though the
@@ -42,7 +44,10 @@ Before every deploy:
 
 1. Validate all HTML documents.
 2. Parse `manifest.webmanifest`, `sitemap.xml`, and `security.txt` as applicable.
-3. Run `node --check site/assets/js/site.js`.
+3. Run `node --check site/assets/js/site.js`,
+   `node --check site/assets/js/product-analytics.js`,
+   `node scripts/test_landing_analytics.mjs`, and
+   `node scripts/test_landing_analytics_browser.mjs`.
 4. Test at 320, 393, and 1440 CSS pixels with no horizontal overflow.
 5. Exercise the mobile menu, four demo tabs, Gateway preview control, network
    switch, payment-review dialog, Escape close, and keyboard focus.
@@ -61,6 +66,29 @@ same-page `blob:` URLs while decoding the model. Keep `blob:` narrowly allowed
 for `connect-src` and `img-src`; it is not required by `script-src`. The Netlify
 build validates these sources and continues to reject `unsafe-inline` and
 `unsafe-eval` script policies.
+
+`connect-src` also allows only the selected PostHog EU ingest origin. This CSP
+permission does not itself transmit data; the analytics module still requires
+explicit consent. A region change requires a reviewed CSP change and matching
+build configuration. Never add a broad wildcard.
+
+## Optional landing analytics configuration
+
+The owner must create `Plawie Staging` in PostHog EU and supply only its public
+`phc_` project token. In Netlify set:
+
+```text
+PLAWIE_POSTHOG_HOST=https://eu.i.posthog.com
+PLAWIE_POSTHOG_PROJECT_KEY=<public phc_ token>
+PLAWIE_SITE_RELEASE_CHANNEL=web-staging
+```
+
+The build creates ignored `site/assets/js/product-analytics-config.js`. Do not
+force-add it to Git. With no host/key, it contains a disabled configuration and
+the site sends nothing. With partial, secret-looking, or unsupported values,
+the build fails. Follow
+[the measurement runbook](POSTHOG_MEASUREMENT_AND_DASHBOARD_RUNBOOK.md) before
+production activation.
 
 PowerShell example:
 

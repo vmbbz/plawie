@@ -95,10 +95,26 @@ path needs a focused policy acceptance review.
 2. Publish only after legal/publisher details and Play delivery gates are done.
 3. Schedule Product Hunt with the final gallery, maker comment, and working
    Android download destination.
-4. Watch support and issue channels during launch.
-5. Keep the site CTA honest if Play review is delayed; never point to a fake or
+4. Use the single allowlisted campaign URL:
+   `https://plawie.app/?utm_source=producthunt&utm_medium=launch&utm_campaign=producthunt_launch_2026`.
+5. Verify the optional analytics prompt, opt-out, privacy page, and PostHog
+   production project before publishing that URL.
+6. Watch support and issue channels during launch.
+7. Keep the site CTA honest if Play review is delayed; never point to a fake or
    unpublished listing.
-6. Record the shipped app version and site commit in the release notes.
+8. Record the shipped app version and site commit in the release notes.
+
+## Launch measurement boundary
+
+Report Product Hunt landing sessions and official download clicks separately
+from Android activation and retention. GitHub sideloading does not transfer the
+website's random analytics ID into the app, so do not claim a person-level
+landing-to-active-install funnel. Use the definitions and dashboard checklist in
+`POSTHOG_MEASUREMENT_AND_DASHBOARD_RUNBOOK.md`.
+
+No signup is required to download, activate, or measure the launch. A future
+account should be introduced only beside durable sync, recoverable receipts,
+support continuity, or AvatarForge creator value.
 
 Official launch preparation references:
 

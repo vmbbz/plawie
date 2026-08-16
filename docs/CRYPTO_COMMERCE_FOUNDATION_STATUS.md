@@ -51,6 +51,9 @@
 - Instrumented app open, onboarding, Gateway readiness/failure, successful
   agent turns, voice transcription success/failure, and bounded TTS failure
   events without prompts, responses, transcripts, wallet data, or raw errors.
+- Added a separately identified, consent-gated landing-site acquisition adapter
+  for landing, official download, release-note, and allowlisted Product Hunt
+  events. It remains disabled until a PostHog staging host/token is supplied.
 
 ## Deliberately not enabled
 

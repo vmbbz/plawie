@@ -35,6 +35,7 @@ migrate_working_dir/
 /test-results/
 /.netlify/
 /site/assets/vrm/
+/site/assets/js/product-analytics-config.js
 
 # Symbolication related
 app.*.symbols

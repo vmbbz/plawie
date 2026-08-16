@@ -38,12 +38,22 @@ be mixed accidentally.
 | `PLAWIE_POSTHOG_PROJECT_KEY` | Consented product analytics is enabled; public project token only, never a personal or secret API key | No product analytics are queued or transmitted |
 | `PLAWIE_RELEASE_CHANNEL` | Every measured build | Defaults to `android-preview` |
 | `PLAWIE_APP_VERSION` | Optional release metadata override | Defaults to `AppConstants.version` |
+| `PLAWIE_SITE_RELEASE_CHANNEL` | Measured Netlify landing build | Defaults to `web-production`; must begin with `web-` |
 
 The client appends `/i/v0/e/` to the configured HTTPS host and sets PostHog's
-`$process_person_profile` property to `false`. It does not enable autocapture,
-session replay, advertising identifiers, or a general analytics SDK. Never put
-a PostHog personal API key, project secret key, Supabase service-role key, or
-other backend credential in a Dart define.
+`$process_person_profile` property to `false` and `$geoip_disable` to `true`.
+It does not enable autocapture, session replay, advertising identifiers, or a
+general analytics SDK. Never put a PostHog personal API key, project secret key,
+Supabase service-role key, or other backend credential in a Dart define.
+
+The Netlify landing build accepts the same host and public project token plus
+`PLAWIE_SITE_RELEASE_CHANNEL`. It generates an ignored runtime configuration in
+the publish directory. If host/key are absent, the generated configuration is
+disabled and the site creates no analytics identity or prompt. EU production
+requires `https://eu.i.posthog.com`, which is narrowly allowed by the site's
+`connect-src` policy. See
+[the PostHog measurement runbook](POSTHOG_MEASUREMENT_AND_DASHBOARD_RUNBOOK.md)
+and [the Data Safety inventory](ANALYTICS_PRIVACY_AND_DATA_SAFETY.md).
 
 Before supplying these defines to a public build:
 

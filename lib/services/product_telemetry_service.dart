@@ -274,6 +274,7 @@ class PostHogProductTelemetryTransport implements ProductTelemetryTransport {
               'plawieEventId': queuedEvent.eventId,
               r'$session_id': sessionId,
               r'$process_person_profile': false,
+              r'$geoip_disable': true,
             },
           }),
         )

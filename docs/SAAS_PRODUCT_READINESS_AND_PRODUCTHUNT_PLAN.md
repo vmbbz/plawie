@@ -1,6 +1,6 @@
 # Plawie Product Readiness, Crypto Commerce, and Product Hunt Plan
 
-**Status:** Guest-first Android measurement foundation implemented; production analytics activation and dashboards remain gated
+**Status:** Guest-first Android and landing-site measurement foundations implemented; production analytics activation and dashboards remain gated
 **Date:** 2026-08-16
 **Product:** Plawie, the local-first Android companion and OpenClaw control surface
 
@@ -319,12 +319,12 @@ Read the [Product Hunt Launch Guide](https://www.producthunt.com/launch), [prepa
 
 - Define event schemas and redaction tests. **Completed.**
 - Keep the local `ProductTelemetryEvent` contract as the only feature-code entry point. **Completed.**
-- Add a consent-aware, fail-closed PostHog Capture API sender with person profiles disabled and no autocapture. **Completed in Android code; production host/token not configured.**
+- Add a consent-aware, fail-closed PostHog Capture API sender with person profiles and GeoIP enrichment disabled and no autocapture. **Completed in Android and landing-site code; production host/token not configured.**
 - Add stable random installation IDs generated only after consent, never hardware or wallet identifiers. **Completed and tested.**
 - Add a bounded redacted retry queue that can never block app functionality. **Completed and tested.**
 - Instrument app open, onboarding, Gateway readiness/failure, successful agent turns, and voice/TTS success/failure. **Completed for the first Android activation slice.**
-- Add consent-aware landing-page acquisition events and allowlisted Product Hunt UTM attribution. **Not started; must update the website privacy disclosure and CSP in the same release.**
-- Create the activation, reliability, and transaction-volume dashboards.
+- Add consent-aware landing-page acquisition events and allowlisted Product Hunt UTM attribution. **Completed in code with privacy/CSP updates; deployment remains disabled until staging configuration is supplied.**
+- Create the activation, reliability, and transaction-volume dashboards. **Dashboard definitions are documented; PostHog project creation is external and pending.**
 - Add release/channel/fee-schedule version to every commerce event.
 - Configure the production PostHog project token and regional ingest host only through release build configuration; do not commit a fabricated token.
 
@@ -361,10 +361,10 @@ Read the [Product Hunt Launch Guide](https://www.producthunt.com/launch), [prepa
 
 ## Immediate next commits
 
-1. Complete and test the Android consent, anonymous identity, queue, PostHog sender, and first activation/reliability instrumentation.
-2. Create the production PostHog project, select its data region, configure release build variables, and verify anonymous capture in a staging project.
-3. Build dashboards for acquisition, activation, retained installations, voice reliability, Gateway reliability, and commerce funnels.
-4. Add website consent and allowlisted campaign/download events; update the privacy page, CSP hash, and Google Play Data Safety inventory in the same release.
+1. Confirm the accepted smoke event in PostHog Live events, connect the Netlify staging deploy context, and verify website opt-in and opt-out behavior.
+2. Build an analytics-configured Android staging artifact and verify its opt-in, queue, redaction, and opt-out behavior on a physical device.
+3. Materialize the documented acquisition, activation, retained-installation, voice, and Gateway dashboards in the PostHog UI.
+4. Create the production PostHog project only after staging acceptance and privacy/Data Safety review, then deploy the consent-gated website and use the allowlisted Product Hunt campaign URL.
 5. Instrument provider and bridge receipts only after each event can be derived from the redacted receipt contracts without addresses, hashes, signatures, or exact balances.
 6. Defer Supabase signup until recoverable receipts, sync, support continuity, or AvatarForge creator features provide a concrete account benefit.
 7. Request the external inputs needed for live commission enablement: provider agreements, LI.FI partner identity, fee wallet, legal review, chain/contract choices, and AvatarForge asset/license specification.

@@ -92,6 +92,7 @@ void main() {
     expect(requestBody['distinct_id'], 'plawie-install-random');
     final properties = requestBody['properties'] as Map<String, dynamic>;
     expect(properties[r'$process_person_profile'], isFalse);
+    expect(properties[r'$geoip_disable'], isTrue);
     expect(properties[r'$session_id'], 'session-random');
     expect(properties['plawieEventId'], 'event-1');
     expect(properties['platform'], 'android');
