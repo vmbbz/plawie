@@ -254,7 +254,7 @@ Acquisition events:
 
 Activation and retention events:
 
-- `app_first_opened`, `app_opened`, `gateway_ready`, `first_agent_turn_completed`, `agent_turn_completed`, `voice_turn_completed`;
+- `app_first_opened`, `app_opened`, `app_foregrounded`, `app_active_heartbeat`, `gateway_ready`, `first_agent_turn_completed`, `agent_turn_completed`, `voice_turn_completed`;
 - `wake_word_enabled`, `companion_session_started`, `avatar_equipped`, `onboarding_completed`.
 
 Commerce events:
@@ -270,6 +270,8 @@ Reliability events:
 - bounded error code and correlation ID only; never raw payloads.
 
 The app analytics boundary rejects prompts, assistant responses, transcripts, audio, media, filenames, raw URLs, wallet addresses, transaction hashes, signatures, balances, API keys, tokens, provider payloads, arbitrary exception strings, and nested objects. Commerce truth remains in signed/provider/chain receipts and the future reconciliation ledger, never in PostHog.
+
+`app_foregrounded` is the active-installation source for DAU, WAU, MAU, and retention. `app_active_heartbeat` is emitted at visible-session start and every five minutes only while the Activity is resumed or PiP is active; unique installations with a heartbeat in the last ten minutes provide an approximate “active now” value. Passive wake-word, foreground-service, and Gateway uptime are not user activity. A two-second lifecycle grace absorbs Android permission and PiP transitions without manufacturing extra sessions.
 
 ### Business metrics
 

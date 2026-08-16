@@ -105,7 +105,9 @@ Do not add user names, post IDs, search terms, referral URLs, or free-form label
 | Event | Meaning |
 |---|---|
 | `app_first_opened` | First measurable consented open for an installation |
-| `app_opened` | Measurable app session |
+| `app_opened` | Measurable app process start; retained for first-open and startup analysis |
+| `app_foregrounded` | Visible foreground/PiP activity session after lifecycle-transition deduplication |
+| `app_active_heartbeat` | Consented visible-use heartbeat at session start and every five minutes while foreground/PiP remains active |
 | `onboarding_completed` | Local setup milestone completed |
 | `gateway_ready` | Gateway changed into interactive-ready state |
 | `first_agent_turn_completed` | First successful agent turn on an installation |
@@ -147,6 +149,12 @@ retention are documented at
   a package-manager install counter.
 - Do not enable autocapture, replay, heatmaps, person profiles, GeoIP, or broad
   URL/referrer collection to make a dashboard easier to populate.
+- Use `app_foregrounded`, not `app_opened`, for active-installation and retention
+  reporting. A process can remain alive across multiple visible sessions.
+- `app_active_heartbeat` represents visible foreground/PiP use only. Passive
+  wake-word listening, an idle foreground service, and a healthy background
+  Gateway do not emit it. “Active now” is therefore a ten-minute approximation,
+  not an exact presence count.
 - Staging is test evidence, so do not turn on **Filter out internal and test
   users** there. Production access and internal-traffic policy are separate
   launch decisions.
@@ -174,8 +182,9 @@ fresh consented setup and successful chat session produce the milestone events.
 
 | Insight name | Type | Query | Required filter / setting |
 |---|---|---|---|
-| Daily active Android installations | Trends | `app_opened`, unique users | `releaseChannel = android-staging`; last 30 days; daily |
-| Weekly active Android installations | Trends | `app_opened`, unique users | `releaseChannel = android-staging`; last 12 weeks; weekly |
+| Daily active Android installations | Trends | `app_foregrounded`, unique users | `releaseChannel = android-staging`; last 30 days; daily |
+| Weekly active Android installations | Trends | `app_foregrounded`, unique users | `releaseChannel = android-staging`; last 12 weeks; weekly |
+| Active Android installations now (approx.) | Trends | `app_active_heartbeat`, unique users | `releaseChannel = android-staging`; rolling last 10 minutes; show current value |
 | Measured first opens | Trends | `app_first_opened`, unique users | `releaseChannel = android-staging`; last 30 days; daily |
 | First-open to first value | Funnel | `app_first_opened` → `onboarding_completed` → `gateway_ready` → `first_agent_turn_completed` | ordered; unique users; conversion window 7 days; first occurrence matching filters; `releaseChannel = android-staging` |
 | Time to first value | Funnel | same four steps | graph type **Time to convert**; same window and filter |
@@ -206,7 +215,7 @@ incident-rate signal rather than a count of every low-level synthesis retry.
 ### Dashboard D — `Plawie — Retention — Staging`
 
 1. Create a retention insight with start event `app_first_opened`, return event
-   `app_opened`, unique users, daily periods, first-ever start occurrence, and
+   `app_foregrounded`, unique users, daily periods, first-ever start occurrence, and
    `releaseChannel = android-staging`. Read D1, D7, and D30 only after each cohort
    period is complete.
 2. Create a second retention insight with start event
@@ -258,6 +267,11 @@ but only after a privacy/policy review and a separate implementation plan.
 8. Install a staging Android build; repeat opt-in/opt-out and inspect event
    properties for forbidden content.
 9. Keep staging data out of production dashboards.
+10. With consent on, foreground the app, move it into PiP, return to full screen,
+    then background it for more than two seconds. Confirm one
+    `app_foregrounded` for the uninterrupted foreground/PiP session, heartbeat
+    surfaces limited to `foreground` and `pip`, and no heartbeat after true
+    backgrounding.
 
 ## 8. Verified staging evidence — 2026-08-16
 
@@ -314,3 +328,28 @@ but only after a privacy/policy review and a separate implementation plan.
 - Website and Android events used different identity namespaces and were not
   joined. The property-level Live events review completes staging acceptance;
   production remains disabled until the production gates are completed.
+
+### Visible-activity measurement follow-up — 2026-08-16
+
+- Added `app_foregrounded` and `app_active_heartbeat` behind the same explicit
+  Android analytics consent. No new identifier or permission was introduced.
+- The lifecycle implementation emits an immediate heartbeat and then one every
+  five minutes only while the app is resumed or PiP remains active. A two-second
+  grace prevents Android permission and PiP transitions from splitting a
+  session; a real background transition cancels the timer.
+- The configured staging APK was version `2.3.0` / version code `15`,
+  230,117,647 bytes, SHA-256
+  `3fc3b75649e9d3acf5ee2a7404eb17f8d9d91c57644829eb3338883084395314`.
+  It was installed over the existing Samsung SM-A556E app without clearing
+  application data.
+- On-device foreground → Home for more than two seconds → foreground testing
+  preserved the existing granted consent and anonymous installation identity,
+  returned Plawie to the resumed top activity, produced no matching fatal or
+  unhandled lifecycle error, and drained the bounded outbound queue to zero.
+- Automated coverage verifies foreground-session deduplication, immediate and
+  periodic heartbeats, cancellation after true backgrounding, uninterrupted
+  foreground/PiP sessions, PiP surface labeling, opt-in while active, and
+  immediate shutdown/identity removal on opt-out.
+- PostHog Live events must still be reviewed for the two new event names and
+  their bounded `source` and `surface` properties before promoting this exact
+  build configuration from staging to production.

@@ -16,6 +16,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../app.dart';
 import '../services/preferences_service.dart';
+import '../services/product_telemetry_activity_service.dart';
 import '../services/product_telemetry_event.dart';
 import '../services/product_telemetry_service.dart';
 import '../services/paid_provider_proxy_models.dart';
@@ -313,6 +314,10 @@ class _ChatScreenState extends State<ChatScreen>
       if (call.method == 'onPiPModeChanged') {
         final bool isPip = call.arguments as bool;
         if (!mounted) return;
+        unawaited(
+          ProductTelemetryActivityService.instance
+              .setPictureInPictureActive(isPip),
+        );
         _voiceSession.updateSurface(
           isPip ? VoiceSessionSurface.pip : VoiceSessionSurface.fullScreen,
         );

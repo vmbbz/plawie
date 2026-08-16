@@ -42,7 +42,9 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
 
   // Step 2: Agent Name
   final _agentNameController = TextEditingController(text: 'Plawie');
-  bool _shareAnonymousAnalytics = false;
+  ProductAnalyticsConsent _analyticsChoice =
+      ProductAnalyticsConsent.undecided;
+  bool _analyticsChoiceSaving = false;
 
   late final AnimationController _fadeController;
   late final Animation<double> _fadeAnimation;
@@ -129,7 +131,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
   @override
   void initState() {
     super.initState();
-    _shareAnonymousAnalytics = ProductTelemetryService.instance.consentGranted;
+    _analyticsChoice = ProductTelemetryService.instance.consent;
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -189,6 +191,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
   Future<void> _startInstallation() async {
     setState(() => _isProcessing = true);
     try {
+      await _storeDefaultAnalyticsDenialIfUndecided();
       final prefs = PreferencesService();
       await prefs.init();
 
@@ -255,6 +258,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
   /// Skip provider setup — start installation without pre-configured credentials.
   /// User can configure their API key later from Settings.
   Future<void> _skipToInstallation() async {
+    await _storeDefaultAnalyticsDenialIfUndecided();
     await ProviderSetupService().clearPending();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -1038,28 +1042,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
           onChanged: (_) {},
         ),
         const SizedBox(height: 12),
-        _buildSettingTile(
-          theme: theme,
-          isDark: isDark,
-          icon: Icons.analytics_outlined,
-          title: 'Share anonymous product analytics',
-          subtitle:
-              'Optional. Sends feature and reliability events only — never prompts, transcripts, audio, wallet data, or API keys.',
-          value: _shareAnonymousAnalytics,
-          onChanged: (value) async {
-            final saved = await ProductTelemetryService.instance.setConsent(
-              value
-                  ? ProductAnalyticsConsent.granted
-                  : ProductAnalyticsConsent.denied,
-            );
-            if (!mounted) return;
-            setState(() {
-              _shareAnonymousAnalytics = saved
-                  ? value
-                  : ProductTelemetryService.instance.consentGranted;
-            });
-          },
-        ),
+        _buildAnalyticsChoiceCard(theme, isDark),
         const SizedBox(height: 24),
         // Pre-install summary card
         Container(
@@ -1143,6 +1126,126 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
         ],
       ),
     );
+  }
+
+  Widget _buildAnalyticsChoiceCard(ThemeData theme, bool isDark) {
+    final granted = _analyticsChoice == ProductAnalyticsConsent.granted;
+    final denied = _analyticsChoice == ProductAnalyticsConsent.denied;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withAlpha(8) : Colors.black.withAlpha(5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? Colors.white.withAlpha(12) : Colors.black.withAlpha(8),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.analytics_outlined,
+                size: 22,
+                color: AppColors.statusGreen,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  'Help improve Plawie',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (_analyticsChoiceSaving)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Share anonymous app usage and reliability events. Plawie never sends conversations, voice recordings, transcripts, wallet data, keys, addresses, URLs, or location.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                key: const Key('analytics-choice-share'),
+                label: const Text('Share anonymous analytics'),
+                selected: granted,
+                onSelected: _analyticsChoiceSaving
+                    ? null
+                    : (_) => unawaited(
+                          _setAnalyticsChoice(
+                            ProductAnalyticsConsent.granted,
+                          ),
+                        ),
+              ),
+              ChoiceChip(
+                key: const Key('analytics-choice-not-now'),
+                label: const Text('Not now'),
+                selected: denied,
+                onSelected: _analyticsChoiceSaving
+                    ? null
+                    : (_) => unawaited(
+                          _setAnalyticsChoice(
+                            ProductAnalyticsConsent.denied,
+                          ),
+                        ),
+              ),
+            ],
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => launchUrl(
+                Uri.parse('https://plawie.app/privacy/#analytics'),
+                mode: LaunchMode.externalApplication,
+              ),
+              icon: const Icon(Icons.privacy_tip_outlined, size: 16),
+              label: const Text('Privacy details'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setAnalyticsChoice(ProductAnalyticsConsent choice) async {
+    if (_analyticsChoiceSaving) return;
+    setState(() => _analyticsChoiceSaving = true);
+    final saved = await ProductTelemetryService.instance.setConsent(choice);
+    if (!mounted) return;
+    setState(() {
+      _analyticsChoiceSaving = false;
+      _analyticsChoice = saved
+          ? choice
+          : ProductTelemetryService.instance.consent;
+    });
+    if (!saved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save the analytics choice.')),
+      );
+    }
+  }
+
+  Future<void> _storeDefaultAnalyticsDenialIfUndecided() async {
+    if (_analyticsChoice != ProductAnalyticsConsent.undecided) return;
+    final saved = await ProductTelemetryService.instance.setConsent(
+      ProductAnalyticsConsent.denied,
+    );
+    if (saved) _analyticsChoice = ProductAnalyticsConsent.denied;
   }
 
   Widget _buildSettingTile({

@@ -6,6 +6,7 @@ import 'services/agent_skill_server.dart';
 import 'services/skills_service.dart';
 import 'services/native_bridge.dart';
 import 'services/preferences_service.dart';
+import 'services/product_telemetry_activity_service.dart';
 import 'services/product_telemetry_service.dart';
 import 'services/ui_chrome_service.dart';
 
@@ -21,6 +22,7 @@ Future<void> main() async {
   runApp(const PlawieApp());
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
+    ProductTelemetryActivityService.instance.start();
     unawaited(_startBackgroundServices());
   });
 }

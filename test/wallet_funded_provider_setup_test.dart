@@ -112,4 +112,50 @@ void main() {
         findsOneWidget);
     expect(find.textContaining('Enter your BlockRun API key'), findsNothing);
   });
+
+  testWidgets('final setup presents explicit unselected analytics choices',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(theme: ThemeData.dark(), home: const SetupFlowScreen()),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+
+    await tester.scrollUntilVisible(
+      find.text('Venice'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+    tester
+        .widget<GestureDetector>(find.byKey(const Key('setup-provider-venice')))
+        .onTap!();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    for (var step = 0; step < 3; step++) {
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Continue'),
+          )
+          .onPressed!();
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('Help improve Plawie'), findsOneWidget);
+    expect(find.text('Share anonymous analytics'), findsOneWidget);
+    expect(find.text('Not now'), findsOneWidget);
+    expect(find.text('Privacy details'), findsOneWidget);
+    expect(
+      tester
+          .widget<ChoiceChip>(find.byKey(const Key('analytics-choice-share')))
+          .selected,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<ChoiceChip>(
+            find.byKey(const Key('analytics-choice-not-now')),
+          )
+          .selected,
+      isFalse,
+    );
+  });
 }

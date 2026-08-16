@@ -402,11 +402,11 @@ class ProductTelemetryService extends ChangeNotifier {
       return false;
     }
 
-    notifyListeners();
     if (_canCapture) {
       await _recordSessionLifecycle();
       unawaited(flush());
     }
+    notifyListeners();
     return true;
   }
 

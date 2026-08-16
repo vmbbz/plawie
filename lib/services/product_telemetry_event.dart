@@ -7,6 +7,8 @@
 enum ProductTelemetryEventName {
   appFirstOpened,
   appOpened,
+  appForegrounded,
+  appActiveHeartbeat,
   gatewayReady,
   firstAgentTurnCompleted,
   agentTurnCompleted,
@@ -46,6 +48,10 @@ extension ProductTelemetryEventNameValue on ProductTelemetryEventName {
         return 'app_first_opened';
       case ProductTelemetryEventName.appOpened:
         return 'app_opened';
+      case ProductTelemetryEventName.appForegrounded:
+        return 'app_foregrounded';
+      case ProductTelemetryEventName.appActiveHeartbeat:
+        return 'app_active_heartbeat';
       case ProductTelemetryEventName.gatewayReady:
         return 'gateway_ready';
       case ProductTelemetryEventName.firstAgentTurnCompleted:

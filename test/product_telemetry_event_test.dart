@@ -49,6 +49,17 @@ void main() {
     expect(restored.properties, original.properties);
   });
 
+  test('uses stable wire names for visible activity measurement', () {
+    expect(
+      ProductTelemetryEventName.appForegrounded.wireName,
+      'app_foregrounded',
+    );
+    expect(
+      ProductTelemetryEventName.appActiveHeartbeat.wireName,
+      'app_active_heartbeat',
+    );
+  });
+
   test('rejects sensitive or unapproved property names', () {
     for (final key in <String>[
       'prompt',

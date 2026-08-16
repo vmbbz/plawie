@@ -16,6 +16,12 @@ allowlisted acquisition events with a random browser installation ID. These IDs
 are not joined to each other or to a wallet, account, email, advertising ID,
 Android ID, Gateway identity, or hardware identifier.
 
+Visible-use measurement records a foreground/PiP session marker and a bounded
+heartbeat at session start and every five minutes while the app remains visibly
+active. It records only the `foreground` or `pip` surface. Passive wake-word
+listening, background foreground-service uptime, and Gateway health do not count
+as active use and do not keep the analytics heartbeat running.
+
 PostHog receives requests only after consent. Every event disables person-profile
 processing and GeoIP enrichment. Ordinary network infrastructure may still
 process connection metadata such as source IP and user-agent to deliver and
