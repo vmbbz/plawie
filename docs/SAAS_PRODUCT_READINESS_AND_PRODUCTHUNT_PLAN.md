@@ -1,6 +1,6 @@
 # Plawie Product Readiness, Crypto Commerce, and Product Hunt Plan
 
-**Status:** Guest-first measurement foundations plus website and Android staging acceptance completed; production activation and dashboards remain gated
+**Status:** Guest-first measurement foundation and full staging acceptance completed; production activation and dashboards remain gated
 **Date:** 2026-08-16
 **Product:** Plawie, the local-first Android companion and OpenClaw control surface
 
@@ -319,12 +319,12 @@ Read the [Product Hunt Launch Guide](https://www.producthunt.com/launch), [prepa
 
 - Define event schemas and redaction tests. **Completed.**
 - Keep the local `ProductTelemetryEvent` contract as the only feature-code entry point. **Completed.**
-- Add a consent-aware, fail-closed PostHog Capture API sender with person profiles and GeoIP enrichment disabled and no autocapture. **Completed in Android and landing-site code; production host/token not configured.**
+- Add a consent-aware, fail-closed PostHog Capture API sender with person profiles and GeoIP enrichment disabled and no autocapture. **Completed and accepted in Android and landing-site staging; production host/token not configured.**
 - Add stable random installation IDs generated only after consent, never hardware or wallet identifiers. **Completed and tested.**
 - Add a bounded redacted retry queue that can never block app functionality. **Completed and tested.**
 - Instrument app open, onboarding, Gateway readiness/failure, successful agent turns, and voice/TTS success/failure. **Completed for the first Android activation slice.**
-- Add consent-aware landing-page acquisition events and allowlisted Product Hunt UTM attribution. **Completed in code with privacy/CSP updates; deployment remains disabled until staging configuration is supplied.**
-- Create the activation, reliability, and transaction-volume dashboards. **Dashboard definitions are documented; PostHog project creation is external and pending.**
+- Add consent-aware landing-page acquisition events and allowlisted Product Hunt UTM attribution. **Completed and accepted on the isolated Netlify staging deploy with privacy/CSP controls intact.**
+- Create the activation, reliability, and transaction-volume dashboards. **Dashboard definitions are documented and the PostHog staging project is receiving accepted events; insight/dashboard creation is next.**
 - Add release/channel/fee-schedule version to every commerce event.
 - Configure the production PostHog project token and regional ingest host only through release build configuration; do not commit a fabricated token.
 

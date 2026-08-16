@@ -101,5 +101,10 @@ Before enabling production analytics:
 The 2026-08-16 staging acceptance verified the implemented consent boundary on
 a physical Android device: no identifier before consent, a random app-only ID
 after opt-in, successful queue drain, and identifier/queue removal after
-opt-out. This engineering evidence does not replace the publisher's final Play
-Data Safety review of the complete production artifact and all dependencies.
+opt-out. PostHog Live events then confirmed that Android transmitted only the
+documented lifecycle fields and website acquisition transmitted only the
+allowlisted campaign fields. Both surfaces set person-profile processing false
+and GeoIP disabled, exposed no prohibited application property, and retained
+separate anonymous identity namespaces. This engineering evidence does not
+replace the publisher's final Play Data Safety review of the complete production
+artifact and all dependencies.

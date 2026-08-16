@@ -1,7 +1,7 @@
 # Plawie PostHog Measurement and Dashboard Runbook
 
 **Date:** 2026-08-16
-**Status:** Website and Android staging verified end to end; production activation and dashboards pending
+**Status:** Website and Android staging acceptance complete; production activation and dashboards pending
 **Identity model:** Consented anonymous installations, not verified people
 
 ## 1. Account setup and project separation
@@ -24,8 +24,9 @@ different region:
 As of 2026-08-16, `Plawie Staging` exists in PostHog EU and its public Capture
 API endpoint accepted the repository smoke event. The Netlify deploy-preview
 context, browser network acceptance test, and Android physical-device consent
-test are complete. Visual confirmation of the received fields in PostHog Live
-events remains a release-evidence gate.
+test are complete. The received website and Android fields were also reviewed in
+PostHog Live events. The accepted property inventory is retained in sections 8
+and 9 so the staging gate does not depend on access to an ephemeral event view.
 
 The public project token identifies the ingestion project; it is not permission
 to administer the PostHog account. Dashboard creation can be completed manually
@@ -201,6 +202,16 @@ but only after a privacy/policy review and a separate implementation plan.
 - Opt-out removed the browser installation ID and suppressed a later download
   capture.
 - The local generated runtime configuration was reset to disabled after deploy.
+- PostHog Live events showed the expected anonymous `plawie-web-*` identity and
+  only `campaign`, `medium`, `platform`, `plawieEventId`, `releaseChannel`,
+  `schemaVersion`, `source`, and `surface`, plus the required PostHog control
+  fields for session ID, timestamp, disabled GeoIP, and disabled person-profile
+  processing.
+- The reviewed `landing_viewed` event used `platform=web`,
+  `releaseChannel=web-staging`, `schemaVersion=1`, `source=producthunt`,
+  `medium=launch`, `campaign=producthunt_launch_2026`, and `surface=hero`.
+- No page URL, referrer, search term, user account, wallet value, prompt,
+  transcript, credential, or other prohibited application property appeared.
 
 ## 9. Verified Android staging evidence — 2026-08-16
 
@@ -217,7 +228,16 @@ but only after a privacy/policy review and a separate implementation plan.
   drained the pending queue to zero after staging delivery.
 - Denying consent again removed the installation ID and reset both telemetry
   lists to zero. The device was left in this denied/off state.
-
-Remaining staging evidence: inspect the website and Android staging events in
-PostHog Live events and retain the reviewed property list or screenshots with
-the release record.
+- PostHog Live events showed the expected anonymous `plawie-install-*` identity
+  and only `appVersion`, `platform`, `plawieEventId`, `releaseChannel`,
+  `schemaVersion`, and `source`, plus the required PostHog control fields for
+  session ID, timestamp, disabled GeoIP, and disabled person-profile processing.
+- The reviewed `app_opened` event used `appVersion=2.3.0`, `platform=android`,
+  `releaseChannel=android-staging`, `schemaVersion=1`, and
+  `source=android_app`. `app_opened` and `app_first_opened` used the same
+  installation identity for that consented app installation.
+- No device/hardware identifier, account, wallet value, prompt, transcript,
+  credential, raw error, or other prohibited application property appeared.
+- Website and Android events used different identity namespaces and were not
+  joined. The property-level Live events review completes staging acceptance;
+  production remains disabled until the production gates are completed.
