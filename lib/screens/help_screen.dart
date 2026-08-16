@@ -107,7 +107,7 @@ class HelpScreen extends StatelessWidget {
                         context,
                         title: 'Base Chain Wallet',
                         description:
-                            'A full EVM wallet on Coinbase\'s Base L2 is built into the app. secp256k1 keypairs are generated and stored securely on-device. Check ETH and USDC balances, send to any 0x address or .base.eth Basename, and view your transaction history — all without a cloud intermediary.\n\nInstall Coinbase AgentKit from the Skills Manager to give the AI 50+ autonomous actions: gasless token swaps, NFT deployment, DCA, bridge, Farcaster posts, and more.',
+                            'A full EVM wallet on Coinbase\'s Base L2 is built into the app. secp256k1 keypairs are generated and stored securely on-device. Check ETH and USDC balances, send to any 0x address or .base.eth Basename, and view your transaction history — all without a cloud intermediary.\n\nCoinbase AgentKit is not integrated in this build. The Base wallet keeps its own visible, one-use approval and Android-authentication path; installing another wallet skill cannot inherit it.',
                         icon: Icons.account_balance_wallet_rounded,
                         color: const Color(0xFF0052FF),
                       ),
@@ -151,6 +151,8 @@ class HelpScreen extends StatelessWidget {
                       _buildSectionHeader('Advanced Extensibility'),
                       const SizedBox(height: 16),
                       _buildSkillsManagerCard(context),
+                      const SizedBox(height: 12),
+                      _buildWalletBoundariesCard(context),
                       const SizedBox(height: 12),
                       _buildMoonPayCard(context),
                       const SizedBox(height: 12),
@@ -687,7 +689,7 @@ class HelpScreen extends StatelessWidget {
                               letterSpacing: 1.2)),
                     ),
                     const SizedBox(height: 6),
-                    Text('MoonPay Banking',
+                    Text('MoonPay external wallet',
                         style: GoogleFonts.outfit(
                             fontWeight: FontWeight.w800,
                             fontSize: 16,
@@ -699,7 +701,7 @@ class HelpScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            '@moonpay/cli seamlessly provisions verified bank accounts inside the OpenClaw gateway context. Support includes cross-chain bridges, token swaps, and dollar-cost algorithmic routing.',
+            'MoonPay CLI can create or import its own locally secured, multi-chain HD wallet. It does not reuse the Plawie Personal Wallet or KeeperHub wallet. This preview exposes read-only portfolio, price, and DCA status only; in-app installation and all value-moving methods are blocked until Plawie can mediate simulation and approval.',
             style: GoogleFonts.outfit(
                 color: Colors.white70, fontSize: 12, height: 1.55),
           ),
@@ -708,11 +710,10 @@ class HelpScreen extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              'Swap',
-              'Bridge',
-              'Fiat Onramps',
-              'DCA Algorithms',
-              'Market APIs',
+              'SEPARATE WALLET',
+              'READ ONLY',
+              'NOT DEFAULT',
+              'WRITES BLOCKED',
             ]
                 .map((label) => Container(
                       padding: const EdgeInsets.symmetric(
@@ -736,58 +737,126 @@ class HelpScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildWalletBoundariesCard(BuildContext context) {
+    const entries = [
+      (
+        'Personal Wallet',
+        'Android-owned',
+        'Plawie Base/Robinhood balance, transfer, bridge-destination, and x402 signer. Every write requires an exact visible approval.'
+      ),
+      (
+        'Agent Execution Wallet',
+        'KeeperHub/Turnkey-managed',
+        'A separate managed address. The current agent tool can inspect it and prepare only the bounded zero-value proof; Wallet UI and Android authentication own execution.'
+      ),
+      (
+        'External financial skills',
+        'Separate custody',
+        'MoonPay, AgentCard, AgentKit, and community x402 tools do not inherit either Plawie wallet. They need a named route and their own reviewed approval adapter before writes can be enabled.'
+      ),
+    ];
+    return GlassCard(
+      padding: const EdgeInsets.all(22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('WALLET BOUNDARIES',
+              style: GoogleFonts.outfit(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                  color: Colors.white54)),
+          const SizedBox(height: 10),
+          const Text(
+            'Plawie supports multiple named wallet surfaces, never one ambiguous shared wallet.',
+            style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.45),
+          ),
+          const SizedBox(height: 16),
+          ...entries.map((entry) => Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.account_balance_wallet_outlined,
+                        size: 17, color: AppColors.statusGreen),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${entry.$1} · ${entry.$2}',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 3),
+                          Text(entry.$3,
+                              style: const TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 11,
+                                  height: 1.4)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPremiumSkillsTable(BuildContext context) {
-    // (icon, name, subtitle, description, requiresInstall)
-    // requiresInstall=true → shows "INSTALL" badge; false → shows active/built-in
+    // (icon, name, subtitle, description, release status)
     final skills = [
       (
         Icons.account_balance_wallet_rounded,
-        'Wallet',
-        'AgentCard.ai',
-        'Issue virtual Visa cards and make autonomous on-chain payments via Base. Install via Skills Manager → Partner Skills.',
-        true
+        'Virtual card',
+        'AgentCard · external',
+        'Read-only connector preview for a separate card account. No card creation, refill, funding, or autonomous spending is exposed by Plawie.',
+        'READ ONLY'
       ),
       (
         Icons.work_rounded,
         'Work',
         'MoltLaunch',
         'EVM/Base-compatible AI job marketplace with Molt.ID identity and ETH escrow. Install via Skills Manager → Partner Skills.',
-        true
+        'INSTALL'
       ),
       (
         Icons.credit_score_rounded,
         'Credit',
         'Valeo Sentinel',
         'x402 spending policy: per-call, hourly & daily budget caps with on-chain audit log. Install via Skills Manager → Partner Skills.',
-        true
+        'INSTALL'
       ),
       (
         Icons.phone_android_rounded,
         'Calls',
         'Twilio AI',
         'Inbound & outbound voice via ConversationRelay with real-time AI transcription. Requires Twilio Account SID + Auth Token. Install via Skills Manager → Partner Skills.',
-        true
+        'INSTALL'
       ),
       (
         Icons.rocket_launch_rounded,
-        'AI Wallet',
-        'Coinbase AgentKit',
-        '50+ AI-callable actions on Base: gasless token swaps, NFT deploy, DCA, bridge, Farcaster, and Basenames. Requires CDP API Key from portal.cdp.coinbase.com. Install via Skills Manager → Partner Skills.',
-        true
+        'AgentKit',
+        'Coinbase · roadmap',
+        'Not integrated. The community x402-client skill is not Coinbase AgentKit and is not installed as a substitute. A vetted wallet provider and Plawie approval adapter are required.',
+        'NOT INTEGRATED'
       ),
       (
         Icons.currency_exchange_rounded,
-        'Finance',
-        'MoonPay',
-        'Verified agent bank account — swap, bridge, DCA, fiat onramps and live market prices.',
-        false
+        'External wallet',
+        'MoonPay CLI',
+        'Separate HD-wallet runtime. Read-only preview only; in-app installation and value-moving methods are blocked in this release.',
+        'BLOCKED'
       ),
       (
         Icons.memory_rounded,
         'Local LLM',
         'fllama NDK',
         'Private/offline local models with direct app actions. Gateway skills stay in Cloud Agent Mode.',
-        false
+        'BUILT IN'
       ),
     ];
 
@@ -808,9 +877,7 @@ class HelpScreen extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(s.$1,
-                        size: 16,
-                        color: s.$5 ? Colors.white38 : Colors.white70),
+                    Icon(s.$1, size: 16, color: Colors.white70),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
@@ -819,31 +886,42 @@ class HelpScreen extends StatelessWidget {
                           Row(
                             children: [
                               Text(s.$2,
-                                  style: TextStyle(
-                                      color:
-                                          s.$5 ? Colors.white54 : Colors.white,
+                                  style: const TextStyle(
+                                      color: Colors.white,
                                       fontSize: 13,
                                       fontWeight: FontWeight.w800)),
                               const SizedBox(width: 8),
                               Text(s.$3,
                                   style: const TextStyle(
                                       color: Colors.white38, fontSize: 10)),
-                              if (s.$5) ...[
+                              if (s.$5.isNotEmpty) ...[
                                 const SizedBox(width: 6),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF0052FF)
+                                    color: (s.$5 == 'BUILT IN'
+                                            ? AppColors.statusGreen
+                                            : s.$5 == 'INSTALL'
+                                                ? const Color(0xFF0052FF)
+                                                : AppColors.statusAmber)
                                         .withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(6),
                                     border: Border.all(
-                                        color: const Color(0xFF0052FF)
+                                        color: (s.$5 == 'BUILT IN'
+                                                ? AppColors.statusGreen
+                                                : s.$5 == 'INSTALL'
+                                                    ? const Color(0xFF0052FF)
+                                                    : AppColors.statusAmber)
                                             .withValues(alpha: 0.4)),
                                   ),
-                                  child: const Text('INSTALL',
+                                  child: Text(s.$5,
                                       style: TextStyle(
-                                          color: Color(0xFF6699FF),
+                                          color: s.$5 == 'BUILT IN'
+                                              ? AppColors.statusGreen
+                                              : s.$5 == 'INSTALL'
+                                                  ? const Color(0xFF6699FF)
+                                                  : AppColors.statusAmber,
                                           fontSize: 8,
                                           fontWeight: FontWeight.w900,
                                           letterSpacing: 0.8)),

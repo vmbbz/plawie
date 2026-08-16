@@ -82,6 +82,15 @@ summarize
 trello
 ```
 
+`agent-card` and `moonpay` are read-only external-account connectors in the
+current release. They do not share the Android-owned Personal Wallet or the
+KeeperHub-managed Agent Execution Wallet. Their app-native schemas expose only
+bounded status methods; known wallet-owning financial skill installs are blocked
+until Plawie can mediate simulation, exact foreground review, one-use approval,
+and Android authentication. `x402-client` is not Coinbase AgentKit and must not
+be labelled or installed as AgentKit. See
+[`MULTI_WALLET_AND_EXTERNAL_FINANCIAL_SKILL_POLICY.md`](MULTI_WALLET_AND_EXTERNAL_FINANCIAL_SKILL_POLICY.md).
+
 The current Android node command allowlist contains avatar, camera, canvas,
 weather, ClawHub metadata, flashlight/torch, location, screen recording, sensor,
 simple meme image creation, blogwatcher RSS/Atom feed checks, camsnap camera

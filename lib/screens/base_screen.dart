@@ -2247,8 +2247,9 @@ class _BaseScreenState extends State<BaseScreen> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Install Coinbase AgentKit in Skills for 50+ AI-driven Base actions '
-                    '(gasless swaps, NFT deploy, DCA, bridge, Farcaster).',
+                    'Coinbase AgentKit is not integrated. The community '
+                    'x402-client skill is not AgentKit and cannot inherit this '
+                    'wallet\'s one-use approval.',
                     style: TextStyle(
                         fontSize: 11,
                         color: theme.colorScheme.onSurfaceVariant),

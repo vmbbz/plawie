@@ -3361,8 +3361,6 @@ class AgentSkillServer {
       skillId: 'agent-card',
       defaultMethod: 'get_balance',
       pathMethods: const {
-        'create': 'create_card',
-        'refill': 'set_refill_policy',
         'balance': 'get_balance',
       },
     );
@@ -3403,10 +3401,6 @@ class AgentSkillServer {
       pathMethods: const {
         'portfolio': 'get_portfolio',
         'price': 'get_price',
-        'swap': 'swap',
-        'bridge': 'bridge',
-        'buy': 'buy',
-        'sell': 'sell',
         'dca': 'dca_list',
       },
     );

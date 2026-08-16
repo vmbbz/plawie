@@ -5,13 +5,15 @@ import '../../../services/skills_service.dart';
 import '../../../widgets/skill_install_hero.dart';
 import '../../../app.dart';
 
-/// Agent Wallet — powered by AgentCard.ai (agentcard.ai)
-/// Virtual Visa card issued by AgentCard for autonomous AI agent spending.
-/// Data is fetched via SkillsService. Direct gateway skill-page execution is
-/// optional, so native builds may show an unavailable state until an adapter is
-/// provided.
+/// Read-only AgentCard connector preview.
 ///
-/// Official AgentCard.ai (private beta) response fields (inferred from CLI schema):
+/// AgentCard is a separate external card account. It is not Plawie's
+/// Android-owned Personal Wallet or the KeeperHub-managed Agent Execution
+/// Wallet. The app may display bounded status returned by a configured Gateway
+/// connector, but it does not expose card creation, refill, funding, or spend to
+/// the agent.
+///
+/// Expected read-only response fields:
 ///   id            - card unique identifier
 ///   last4         - last 4 digits of the Visa card
 ///   balance       - current balance in USD cents
@@ -74,6 +76,11 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
         setState(() {
           _data = raw;
           _loading = false;
+          if (raw['configured'] == false) {
+            _error = raw['actionRequired']?.toString() ??
+                raw['message']?.toString() ??
+                'AgentCard is not configured.';
+          }
         });
       } else {
         setState(() {
@@ -86,12 +93,6 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
         _error = result.error ?? 'Could not load card data';
       });
     }
-  }
-
-  Future<void> _setAutoRefill(bool value) async {
-    await SkillsService().executeSkill('agent_card',
-        parameters: {'method': 'set_refill_policy', 'enabled': value});
-    _refreshData();
   }
 
   @override
@@ -208,7 +209,7 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
       backgroundColor: Colors.transparent,
       flexibleSpace: FlexibleSpaceBar(
         title: Text(
-          'Agent Wallet',
+          'AgentCard connector',
           style: GoogleFonts.outfit(
             fontWeight: FontWeight.bold,
             color: Theme.of(context).textTheme.titleLarge?.color,
@@ -589,10 +590,10 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Auto-Refill',
+                Text('Auto-Refill (external)',
                     style:
                         TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                Text('Automatically top up when balance runs low',
+                Text('Manage this only in the external provider account',
                     style:
                         TextStyle(fontSize: 11, color: AppColors.statusGrey)),
               ],
@@ -600,7 +601,7 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
           ),
           Switch(
             value: autoRefill,
-            onChanged: _setAutoRefill,
+            onChanged: null,
             activeThumbColor: AppColors.statusGreen,
           ),
         ],
@@ -609,36 +610,31 @@ class _AgentWalletPageState extends State<AgentWalletPage> {
   }
 
   Widget _buildActionButtons(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Add Funds'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.statusGreen,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.statusAmber.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.statusAmber.withValues(alpha: 0.25),
+        ),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.shield_outlined, color: AppColors.statusAmber, size: 20),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Read-only boundary: Plawie does not create, fund, refill, or '
+              'spend from this external account. Those controls must not be '
+              'treated as Personal Wallet or KeeperHub approvals.',
+              style: TextStyle(fontSize: 12, height: 1.45),
             ),
           ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.open_in_new_rounded),
-            label: const Text('AgentCard.ai'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-            ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

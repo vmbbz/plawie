@@ -13,7 +13,8 @@ import '../../base_screen.dart';
 
 /// Wallet skill page — device-native EVM identity powered by BaseService.
 /// Always available (no gateway install needed).
-/// Shows exact per-network assets, AgentKit status, and skill documentation.
+/// Shows exact per-network assets, AgentKit roadmap status, and skill
+/// documentation.
 class AgentBasePage extends StatefulWidget {
   const AgentBasePage({super.key});
 
@@ -271,7 +272,7 @@ class _AgentBasePageState extends State<AgentBasePage>
     );
   }
 
-  // ── AgentKit banner ────────────────────────────────────────────────────────
+  // ── AgentKit roadmap boundary ─────────────────────────────────────────────
 
   Widget _buildAgentKitBanner(BuildContext context) {
     return Container(
@@ -290,12 +291,13 @@ class _AgentBasePageState extends State<AgentBasePage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Coinbase AgentKit',
+                  'Coinbase AgentKit · not integrated',
                   style: GoogleFonts.outfit(
                       fontWeight: FontWeight.w700, fontSize: 13),
                 ),
                 Text(
-                  '50+ AI-driven Base actions — gasless swaps, NFT deploy, DCA, bridge.',
+                  'No CDP wallet provider or Plawie approval adapter is active. '
+                  'This Base wallet remains a separate custody route.',
                   style: TextStyle(
                       fontSize: 11,
                       color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -311,18 +313,8 @@ class _AgentBasePageState extends State<AgentBasePage>
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            onPressed: () {
-              // Navigate to Skills Manager to install cdp-agentkit
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                      'Go to Skills Manager → Discover → Coinbase AgentKit to install.'),
-                  duration: Duration(seconds: 4),
-                ),
-              );
-            },
-            child: const Text('Install',
+            onPressed: null,
+            child: const Text('Roadmap',
                 style: TextStyle(color: Colors.purple, fontSize: 12)),
           ),
         ],

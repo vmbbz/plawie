@@ -17,6 +17,7 @@ import 'clawhub_service.dart';
 import '../constants/openclaw_paths.dart';
 import 'native_clawhub_skill_installer.dart';
 import 'gifgrep_contract.dart';
+import 'external_financial_skill_policy.dart';
 
 /// Skills System — Thin UI + Native Bridge architecture.
 /// This service acts as the UI manager and execution router for on-device native
@@ -381,6 +382,16 @@ class SkillsService {
     String id, {
     bool silent = false,
   }) async {
+    final installBlock = ExternalFinancialSkillPolicy.installBlockReason(id);
+    if (installBlock != null) {
+      if (!silent) _broadcast(SkillsEvent.skillError(id, installBlock));
+      return SkillInstallReport(
+        ok: false,
+        id: id,
+        message: 'error: $installBlock',
+        error: installBlock,
+      );
+    }
     try {
       if (!silent) _broadcast(SkillsEvent.skillInstalling(id));
       final nativeOwner = await OpenClawCommandService.isNativeOwnerSelected();
@@ -1039,6 +1050,17 @@ class SkillsService {
 
   Future<SkillResult> _executeAgentCardSkill(
       Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    final method = p['method']?.toString().trim().isNotEmpty == true
+        ? p['method'].toString().trim()
+        : 'get_balance';
+    if (!ExternalFinancialSkillPolicy.canExecuteAgentCardMethod(method)) {
+      return SkillResult.error(
+        ExternalFinancialSkillPolicy.executionBlockReason(
+          provider: 'AgentCard',
+          method: method,
+        ),
+      );
+    }
     return _executeGatewayOrNativePartnerSkill(
       skillId: 'agent-card',
       defaultMethod: 'get_balance',
@@ -1069,6 +1091,17 @@ class SkillsService {
 
   Future<SkillResult> _executeMoonPaySkill(
       Skill s, Map<String, dynamic> p, Map<String, dynamic> c) async {
+    final method = p['method']?.toString().trim().isNotEmpty == true
+        ? p['method'].toString().trim()
+        : 'get_portfolio';
+    if (!ExternalFinancialSkillPolicy.canExecuteMoonPayMethod(method)) {
+      return SkillResult.error(
+        ExternalFinancialSkillPolicy.executionBlockReason(
+          provider: 'MoonPay',
+          method: method,
+        ),
+      );
+    }
     return _executeGatewayOrNativePartnerSkill(
       skillId: 'moonpay',
       defaultMethod: 'get_portfolio',
@@ -1671,13 +1704,14 @@ class SkillsService {
       enabled: true);
   Skill _createAgentCardSkill() => Skill(
       id: 'agent-card',
-      name: 'AgentCard',
-      description: 'Virtual cards for AI spending.',
+      name: 'AgentCard connector',
+      description:
+          'Read-only status connector for a separate external virtual card account.',
       version: '1.0.0',
-      author: 'OpenClaw',
+      author: 'Plawie connector',
       category: 'agentcard',
-      tags: ['finance'],
-      source: 'bundled',
+      tags: ['finance', 'read-only', 'external-custody'],
+      source: 'bundled-read-only-adapter',
       createdAt: DateTime.now(),
       enabled: true);
   Skill _createMoltLaunchSkill() => Skill(
@@ -1704,13 +1738,14 @@ class SkillsService {
       enabled: true);
   Skill _createMoonPaySkill() => Skill(
       id: 'moonpay',
-      name: 'MoonPay',
-      description: 'Crypto onramp/offramp.',
+      name: 'MoonPay read-only connector',
+      description:
+          'Read-only portfolio connector for a separate external MoonPay CLI wallet.',
       version: '1.0.0',
-      author: 'MoonPay',
+      author: 'Plawie connector',
       category: 'moonpay',
-      tags: ['finance'],
-      source: 'bundled',
+      tags: ['finance', 'read-only', 'external-custody'],
+      source: 'bundled-read-only-adapter',
       createdAt: DateTime.now(),
       enabled: true);
   Skill _createXurlSkill() => Skill(
@@ -2437,11 +2472,8 @@ class SkillsService {
         return _methodToolDefinition(
           skill,
           description:
-              'Inspect AgentCard balance/status or configure card refill policy.',
-          methods: const ['get_balance', 'set_refill_policy', 'create_card'],
-          extraProperties: const {
-            'enabled': {'type': 'boolean'},
-          },
+              'Read AgentCard balance/status for a separately configured external account. Plawie cannot create, refill, or spend from it.',
+          methods: ExternalFinancialSkillPolicy.agentCardReadMethods,
         );
       case 'molt-launch':
         return _methodToolDefinition(
@@ -2464,30 +2496,14 @@ class SkillsService {
         return _methodToolDefinition(
           skill,
           description:
-              'Inspect MoonPay portfolio, token prices, DCA strategies, or requested financial operations.',
-          methods: const [
-            'get_portfolio',
-            'get_price',
-            'swap',
-            'bridge',
-            'buy',
-            'sell',
-            'dca_list',
-            'dca_create',
-          ],
+              'Read portfolio, token-price, or DCA status from a separately configured external MoonPay CLI wallet. Writes are not exposed.',
+          methods: ExternalFinancialSkillPolicy.moonPayReadMethods,
           extraProperties: const {
             'token': {'type': 'string'},
             'tokens': {
               'type': 'array',
               'items': {'type': 'string'},
             },
-            'from_token': {'type': 'string'},
-            'to_token': {'type': 'string'},
-            'amount': {'type': 'string'},
-            'amount_usd': {'type': 'number'},
-            'from_chain': {'type': 'string'},
-            'to_chain': {'type': 'string'},
-            'frequency': {'type': 'string'},
           },
         );
       case 'xurl':

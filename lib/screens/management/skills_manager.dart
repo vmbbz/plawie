@@ -25,6 +25,7 @@ import '../../services/openclaw_service.dart';
 import '../../services/preferences_service.dart';
 import '../../services/skills_service.dart';
 import '../../services/skill_provisioning_service.dart';
+import '../../services/external_financial_skill_policy.dart';
 import 'skills/agent_wallet_page.dart';
 import 'skills/agent_work_page.dart';
 import 'skills/agent_credit_page.dart';
@@ -53,15 +54,16 @@ import 'skills/skill_detail_sheet.dart';
 const _premiumSkills = [
   _SkillEntry(
     id: 'agent-card',
-    title: 'Wallet',
-    subtitle: 'AgentCard.ai',
+    title: 'Virtual card',
+    subtitle: 'AgentCard · external',
     description:
-        'Issue virtual Visa cards, manage balances, and make autonomous payments.',
+        'Read-only connector preview for a separate AgentCard account. It is not the Personal Wallet or KeeperHub wallet and cannot spend through Plawie.',
     icon: Icons.account_balance_wallet_rounded,
     color: Color(0xFF3D52D5),
     hasPage: true,
-    tooltip: 'AgentCard.ai gives your agent a virtual Visa card...',
-    installSlug: null, // built-in
+    tooltip: 'Separate external virtual-card account; read-only in Plawie.',
+    builtIn: true,
+    installSlug: null,
   ),
   _SkillEntry(
     id: 'molt-launch',
@@ -100,14 +102,16 @@ const _premiumSkills = [
   ),
   _SkillEntry(
     id: 'moonpay',
-    title: 'Finance',
-    subtitle: 'MoonPay',
-    description: 'Verified agent bank account + 30 financial skills',
+    title: 'External wallet',
+    subtitle: 'MoonPay CLI · separate custody',
+    description:
+        'Creates or imports its own multi-chain HD wallet. Plawie exposes a read-only connector preview; in-app installation and writes are blocked until approval mediation exists.',
     icon: Icons.currency_exchange_rounded,
     color: Color(0xFF7B2FBE),
     hasPage: true,
-    tooltip: 'MoonPay verified bank...',
-    installSlug: 'moonpay', // ← REAL CLAWHUB SLUG
+    tooltip:
+        'External wallet runtime; never a replacement or default for Plawie wallets.',
+    installSlug: 'moonpay',
   ),
   _SkillEntry(
     id: 'local-llm',
@@ -119,17 +123,6 @@ const _premiumSkills = [
     hasPage: true,
     tooltip: 'Local LLM...',
     installSlug: null, // built-in
-  ),
-  _SkillEntry(
-    id: 'cdp-agentkit',
-    title: 'AgentKit',
-    subtitle: 'Coinbase CDP',
-    description:
-        '50+ AI-driven Base actions (gasless swaps, NFT, DCA, Farcaster)',
-    icon: Icons.rocket_launch_rounded,
-    color: Color(0xFF0052FF),
-    tooltip: 'Official Coinbase AgentKit...',
-    installSlug: 'x402-client', // ← REAL CLAWHUB SLUG for Coinbase payments
   ),
 ];
 
@@ -301,6 +294,31 @@ class _SkillsManagerState extends State<SkillsManager>
         lower.contains('use update instead');
   }
 
+  Future<bool> _showExternalFinancialInstallBlock(
+    BuildContext context,
+    String slug,
+  ) async {
+    final reason = ExternalFinancialSkillPolicy.installBlockReason(slug);
+    if (reason == null) return false;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Separate wallet integration not enabled'),
+        content: Text(
+          '$reason\n\nInstalling a skill never merges wallets, migrates keys, '
+          'or changes Plawie\'s default payment wallet.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Understood'),
+          ),
+        ],
+      ),
+    );
+    return true;
+  }
+
   Future<void> _installSkill(
     BuildContext context,
     _SkillEntry skill,
@@ -316,6 +334,13 @@ class _SkillsManagerState extends State<SkillsManager>
       if (skill.hasPage) {
         _navigateToSkillPage(context, skill.id);
       }
+      return;
+    }
+
+    if (await _showExternalFinancialInstallBlock(
+      context,
+      skill.installSlug!,
+    )) {
       return;
     }
 
@@ -434,6 +459,8 @@ class _SkillsManagerState extends State<SkillsManager>
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final provider = Provider.of<GatewayProvider>(context, listen: false);
+
+    if (await _showExternalFinancialInstallBlock(context, slug)) return;
 
     final alreadyActive = await _isSkillAlreadyActive(slug, provider);
     if (!mounted || !context.mounted) return;
@@ -966,12 +993,12 @@ class _MySkillsTabState extends State<_MySkillsTab> {
                         for (final skill in mergedSkills)
                           Builder(
                             builder: (context) {
-                              final installed =
+                              final installed = skill.builtIn ||
                                   installedIds.contains(skill.id) ||
-                                      installedIds.any((id) =>
-                                          id.contains(skill.id) ||
-                                          id.contains(
-                                              skill.id.replaceAll('-', '_')));
+                                  installedIds.any((id) =>
+                                      id.contains(skill.id) ||
+                                      id.contains(
+                                          skill.id.replaceAll('-', '_')));
                               final provisioning =
                                   _provisioningFor(provisioningById, skill.id);
                               final configModel = androidReadiness == null
@@ -4859,6 +4886,7 @@ class _SkillEntry {
   /// (agent-card, molt-launch, valeo-sentinel, twilio-voice, moonpay, local-llm).
   /// Shows "Open" when already active; install remains an install action.
   final bool hasPage;
+  final bool builtIn;
   final String? installSlug;
 
   const _SkillEntry({
@@ -4870,6 +4898,7 @@ class _SkillEntry {
     required this.color,
     this.tooltip,
     this.hasPage = false,
+    this.builtIn = false,
     this.installSlug,
   });
 }

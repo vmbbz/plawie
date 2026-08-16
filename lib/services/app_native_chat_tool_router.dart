@@ -1994,15 +1994,20 @@ class AppNativeChatToolRouter {
       'card balance',
       'spend limit',
     ])) {
-      final method =
-          lower.contains('refill') ? 'set_refill_policy' : 'get_balance';
+      if (_containsAny(lower, const [
+        'refill',
+        'create card',
+        'issue card',
+        'add funds',
+        'spend',
+      ])) {
+        return null;
+      }
+      const method = 'get_balance';
       return _AppNativeToolPlan(
         toolName: 'agent-card',
         command: 'agent-card.$method',
-        input: {
-          'method': method,
-          if (method != 'get_balance') 'enabled': _enabledIntent(lower),
-        },
+        input: const {'method': method},
       );
     }
 
@@ -2057,19 +2062,23 @@ class AppNativeChatToolRouter {
       'dca strategy',
       'dca strategies',
     ])) {
+      if (_containsAny(lower, const [
+        'swap',
+        'bridge',
+        'buy',
+        'sell',
+        'create dca',
+        'start dca',
+        'set up dca',
+        'setup dca',
+      ])) {
+        return null;
+      }
       final method = lower.contains('price')
           ? 'get_price'
           : lower.contains('dca')
               ? 'dca_list'
-              : lower.contains('swap')
-                  ? 'swap'
-                  : lower.contains('bridge')
-                      ? 'bridge'
-                      : lower.contains('buy')
-                          ? 'buy'
-                          : lower.contains('sell')
-                              ? 'sell'
-                              : 'get_portfolio';
+              : 'get_portfolio';
       return _AppNativeToolPlan(
         toolName: 'moonpay',
         command: 'moonpay.$method',

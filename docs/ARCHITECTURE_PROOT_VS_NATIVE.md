@@ -260,6 +260,14 @@ valeo-sentinel
 moonpay
 ```
 
+The finance-shaped entries in this catalog do not form a shared wallet pool.
+`base-chain` is the Android-owned Personal Wallet; KeeperHub is a separately
+named managed execution capability; `agent-card` and `moonpay` are read-only
+external-account connectors. Installing a skill cannot select, replace, or
+inherit approval from either Plawie wallet. The current admission and future
+multi-wallet contract is documented in
+[`MULTI_WALLET_AND_EXTERNAL_FINANCIAL_SKILL_POLICY.md`](MULTI_WALLET_AND_EXTERNAL_FINANCIAL_SKILL_POLICY.md).
+
 Current node command policy includes avatar, camera, canvas, weather, ClawHub
 metadata, meme image creation, flashlight/torch, location, screen recording,
 sensor, and haptic commands. It does not currently prove a generic Android app
