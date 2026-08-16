@@ -27,7 +27,7 @@
   X-Content-Type-Options: nosniff
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-I+dMDX7KD9kyVUkTTjJBBA9Vs0pTPtWVwtjuQKNLczg='; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: https://eu.i.posthog.com; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; manifest-src 'self'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-lcbeR4UJHh+gdDEw55SOeM454G9XxcIrOHf8IzlHNSo='; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: https://eu.i.posthog.com; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; manifest-src 'self'; upgrade-insecure-requests
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
   Permissions-Policy: accelerometer=(), autoplay=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
