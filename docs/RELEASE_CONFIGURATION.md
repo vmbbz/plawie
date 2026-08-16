@@ -41,9 +41,10 @@ be mixed accidentally.
 | `PLAWIE_SITE_RELEASE_CHANNEL` | Measured Netlify landing build | Defaults to `web-production`; must begin with `web-` |
 
 The client appends `/i/v0/e/` to the configured HTTPS host and sets PostHog's
-`$process_person_profile` property to `false` and `$geoip_disable` to `true`.
-It does not enable autocapture, session replay, advertising identifiers, or a
-general analytics SDK. Never put a PostHog personal API key, project secret key,
+`$process_person_profile` property to `false`, `$geoip_disable` to `true`, and
+the stable queued event ID as `$insert_id` for idempotent retries. It does not
+enable autocapture, session replay, advertising identifiers, or a general
+analytics SDK. Never put a PostHog personal API key, project secret key,
 Supabase service-role key, or other backend credential in a Dart define.
 
 The Netlify landing build accepts the same host and public project token plus

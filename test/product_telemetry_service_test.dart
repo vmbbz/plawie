@@ -94,6 +94,7 @@ void main() {
     expect(properties[r'$process_person_profile'], isFalse);
     expect(properties[r'$geoip_disable'], isTrue);
     expect(properties[r'$session_id'], 'session-random');
+    expect(properties[r'$insert_id'], 'event-1');
     expect(properties['plawieEventId'], 'event-1');
     expect(properties['platform'], 'android');
     expect(jsonEncode(requestBody), isNot(contains('prompt')));

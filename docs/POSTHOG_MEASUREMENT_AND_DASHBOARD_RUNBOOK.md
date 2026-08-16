@@ -1,7 +1,7 @@
 # Plawie PostHog Measurement and Dashboard Runbook
 
 **Date:** 2026-08-16
-**Status:** Website and Android staging acceptance complete; production activation and dashboards pending
+**Status:** Website/Android staging accepted and staging dashboards provisioned; production activation pending
 **Identity model:** Consented anonymous installations, not verified people
 
 ## 1. Account setup and project separation
@@ -30,7 +30,9 @@ and 9 so the staging gate does not depend on access to an ephemeral event view.
 
 The public project token identifies the ingestion project; it is not permission
 to administer the PostHog account. Dashboard creation can be completed manually
-in the PostHog UI and does not require committing an administrative API key.
+in the PostHog UI or with `scripts/provision_posthog_dashboards.mjs`. Automation
+requires a least-privilege Personal API key only in the operator's process
+environment. Never commit it, embed it in a frontend, or pass it to an app build.
 
 ## 2. Release configuration
 
@@ -73,6 +75,8 @@ Production uses the production project token and `web-production` /
 - Direct PostHog Capture API calls; no analytics SDK, autocapture, replay,
   heatmaps, feature flags, or remote configuration.
 - `$process_person_profile=false` and `$geoip_disable=true` on every event.
+- The locally generated event ID is also sent as PostHog `$insert_id`, making
+  at-least-once queue delivery idempotent instead of inflating metrics.
 - No page URL, referrer, search term, arbitrary UTM value, prompt, response,
   transcript, audio, media, filename, wallet data, signature, credential, raw
   provider payload, or raw exception.
@@ -236,6 +240,43 @@ events render; Android activation/reliability/retention require one deliberately
 consented end-to-end staging session and then a property review of each newly
 observed event family.
 
+### Reproducible dashboard provisioning
+
+The checked-in manifest is the dashboard source of truth. It creates or verifies
+only objects carrying its managed marker and refuses to overwrite an unmanaged
+name collision. The generic PostHog starter dashboard is intentionally left
+untouched.
+
+```powershell
+$env:POSTHOG_PERSONAL_API_KEY = '<private phx_ operator key>'
+$env:POSTHOG_PROJECT_ID = '249705'
+$env:POSTHOG_API_HOST = 'https://eu.posthog.com'
+node scripts/provision_posthog_dashboards.mjs --check --execute-queries
+Remove-Item Env:POSTHOG_PERSONAL_API_KEY
+Remove-Item Env:POSTHOG_PROJECT_ID
+Remove-Item Env:POSTHOG_API_HOST
+```
+
+Run without `--check` to create or reconcile managed objects. Run with
+`--check --execute-queries` in release acceptance to prove the saved definitions,
+dashboard attachments, and all 22 query payloads remain valid. Rotate an
+operator key after accidental disclosure; rotation does not affect app capture,
+which uses only the public `phc_` project token.
+
+Provisioned staging dashboards on 2026-08-16:
+
+| Dashboard | ID | Managed insights |
+|---|---:|---:|
+| `Plawie — Acquisition — Staging` | `898684` | 5 |
+| `Plawie — Android Activation — Staging` | `898685` | 9 |
+| `Plawie — Voice and Gateway — Staging` | `898686` | 6 |
+| `Plawie — Retention — Staging` | `898687` | 2 |
+
+An immediate second run reported zero creates and zero updates, and PostHog's
+private query endpoint executed every managed insight successfully. Empty or
+immature cohort tiles still mean “awaiting evidence”; provisioning does not turn
+them into launch claims.
+
 ## 6. Acquisition-to-app limitation
 
 The GitHub APK download and Android installation have different random IDs.
@@ -350,6 +391,20 @@ but only after a privacy/policy review and a separate implementation plan.
   periodic heartbeats, cancellation after true backgrounding, uninterrupted
   foreground/PiP sessions, PiP surface labeling, opt-in while active, and
   immediate shutdown/identity removal on opt-out.
-- PostHog Live events must still be reviewed for the two new event names and
-  their bounded `source` and `surface` properties before promoting this exact
-  build configuration from staging to production.
+- PostHog's private query API confirmed both new event names with only the
+  expected anonymous installation, `android-staging`, app version `2.3.0`,
+  `source=app_lifecycle`, and `surface=foreground` fields plus the standard
+  bounded control properties.
+- That review exposed one at-least-once delivery duplicated under the same
+  `plawieEventId`. Preview 6 now maps the queued event ID to PostHog
+  `$insert_id`; this preserves queue retries while making ingestion idempotent.
+- The Preview 6 candidate was version `2.3.0` / version code `16`,
+  230,095,107 bytes, SHA-256
+  `8cd1ec42015deb0b287ef94243cc261d933b1d376894cce8ff3893e12f739310`.
+  It passed the compiled-artifact secret audit, installed over the existing
+  Samsung app, preserved consent and app data, and reported matching
+  `plawieEventId`/`$insert_id` values with one ingested row per observed event
+  ID. Historical rows are not rewritten.
+- Release-candidate validation passed all 915 Flutter tests, Flutter analysis,
+  landing build/CSP validation, both landing analytics suites, the dashboard
+  manifest contract, and execution of all 22 managed PostHog queries.

@@ -243,7 +243,7 @@ Do not call an avatar “owned” merely because a local file is present. The ap
 
 ### Event contract
 
-Every transmitted event has `event_name`, `schema_version`, a random installation ID, an app-session ID, platform, release channel, app version, timestamp, and a locally generated event ID. The installation ID is created only after consent. It is not an Android advertising ID, hardware identifier, wallet address, Gateway device identity, account ID, or cryptographic key.
+Every transmitted event has `event_name`, `schema_version`, a random installation ID, an app-session ID, platform, release channel, app version, timestamp, and a locally generated event ID. That event ID is also the PostHog `$insert_id`, so retrying one queued event does not create multiple metric rows. The installation ID is created only after consent. It is not an Android advertising ID, hardware identifier, wallet address, Gateway device identity, account ID, or cryptographic key.
 
 Until optional accounts exist, dashboards must say **active installations** rather than claiming verified people or registered users. Download counts are acquisition signals, not installs; installation IDs are not people.
 

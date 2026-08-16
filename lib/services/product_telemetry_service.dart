@@ -272,6 +272,7 @@ class PostHogProductTelemetryTransport implements ProductTelemetryTransport {
               'appVersion': event.releaseVersion ?? config.appVersion,
               'releaseChannel': event.releaseChannel ?? config.releaseChannel,
               'plawieEventId': queuedEvent.eventId,
+              r'$insert_id': queuedEvent.eventId,
               r'$session_id': sessionId,
               r'$process_person_profile': false,
               r'$geoip_disable': true,
