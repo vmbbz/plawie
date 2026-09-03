@@ -1,8 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/sibyl_memory_service.dart';
 
 class GuardianPolicyCard extends StatefulWidget {
-  const GuardianPolicyCard({super.key});
+  final VoidCallback? onDismiss;
+  final bool initiallyCollapsed;
+
+  const GuardianPolicyCard({
+    super.key,
+    this.onDismiss,
+    this.initiallyCollapsed = false,
+  });
 
   @override
   State<GuardianPolicyCard> createState() => _GuardianPolicyCardState();
@@ -13,11 +21,28 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
   GuardianPolicy? _policy;
   double _dailySpent = 0.0;
   bool _loading = true;
+  late bool _collapsed;
+  StreamSubscription<GuardianPolicy>? _policySub;
 
   @override
   void initState() {
     super.initState();
+    _collapsed = widget.initiallyCollapsed;
     _loadPolicy();
+    _policySub = _memoryService.policyStream.listen((updatedPolicy) {
+      if (mounted) {
+        setState(() {
+          _policy = updatedPolicy;
+        });
+        _refreshSpent();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _policySub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadPolicy() async {
@@ -34,19 +59,39 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
     }
   }
 
+  Future<void> _refreshSpent() async {
+    final spent = await _memoryService.getDailySpentUsdc();
+    if (mounted) {
+      setState(() {
+        _dailySpent = spent;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Center(
-            child: SizedBox(
-              height: 20,
-              width: 20,
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+        padding: const EdgeInsets.all(12.0),
+        decoration: BoxDecoration(
+          color: const Color(0xFF161B22),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF30363D)),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              height: 16,
+              width: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
-          ),
+            SizedBox(width: 12),
+            Text(
+              'Recalling Sibyl Memory...',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
         ),
       );
     }
@@ -56,7 +101,8 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
     final progress = dailyCap > 0 ? (_dailySpent / dailyCap).clamp(0.0, 1.0) : 0.0;
     final remaining = (dailyCap - _dailySpent).clamp(0.0, dailyCap);
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
       margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
       decoration: BoxDecoration(
         color: const Color(0xFF161B22),
@@ -71,7 +117,7 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(14.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -87,10 +133,10 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                   child: const Icon(
                     Icons.security_rounded,
                     color: Color(0xFF0052FF),
-                    size: 22,
+                    size: 20,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -102,7 +148,7 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
-                              fontSize: 15,
+                              fontSize: 14,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -132,7 +178,7 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                         'Base L2 Financial Safety Shield',
                         style: TextStyle(
                           color: Colors.grey[400],
-                          fontSize: 12,
+                          fontSize: 11,
                         ),
                       ),
                     ],
@@ -142,109 +188,132 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                   icon: const Icon(Icons.refresh, color: Colors.grey, size: 18),
                   onPressed: _loadPolicy,
                   tooltip: 'Refresh Recall',
-                )
+                  constraints: const BoxConstraints(),
+                  padding: const EdgeInsets.all(6),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _collapsed ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                    color: Colors.grey,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _collapsed = !_collapsed),
+                  tooltip: _collapsed ? 'Expand details' : 'Collapse details',
+                  constraints: const BoxConstraints(),
+                  padding: const EdgeInsets.all(6),
+                ),
+                if (widget.onDismiss != null)
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.grey, size: 18),
+                    onPressed: widget.onDismiss,
+                    tooltip: 'Dismiss Card',
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(6),
+                  ),
               ],
             ),
-            const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Daily Spend: \$${_dailySpent.toStringAsFixed(2)} / \$${dailyCap.toStringAsFixed(2)} USDC',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
+            if (!_collapsed) ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Daily Spend: \$${_dailySpent.toStringAsFixed(2)} / \$${dailyCap.toStringAsFixed(2)} USDC',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                ),
-                Text(
-                  '\$${remaining.toStringAsFixed(2)} remaining',
-                  style: TextStyle(
-                    color: remaining > 0 ? Colors.cyanAccent : Colors.redAccent,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
+                  Text(
+                    '\$${remaining.toStringAsFixed(2)} remaining',
+                    style: TextStyle(
+                      color: remaining > 0 ? Colors.cyanAccent : Colors.redAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 6,
-                backgroundColor: const Color(0xFF21262D),
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  progress >= 1.0
-                      ? Colors.redAccent
-                      : (progress > 0.7
-                          ? Colors.orangeAccent
-                          : const Color(0xFF0052FF)),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 6,
+                  backgroundColor: const Color(0xFF21262D),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    progress >= 1.0
+                        ? Colors.redAccent
+                        : (progress > 0.7
+                            ? Colors.orangeAccent
+                            : const Color(0xFF0052FF)),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF21262D),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Per-Tx Cap',
-                          style: TextStyle(color: Colors.grey, fontSize: 10),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '\$${policy.singleTxLimitUsdc.toStringAsFixed(2)} USDC',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF21262D),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Per-Tx Cap',
+                            style: TextStyle(color: Colors.grey, fontSize: 10),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 2),
+                          Text(
+                            '\$${policy.singleTxLimitUsdc.toStringAsFixed(2)} USDC',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF21262D),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Allowlist',
-                          style: TextStyle(color: Colors.grey, fontSize: 10),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          policy.allowedRecipients.isEmpty
-                              ? 'Human Review'
-                              : '${policy.allowedRecipients.length} Recipient(s)',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF21262D),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Allowlist',
+                            style: TextStyle(color: Colors.grey, fontSize: 10),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 2),
+                          Text(
+                            policy.allowedRecipients.isEmpty
+                                ? 'Human Review'
+                                : '${policy.allowedRecipients.length} Recipient(s)',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
-            )
+                ],
+              ),
+            ]
           ],
         ),
       ),

@@ -28,6 +28,7 @@ import '../widgets/status_card.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/bridge_funding_panel.dart';
 import '../widgets/keeperhub_agent_wallet_card.dart';
+import '../widgets/guardian_policy_card.dart';
 
 class BaseScreen extends StatefulWidget {
   const BaseScreen({
@@ -388,6 +389,9 @@ class _BaseScreenState extends State<BaseScreen> {
                               const SizedBox(height: 16),
                               _buildWalletStatePanel(theme),
                               const SizedBox(height: 24),
+                              _sectionLabel(theme, 'GUARDIAN SAFETY SHIELD'),
+                              const GuardianPolicyCard(),
+                              const SizedBox(height: 12),
                               _sectionLabel(theme, 'AGENT EXECUTION'),
                               KeeperHubAgentWalletCard(
                                 personalWalletAddress: _baseService.address,

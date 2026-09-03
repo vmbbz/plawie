@@ -58,6 +58,7 @@ import '../services/tool_media_event_bus.dart';
 import '../widgets/hologram_overlay.dart';
 import 'management/local_llm_screen.dart';
 import 'base_screen.dart';
+import '../widgets/guardian_policy_card.dart';
 import 'web_dashboard_screen.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
@@ -198,6 +199,7 @@ class _ChatScreenState extends State<ChatScreen>
   static const MethodChannel _pipChannel = MethodChannel('vrm/pip_mode');
   bool _isPipMode = false;
   bool _isChatCollapsed = false; // Expanded by default
+  bool _showGuardianCard = true;
   bool _chatPinnedToBottom = true;
   late AnimationController _glowController;
 
@@ -4836,9 +4838,31 @@ class _ChatScreenState extends State<ChatScreen>
                       await Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const BaseScreen()),
                       );
+                    } else if (value == 'guardian_card') {
+                      setState(() => _showGuardianCard = !_showGuardianCard);
                     }
                   },
                   itemBuilder: (ctx) => [
+                    PopupMenuItem<String>(
+                      value: 'guardian_card',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.security_rounded,
+                            color: _showGuardianCard ? Colors.greenAccent : Colors.white70,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            _showGuardianCard ? 'Hide Guardian Card' : 'Show Guardian Card',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     PopupMenuItem<String>(
                       value: 'agent_controls',
                       child: Row(
@@ -5078,7 +5102,18 @@ class _ChatScreenState extends State<ChatScreen>
             ),
           ),
 
-          // 4. Glassmorphic Chat Area
+          // 4. Plawie Guardian Safety Shield Overlay
+          if (!_isPipMode && _showGuardianCard)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 64,
+              left: 8,
+              right: 8,
+              child: GuardianPolicyCard(
+                onDismiss: () => setState(() => _showGuardianCard = false),
+              ),
+            ),
+
+          // 5. Glassmorphic Chat Area
           if (!_isPipMode)
             Positioned.fill(
               child: Padding(
