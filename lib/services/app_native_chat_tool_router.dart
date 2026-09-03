@@ -268,7 +268,9 @@ class AppNativeChatToolRouter {
         true,
       'payments.capabilities' ||
       'payments.status' ||
-      'payments.receipts' =>
+      'payments.receipts' ||
+      'payments.set_policy' ||
+      'payments.get_policy' =>
         true,
       'bridge.capabilities' ||
       'bridge.quote' ||
@@ -735,6 +737,8 @@ class AppNativeChatToolRouter {
         case 'payments.capabilities':
         case 'payments.status':
         case 'payments.receipts':
+        case 'payments.set_policy':
+        case 'payments.get_policy':
           return _frameToMap(await _aiPayments.handle(
             plan.command,
             plan.input,

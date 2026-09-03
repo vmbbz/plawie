@@ -9,11 +9,10 @@ import '../x402_payment_service.dart';
 import '../x402_payment_transport_service.dart';
 import 'capability_handler.dart';
 
-/// Read-only agent view of wallet-funded AI payments.
-///
-/// There is deliberately no approve/sign/submit command. An agent can explain
-/// status and prepare the user to open the Base page, but only visible Flutter
-/// UI can mint an approval ticket and only Android can unlock the key.
+import '../sibyl_memory_service.dart';
+import '../guardian_policy_engine.dart';
+
+/// Agent view of wallet-funded AI payments and Guardian policy control.
 class AiPaymentsCapability extends CapabilityHandler {
   AiPaymentsCapability({
     BaseService? baseService,
@@ -42,6 +41,8 @@ class AiPaymentsCapability extends CapabilityHandler {
         'capabilities',
         'status',
         'receipts',
+        'set_policy',
+        'get_policy',
         'bridge.capabilities',
         'bridge.quote',
         'bridge.status',
@@ -67,6 +68,8 @@ class AiPaymentsCapability extends CapabilityHandler {
           ),
         'payments.status' => await _status(),
         'payments.receipts' => await _receipts(),
+        'payments.set_policy' => await _setPolicy(params),
+        'payments.get_policy' => await _getPolicy(),
         'bridge.capabilities' => NodeFrame.response(
             '',
             payload: _bridgeCapabilities(),
@@ -85,6 +88,45 @@ class AiPaymentsCapability extends CapabilityHandler {
         'message': '$error',
       });
     }
+  }
+
+  Future<NodeFrame> _setPolicy(Map<String, dynamic> params) async {
+    final dailyLimit = double.tryParse(params['daily_limit']?.toString() ??
+            params['dailyLimitUsdc']?.toString() ??
+            '50') ??
+        50.0;
+    final singleLimit = double.tryParse(params['single_limit']?.toString() ??
+            params['singleTxLimitUsdc']?.toString() ??
+            '25') ??
+        25.0;
+    final recipients = (params['allowed_recipients'] as List? ??
+            params['allowedRecipients'] as List?)
+        ?.map((e) => e.toString().toLowerCase().trim())
+        .toList() ??
+        <String>[];
+    final newPolicy = GuardianPolicy(
+      dailyLimitUsdc: dailyLimit,
+      singleTxLimitUsdc: singleLimit,
+      allowedRecipients: recipients,
+    );
+    await SibylMemoryService().savePolicy(newPolicy);
+    return NodeFrame.response('', payload: <String, dynamic>{
+      'status': 'POLICY_SAVED',
+      'policy': newPolicy.toJson(),
+      'summary': newPolicy.toPromptSummary(),
+    });
+  }
+
+  Future<NodeFrame> _getPolicy() async {
+    final memorySvc = SibylMemoryService();
+    await memorySvc.initialize();
+    final policy = memorySvc.activePolicy;
+    final dailySpent = await memorySvc.getDailySpentUsdc();
+    return NodeFrame.response('', payload: <String, dynamic>{
+      'policy': policy.toJson(),
+      'dailySpentUsdc': dailySpent,
+      'summary': policy.toPromptSummary(),
+    });
   }
 
   Map<String, dynamic> _capabilities() => <String, dynamic>{
