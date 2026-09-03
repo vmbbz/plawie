@@ -11,6 +11,7 @@ class GuardianPolicy {
   final double singleTxLimitUsdc;
   final List<String> allowedRecipients; // Addresses or .base.eth names
   final bool requireExplicitApproval;
+  final bool isConfigured;
   final DateTime updatedAt;
 
   GuardianPolicy({
@@ -18,21 +19,26 @@ class GuardianPolicy {
     required this.singleTxLimitUsdc,
     required this.allowedRecipients,
     this.requireExplicitApproval = true,
+    this.isConfigured = true,
     DateTime? updatedAt,
   }) : updatedAt = updatedAt ?? DateTime.now();
 
-  factory GuardianPolicy.defaultPolicy() => GuardianPolicy(
-        dailyLimitUsdc: 50.0,
-        singleTxLimitUsdc: 25.0,
+  factory GuardianPolicy.unconfigured() => GuardianPolicy(
+        dailyLimitUsdc: 0.0,
+        singleTxLimitUsdc: 0.0,
         allowedRecipients: const [],
         requireExplicitApproval: true,
+        isConfigured: false,
       );
+
+  factory GuardianPolicy.defaultPolicy() => GuardianPolicy.unconfigured();
 
   Map<String, dynamic> toJson() => {
         'dailyLimitUsdc': dailyLimitUsdc,
         'singleTxLimitUsdc': singleTxLimitUsdc,
         'allowedRecipients': allowedRecipients,
         'requireExplicitApproval': requireExplicitApproval,
+        'isConfigured': isConfigured,
         'updatedAt': updatedAt.toIso8601String(),
       };
 
@@ -46,6 +52,7 @@ class GuardianPolicy {
             const [],
         requireExplicitApproval:
             json['requireExplicitApproval'] as bool? ?? true,
+        isConfigured: json['isConfigured'] as bool? ?? true,
         updatedAt: json['updatedAt'] != null
             ? DateTime.tryParse(json['updatedAt'].toString()) ?? DateTime.now()
             : DateTime.now(),
@@ -247,7 +254,23 @@ class SibylMemoryService {
         _logger.e('Error decoding stored policy: $e');
       }
     }
-    return GuardianPolicy.defaultPolicy();
+    return GuardianPolicy.unconfigured();
+  }
+
+  /// Reset policy to unconfigured state (for demo prep without wiping any phone or wallet data)
+  Future<void> clearPolicy() async {
+    await initialize();
+    _cachedPolicy = GuardianPolicy.unconfigured();
+    _policyStreamController.add(_cachedPolicy!);
+
+    if (_db != null && !_isTestingMode) {
+      await _db!.delete(
+        'sibyl_memories',
+        where: 'category = ? AND key_name = ?',
+        whereArgs: ['policy', 'active_financial_policy'],
+      );
+    }
+    _logger.i('Cleared active financial policy from Sibyl Memory.');
   }
 
   /// Store or update active financial policy into Sibyl Memory

@@ -68,6 +68,18 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
     }
   }
 
+  Future<void> _resetPolicyForDemo() async {
+    await _memoryService.clearPolicy();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Financial policy reset to unconfigured state for demo recording.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -96,7 +108,8 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
       );
     }
 
-    final policy = _policy ?? GuardianPolicy.defaultPolicy();
+    final policy = _policy ?? GuardianPolicy.unconfigured();
+    final isConfigured = policy.isConfigured;
     final dailyCap = policy.dailyLimitUsdc;
     final progress = dailyCap > 0 ? (_dailySpent / dailyCap).clamp(0.0, 1.0) : 0.0;
     final remaining = (dailyCap - _dailySpent).clamp(0.0, dailyCap);
@@ -107,7 +120,9 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
       decoration: BoxDecoration(
         color: const Color(0xFF161B22),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF30363D)),
+        border: Border.all(
+          color: isConfigured ? const Color(0xFF30363D) : Colors.amber.withOpacity(0.4),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.3),
@@ -127,12 +142,14 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0052FF).withOpacity(0.15),
+                    color: isConfigured
+                        ? const Color(0xFF0052FF).withOpacity(0.15)
+                        : Colors.amber.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.security_rounded,
-                    color: Color(0xFF0052FF),
+                    color: isConfigured ? const Color(0xFF0052FF) : Colors.amber,
                     size: 20,
                   ),
                 ),
@@ -156,15 +173,22 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.2),
+                              color: isConfigured
+                                  ? Colors.green.withOpacity(0.2)
+                                  : Colors.amber.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
-                                  color: Colors.green.withOpacity(0.4)),
+                                color: isConfigured
+                                    ? Colors.green.withOpacity(0.4)
+                                    : Colors.amber.withOpacity(0.4),
+                              ),
                             ),
-                            child: const Text(
-                              'SIBYL RECALLED',
+                            child: Text(
+                              isConfigured ? 'SIBYL RECALLED' : 'UNCONFIGURED',
                               style: TextStyle(
-                                color: Colors.greenAccent,
+                                color: isConfigured
+                                    ? Colors.greenAccent
+                                    : Colors.amberAccent,
                                 fontSize: 9,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 0.5,
@@ -175,7 +199,9 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Base L2 Financial Safety Shield',
+                        isConfigured
+                            ? 'Base L2 Financial Safety Shield'
+                            : 'No policy stored in Sibyl Memory',
                         style: TextStyle(
                           color: Colors.grey[400],
                           fontSize: 11,
@@ -184,6 +210,14 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                     ],
                   ),
                 ),
+                if (isConfigured)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 18),
+                    onPressed: _resetPolicyForDemo,
+                    tooltip: 'Reset Policy for Demo Prep',
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(6),
+                  ),
                 IconButton(
                   icon: const Icon(Icons.refresh, color: Colors.grey, size: 18),
                   onPressed: _loadPolicy,
@@ -214,105 +248,131 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
             ),
             if (!_collapsed) ...[
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Daily Spend: \$${_dailySpent.toStringAsFixed(2)} / \$${dailyCap.toStringAsFixed(2)} USDC',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
+              if (!isConfigured) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.withOpacity(0.2)),
                   ),
-                  Text(
-                    '\$${remaining.toStringAsFixed(2)} remaining',
-                    style: TextStyle(
-                      color: remaining > 0 ? Colors.cyanAccent : Colors.redAccent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 6,
-                  backgroundColor: const Color(0xFF21262D),
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    progress >= 1.0
-                        ? Colors.redAccent
-                        : (progress > 0.7
-                            ? Colors.orangeAccent
-                            : const Color(0xFF0052FF)),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.amberAccent, size: 16),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Ask Plawie: "Set my spending policy to max \$50 daily and \$25 per transaction cap."',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF21262D),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Per-Tx Cap',
-                            style: TextStyle(color: Colors.grey, fontSize: 10),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '\$${policy.singleTxLimitUsdc.toStringAsFixed(2)} USDC',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
+              ] else ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Daily Spend: \$${_dailySpent.toStringAsFixed(2)} / \$${dailyCap.toStringAsFixed(2)} USDC',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF21262D),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Allowlist',
-                            style: TextStyle(color: Colors.grey, fontSize: 10),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            policy.allowedRecipients.isEmpty
-                                ? 'Human Review'
-                                : '${policy.allowedRecipients.length} Recipient(s)',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      '\$${remaining.toStringAsFixed(2)} remaining',
+                      style: TextStyle(
+                        color: remaining > 0 ? Colors.cyanAccent : Colors.redAccent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 6,
+                    backgroundColor: const Color(0xFF21262D),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      progress >= 1.0
+                          ? Colors.redAccent
+                          : (progress > 0.7
+                              ? Colors.orangeAccent
+                              : const Color(0xFF0052FF)),
+                    ),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF21262D),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Per-Tx Cap',
+                              style: TextStyle(color: Colors.grey, fontSize: 10),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '\$${policy.singleTxLimitUsdc.toStringAsFixed(2)} USDC',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF21262D),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Allowlist',
+                              style: TextStyle(color: Colors.grey, fontSize: 10),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              policy.allowedRecipients.isEmpty
+                                  ? 'Human Review'
+                                  : '${policy.allowedRecipients.length} Recipient(s)',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ]
             ]
           ],
         ),
