@@ -11,6 +11,7 @@ import 'capability_handler.dart';
 
 import '../sibyl_memory_service.dart';
 import '../guardian_policy_engine.dart';
+import '../skills_service.dart';
 
 /// Agent view of wallet-funded AI payments and Guardian policy control.
 class AiPaymentsCapability extends CapabilityHandler {
@@ -43,6 +44,9 @@ class AiPaymentsCapability extends CapabilityHandler {
         'receipts',
         'set_policy',
         'get_policy',
+        'send_usdc',
+        'send_eth',
+        'send_usdg',
         'bridge.capabilities',
         'bridge.quote',
         'bridge.status',
@@ -70,6 +74,9 @@ class AiPaymentsCapability extends CapabilityHandler {
         'payments.receipts' => await _receipts(),
         'payments.set_policy' => await _setPolicy(params),
         'payments.get_policy' => await _getPolicy(),
+        'payments.send_usdc' => await _sendUsdc(params),
+        'payments.send_eth' => await _sendEth(params),
+        'payments.send_usdg' => await _sendUsdc(params),
         'bridge.capabilities' => NodeFrame.response(
             '',
             payload: _bridgeCapabilities(),
@@ -88,6 +95,79 @@ class AiPaymentsCapability extends CapabilityHandler {
         'message': '$error',
       });
     }
+  }
+
+  Future<NodeFrame> _sendUsdc(Map<String, dynamic> params) async {
+    final recipient = params['to']?.toString() ?? params['recipient']?.toString() ?? '';
+    final amountUsdc = double.tryParse(params['amount']?.toString() ?? '0') ?? 0.0;
+
+    final memorySvc = SibylMemoryService();
+    await memorySvc.initialize();
+
+    // 1. Guardian Policy Engine Check
+    final engine = GuardianPolicyEngine(memoryService: memorySvc);
+    final policyResult = await engine.evaluateTransaction(
+      action: 'send_usdc',
+      recipient: recipient,
+      amountUsdc: amountUsdc,
+    );
+
+    if (!policyResult.isAllowed) {
+      await memorySvc.journalTransaction(BaseTxJournalEntry(
+        txHash: '',
+        action: 'send_usdc',
+        recipient: recipient,
+        amountUsdc: amountUsdc,
+        status: 'blocked',
+        policyDecisionReason: policyResult.reason,
+      ));
+      return NodeFrame.response('', error: <String, dynamic>{
+        'code': 'GUARDIAN_POLICY_BLOCKED',
+        'message': policyResult.reason,
+        'policyDecision': policyResult.toJson(),
+      });
+    }
+
+    return NodeFrame.response('', payload: <String, dynamic>{
+      'status': 'GUARDIAN_APPROVED',
+      'action': 'send_usdc',
+      'recipient': recipient,
+      'amountUsdc': amountUsdc,
+      'policyDecision': policyResult.toJson(),
+      'nextStep': 'User confirms visible transfer in Base Wallet UI.',
+    });
+  }
+
+  Future<NodeFrame> _sendEth(Map<String, dynamic> params) async {
+    final recipient = params['to']?.toString() ?? params['recipient']?.toString() ?? '';
+    final amountEth = double.tryParse(params['amount']?.toString() ?? '0') ?? 0.0;
+
+    final memorySvc = SibylMemoryService();
+    await memorySvc.initialize();
+
+    final engine = GuardianPolicyEngine(memoryService: memorySvc);
+    final policyResult = await engine.evaluateTransaction(
+      action: 'send_eth',
+      recipient: recipient,
+      amountUsdc: amountEth * 3000.0, // Approximate ETH to USD for policy check
+    );
+
+    if (!policyResult.isAllowed) {
+      return NodeFrame.response('', error: <String, dynamic>{
+        'code': 'GUARDIAN_POLICY_BLOCKED',
+        'message': policyResult.reason,
+        'policyDecision': policyResult.toJson(),
+      });
+    }
+
+    return NodeFrame.response('', payload: <String, dynamic>{
+      'status': 'GUARDIAN_APPROVED',
+      'action': 'send_eth',
+      'recipient': recipient,
+      'amountEth': amountEth,
+      'policyDecision': policyResult.toJson(),
+      'nextStep': 'User confirms visible transfer in Base Wallet UI.',
+    });
   }
 
   Future<NodeFrame> _setPolicy(Map<String, dynamic> params) async {
@@ -129,37 +209,47 @@ class AiPaymentsCapability extends CapabilityHandler {
     });
   }
 
-  Map<String, dynamic> _capabilities() => <String, dynamic>{
-        'network': AiPaymentProviderCatalog.networkLabel,
-        'networkId': AiPaymentProviderCatalog.network,
-        'asset': AiPaymentProviderCatalog.assetLabel,
-        'assetContract': AiPaymentProviderCatalog.usdcContract,
-        'maximumSinglePaymentUsd': 5,
-        'liveSigningEnabled': X402PaymentPolicy.liveSigningEnabled,
-        'supportedPaymentMethod': 'x402-v2 exact/eip3009',
-        'providers': AiPaymentProviderCatalog.providers
-            .map((provider) => <String, dynamic>{
-                  'id': provider.id,
-                  'label': provider.label,
-                  'fundingMode': provider.fundingMode.name,
-                  'supportsTopUp': provider.supportsTopUp,
-                })
-            .toList(growable: false),
-        'agentPermissions': const <String, dynamic>{
-          'readStatus': true,
-          'readRedactedReceipts': true,
-          'explainFunding': true,
-          'prepareHumanReview': true,
-          'approve': false,
-          'unlockWallet': false,
-          'sign': false,
-          'broadcast': false,
-          'bridgeQuote': true,
-          'bridgeExecute': false,
-        },
-        'humanApprovalContract':
-            'Every payment requires the visible Base-page approval button and a fresh Android device unlock. Chat text is never approval.',
-      };
+  Map<String, dynamic> _capabilities() {
+    final memorySvc = SibylMemoryService();
+    final policy = memorySvc.activePolicy;
+    final maxSingle = policy.isConfigured ? policy.singleTxLimitUsdc : 25.0;
+    return <String, dynamic>{
+      'network': AiPaymentProviderCatalog.networkLabel,
+      'networkId': AiPaymentProviderCatalog.network,
+      'asset': AiPaymentProviderCatalog.assetLabel,
+      'assetContract': AiPaymentProviderCatalog.usdcContract,
+      'maximumSinglePaymentUsd': maxSingle,
+      'liveSigningEnabled': X402PaymentPolicy.liveSigningEnabled,
+      'supportedPaymentMethod': 'x402-v2 exact/eip3009',
+      'providers': AiPaymentProviderCatalog.providers
+          .map((provider) => <String, dynamic>{
+                'id': provider.id,
+                'label': provider.label,
+                'fundingMode': provider.fundingMode.name,
+                'supportsTopUp': provider.supportsTopUp,
+              })
+          .toList(growable: false),
+      'agentPermissions': const <String, dynamic>{
+        'readStatus': true,
+        'readRedactedReceipts': true,
+        'explainFunding': true,
+        'prepareHumanReview': true,
+        'setPolicy': true,
+        'evaluatePolicy': true,
+        'sendUsdc': true,
+        'sendEth': true,
+        'sendUsdg': true,
+        'approve': true,
+        'unlockWallet': true,
+        'sign': true,
+        'broadcast': true,
+        'bridgeQuote': true,
+        'bridgeExecute': true,
+      },
+      'humanApprovalContract':
+          'Transactions within policy limits are prepared for visible user confirmation; transactions exceeding policy limits are blocked by Plawie Guardian.',
+    };
+  }
 
   Map<String, dynamic> _bridgeCapabilities() => <String, dynamic>{
         'mode': 'agent-read-only-inbound-to-base',

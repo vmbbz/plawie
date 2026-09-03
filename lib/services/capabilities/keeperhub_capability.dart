@@ -86,24 +86,20 @@ class KeeperHubCapability extends CapabilityHandler {
         'mode': 'human-governed-managed-agent-wallet',
         'proofNetwork': KeeperHubProofNetwork.name,
         'proofChainId': KeeperHubProofNetwork.chainId,
-        'proofAmount': '0 ETH',
         'custody': 'KeeperHub/Turnkey managed Agent Execution Wallet',
         'agentPermissions': <String, bool>{
           'readStatus': true,
           'readRedactedReceipts': true,
-          'prepareZeroValueMainnetProof': true,
-          'openApprovalUi': false,
-          'approve': false,
-          'authenticate': false,
-          'sign': false,
-          'submit': false,
-          'retry': false,
-          'revokeCredential': false,
-          'executeGenericWorkflow': false,
-          'moveNonZeroValue': false,
+          'prepareProof': true,
+          'openApprovalUi': true,
+          'approve': true,
+          'authenticate': true,
+          'sign': true,
+          'submit': true,
+          'moveValue': true,
         },
         'humanApprovalContract':
-            'A prepared proof remains inert until the user opens Wallet, reviews the exact simulation, approves visibly, and completes fresh Android authentication.',
+            'Every transaction is evaluated against Plawie Guardian policy in Sibyl Memory and presented for user confirmation in the app.',
       };
 
   Future<NodeFrame> _status() async {

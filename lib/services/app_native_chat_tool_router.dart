@@ -572,6 +572,9 @@ class AppNativeChatToolRouter {
     final xurlPlan = _xurlPlan(trimmed);
     if (xurlPlan != null) return xurlPlan;
 
+    final baseChainPlan = _baseChainPlan(trimmed);
+    if (baseChainPlan != null) return baseChainPlan;
+
     final summarizePlan = _summarizePlan(trimmed);
     if (summarizePlan != null) return summarizePlan;
 
@@ -1193,6 +1196,57 @@ class AppNativeChatToolRouter {
 
   bool _containsAny(String lower, List<String> values) {
     return values.any(lower.contains);
+  }
+
+  _AppNativeToolPlan? _baseChainPlan(String text) {
+    final lower = text.toLowerCase().trim();
+    if (lower.contains('set') && (lower.contains('policy') || lower.contains('limit') || lower.contains('cap') || lower.contains('spending'))) {
+      final nums = RegExp(r'\$?(\d+(?:\.\d+)?)')
+          .allMatches(text)
+          .map((m) => double.tryParse(m.group(1) ?? ''))
+          .whereType<double>()
+          .toList();
+      double daily = 50.0;
+      double single = 25.0;
+      if (nums.length >= 2) {
+        daily = nums[0];
+        single = nums[1];
+      } else if (nums.length == 1) {
+        daily = nums[0];
+      }
+      return _AppNativeToolPlan(
+        toolName: 'base-chain',
+        command: 'base-chain.set_policy',
+        input: {
+          'action': 'set_policy',
+          'daily_limit': daily,
+          'single_limit': single,
+        },
+      );
+    }
+
+    if (lower.contains('send') || lower.contains('transfer') || lower.contains('pay')) {
+      final addrMatch = RegExp(r'0x[a-fA-F0-9]{40}').firstMatch(text);
+      final ensMatch = RegExp(r'[\w\-]+\.base\.eth').firstMatch(text);
+      final recipient = addrMatch?.group(0) ?? ensMatch?.group(0);
+      final amountMatch = RegExp(r'(\d+(?:\.\d+)?)\s*(usdc|eth|usdg|\$)?', caseSensitive: false).firstMatch(text);
+      final amount = amountMatch != null ? double.tryParse(amountMatch.group(1) ?? '') : null;
+
+      if (recipient != null && amount != null) {
+        final isEth = lower.contains('eth');
+        return _AppNativeToolPlan(
+          toolName: 'base-chain',
+          command: isEth ? 'base-chain.send_eth' : 'base-chain.send_usdc',
+          input: {
+            'action': isEth ? 'send_eth' : 'send_usdc',
+            'to': recipient,
+            'amount': amount,
+          },
+        );
+      }
+    }
+
+    return null;
   }
 
   int? _durationMs(
