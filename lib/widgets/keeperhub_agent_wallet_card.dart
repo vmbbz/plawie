@@ -284,18 +284,19 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 44,
-          height: 44,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
             color: AppColors.statusGreen.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: const Icon(
             Icons.hub_outlined,
             color: AppColors.statusGreen,
+            size: 20,
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,25 +305,37 @@ class _KeeperHubAgentWalletCardState extends State<KeeperHubAgentWalletCard> {
                 'Agent Execution Wallet',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w800,
+                  fontSize: 14,
                 ),
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 2),
               Text(
                 'Reliable agent execution with human approval',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 11,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
         ),
-        IconButton(
-          tooltip: 'Refresh Agent Wallet state',
-          visualDensity: VisualDensity.compact,
-          onPressed: _busy || _loading ? null : _reload,
-          icon: const Icon(Icons.refresh, size: 19),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Refresh Agent Wallet state',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.all(4),
+              onPressed: _busy || _loading ? null : _reload,
+              icon: const Icon(Icons.refresh, size: 18),
+            ),
+            const SizedBox(width: 4),
+            _chip(statusLabel, statusColor),
+          ],
         ),
-        _chip(statusLabel, statusColor),
       ],
     );
   }

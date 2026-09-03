@@ -116,7 +116,7 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
-      margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+      margin: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
       decoration: BoxDecoration(
         color: const Color(0xFF161B22),
         borderRadius: BorderRadius.circular(16),
@@ -132,46 +132,50 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(14.0),
+        padding: const EdgeInsets.all(12.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
                     color: isConfigured
                         ? const Color(0xFF0052FF).withOpacity(0.15)
                         : Colors.amber.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     Icons.security_rounded,
                     color: isConfigured ? const Color(0xFF0052FF) : Colors.amber,
-                    size: 20,
+                    size: 18,
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
+                        runSpacing: 2,
                         children: [
                           const Text(
                             'Plawie Guardian',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                              fontSize: 13,
                             ),
                           ),
-                          const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
+                                horizontal: 5, vertical: 1.5),
                             decoration: BoxDecoration(
                               color: isConfigured
                                   ? Colors.green.withOpacity(0.2)
@@ -189,68 +193,75 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                                 color: isConfigured
                                     ? Colors.greenAccent
                                     : Colors.amberAccent,
-                                fontSize: 9,
+                                fontSize: 8.5,
                                 fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
+                                letterSpacing: 0.4,
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 1),
                       Text(
                         isConfigured
                             ? 'Base L2 Financial Safety Shield'
                             : 'No policy stored in Sibyl Memory',
                         style: TextStyle(
                           color: Colors.grey[400],
-                          fontSize: 11,
+                          fontSize: 10.5,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
-                if (isConfigured)
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 18),
-                    onPressed: _resetPolicyForDemo,
-                    tooltip: 'Reset Policy for Demo Prep',
-                    constraints: const BoxConstraints(),
-                    padding: const EdgeInsets.all(6),
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.refresh, color: Colors.grey, size: 18),
-                  onPressed: _loadPolicy,
-                  tooltip: 'Refresh Recall',
-                  constraints: const BoxConstraints(),
-                  padding: const EdgeInsets.all(6),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isConfigured)
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.grey, size: 16),
+                        onPressed: _resetPolicyForDemo,
+                        tooltip: 'Reset Policy for Demo Prep',
+                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(4),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh, color: Colors.grey, size: 16),
+                      onPressed: _loadPolicy,
+                      tooltip: 'Refresh Recall',
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(4),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _collapsed ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                        color: Colors.grey,
+                        size: 18,
+                      ),
+                      onPressed: () => setState(() => _collapsed = !_collapsed),
+                      tooltip: _collapsed ? 'Expand details' : 'Collapse details',
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(4),
+                    ),
+                    if (widget.onDismiss != null)
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.grey, size: 16),
+                        onPressed: widget.onDismiss,
+                        tooltip: 'Dismiss Card',
+                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(4),
+                      ),
+                  ],
                 ),
-                IconButton(
-                  icon: Icon(
-                    _collapsed ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
-                    color: Colors.grey,
-                    size: 20,
-                  ),
-                  onPressed: () => setState(() => _collapsed = !_collapsed),
-                  tooltip: _collapsed ? 'Expand details' : 'Collapse details',
-                  constraints: const BoxConstraints(),
-                  padding: const EdgeInsets.all(6),
-                ),
-                if (widget.onDismiss != null)
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.grey, size: 18),
-                    onPressed: widget.onDismiss,
-                    tooltip: 'Dismiss Card',
-                    constraints: const BoxConstraints(),
-                    padding: const EdgeInsets.all(6),
-                  ),
               ],
             ),
             if (!_collapsed) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               if (!isConfigured) ...[
                 Container(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: Colors.amber.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(8),
@@ -258,14 +269,14 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                   ),
                   child: const Row(
                     children: [
-                      Icon(Icons.info_outline, color: Colors.amberAccent, size: 16),
-                      SizedBox(width: 8),
+                      Icon(Icons.info_outline, color: Colors.amberAccent, size: 14),
+                      SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           'Ask Plawie: "Set my spending policy to max \$50 daily and \$25 per transaction cap."',
                           style: TextStyle(
                             color: Colors.white70,
-                            fontSize: 11,
+                            fontSize: 10.5,
                           ),
                         ),
                       ),
@@ -273,14 +284,17 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                   ),
                 ),
               ] else ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 4,
                   children: [
                     Text(
                       'Daily Spend: \$${_dailySpent.toStringAsFixed(2)} / \$${dailyCap.toStringAsFixed(2)} USDC',
                       style: const TextStyle(
                         color: Colors.white70,
-                        fontSize: 12,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -288,7 +302,7 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                       '\$${remaining.toStringAsFixed(2)} remaining',
                       style: TextStyle(
                         color: remaining > 0 ? Colors.cyanAccent : Colors.redAccent,
-                        fontSize: 12,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -299,7 +313,7 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
                     value: progress,
-                    minHeight: 6,
+                    minHeight: 5,
                     backgroundColor: const Color(0xFF21262D),
                     valueColor: AlwaysStoppedAnimation<Color>(
                       progress >= 1.0
@@ -310,12 +324,12 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
                       child: Container(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
                           color: const Color(0xFF21262D),
                           borderRadius: BorderRadius.circular(8),
@@ -325,25 +339,25 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                           children: [
                             const Text(
                               'Per-Tx Cap',
-                              style: TextStyle(color: Colors.grey, fontSize: 10),
+                              style: TextStyle(color: Colors.grey, fontSize: 9.5),
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 1),
                             Text(
                               '\$${policy.singleTxLimitUsdc.toStringAsFixed(2)} USDC',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 12,
+                                fontSize: 11,
                               ),
                             ),
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Container(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
                           color: const Color(0xFF21262D),
                           borderRadius: BorderRadius.circular(8),
@@ -353,9 +367,9 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                           children: [
                             const Text(
                               'Allowlist',
-                              style: TextStyle(color: Colors.grey, fontSize: 10),
+                              style: TextStyle(color: Colors.grey, fontSize: 9.5),
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: 1),
                             Text(
                               policy.allowedRecipients.isEmpty
                                   ? 'Human Review'
@@ -363,7 +377,7 @@ class _GuardianPolicyCardState extends State<GuardianPolicyCard> {
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 12,
+                                fontSize: 11,
                               ),
                             ),
                           ],
