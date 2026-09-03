@@ -10,6 +10,8 @@ import 'gateway_skill_proxy.dart';
 import 'openclaw_service.dart';
 import 'native_bridge.dart';
 import 'base_service.dart';
+import 'sibyl_memory_service.dart';
+import 'guardian_policy_engine.dart';
 import 'gateway_service.dart';
 import 'skill_workspace.dart';
 import 'avatar_gesture_catalog.dart';
@@ -1323,7 +1325,10 @@ class SkillsService {
     final action = p['action'] ?? 'get_balance';
     final svc = BaseService();
     await svc.initialize();
-    if (!svc.isConnected && action != 'switch_network') {
+    final memorySvc = SibylMemoryService();
+    await memorySvc.initialize();
+
+    if (!svc.isConnected && action != 'switch_network' && action != 'get_policy' && action != 'set_policy') {
       return SkillResult.success({
         'configured': false,
         'connected': false,
@@ -1354,42 +1359,97 @@ class SkillsService {
             },
             'usdc': svc.usdcBalance.toString(),
           });
+        case 'get_policy':
+          final policy = memorySvc.activePolicy;
+          final dailySpent = await memorySvc.getDailySpentUsdc();
+          return SkillResult.success({
+            'policy': policy.toJson(),
+            'dailySpentUsdc': dailySpent,
+            'summary': policy.toPromptSummary(),
+          });
+        case 'set_policy':
+          final dailyLimit = double.tryParse(p['daily_limit']?.toString() ?? '50') ?? 50.0;
+          final singleLimit = double.tryParse(p['single_limit']?.toString() ?? '25') ?? 25.0;
+          final recipients = (p['allowed_recipients'] as List?)
+                  ?.map((e) => e.toString().toLowerCase().trim())
+                  .toList() ??
+              <String>[];
+          final newPolicy = GuardianPolicy(
+            dailyLimitUsdc: dailyLimit,
+            singleTxLimitUsdc: singleLimit,
+            allowedRecipients: recipients,
+          );
+          await memorySvc.savePolicy(newPolicy);
+          return SkillResult.success({
+            'status': 'POLICY_SAVED',
+            'policy': newPolicy.toJson(),
+            'summary': newPolicy.toPromptSummary(),
+          });
         case 'send_eth':
-          final approval = ctx['baseTransferApproval'];
-          if (approval is! BaseTransferApproval) {
-            return SkillResult.error(
-                'HUMAN_APPROVAL_REQUIRED: confirm the exact transfer in the visible Wallet UI.');
-          }
-          final tx = await svc.sendEth(
-            p['to'].toString(),
-            Decimal.parse(p['amount'].toString()),
-            approval: approval,
-          );
-          return SkillResult.success({'txHash': tx});
         case 'send_usdc':
-          final approval = ctx['baseTransferApproval'];
-          if (approval is! BaseTransferApproval) {
-            return SkillResult.error(
-                'HUMAN_APPROVAL_REQUIRED: confirm the exact transfer in the visible Wallet UI.');
-          }
-          final tx = await svc.sendUsdc(
-            p['to'].toString(),
-            Decimal.parse(p['amount'].toString()),
-            approval: approval,
-          );
-          return SkillResult.success({'txHash': tx});
         case 'send_usdg':
+          final recipient = p['to'].toString();
+          final amountDecimal = Decimal.parse(p['amount'].toString());
+          final amountUsdc = amountDecimal.toDouble();
+
+          // 1. Guardian Policy Engine Check
+          final engine = GuardianPolicyEngine(memoryService: memorySvc);
+          final policyResult = await engine.evaluateTransaction(
+            action: action,
+            recipient: recipient,
+            amountUsdc: amountUsdc,
+          );
+
+          if (!policyResult.isAllowed) {
+            await memorySvc.journalTransaction(BaseTxJournalEntry(
+              txHash: '',
+              action: action,
+              recipient: recipient,
+              amountUsdc: amountUsdc,
+              status: 'blocked',
+              policyDecisionReason: policyResult.reason,
+            ));
+            return SkillResult.error(policyResult.reason);
+          }
+
+          // 2. Visible UI Human Approval Check
           final approval = ctx['baseTransferApproval'];
           if (approval is! BaseTransferApproval) {
             return SkillResult.error(
-                'HUMAN_APPROVAL_REQUIRED: confirm the exact transfer in the visible Wallet UI.');
+                'HUMAN_APPROVAL_REQUIRED: Policy check passed (${policyResult.reason}). Please confirm the transfer in the visible Base wallet UI.');
           }
-          final tx = await svc.sendUsdg(
-            p['to'].toString(),
-            Decimal.parse(p['amount'].toString()),
-            approval: approval,
-          );
-          return SkillResult.success({'txHash': tx});
+
+          // 3. Execute Transfer
+          final String txHash;
+          if (action == 'send_eth') {
+            txHash = await svc.sendEth(
+              recipient,
+              amountDecimal,
+              approval: approval,
+            );
+          } else {
+            txHash = await svc.sendUsdc(
+              recipient,
+              amountDecimal,
+              approval: approval,
+            );
+          }
+
+          // 4. Journal Executed Transaction in Sibyl Memory
+          await memorySvc.journalTransaction(BaseTxJournalEntry(
+            txHash: txHash,
+            action: action,
+            recipient: recipient,
+            amountUsdc: amountUsdc,
+            status: 'executed',
+            policyDecisionReason: policyResult.reason,
+          ));
+
+          return SkillResult.success({
+            'txHash': txHash,
+            'status': 'EXECUTED',
+            'policyEvaluation': policyResult.toJson(),
+          });
         case 'resolve_basename':
           final addr = await svc.resolveBasename(p['name']);
           return SkillResult.success({'address': addr});

@@ -75,3 +75,6 @@ build/native-node/
 
 # Isolated Superpowers/Codex implementation worktrees.
 .worktrees/
+
+# Local Netlify folder
+.netlify

@@ -17,6 +17,7 @@ import 'paid_provider_proxy_models.dart';
 import 'preferences_service.dart';
 import 'product_telemetry_event.dart';
 import 'product_telemetry_service.dart';
+import 'sibyl_memory_service.dart';
 import 'speech_text_normalizer.dart';
 import 'tool_media_event_bus.dart';
 import 'tts_service.dart';
@@ -100,6 +101,7 @@ class ChatRuntimeService extends ChangeNotifier {
 
   Future<void> _init() async {
     await _persistence.init();
+    await SibylMemoryService().initialize();
     final prefs = PreferencesService();
     await prefs.init();
     _agentName = prefs.agentName;
