@@ -36,65 +36,61 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       'name': 'Google Gemini',
       'icon': 'smart_toy',
       'models': [
-        {'id': 'gemini-3.1-pro-preview', 'name': 'Gemini 3.1 Pro Preview'},
+        {'id': 'gemini-2.5-pro', 'name': 'Gemini 2.5 Pro'},
+        {'id': 'gemini-2.5-flash', 'name': 'Gemini 2.5 Flash'},
         {'id': 'gemini-1.5-pro', 'name': 'Gemini 1.5 Pro'},
-        {'id': 'gemini-1.5-flash', 'name': 'Gemini 1.5 Flash'},
       ],
-      'defaultModel': 'gemini-3.1-pro-preview',
+      'defaultModel': 'gemini-2.5-pro',
     },
     {
       'id': 'anthropic',
       'name': 'Anthropic Claude',
       'icon': 'api',
       'models': [
-        {'id': 'claude-opus-4-6', 'name': 'Claude Opus 4.6'},
-        {'id': 'claude-sonnet-4-6', 'name': 'Claude Sonnet 4.6'},
-        {'id': 'claude-3-5-sonnet-latest', 'name': 'Claude 3.5 Sonnet'},
+        {'id': 'claude-3-7-sonnet-20250219', 'name': 'Claude 3.7 Sonnet'},
+        {'id': 'claude-3-5-sonnet-20241022', 'name': 'Claude 3.5 Sonnet v2'},
       ],
-      'defaultModel': 'claude-opus-4-6',
+      'defaultModel': 'claude-3-7-sonnet-20250219',
     },
     {
       'id': 'openai',
       'name': 'OpenAI',
       'icon': 'psychology',
       'models': [
-        {'id': 'gpt-5.4', 'name': 'GPT-5.4'},
         {'id': 'gpt-4o', 'name': 'GPT-4o'},
+        {'id': 'gpt-4o-mini', 'name': 'GPT-4o Mini'},
+        {'id': 'o3-mini', 'name': 'o3-mini'},
       ],
-      'defaultModel': 'gpt-5.4',
+      'defaultModel': 'gpt-4o',
     },
     {
       'id': 'xai',
       'name': 'xAI Grok',
       'icon': 'rocket_launch',
       'models': [
-        {'id': 'grok-4', 'name': 'Grok 4'},
-        {'id': 'grok-4-1-fast', 'name': 'Grok 4.1 Fast'},
-        {'id': 'grok-code-fast-1', 'name': 'Grok Code Fast 1'},
+        {'id': 'grok-2-vision-1212', 'name': 'Grok 2 Vision'},
+        {'id': 'grok-2-1212', 'name': 'Grok 2'},
       ],
-      'defaultModel': 'grok-4',
+      'defaultModel': 'grok-2-vision-1212',
     },
     {
       'id': 'openrouter',
       'name': 'OpenRouter',
       'icon': 'hub',
       'models': [
-        {'id': 'openai/gpt-oss-20b:free', 'name': 'GPT-OSS 20B Free'},
-        {'id': 'openrouter/free', 'name': 'OpenRouter Free Router'},
+        {'id': 'meta-llama/llama-3.3-70b-instruct:free', 'name': 'Llama 3.3 70B Free'},
         {'id': 'auto', 'name': 'OpenRouter Auto'},
-        {'id': 'moonshotai/kimi-k2.6', 'name': 'Kimi K2.6'},
       ],
-      'defaultModel': 'openai/gpt-oss-20b:free',
+      'defaultModel': 'meta-llama/llama-3.3-70b-instruct:free',
     },
     {
       'id': 'groq',
       'name': 'Groq',
       'icon': 'speed',
       'models': [
-        {'id': 'openai/gpt-oss-120b', 'name': 'GPT-OSS 120B'},
-        {'id': 'openai/gpt-oss-20b', 'name': 'GPT-OSS 20B'},
+        {'id': 'llama-3.3-70b-versatile', 'name': 'Llama 3.3 70B Versatile'},
       ],
-      'defaultModel': 'openai/gpt-oss-120b',
+      'defaultModel': 'llama-3.3-70b-versatile',
     },
     {
       'id': 'zenmux',
@@ -259,20 +255,20 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     if (modelId == null || modelName == null) {
       switch (provider.toLowerCase()) {
         case 'google':
-          modelId = 'gemini-3.1-pro-preview';
-          modelName = 'Gemini 3.1 Pro Preview';
+          modelId = 'gemini-2.5-pro';
+          modelName = 'Gemini 2.5 Pro';
           break;
         case 'anthropic':
-          modelId = 'claude-opus-4.6';
-          modelName = 'Claude Opus 4.6';
+          modelId = 'claude-3-7-sonnet-20250219';
+          modelName = 'Claude 3.7 Sonnet';
           break;
         case 'openai':
           modelId = 'gpt-4o';
           modelName = 'GPT-4o';
           break;
         case 'groq':
-          modelId = 'openai/gpt-oss-120b';
-          modelName = 'GPT-OSS 120B';
+          modelId = 'llama-3.3-70b-versatile';
+          modelName = 'Llama 3.3 70B Versatile';
           break;
         case 'zenmux':
           modelId = 'z-ai/glm-5.2-free';

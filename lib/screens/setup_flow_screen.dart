@@ -58,7 +58,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       color: Color(0xFFD97706),
       hint: 'sk-ant-api03-...',
       prefix: 'sk-ant-',
-      defaultModel: 'anthropic/claude-opus-4-6',
+      defaultModel: 'anthropic/claude-3-7-sonnet-20250219',
       requiresApiKey: true,
     ),
     const _ProviderInfo(
@@ -69,7 +69,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       color: Color(0xFF4285F4),
       hint: 'AIzaSy...',
       prefix: 'AIza',
-      defaultModel: 'google/gemini-3.1-pro-preview',
+      defaultModel: 'google/gemini-2.5-pro',
       requiresApiKey: true,
     ),
     const _ProviderInfo(
@@ -80,7 +80,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       color: Color(0xFF10A37F),
       hint: 'sk-proj-...',
       prefix: 'sk-',
-      defaultModel: 'openai/gpt-5.4',
+      defaultModel: 'openai/gpt-4o',
       requiresApiKey: true,
     ),
     const _ProviderInfo(
@@ -91,7 +91,7 @@ class _SetupFlowScreenState extends State<SetupFlowScreen>
       color: Color(0xFFE0E0E0),
       hint: 'xai-...',
       prefix: 'xai-',
-      defaultModel: 'xai/grok-4',
+      defaultModel: 'xai/grok-2-vision-1212',
       requiresApiKey: true,
     ),
     const _ProviderInfo(

@@ -319,7 +319,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 _prefs.configuredModel == null
                             ? '${AiPaymentProviderCatalog.byId(_currentWalletProviderId)!.label} · finish setup in Wallet'
                             : _getProviderLabel(_prefs.configuredModel ??
-                                'google/gemini-3.1-pro-preview')),
+                                'google/gemini-2.5-pro')),
                         leading: Icon(_currentWalletProviderId == null
                             ? Icons.key
                             : Icons.account_balance_wallet_outlined),
@@ -343,7 +343,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 _currentWalletProviderId != null
                             ? 'Select after wallet and provider readiness checks'
                             : _getModelLabel(_prefs.configuredModel ??
-                                'google/gemini-3.1-pro-preview')),
+                                'google/gemini-2.5-pro')),
                         leading: const Icon(Icons.psychology),
                         trailing: const Icon(Icons.swap_horiz, size: 18),
                         onTap: () => _showChangeModelDialog(context),

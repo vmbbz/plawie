@@ -113,7 +113,7 @@ class ProviderOption {
 
 class ModelProviderCatalog {
   static const String defaultCloudFallbackModel =
-      'openrouter/openai/gpt-oss-20b:free';
+      'openrouter/meta-llama/llama-3.3-70b-instruct:free';
   static const String setupSafeGatewayModel = defaultCloudFallbackModel;
 
   static const String plawieNdkProviderId = 'plawie_ndk';
@@ -127,8 +127,8 @@ class ModelProviderCatalog {
       envKey: 'GOOGLE_API_KEY',
       keyHint: 'AIzaSy...',
       keyPrefix: 'AIza',
-      defaultModel: 'google/gemini-3.1-pro-preview',
-      description: 'Strong multimodal model for general chat, vision, video.',
+      defaultModel: 'google/gemini-2.5-pro',
+      description: 'Flagship multimodal model with vision, video, and full tool calls.',
     ),
     ProviderOption(
       id: 'anthropic',
@@ -137,8 +137,8 @@ class ModelProviderCatalog {
       envKey: 'ANTHROPIC_API_KEY',
       keyHint: 'sk-ant-api03-...',
       keyPrefix: 'sk-ant-',
-      defaultModel: 'anthropic/claude-opus-4-6',
-      description: 'Premium reasoning and long-form tool planning.',
+      defaultModel: 'anthropic/claude-3-7-sonnet-20250219',
+      description: 'Hybrid reasoning and long-form tool planning.',
     ),
     ProviderOption(
       id: 'openai',
@@ -147,8 +147,8 @@ class ModelProviderCatalog {
       envKey: 'OPENAI_API_KEY',
       keyHint: 'sk-proj-...',
       keyPrefix: 'sk-',
-      defaultModel: 'openai/gpt-5.4',
-      description: 'Balanced reasoning, multimodal chat, and tool use.',
+      defaultModel: 'openai/gpt-4o',
+      description: 'Flagship reasoning, multimodal chat, and full tool capabilities.',
     ),
     ProviderOption(
       id: 'xai',
@@ -157,8 +157,8 @@ class ModelProviderCatalog {
       envKey: 'XAI_API_KEY',
       keyHint: 'xai-...',
       keyPrefix: 'xai-',
-      defaultModel: 'xai/grok-4',
-      description: 'Grok reasoning, fast variants, and coding models.',
+      defaultModel: 'xai/grok-2-vision-1212',
+      description: 'Grok multimodal reasoning, vision, and tool execution models.',
     ),
     ProviderOption(
       id: 'openrouter',
@@ -177,8 +177,8 @@ class ModelProviderCatalog {
       envKey: 'GROQ_API_KEY',
       keyHint: 'gsk_...',
       keyPrefix: 'gsk_',
-      defaultModel: 'groq/openai/gpt-oss-120b',
-      description: 'Very fast hosted inference for responsive chat.',
+      defaultModel: 'groq/llama-3.3-70b-versatile',
+      description: 'Very fast hosted inference for responsive chat with full tool support.',
     ),
     ProviderOption(
       id: 'zenmux',
@@ -216,33 +216,17 @@ class ModelProviderCatalog {
     ),
   ];
 
-  /// Providers the official OpenClaw core can use in Plawie's embedded native
-  /// runtime without asking the gateway to launch a standalone package manager.
-  ///
-  /// This is intentionally narrower than [providers]: the catalog may describe
-  /// optional upstream extensions, but a stock Android app cannot execute an
-  /// arbitrary npm repair command from its writable data directory.
   static const Set<String> nativeGatewaySupportedProviderIds = <String>{
     'google',
     'anthropic',
     'openai',
     'xai',
     'openrouter',
-    // Zenmux uses the core OpenAI-compatible provider configuration.
     'zenmux',
-    // Wallet-funded providers use the bounded app-owned OpenAI-compatible
-    // loopback proxy and require no external Gateway plugin.
     'venice',
     'blockrun',
   };
 
-  /// Bundled upstream plugins that are safe to activate in the stock Android
-  /// native runtime. Keeping this explicit prevents upstream startup from
-  /// discovering an optional external plugin and attempting an implicit npm
-  /// repair inside the long-lived gateway process.
-  ///
-  /// Verified native extension packs must extend this policy deliberately;
-  /// merely writing an arbitrary plugin ID into openclaw.json is not enough.
   static const Set<String> nativeGatewayBundledPluginIds = <String>{
     'anthropic',
     'browser',
@@ -263,18 +247,11 @@ class ModelProviderCatalog {
     'xai',
   };
 
-  /// App-owned OpenClaw plugins whose exact source bytes are bundled in the
-  /// APK, SHA-256 verified during native bootstrap, and loaded only from the
-  /// app-private verified-plugin directory. These are deliberately separate
-  /// from upstream bundled plugins and arbitrary writable extension paths.
   static const Set<String> nativeGatewayVerifiedPluginIds = <String>{
     'plawie-tool-probe-guard',
     'plawie-venice-compat',
   };
 
-  /// Verified policy plugins required for every native Gateway regardless of
-  /// which cloud provider is selected. They are app-private and hash checked
-  /// by Android before the Gateway can load them.
   static const Set<String> nativeGatewayCoreVerifiedPluginIds = <String>{
     'plawie-tool-probe-guard',
   };
@@ -284,9 +261,6 @@ class ModelProviderCatalog {
     'venice': 'plawie-venice-compat',
   };
 
-  /// Upstream provider packages which must be delivered through an explicit,
-  /// verified Plawie extension path before native configuration may enable
-  /// them. They are never installed implicitly by gateway startup.
   static const Map<String, String> nativeGatewayExternalProviderPackages =
       <String, String>{
     'groq': '@openclaw/groq-provider',
@@ -304,48 +278,50 @@ class ModelProviderCatalog {
 
   static const List<ModelOption> cloudModels = [
     ModelOption(
-      id: 'google/gemini-3.1-pro-preview',
-      label: 'Gemini 3.1 Pro Preview',
+      id: 'google/gemini-2.5-pro',
+      label: 'Gemini 2.5 Pro',
       providerId: 'google',
       route: ModelRouteKind.cloud,
-      description: 'Recommended multimodal default.',
+      description: 'Flagship 2M context multimodal model with full tool capabilities.',
       category: 'Multimodal',
       recommended: true,
       supportsVision: true,
-      contextWindow: ModelExecutionPolicy.googleGemini31ProContextWindow,
+      contextWindow: ModelExecutionPolicy.googleGemini25ProContextWindow,
       maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
-      id: 'anthropic/claude-opus-4-6',
-      label: 'Claude Opus 4.6',
-      providerId: 'anthropic',
+      id: 'google/gemini-2.5-flash',
+      label: 'Gemini 2.5 Flash',
+      providerId: 'google',
       route: ModelRouteKind.cloud,
-      description: 'Premium reasoning and agent planning.',
-      category: 'Reasoning',
-      recommended: true,
-      contextWindow: ModelExecutionPolicy.anthropicClaude46ContextWindow,
-      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
-    ),
-    ModelOption(
-      id: 'anthropic/claude-sonnet-4-6',
-      label: 'Claude Sonnet 4.6',
-      providerId: 'anthropic',
-      route: ModelRouteKind.cloud,
-      description: 'Balanced Anthropic model.',
-      category: 'Reasoning',
-      contextWindow: ModelExecutionPolicy.anthropicClaude46ContextWindow,
-      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
-    ),
-    ModelOption(
-      id: 'openai/gpt-5.4',
-      label: 'GPT-5.4',
-      providerId: 'openai',
-      route: ModelRouteKind.cloud,
-      description: 'OpenAI API-key route for current OpenClaw docs.',
-      category: 'General',
+      description: 'Ultra fast 1M context multimodal model with full tool capabilities.',
+      category: 'Fast',
       recommended: true,
       supportsVision: true,
-      contextWindow: ModelExecutionPolicy.openAiGpt54ContextWindow,
+      contextWindow: ModelExecutionPolicy.googleGemini25FlashContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
+    ModelOption(
+      id: 'anthropic/claude-3-7-sonnet-20250219',
+      label: 'Claude 3.7 Sonnet',
+      providerId: 'anthropic',
+      route: ModelRouteKind.cloud,
+      description: 'Flagship hybrid reasoning and tool planning model.',
+      category: 'Reasoning',
+      recommended: true,
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.anthropicClaude37SonnetContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
+    ModelOption(
+      id: 'anthropic/claude-3-5-sonnet-20241022',
+      label: 'Claude 3.5 Sonnet v2',
+      providerId: 'anthropic',
+      route: ModelRouteKind.cloud,
+      description: 'Capable vision and agent tool execution model.',
+      category: 'Reasoning',
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.anthropicClaude35SonnetContextWindow,
       maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
@@ -353,66 +329,66 @@ class ModelProviderCatalog {
       label: 'GPT-4o',
       providerId: 'openai',
       route: ModelRouteKind.cloud,
-      description: 'Legacy-compatible multimodal fallback.',
+      description: 'Flagship multimodal model with full tool support.',
       category: 'Multimodal',
+      recommended: true,
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.openAiGpt4oContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
+    ModelOption(
+      id: 'openai/gpt-4o-mini',
+      label: 'GPT-4o Mini',
+      providerId: 'openai',
+      route: ModelRouteKind.cloud,
+      description: 'Lightweight fast multimodal model with full tool support.',
+      category: 'Fast',
+      recommended: true,
       supportsVision: true,
       contextWindow: ModelExecutionPolicy.openAiGpt4oContextWindow,
       maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
     ModelOption(
-      id: 'xai/grok-4',
-      label: 'Grok 4',
-      providerId: 'xai',
+      id: 'openai/o3-mini',
+      label: 'o3-mini',
+      providerId: 'openai',
       route: ModelRouteKind.cloud,
-      description: 'xAI default reasoning model.',
+      description: 'High-speed reasoning model with full tool support.',
       category: 'Reasoning',
-      recommended: true,
-      supportsVision: true,
-      contextWindow: ModelExecutionPolicy.xaiGrok4ContextWindow,
+      contextWindow: ModelExecutionPolicy.openAiO3MiniContextWindow,
       maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
-      id: 'xai/grok-4-1-fast',
-      label: 'Grok 4.1 Fast',
+      id: 'xai/grok-2-vision-1212',
+      label: 'Grok 2 Vision',
       providerId: 'xai',
       route: ModelRouteKind.cloud,
-      description: 'Fast xAI model for responsive chat.',
-      category: 'Fast',
+      description: 'xAI flagship multimodal model with tool calls.',
+      category: 'Multimodal',
+      recommended: true,
       supportsVision: true,
-      contextWindow: ModelExecutionPolicy.xaiGrok41FastContextWindow,
+      contextWindow: ModelExecutionPolicy.xaiGrok2ContextWindow,
       maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
-      id: 'xai/grok-code-fast-1',
-      label: 'Grok Code Fast 1',
+      id: 'xai/grok-2-1212',
+      label: 'Grok 2',
       providerId: 'xai',
       route: ModelRouteKind.cloud,
-      description: 'xAI coding model.',
-      category: 'Code',
-      contextWindow: ModelExecutionPolicy.xaiGrokCodeFastContextWindow,
-      maxTokens: ModelExecutionPolicy.standardOutputTokens,
+      description: 'xAI reasoning and tool execution model.',
+      category: 'Reasoning',
+      contextWindow: ModelExecutionPolicy.xaiGrok2ContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
-      id: 'openrouter/openai/gpt-oss-20b:free',
-      label: 'GPT-OSS 20B Free via OpenRouter',
+      id: 'openrouter/meta-llama/llama-3.3-70b-instruct:free',
+      label: 'Llama 3.3 70B Free via OpenRouter',
       providerId: 'openrouter',
       route: ModelRouteKind.cloud,
-      description: 'Free OpenRouter model that advertises tool-call support.',
+      description: 'Free high-capacity model with tool-call support.',
       category: 'Free',
       recommended: true,
-      contextWindow: ModelExecutionPolicy.openRouterGptOss20bContextWindow,
-      maxTokens: ModelExecutionPolicy.compactOutputTokens,
-    ),
-    ModelOption(
-      id: 'openrouter/openrouter/free',
-      label: 'OpenRouter Free Router',
-      providerId: 'openrouter',
-      route: ModelRouteKind.cloud,
-      description:
-          'Routes to available free models; tool-call support is not guaranteed.',
-      category: 'Free',
-      toolPolicy: ModelToolPolicy.variable,
-      contextWindow: ModelExecutionPolicy.openRouterFreeContextWindow,
+      contextWindow: ModelExecutionPolicy.openRouterLlama33ContextWindow,
       maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),
     ModelOption(
@@ -427,38 +403,14 @@ class ModelProviderCatalog {
       maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
     ModelOption(
-      id: 'openrouter/moonshotai/kimi-k2.6',
-      label: 'Kimi K2.6 via OpenRouter',
-      providerId: 'openrouter',
-      route: ModelRouteKind.cloud,
-      description: 'Strong long-context agent model through OpenRouter.',
-      category: 'Agent',
-      contextWindow: ModelExecutionPolicy.openRouterKimiK26ContextWindow,
-      maxTokens: ModelExecutionPolicy.standardOutputTokens,
-    ),
-    ModelOption(
-      id: 'groq/openai/gpt-oss-120b',
-      label: 'GPT-OSS 120B via Groq',
+      id: 'groq/llama-3.3-70b-versatile',
+      label: 'Llama 3.3 70B via Groq',
       providerId: 'groq',
       route: ModelRouteKind.cloud,
-      description:
-          'Production Groq model for capable, low-latency cloud reasoning.',
+      description: 'Production Groq model for fast cloud reasoning with tool calls.',
       category: 'Fast',
       recommended: true,
-      toolPolicy: ModelToolPolicy.variable,
-      contextWindow: ModelExecutionPolicy.groqLlamaContextWindow,
-      maxTokens: ModelExecutionPolicy.compactOutputTokens,
-    ),
-    ModelOption(
-      id: 'groq/openai/gpt-oss-20b',
-      label: 'GPT-OSS 20B via Groq',
-      providerId: 'groq',
-      route: ModelRouteKind.cloud,
-      description:
-          'Production lightweight Groq route for fast, economical turns.',
-      category: 'Fast',
-      toolPolicy: ModelToolPolicy.variable,
-      contextWindow: ModelExecutionPolicy.groqLlamaContextWindow,
+      contextWindow: ModelExecutionPolicy.groqLlama33ContextWindow,
       maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),
     ModelOption(
@@ -466,8 +418,7 @@ class ModelProviderCatalog {
       label: 'GLM-5.2 Free via Zenmux',
       providerId: 'zenmux',
       route: ModelRouteKind.cloud,
-      description:
-          'Free community model via the Zenmux OpenAI-compatible gateway.',
+      description: 'Free community model via the Zenmux OpenAI-compatible gateway.',
       category: 'Free',
       recommended: true,
       contextWindow: ModelExecutionPolicy.zenmuxGlm52ContextWindow,
@@ -513,10 +464,6 @@ class ModelProviderCatalog {
     return option?.defaultModel ?? provider;
   }
 
-  /// Model to persist during fresh setup before optional local runtimes exist.
-  ///
-  /// Legacy Ollama choices boot with a safe gateway model. Current setup no
-  /// longer exposes Ollama as a first-run provider.
   static String setupSafeModelForProvider(String provider) {
     final normalized = normalizeProvider(provider);
     return defaultModelForProvider(normalized);
@@ -566,17 +513,28 @@ class ModelProviderCatalog {
     final trimmed = modelId.trim();
     if (trimmed.startsWith('ollama/')) return defaultCloudFallbackModel;
     switch (trimmed) {
+      case 'google/gemini-3.1-pro-preview':
+      case 'google/gemini-3.1-pro':
+      case 'google/gemini-1.5-pro':
+        return 'google/gemini-2.5-pro';
+      case 'anthropic/claude-opus-4-6':
       case 'anthropic/claude-opus-4.6':
-        return 'anthropic/claude-opus-4-6';
+        return 'anthropic/claude-3-7-sonnet-20250219';
+      case 'anthropic/claude-sonnet-4-6':
       case 'anthropic/claude-sonnet-4.6':
-        return 'anthropic/claude-sonnet-4-6';
+        return 'anthropic/claude-3-5-sonnet-20241022';
+      case 'openai/gpt-5.4':
+        return 'openai/gpt-4o';
+      case 'xai/grok-4':
       case 'xai/grok-4.3':
-        return 'xai/grok-4';
-      case 'groq/llama-3.3-70b-versatile':
-      case 'groq/llama-3.1-405b':
-        return 'groq/openai/gpt-oss-120b';
-      case 'groq/llama-3.1-8b-instant':
-        return 'groq/openai/gpt-oss-20b';
+      case 'xai/grok-4-1-fast':
+      case 'xai/grok-code-fast-1':
+        return 'xai/grok-2-vision-1212';
+      case 'groq/openai/gpt-oss-120b':
+      case 'groq/openai/gpt-oss-20b':
+        return 'groq/llama-3.3-70b-versatile';
+      case 'openrouter/openai/gpt-oss-20b:free':
+        return 'openrouter/meta-llama/llama-3.3-70b-instruct:free';
       default:
         return trimmed;
     }
@@ -584,9 +542,6 @@ class ModelProviderCatalog {
 
   static bool isLocalModelId(String modelId) {
     final trimmed = modelId.trim();
-    // plawie_ndk/local-llm routes through the OpenClaw gateway — NOT the local
-    // fllama engine. isLocalModelId must return false so chat_screen routes it
-    // to PATH B (gateway lane) instead of PATH A (direct local bypass).
     if (trimmed == '$plawieNdkProviderId/local-llm') return false;
     if (trimmed.startsWith('$plawieNdkProviderId/local-llm/')) return false;
     if (trimmed.startsWith('local-llm')) return true;
@@ -686,12 +641,6 @@ class ModelProviderCatalog {
           'models': models,
         };
       case 'plawie_ndk':
-        // The gateway schema strictly validates the 'api' field.
-        // Always start the merge with the correct value so a stale on-disk
-        // 'openai' value cannot survive through _ensureCatalogProviderDefaults.
-        // contextWindow tells the gateway the real token budget so it
-        // pre-truncates the system prompt before reaching the bridge.
-        // Qwen 1.5B / 3B are comfortable at 4096; bridge also trims aggressively.
         return {
           'api': 'openai-completions',
           'baseUrl': plawieNdkBaseUrl,

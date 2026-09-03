@@ -20,18 +20,17 @@ class ModelExecutionPolicy {
   static const int standardOutputTokens = 16384;
   static const int extendedOutputTokens = 32768;
 
-  static const int googleGemini31ProContextWindow = 1048576;
-  static const int openAiGpt54ContextWindow = 1050000;
+  static const int googleGemini25ProContextWindow = 2097152;
+  static const int googleGemini25FlashContextWindow = 1048576;
+  static const int anthropicClaude37SonnetContextWindow = 200000;
+  static const int anthropicClaude35SonnetContextWindow = 200000;
   static const int openAiGpt4oContextWindow = 128000;
-  static const int anthropicClaude46ContextWindow = 1000000;
-  static const int xaiGrok4ContextWindow = 1000000;
-  static const int xaiGrok41FastContextWindow = 2000000;
-  static const int xaiGrokCodeFastContextWindow = 256000;
-  static const int openRouterGptOss20bContextWindow = 131072;
+  static const int openAiO3MiniContextWindow = 200000;
+  static const int xaiGrok2ContextWindow = 131072;
+  static const int openRouterLlama33ContextWindow = 131072;
   static const int openRouterAutoContextWindow = 2000000;
-  static const int openRouterFreeContextWindow = 200000;
-  static const int openRouterKimiK26ContextWindow = 262144;
-  static const int groqLlamaContextWindow = 131072;
+  static const int openRouterFreeContextWindow = 131072;
+  static const int groqLlama33ContextWindow = 128000;
   static const int zenmuxGlm52ContextWindow = 131072;
 
   static const int ndkBridgeContextWindow = 4096;
