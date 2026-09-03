@@ -2474,7 +2474,7 @@ class SkillsService {
         return _methodToolDefinition(
           skill,
           description:
-              'Use the secured local EVM wallet for Base and Robinhood address, balances, history, network selection, and explicit transfers.',
+              'Use the secured local EVM wallet for Base address, balances, history, spending policy management (set_policy / get_policy), and explicit transfers.',
           methods: const [
             'get_address',
             'get_balance',
@@ -2484,6 +2484,8 @@ class SkillsService {
             'send_eth',
             'send_usdc',
             'send_usdg',
+            'set_policy',
+            'get_policy',
           ],
           extraProperties: const {
             'to': {
@@ -2497,6 +2499,19 @@ class SkillsService {
             'amount': {
               'type': 'string',
               'description': 'Token amount as a decimal string.',
+            },
+            'daily_limit': {
+              'type': 'string',
+              'description': 'Maximum cumulative daily spending limit in USDC.',
+            },
+            'single_limit': {
+              'type': 'string',
+              'description': 'Maximum single transaction spending limit in USDC.',
+            },
+            'allowed_recipients': {
+              'type': 'array',
+              'items': {'type': 'string'},
+              'description': 'List of approved recipient wallet addresses or basenames.',
             },
             'network': {
               'type': 'string',
