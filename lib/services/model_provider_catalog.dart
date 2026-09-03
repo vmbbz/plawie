@@ -127,8 +127,8 @@ class ModelProviderCatalog {
       envKey: 'GOOGLE_API_KEY',
       keyHint: 'AIzaSy...',
       keyPrefix: 'AIza',
-      defaultModel: 'google/gemini-2.5-pro',
-      description: 'Flagship multimodal model with vision, video, and full tool calls.',
+      defaultModel: 'google/gemini-3.8-flash',
+      description: 'Latest 2026 Gemini Flash & Pro models for software agents, vision, and full tool calls.',
     ),
     ProviderOption(
       id: 'anthropic',
@@ -137,8 +137,8 @@ class ModelProviderCatalog {
       envKey: 'ANTHROPIC_API_KEY',
       keyHint: 'sk-ant-api03-...',
       keyPrefix: 'sk-ant-',
-      defaultModel: 'anthropic/claude-3-7-sonnet-20250219',
-      description: 'Hybrid reasoning and long-form tool planning.',
+      defaultModel: 'anthropic/claude-fable-5-1',
+      description: 'Frontier Generation 5 Claude models for reasoning, long-horizon planning, and agentic coding.',
     ),
     ProviderOption(
       id: 'openai',
@@ -147,18 +147,18 @@ class ModelProviderCatalog {
       envKey: 'OPENAI_API_KEY',
       keyHint: 'sk-proj-...',
       keyPrefix: 'sk-',
-      defaultModel: 'openai/gpt-4o',
-      description: 'Flagship reasoning, multimodal chat, and full tool capabilities.',
+      defaultModel: 'openai/gpt-5.6',
+      description: 'Current 2026 GPT-5 series for unified chat, multimodal vision, and tool capabilities.',
     ),
     ProviderOption(
       id: 'xai',
       label: 'Grok',
-      subtitle: 'by xAI',
+      subtitle: 'by SpaceXAI',
       envKey: 'XAI_API_KEY',
       keyHint: 'xai-...',
       keyPrefix: 'xai-',
-      defaultModel: 'xai/grok-2-vision-1212',
-      description: 'Grok multimodal reasoning, vision, and tool execution models.',
+      defaultModel: 'xai/grok-4-6',
+      description: 'Grok 4.6 flagship models with 500K-2M context, vision, and high-performance agentic coding.',
     ),
     ProviderOption(
       id: 'openrouter',
@@ -177,8 +177,8 @@ class ModelProviderCatalog {
       envKey: 'GROQ_API_KEY',
       keyHint: 'gsk_...',
       keyPrefix: 'gsk_',
-      defaultModel: 'groq/llama-3.3-70b-versatile',
-      description: 'Very fast hosted inference for responsive chat with full tool support.',
+      defaultModel: 'groq/openai/gpt-oss-120b',
+      description: 'Ultra-low-latency LPU inference hosting GPT-OSS 120B and Llama 3.3 70B.',
     ),
     ProviderOption(
       id: 'zenmux',
@@ -277,14 +277,49 @@ class ModelProviderCatalog {
   }
 
   static const List<ModelOption> cloudModels = [
+    // --- Google Gemini (2026 Ground Truth) ---
+    ModelOption(
+      id: 'google/gemini-3.8-flash',
+      label: 'Gemini 3.8 Flash',
+      providerId: 'google',
+      route: ModelRouteKind.cloud,
+      description: 'Latest 2026 Flash model for software engineering, autonomous agents & full tools.',
+      category: 'Agent',
+      recommended: true,
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.googleGemini38FlashContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
+    ModelOption(
+      id: 'google/gemini-3.7-flash',
+      label: 'Gemini 3.7 Flash',
+      providerId: 'google',
+      route: ModelRouteKind.cloud,
+      description: 'High-speed agentic & coding model.',
+      category: 'Code',
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.googleGemini37FlashContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
+    ModelOption(
+      id: 'google/gemini-3.1-pro',
+      label: 'Gemini 3.1 Pro',
+      providerId: 'google',
+      route: ModelRouteKind.cloud,
+      description: 'Flagship 1M context Pro reasoning model with full tool capabilities.',
+      category: 'Multimodal',
+      recommended: true,
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.googleGemini31ProContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
     ModelOption(
       id: 'google/gemini-2.5-pro',
       label: 'Gemini 2.5 Pro',
       providerId: 'google',
       route: ModelRouteKind.cloud,
-      description: 'Flagship 2M context multimodal model with full tool capabilities.',
-      category: 'Multimodal',
-      recommended: true,
+      description: 'Production-stable 2M context Pro reasoning model.',
+      category: 'Reasoning',
       supportsVision: true,
       contextWindow: ModelExecutionPolicy.googleGemini25ProContextWindow,
       maxTokens: ModelExecutionPolicy.extendedOutputTokens,
@@ -294,34 +329,104 @@ class ModelProviderCatalog {
       label: 'Gemini 2.5 Flash',
       providerId: 'google',
       route: ModelRouteKind.cloud,
-      description: 'Ultra fast 1M context multimodal model with full tool capabilities.',
+      description: 'Production-stable ultra fast Flash model.',
       category: 'Fast',
-      recommended: true,
       supportsVision: true,
       contextWindow: ModelExecutionPolicy.googleGemini25FlashContextWindow,
+      maxTokens: ModelExecutionPolicy.standardOutputTokens,
+    ),
+
+    // --- Anthropic Claude (2026 Ground Truth) ---
+    ModelOption(
+      id: 'anthropic/claude-fable-5-1',
+      label: 'Claude Fable 5.1',
+      providerId: 'anthropic',
+      route: ModelRouteKind.cloud,
+      description: 'Frontier 2026 model for demanding reasoning and long-horizon agents.',
+      category: 'Reasoning',
+      recommended: true,
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.anthropicClaudeFable51ContextWindow,
       maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
+    ModelOption(
+      id: 'anthropic/claude-opus-5',
+      label: 'Claude Opus 5',
+      providerId: 'anthropic',
+      route: ModelRouteKind.cloud,
+      description: 'Flagship agentic coding and enterprise long-form planning.',
+      category: 'Reasoning',
+      recommended: true,
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.anthropicClaudeOpus5ContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
+    ModelOption(
+      id: 'anthropic/claude-sonnet-5',
+      label: 'Claude Sonnet 5',
+      providerId: 'anthropic',
+      route: ModelRouteKind.cloud,
+      description: 'Balanced Generation 5 production tier model (1M context).',
+      category: 'Reasoning',
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.anthropicClaudeSonnet5ContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
+    ModelOption(
+      id: 'anthropic/claude-haiku-4-5',
+      label: 'Claude Haiku 4.5',
+      providerId: 'anthropic',
+      route: ModelRouteKind.cloud,
+      description: 'Fast, lowest-cost Claude model for lightweight turns.',
+      category: 'Fast',
+      contextWindow: ModelExecutionPolicy.anthropicClaudeHaiku45ContextWindow,
+      maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
     ModelOption(
       id: 'anthropic/claude-3-7-sonnet-20250219',
       label: 'Claude 3.7 Sonnet',
       providerId: 'anthropic',
       route: ModelRouteKind.cloud,
-      description: 'Flagship hybrid reasoning and tool planning model.',
+      description: 'Extended thinking & hybrid reasoning model.',
       category: 'Reasoning',
-      recommended: true,
       supportsVision: true,
       contextWindow: ModelExecutionPolicy.anthropicClaude37SonnetContextWindow,
       maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
+
+    // --- OpenAI (2026 Ground Truth) ---
     ModelOption(
-      id: 'anthropic/claude-3-5-sonnet-20241022',
-      label: 'Claude 3.5 Sonnet v2',
-      providerId: 'anthropic',
+      id: 'openai/gpt-5.6',
+      label: 'GPT-5.6',
+      providerId: 'openai',
       route: ModelRouteKind.cloud,
-      description: 'Capable vision and agent tool execution model.',
+      description: 'Current 2026 flagship unified reasoning and agent model.',
       category: 'Reasoning',
+      recommended: true,
       supportsVision: true,
-      contextWindow: ModelExecutionPolicy.anthropicClaude35SonnetContextWindow,
+      contextWindow: ModelExecutionPolicy.openAiGpt56ContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
+    ModelOption(
+      id: 'openai/gpt-5.5',
+      label: 'GPT-5.5',
+      providerId: 'openai',
+      route: ModelRouteKind.cloud,
+      description: 'Mainstream high-capacity GPT-5 series model.',
+      category: 'Multimodal',
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.openAiGpt55ContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
+    ModelOption(
+      id: 'openai/gpt-5.4',
+      label: 'GPT-5.4',
+      providerId: 'openai',
+      route: ModelRouteKind.cloud,
+      description: 'Workhorse general reasoning & tool execution model.',
+      category: 'General',
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.openAiGpt54ContextWindow,
       maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
@@ -329,57 +434,83 @@ class ModelProviderCatalog {
       label: 'GPT-4o',
       providerId: 'openai',
       route: ModelRouteKind.cloud,
-      description: 'Flagship multimodal model with full tool support.',
+      description: 'Multimodal fallback model with full tool support.',
       category: 'Multimodal',
-      recommended: true,
-      supportsVision: true,
-      contextWindow: ModelExecutionPolicy.openAiGpt4oContextWindow,
-      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
-    ),
-    ModelOption(
-      id: 'openai/gpt-4o-mini',
-      label: 'GPT-4o Mini',
-      providerId: 'openai',
-      route: ModelRouteKind.cloud,
-      description: 'Lightweight fast multimodal model with full tool support.',
-      category: 'Fast',
-      recommended: true,
       supportsVision: true,
       contextWindow: ModelExecutionPolicy.openAiGpt4oContextWindow,
       maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
+
+    // --- xAI Grok (2026 Ground Truth) ---
     ModelOption(
-      id: 'openai/o3-mini',
-      label: 'o3-mini',
-      providerId: 'openai',
-      route: ModelRouteKind.cloud,
-      description: 'High-speed reasoning model with full tool support.',
-      category: 'Reasoning',
-      contextWindow: ModelExecutionPolicy.openAiO3MiniContextWindow,
-      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
-    ),
-    ModelOption(
-      id: 'xai/grok-2-vision-1212',
-      label: 'Grok 2 Vision',
+      id: 'xai/grok-4-6',
+      label: 'Grok 4.6',
       providerId: 'xai',
       route: ModelRouteKind.cloud,
-      description: 'xAI flagship multimodal model with tool calls.',
-      category: 'Multimodal',
+      description: 'Current 2026 xAI flagship model (500K context, vision & agentic coding).',
+      category: 'Reasoning',
       recommended: true,
       supportsVision: true,
-      contextWindow: ModelExecutionPolicy.xaiGrok2ContextWindow,
+      contextWindow: ModelExecutionPolicy.xaiGrok46ContextWindow,
       maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
     ModelOption(
-      id: 'xai/grok-2-1212',
-      label: 'Grok 2',
+      id: 'xai/grok-4-5',
+      label: 'Grok 4.5',
       providerId: 'xai',
       route: ModelRouteKind.cloud,
-      description: 'xAI reasoning and tool execution model.',
-      category: 'Reasoning',
-      contextWindow: ModelExecutionPolicy.xaiGrok2ContextWindow,
+      description: 'High-performance model for research and agentic coding.',
+      category: 'Code',
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.xaiGrok45ContextWindow,
       maxTokens: ModelExecutionPolicy.extendedOutputTokens,
     ),
+    ModelOption(
+      id: 'xai/grok-4-1-fast',
+      label: 'Grok 4.1 Fast',
+      providerId: 'xai',
+      route: ModelRouteKind.cloud,
+      description: 'Budget fast xAI model with 2M context window.',
+      category: 'Fast',
+      supportsVision: true,
+      contextWindow: ModelExecutionPolicy.xaiGrok41FastContextWindow,
+      maxTokens: ModelExecutionPolicy.extendedOutputTokens,
+    ),
+
+    // --- Groq (2026 Ground Truth) ---
+    ModelOption(
+      id: 'groq/openai/gpt-oss-120b',
+      label: 'GPT-OSS 120B via Groq',
+      providerId: 'groq',
+      route: ModelRouteKind.cloud,
+      description: 'Flagship 120B model with web search, code execution & reasoning.',
+      category: 'Fast',
+      recommended: true,
+      contextWindow: ModelExecutionPolicy.groqGptOss120bContextWindow,
+      maxTokens: ModelExecutionPolicy.compactOutputTokens,
+    ),
+    ModelOption(
+      id: 'groq/openai/gpt-oss-20b',
+      label: 'GPT-OSS 20B via Groq',
+      providerId: 'groq',
+      route: ModelRouteKind.cloud,
+      description: 'Fast MoE model optimized for low-latency agentic turns.',
+      category: 'Fast',
+      contextWindow: ModelExecutionPolicy.groqGptOss20bContextWindow,
+      maxTokens: ModelExecutionPolicy.compactOutputTokens,
+    ),
+    ModelOption(
+      id: 'groq/llama-3.3-70b-versatile',
+      label: 'Llama 3.3 70B via Groq',
+      providerId: 'groq',
+      route: ModelRouteKind.cloud,
+      description: 'Meta Llama 3.3 70B hosted on Groq LPU.',
+      category: 'Fast',
+      contextWindow: ModelExecutionPolicy.groqLlama33ContextWindow,
+      maxTokens: ModelExecutionPolicy.compactOutputTokens,
+    ),
+
+    // --- OpenRouter (2026 Ground Truth) ---
     ModelOption(
       id: 'openrouter/meta-llama/llama-3.3-70b-instruct:free',
       label: 'Llama 3.3 70B Free via OpenRouter',
@@ -389,6 +520,16 @@ class ModelProviderCatalog {
       category: 'Free',
       recommended: true,
       contextWindow: ModelExecutionPolicy.openRouterLlama33ContextWindow,
+      maxTokens: ModelExecutionPolicy.compactOutputTokens,
+    ),
+    ModelOption(
+      id: 'openrouter/deepseek/deepseek-r1:free',
+      label: 'DeepSeek R1 Free via OpenRouter',
+      providerId: 'openrouter',
+      route: ModelRouteKind.cloud,
+      description: 'Free DeepSeek R1 reasoning model.',
+      category: 'Free',
+      contextWindow: ModelExecutionPolicy.openRouterFreeContextWindow,
       maxTokens: ModelExecutionPolicy.compactOutputTokens,
     ),
     ModelOption(
@@ -402,17 +543,8 @@ class ModelProviderCatalog {
       contextWindow: ModelExecutionPolicy.openRouterAutoContextWindow,
       maxTokens: ModelExecutionPolicy.standardOutputTokens,
     ),
-    ModelOption(
-      id: 'groq/llama-3.3-70b-versatile',
-      label: 'Llama 3.3 70B via Groq',
-      providerId: 'groq',
-      route: ModelRouteKind.cloud,
-      description: 'Production Groq model for fast cloud reasoning with tool calls.',
-      category: 'Fast',
-      recommended: true,
-      contextWindow: ModelExecutionPolicy.groqLlama33ContextWindow,
-      maxTokens: ModelExecutionPolicy.compactOutputTokens,
-    ),
+
+    // --- Zenmux & Plawie Bridge ---
     ModelOption(
       id: 'zenmux/z-ai/glm-5.2-free',
       label: 'GLM-5.2 Free via Zenmux',
@@ -513,28 +645,50 @@ class ModelProviderCatalog {
     final trimmed = modelId.trim();
     if (trimmed.startsWith('ollama/')) return defaultCloudFallbackModel;
     switch (trimmed) {
+      // Legacy Google mappings
       case 'google/gemini-3.1-pro-preview':
-      case 'google/gemini-3.1-pro':
       case 'google/gemini-1.5-pro':
-        return 'google/gemini-2.5-pro';
+        return 'google/gemini-3.1-pro';
+      case 'google/gemini-1.5-flash':
+        return 'google/gemini-3.7-flash';
+
+      // Legacy Anthropic mappings
+      case 'anthropic/claude-3-opus-20240229':
       case 'anthropic/claude-opus-4-6':
       case 'anthropic/claude-opus-4.6':
-        return 'anthropic/claude-3-7-sonnet-20250219';
+        return 'anthropic/claude-opus-5';
       case 'anthropic/claude-sonnet-4-6':
       case 'anthropic/claude-sonnet-4.6':
-        return 'anthropic/claude-3-5-sonnet-20241022';
+      case 'anthropic/claude-3-5-sonnet-20241022':
+        return 'anthropic/claude-sonnet-5';
+
+      // Legacy OpenAI mappings
+      case 'openai/gpt-4':
+      case 'openai/gpt-4.5':
+      case 'openai/o3-mini':
+      case 'openai/o4-mini':
       case 'openai/gpt-5.4':
-        return 'openai/gpt-4o';
+        return 'openai/gpt-5.6';
+
+      // Legacy xAI mappings
+      case 'xai/grok-beta':
       case 'xai/grok-4':
       case 'xai/grok-4.3':
-      case 'xai/grok-4-1-fast':
-      case 'xai/grok-code-fast-1':
-        return 'xai/grok-2-vision-1212';
-      case 'groq/openai/gpt-oss-120b':
+      case 'xai/grok-2-vision-1212':
+      case 'xai/grok-2-1212':
+        return 'xai/grok-4-6';
+
+      // Legacy Groq mappings
+      case 'groq/llama-3.1-8b-instant':
       case 'groq/openai/gpt-oss-20b':
-        return 'groq/llama-3.3-70b-versatile';
+        return 'groq/openai/gpt-oss-120b';
+
+      // Legacy OpenRouter mappings
       case 'openrouter/openai/gpt-oss-20b:free':
+      case 'openrouter/openrouter/free':
+      case 'openrouter/free':
         return 'openrouter/meta-llama/llama-3.3-70b-instruct:free';
+
       default:
         return trimmed;
     }
