@@ -38,7 +38,7 @@ class PreferencesService {
   static const _keyLastProviderSetupReceiptId =
       'last_provider_setup_receipt_id';
   static const _keyDynamicModelCatalogSnapshot =
-      'dynamic_model_catalog_snapshot_v1';
+      'dynamic_model_catalog_snapshot_v2';
   static const _keyModelCapabilityReceipts = 'model_capability_receipts_v1';
   static const _keyAiPaymentProvider = 'ai_payment_provider';
   static const _keyX402PaymentReceipts = 'x402_payment_receipts_v1';
